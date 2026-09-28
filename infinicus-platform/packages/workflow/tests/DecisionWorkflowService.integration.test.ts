@@ -262,13 +262,13 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
 
   describe('business selection', () => {
     it('lists businesses for a workspace', async () => {
-      const list = await service.listBusinesses(ctx1);
-      expect(list.some((b) => b.id === BIZ1)).toBe(true);
+      const { items } = await service.listBusinesses(ctx1);
+      expect(items.some((b) => b.id === BIZ1)).toBe(true);
     });
 
     it('does not list a different tenant workspace\'s businesses', async () => {
-      const list = await service.listBusinesses(ctx1);
-      expect(list.some((b) => b.id === BIZ2)).toBe(false);
+      const { items } = await service.listBusinesses(ctx1);
+      expect(items.some((b) => b.id === BIZ2)).toBe(false);
     });
   });
 
@@ -368,8 +368,8 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
 
   describe('cross-tenant isolation (live RLS)', () => {
     it('tenant 2 cannot see tenant 1\'s business in listBusinesses', async () => {
-      const list = await service.listBusinesses(ctx2);
-      expect(list.some((b) => b.id === BIZ1)).toBe(false);
+      const { items } = await service.listBusinesses(ctx2);
+      expect(items.some((b) => b.id === BIZ1)).toBe(false);
     });
 
     it('tenant 2 cannot read tenant 1\'s business via getWorkflowView', async () => {

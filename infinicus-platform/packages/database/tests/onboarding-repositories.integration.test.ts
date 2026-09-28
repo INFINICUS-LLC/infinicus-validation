@@ -191,6 +191,51 @@ describe.runIf(run)('BUILD-19 Tenant Onboarding repositories — live PostgreSQL
       expect(suspended.status).toBe('suspended');
       expect(suspended.version).toBe(business.version + 1);
     });
+
+    describe('listForWorkspace — SQL-pushed pagination', () => {
+      it('bounds a page with LIMIT/OFFSET and reports the true total across pages', async () => {
+        const user = await createActiveUser();
+        const { tenant, workspace } = await createTenantAndWorkspace(user.id);
+        const ctx = { tenantId: tenant.id, workspaceId: workspace.id, userId: user.id };
+
+        // Alphabetically-ordered names so page boundaries are deterministic:
+        // listForWorkspace orders by legal_name.
+        const names = ['Alpha Co', 'Bravo Co', 'Charlie Co', 'Delta Co', 'Echo Co'];
+        for (const legalName of names) {
+          await businesses.create(ctx, { legalName, businessCode: uniqueSlug('page') });
+        }
+
+        const firstPage = await businesses.listForWorkspace(ctx, { limit: 2, offset: 0 });
+        expect(firstPage.items.map((b) => b.legalName)).toEqual(['Alpha Co', 'Bravo Co']);
+        expect(firstPage.total).toBe(5);
+
+        const secondPage = await businesses.listForWorkspace(ctx, { limit: 2, offset: 2 });
+        expect(secondPage.items.map((b) => b.legalName)).toEqual(['Charlie Co', 'Delta Co']);
+        expect(secondPage.total).toBe(5);
+
+        // Last page is a partial page (5 rows, page size 2, offset 4) —
+        // the boundary case a naive LIMIT/OFFSET translation gets wrong.
+        const lastPage = await businesses.listForWorkspace(ctx, { limit: 2, offset: 4 });
+        expect(lastPage.items.map((b) => b.legalName)).toEqual(['Echo Co']);
+        expect(lastPage.total).toBe(5);
+
+        // Past the end: empty items, but total still reflects the full set.
+        const pastEnd = await businesses.listForWorkspace(ctx, { limit: 2, offset: 10 });
+        expect(pastEnd.items).toEqual([]);
+        expect(pastEnd.total).toBe(5);
+      });
+
+      it('defaults to DEFAULT_PAGE_SIZE when no page options are supplied', async () => {
+        const user = await createActiveUser();
+        const { tenant, workspace } = await createTenantAndWorkspace(user.id);
+        const ctx = { tenantId: tenant.id, workspaceId: workspace.id, userId: user.id };
+        await businesses.create(ctx, { legalName: 'Solo Co', businessCode: uniqueSlug('solo') });
+
+        const page = await businesses.listForWorkspace(ctx);
+        expect(page.items.some((b) => b.legalName === 'Solo Co')).toBe(true);
+        expect(page.total).toBe(1);
+      });
+    });
   });
 
   // ── 4. SettingsRepository ────────────────────────────────────────────────
