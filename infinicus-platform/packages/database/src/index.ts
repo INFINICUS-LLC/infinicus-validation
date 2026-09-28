@@ -377,7 +377,7 @@ export {
 export type {
   Tenant, CreateTenantInput,
   Workspace, CreateWorkspaceInput,
-  Business, CreateBusinessInput,
+  Business, CreateBusinessInput, PagedBusinesses,
   Setting, SettingsScope,
   OnboardingProgress, OnboardingStatus, OnboardingStep,
 } from './repositories/onboarding/index.js';

@@ -7,6 +7,7 @@ import {
   ActionReviewRepository, ApproverAuthorityRepository, ApprovalDecisionRepository,
   MonitoredActionRepository, OutcomeObservationRepository,
   type TenantContext, type Business, type CreateBusinessInput,
+  type PagedBusinesses, type PageOptions,
   type InsightPackage,
   type DigitalTwinInstance, type DigitalTwinSnapshot,
   type SimulationRun, type SimulationResult,
@@ -89,9 +90,9 @@ export class DecisionWorkflowService {
     private readonly outcomeObservations: OutcomeObservationRepository = new OutcomeObservationRepository()
   ) {}
 
-  /** Business selection. */
-  async listBusinesses(ctx: TenantContext): Promise<Business[]> {
-    return this.businesses.listForWorkspace(ctx);
+  /** Business selection, bounded by LIMIT/OFFSET pushed into the repository query. */
+  async listBusinesses(ctx: TenantContext, page: PageOptions = {}): Promise<PagedBusinesses> {
+    return this.businesses.listForWorkspace(ctx, page);
   }
 
   async createBusiness(ctx: TenantContext, input: CreateBusinessInput): Promise<Business> {
