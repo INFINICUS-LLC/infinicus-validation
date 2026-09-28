@@ -6,7 +6,7 @@ import {
 import { hashPassword, verifyPassword } from './password.js';
 import { generateSessionToken, hashToken, defaultSessionExpiry } from './tokens.js';
 import {
-  InvalidCredentialsError, AccountNotActiveError,
+  InvalidCredentialsError, AccountNotActiveError, AccountLockedError,
   SessionExpiredError, SessionRevokedError, SessionInvalidError,
   VerificationTokenInvalidError,
 } from './errors.js';
@@ -15,6 +15,14 @@ import type { EmailSender } from './email/EmailSender.js';
 import { verificationEmail } from './email/verificationEmail.js';
 
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Account lockout (BUILD-18 known-limitations: "No account lockout / rate
+// limiting" — this closes that gap). 5 bad-password attempts within a
+// 15-minute sliding window locks the account; the window naturally clears
+// itself as old failures age out, so there is no separate "locked_until"
+// state to track or expire.
+const LOCKOUT_FAILURE_THRESHOLD = 5;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 
 export interface LoginResult {
   user: User;
@@ -97,6 +105,18 @@ export class AuthenticationService {
         throw new InvalidCredentialsError();
       }
       throw err;
+    }
+
+    // Checked before verifying the password (not after failing it) so a
+    // locked-out attacker's guesses never reach bcrypt — cheap to check,
+    // and avoids doing real password-verification work on a request that's
+    // going to be rejected regardless of what password was supplied.
+    const recentFailures = await this.accessEvents.countRecentFailedPasswordAttempts(
+      user.id, new Date(Date.now() - LOCKOUT_WINDOW_MS)
+    );
+    if (recentFailures >= LOCKOUT_FAILURE_THRESHOLD) {
+      await this.accessEvents.record(null, user.id, 'failed_auth', meta.ipAddress ?? null, meta.userAgent ?? null, { reason: 'account_locked' });
+      throw new AccountLockedError(LOCKOUT_WINDOW_MS);
     }
 
     const passwordHash = await this.users.getPasswordHash(user.id);

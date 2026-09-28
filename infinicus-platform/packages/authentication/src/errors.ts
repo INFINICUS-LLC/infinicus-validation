@@ -12,6 +12,14 @@ export class AccountNotActiveError extends Error {
   }
 }
 
+/** Thrown by AuthenticationService.login() when the account has too many recent failed-password attempts. Never thrown for an unknown email (see AccessEventRepository.countRecentFailedPasswordAttempts's own doc comment for why). */
+export class AccountLockedError extends Error {
+  constructor(retryAfterMs: number) {
+    super(`Account temporarily locked after too many failed login attempts. Try again in ${Math.ceil(retryAfterMs / 1000)}s.`);
+    this.name = 'AccountLockedError';
+  }
+}
+
 export class SessionExpiredError extends Error {
   constructor() {
     super('Session has expired');

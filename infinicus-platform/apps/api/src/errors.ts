@@ -37,6 +37,10 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   // Authentication (@infinicus/authentication)
   InvalidCredentialsError: 401,
   AccountNotActiveError: 403,
+  // 429, not 401/403 — the credentials supplied may well be correct; the
+  // account is rate-limited, not rejected (BUILD-18 known-limitations item,
+  // closed: "No account lockout / rate limiting").
+  AccountLockedError: 429,
   SessionExpiredError: 401,
   SessionRevokedError: 401,
   SessionInvalidError: 401,

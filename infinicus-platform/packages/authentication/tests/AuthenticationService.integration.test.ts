@@ -15,7 +15,7 @@ import { createPool, closePool, UserRepository, SessionRepository, AccessEventRe
 import { AuthenticationService } from '../src/AuthenticationService.js';
 import { generateSessionToken, hashToken } from '../src/tokens.js';
 import {
-  InvalidCredentialsError, AccountNotActiveError,
+  InvalidCredentialsError, AccountNotActiveError, AccountLockedError,
   SessionExpiredError, SessionRevokedError, SessionInvalidError,
   VerificationTokenInvalidError,
 } from '../src/errors.js';
@@ -174,6 +174,44 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const { email, user } = await registerAndActivate(service, users);
       await users.suspend(user.id);
       await expect(service.login(email, STRONG_PASSWORD)).rejects.toBeInstanceOf(AccountNotActiveError);
+    });
+  });
+
+  describe('login — account lockout', () => {
+    it('locks the account after 5 bad-password attempts within the window, even with the correct password on the 6th try', async () => {
+      const { email } = await registerAndActivate(service, users);
+      for (let i = 0; i < 5; i++) {
+        await expect(service.login(email, 'Wrong-Password-9!')).rejects.toBeInstanceOf(InvalidCredentialsError);
+      }
+      await expect(service.login(email, STRONG_PASSWORD)).rejects.toBeInstanceOf(AccountLockedError);
+    });
+
+    it('records a failed_auth access event with reason=account_locked when lockout triggers', async () => {
+      const { email, user } = await registerAndActivate(service, users);
+      for (let i = 0; i < 5; i++) {
+        await expect(service.login(email, 'Wrong-Password-9!')).rejects.toBeInstanceOf(InvalidCredentialsError);
+      }
+      await expect(service.login(email, STRONG_PASSWORD)).rejects.toBeInstanceOf(AccountLockedError);
+      const events = await accessEvents.listForUser(user.id);
+      const lockEvent = events.find((e) => e.eventType === 'failed_auth' && e.metadata.reason === 'account_locked');
+      expect(lockEvent).toBeDefined();
+    });
+
+    it('does not lock an account that has fewer than the threshold\'s worth of recent failures', async () => {
+      const { email } = await registerAndActivate(service, users);
+      for (let i = 0; i < 4; i++) {
+        await expect(service.login(email, 'Wrong-Password-9!')).rejects.toBeInstanceOf(InvalidCredentialsError);
+      }
+      // The 5th attempt is the correct password — must succeed, not lock,
+      // since only 4 *failed* attempts have happened so far.
+      await expect(service.login(email, STRONG_PASSWORD)).resolves.toBeDefined();
+    });
+
+    it('an unknown email never locks (there is no account to lock, and no userId to count failures against)', async () => {
+      const unknownEmail = uniqueEmail('lockout-unknown');
+      for (let i = 0; i < 10; i++) {
+        await expect(service.login(unknownEmail, 'Wrong-Password-9!')).rejects.toBeInstanceOf(InvalidCredentialsError);
+      }
     });
   });
 

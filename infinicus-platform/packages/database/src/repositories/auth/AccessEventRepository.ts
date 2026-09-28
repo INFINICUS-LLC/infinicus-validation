@@ -72,4 +72,26 @@ export class AccessEventRepository {
       return result.rows.map(rowToAccessEvent);
     });
   }
+
+  /**
+   * Counts this user's 'failed_auth' events with metadata.reason = 'bad_password'
+   * since the given time — the login-lockout check's sole data source (no
+   * separate failed-attempt counter column; this read-back keeps the account
+   * lockout gate to a pure function of the audit trail that already exists).
+   * Deliberately scoped to 'bad_password' only: 'unknown_email' failures carry
+   * no userId (nothing to count against), and 'account_not_active'/
+   * 'account_locked' failures are already-known-account states, not attackable
+   * password guesses — counting them would let an attacker who trips lockout
+   * once keep the account locked indefinitely just by continuing to hit it.
+   */
+  async countRecentFailedPasswordAttempts(userId: string, since: Date): Promise<number> {
+    return withTransaction(async (client) => {
+      const result = await client.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM audit.access_events
+         WHERE user_id = $1 AND event_type = 'failed_auth' AND metadata->>'reason' = 'bad_password' AND occurred_at > $2`,
+        [userId, since]
+      );
+      return parseInt(result.rows[0].count, 10);
+    });
+  }
 }

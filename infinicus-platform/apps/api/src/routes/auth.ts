@@ -42,9 +42,9 @@ export default async function authRoutes(app: FastifyInstance) {
   server.post('/v1/auth/login', {
     schema: {
       tags: ['auth'],
-      summary: 'Log in with email and password; returns a bearer session token',
+      summary: 'Log in with email and password; returns a bearer session token. 429 after too many recent failed attempts (account lockout), independent of whether this attempt\'s password is correct.',
       body: loginBodySchema,
-      response: { 200: loginResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema },
+      response: { 200: loginResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 429: errorResponseSchema },
     },
   }, async (request, reply) => {
     const { user, session, rawSessionToken } = await authService.login(
