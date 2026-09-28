@@ -1,18 +1,24 @@
 # BUILD-21 — Governed Application API: Known Limitations
 
-## Pagination is applied after a full repository fetch, not pushed into SQL
+## Pagination is applied after a full repository fetch, not pushed into SQL — CLOSED (post-BUILD-21 follow-up)
 
-`paginate<T>(items, page, pageSize)` (`apps/api/src/schemas/common.ts`)
-slices an already-fully-fetched array rather than pushing `LIMIT`/
-`OFFSET` into the underlying repository query. This was a deliberate,
-documented scope simplification to avoid re-touching every already-
-shipped `listForBusiness`/`listForWorkspace` repository method again in
-this build — those methods return recency-ordered lists that, for the
-data volumes this platform currently operates at, are not large enough
-for in-memory slicing to be a real performance concern. Pushing
-pagination into the SQL layer (repository-level `LIMIT`/`OFFSET`
-parameters) is a reasonable, isolated future follow-up, out of this
-build's frozen scope.
+Closed: `BusinessRepository.listForWorkspace(ctx, page?)` — the sole
+caller of the old in-memory `paginate()` helper, via
+`DecisionWorkflowService.listBusinesses` and `GET /v1/businesses` —
+now issues a bounded `LIMIT`/`OFFSET` query plus a `COUNT(*)` on the
+same transaction client, instead of fetching the full workspace list
+for the API layer to slice. Bounds are clamped through the existing
+`boundedPage()` helper (`repositories/da/pagination.ts`, reused rather
+than duplicated), so a malformed or unbounded caller request still
+cannot reach the query directly. The now-unused in-memory `paginate()`
+helper has been removed from `apps/api/src/schemas/common.ts`; the
+request/response contract for `GET /v1/businesses`
+(`paginationQuerySchema`, `businessListResponseSchema`) is unchanged.
+
+This closes the one call site that existed at the time this
+limitation was written. Other repository methods returning
+recency-ordered lists without pagination at all (as opposed to
+paginating in memory) are unaffected and remain out of scope here.
 
 ## No email verification / activation flow
 
