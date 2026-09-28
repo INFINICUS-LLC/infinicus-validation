@@ -1,5 +1,6 @@
 import { withTenantTransaction, type TenantContext } from '../../client.js';
 import { BusinessNotFoundError, BusinessCodeConflictError } from './errors.js';
+import { boundedPage, type PageOptions } from '../da/pagination.js';
 
 export interface Business {
   id: string;
@@ -24,6 +25,11 @@ export interface CreateBusinessInput {
   industry?: string;
   legalStructure?: string;
   businessModel?: string;
+}
+
+export interface PagedBusinesses {
+  items: Business[];
+  total: number;
 }
 
 const VALID_STATUSES = ['draft', 'active', 'suspended', 'closed', 'archived'];
@@ -83,14 +89,36 @@ export class BusinessRepository {
     });
   }
 
-  /** Business selection: lists every non-deleted business in the caller's workspace, most recently created first. */
-  async listForWorkspace(ctx: TenantContext): Promise<Business[]> {
+  /**
+   * Business selection: lists non-deleted businesses in the caller's workspace,
+   * alphabetically by legal name, bounded by LIMIT/OFFSET rather than fetched
+   * in full — see known-limitations-build21.md, "Pagination is applied after
+   * a full repository fetch, not pushed into SQL".
+   *
+   * `page` is optional so existing callers keep working; omitting it yields
+   * the explicit DEFAULT_PAGE_SIZE rather than an unbounded scan. Both
+   * queries run on the same transaction client, so the count reflects a
+   * consistent snapshot with the page rather than a value read separately.
+   */
+  async listForWorkspace(ctx: TenantContext, page: PageOptions = {}): Promise<PagedBusinesses> {
+    const { limit, offset } = boundedPage(page);
+
     return withTenantTransaction(ctx, async (client) => {
-      const result = await client.query<Record<string, unknown>>(
-        `SELECT * FROM platform.businesses WHERE workspace_id = $1 AND deleted_at IS NULL ORDER BY legal_name`,
+      const itemsResult = await client.query<Record<string, unknown>>(
+        `SELECT * FROM platform.businesses
+         WHERE workspace_id = $1 AND deleted_at IS NULL
+         ORDER BY legal_name
+         LIMIT $2 OFFSET $3`,
+        [ctx.workspaceId, limit, offset]
+      );
+      const countResult = await client.query<{ count: string }>(
+        `SELECT COUNT(*) FROM platform.businesses WHERE workspace_id = $1 AND deleted_at IS NULL`,
         [ctx.workspaceId]
       );
-      return result.rows.map(rowToBusiness);
+      return {
+        items: itemsResult.rows.map(rowToBusiness),
+        total: Number(countResult.rows[0].count),
+      };
     });
   }
 
