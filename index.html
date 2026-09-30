@@ -819,7 +819,9 @@ SUPA.auth.onAuthStateChange(async (event, session) => {
       createdAt:  session.user.created_at || prev.createdAt || Date.now(),
       verifiedAt: Date.now()
     };
-    saveUser(); renderUserBadge();
+      saveUser(); renderUserBadge();
+    if (typeof daInit === 'function') daInit();
+    if (typeof bizInit === 'function') bizInit();
     if (event === 'SIGNED_IN') {
       const modal = document.getElementById('reg-modal');
       if (modal) modal.style.display = 'none';
