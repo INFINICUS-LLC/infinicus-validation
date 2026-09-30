@@ -101,7 +101,7 @@ describe.runIf(run)('BUILD-31 Data Acquisition runtime API — live PostgreSQL',
   beforeAll(async () => {
     const appUrl = process.env.DATABASE_URL!;
     const adminUrl = process.env.ADMIN_DATABASE_URL ?? appUrl;
-    createPool({ connectionString: appUrl });
+    createPool({ connectionString: appUrl, ssl: true });
     adminPool = new Pool({ connectionString: adminUrl });
 
     await adminPool.query(
@@ -418,3 +418,5 @@ describe.skipIf(run)('BUILD-31 Data Acquisition runtime API — live PostgreSQL 
     expect(run).toBe(false);
   });
 });
+
+

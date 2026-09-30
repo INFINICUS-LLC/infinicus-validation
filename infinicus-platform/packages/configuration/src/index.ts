@@ -16,6 +16,7 @@ export type { SecretClassification, SecretDefinition, SecretProvider } from './s
 export interface InfinicusConfig {
   env: 'development' | 'staging' | 'production' | 'test';
   databaseUrl: string;
+  dbSsl: boolean;
   port: number;
   logLevel: string;
   rateLimitMax: number;
@@ -25,7 +26,6 @@ export interface InfinicusConfig {
   dbIdleTimeoutMs: number;
   dbConnectionTimeoutMs: number;
   dbStatementTimeoutMs: number;
-  /** Browser origins allowed to call this API cross-origin (see apps/api/src/app.ts's @fastify/cors registration). */
   corsAllowedOrigins: string[];
 }
 
@@ -43,7 +43,17 @@ function optionalInt(env: NodeJS.ProcessEnv, key: string, fallback: number): num
   return parsed;
 }
 
-/** Reads configuration from the given environment (defaults to process.env). Never caches — callers control when it re-reads. */
+function resolveDbSsl(env: NodeJS.ProcessEnv, databaseUrl: string): boolean {
+  const raw = env.DB_SSL;
+  if (raw !== undefined) return raw === 'true' || raw === '1';
+  try {
+    const host = new URL(databaseUrl).hostname;
+    return host !== 'localhost' && host !== '127.0.0.1';
+  } catch {
+    return true;
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): InfinicusConfig {
   const nodeEnv = env.NODE_ENV;
   const resolvedEnv: InfinicusConfig['env'] =
@@ -51,10 +61,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): InfinicusConfi
 
   const databaseUrl = requireEnv(env, 'DATABASE_URL');
 
-  // Environment separation, enforced: a production process must never
-  // start against a database credential that looks like a local or CI
-  // disposable test credential — fail closed rather than silently run
-  // production traffic against a dev/test database.
   if (resolvedEnv === 'production' && looksLikeLocalOrTestCredential(databaseUrl)) {
     throw new ConfigurationError(
       'DATABASE_URL looks like a local/test credential (matches a known dev or CI pattern) but NODE_ENV is production — refusing to start.'
@@ -64,6 +70,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): InfinicusConfi
   return {
     env: resolvedEnv,
     databaseUrl,
+    dbSsl: resolveDbSsl(env, databaseUrl),
     port: optionalInt(env, 'PORT', 3000),
     logLevel: env.LOG_LEVEL ?? (resolvedEnv === 'production' ? 'info' : 'debug'),
     rateLimitMax: optionalInt(env, 'RATE_LIMIT_MAX', 100),
@@ -73,10 +80,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): InfinicusConfi
     dbIdleTimeoutMs: optionalInt(env, 'DB_IDLE_TIMEOUT_MS', 30_000),
     dbConnectionTimeoutMs: optionalInt(env, 'DB_CONNECTION_TIMEOUT_MS', 5_000),
     dbStatementTimeoutMs: optionalInt(env, 'DB_STATEMENT_TIMEOUT_MS', 30_000),
-    // Default matches the live public site's real domain (root CNAME file)
-    // so the demo works out of the box; CORS_ALLOWED_ORIGINS overrides for
-    // staging/local/other deployments. Comma-separated, trimmed, empty
-    // entries dropped.
     corsAllowedOrigins: (env.CORS_ALLOWED_ORIGINS ?? 'https://infini-cus.com,https://www.infini-cus.com')
       .split(',').map((o) => o.trim()).filter((o) => o.length > 0),
   };

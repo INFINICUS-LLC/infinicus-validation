@@ -36,7 +36,7 @@ describe.runIf(run)('smoke-test.sh — live HTTP server', () => {
 
   it('passes against a real, listening apps/api instance', async () => {
     const config = loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', PORT: String(PORT) });
-    createPool({ connectionString: config.databaseUrl });
+    createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     app = await buildApp(config);
     await app.listen({ port: PORT, host: '127.0.0.1' });
 
@@ -65,3 +65,5 @@ describe.skipIf(run)('smoke-test.sh — live HTTP server (skipped, no DATABASE_U
     expect(run).toBe(false);
   });
 });
+
+

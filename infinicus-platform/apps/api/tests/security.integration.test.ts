@@ -29,7 +29,7 @@ describe.runIf(run)('Security headers — live PostgreSQL', () => {
 
   beforeAll(async () => {
     const config = loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent' });
-    createPool({ connectionString: config.databaseUrl });
+    createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     app = await buildApp(config);
   });
 
@@ -73,7 +73,7 @@ describe.runIf(run)('Rate limiting — live PostgreSQL', () => {
       DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent',
       RATE_LIMIT_MAX: '5', RATE_LIMIT_WINDOW_MS: '60000',
     });
-    createPool({ connectionString: config.databaseUrl });
+    createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     app = await buildApp(config);
   });
 
@@ -98,7 +98,7 @@ describe.runIf(run)('Injection resistance — live PostgreSQL', () => {
 
   beforeAll(async () => {
     const config = loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent' });
-    createPool({ connectionString: config.databaseUrl });
+    createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     app = await buildApp(config);
   });
 
@@ -144,3 +144,5 @@ describe.skipIf(run)('Security — live PostgreSQL (skipped, no DATABASE_URL)', 
     expect(run).toBe(false);
   });
 });
+
+

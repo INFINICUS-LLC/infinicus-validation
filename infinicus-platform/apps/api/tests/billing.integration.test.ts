@@ -75,7 +75,7 @@ function tenantHeaders(ctx: TenantContext, token: string) {
 describe.runIf(run)('BUILD-28 billing HTTP routes — live PostgreSQL', () => {
   beforeAll(async () => {
     const config = loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent' });
-    createPool({ connectionString: config.databaseUrl });
+    createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     adminPool = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
     app = await buildApp(config);
   });
@@ -176,3 +176,5 @@ describe.skipIf(run)('BUILD-28 billing HTTP routes — live PostgreSQL (skipped,
     expect(run).toBe(false);
   });
 });
+
+

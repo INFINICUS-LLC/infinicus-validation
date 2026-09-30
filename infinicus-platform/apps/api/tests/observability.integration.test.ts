@@ -51,7 +51,7 @@ describe.runIf(run)('GET /v1/metrics — live PostgreSQL', () => {
 
   beforeAll(async () => {
     const config = loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent' });
-    createPool({ connectionString: config.databaseUrl });
+    createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     adminPool = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL! });
     await seedTenant(adminPool, T2, WS2, 'member');
     await seedTenant(adminPool, T3, WS3, 'owner');
@@ -128,7 +128,7 @@ describe.runIf(run)('errorHandler — unhandled-error persistence — live Postg
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    createPool({ connectionString: process.env.DATABASE_URL! });
+    createPool({ connectionString: process.env.DATABASE_URL!, ssl: true });
     app = Fastify({ logger: false });
     await app.register(correlationIdPlugin);
     await app.register(errorHandlerPlugin);
@@ -169,3 +169,5 @@ describe.skipIf(run)('observability — live PostgreSQL (skipped, no DATABASE_UR
     expect(run).toBe(false);
   });
 });
+
+
