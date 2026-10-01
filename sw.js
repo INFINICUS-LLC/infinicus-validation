@@ -1,7 +1,7 @@
 // sw.js — INFINICUS Engine v3 Service Worker
 // Bump CACHE_VERSION when deploying significant updates to force re-cache
 // Deployed: 2026-07-16 rev21 — platform flow redesign: 6-layer nav (Data/Ops/Intel/Twin/Simulate/AI)
-const CACHE_VERSION = 'v27';
+const CACHE_VERSION = 'v28';
 const CACHE = 'infinicus-' + CACHE_VERSION;
 
 // Core shell assets — cached on install
@@ -44,6 +44,13 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const { request } = e;
   const url = new URL(request.url);
+
+  // Never intercept non-http(s) schemes — browser extensions can trigger
+  // page-context requests (chrome-extension://, moz-extension://, etc.)
+  // that the Cache API flatly rejects with "Request scheme ... is
+  // unsupported", logged as an uncaught promise rejection on every such
+  // request. Not ours to cache either way.
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
   // Never intercept API calls (legacy Cloudflare Functions under /api/, or
   // the Postgres platform under /v1/) or any non-GET request — always go
