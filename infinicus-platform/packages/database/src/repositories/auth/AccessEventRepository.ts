@@ -43,17 +43,24 @@ export class AccessEventRepository {
     userAgent: string | null = null,
     metadata: Record<string, unknown> = {}
   ): Promise<AccessEvent> {
+    // tenant_id/user_id are uuid-typed FKs — an empty string (as opposed to
+    // a proper UUID or null) fails the column's type cast and crashes the
+    // insert. Coerce falsy-but-not-null values to null defensively so a
+    // malformed caller can never take down the audit trail (or, via
+    // countRecentFailedPasswordAttempts below, a live login request).
+    const safeTenantId = tenantId || null;
+    const safeUserId = userId || null;
     return withTransaction(async (client) => {
       // access_events_isolation only admits rows where tenant_id IS NULL or
       // tenant_id matches app.tenant_id — a non-null tenantId must be set
       // in-session before the insert or RLS rejects the write.
-      if (tenantId) {
-        await client.query('SELECT set_config($1, $2, true)', ['app.tenant_id', tenantId]);
+      if (safeTenantId) {
+        await client.query('SELECT set_config($1, $2, true)', ['app.tenant_id', safeTenantId]);
       }
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO audit.access_events (tenant_id, user_id, event_type, ip_address, user_agent, metadata)
          VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [tenantId, userId, eventType, ipAddress, userAgent, JSON.stringify(metadata)]
+        [safeTenantId, safeUserId, eventType, ipAddress, userAgent, JSON.stringify(metadata)]
       );
       return rowToAccessEvent(result.rows[0]);
     });
@@ -85,6 +92,12 @@ export class AccessEventRepository {
    * once keep the account locked indefinitely just by continuing to hit it.
    */
   async countRecentFailedPasswordAttempts(userId: string, since: Date): Promise<number> {
+    // Same uuid-cast hazard as record() above — an empty/falsy userId here
+    // used to crash the login request outright (500) instead of just
+    // skipping the lockout check, taking down every caller of
+    // AuthenticationService.login with it. Nothing to count without a real
+    // userId, so this mirrors the 'unknown_email' case: no lockout.
+    if (!userId) return 0;
     return withTransaction(async (client) => {
       const result = await client.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM audit.access_events
