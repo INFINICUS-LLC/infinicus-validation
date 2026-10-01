@@ -3,6 +3,7 @@ import {
   DecisionQuestionRepository, DecisionCaseRepository, DecisionRecommendationRepository,
   ADIPublicationRepository, ABAIntakeRepository, ABAPublicationRepository,
   ApprovedActionRepository, OMIntakeRepository, MonitoringPlanRepository, MonitoredActionRepository,
+  OutcomeObservationRepository,
   type TenantContext,
 } from '@infinicus/database';
 import { AnthropicClient } from '@infinicus/llm-client';
@@ -29,16 +30,24 @@ export interface ChoiceReviewResult {
 }
 
 export interface DecisionHistoryEntry {
+  /** DecisionRecommendation id — same id recommend() returned; pass to startChoiceReview/recordChoiceOutcome. */
+  id: string;
   decisionText: string;
   recommendedAt: string;
   /**
-   * Not yet tracked: no repository method correlates a DecisionCase back to
-   * its ABA approval decision without a new cross-domain join this build
-   * doesn't introduce (deliberate, bounded simplification — see
-   * BusinessDecisionRecommendationService's own doc comment).
+   * true once this recommendation has a resulting ApprovedAction (migration
+   * 0170's source_recommendation_id, populated by startChoiceReview() since
+   * Block 2). Rows from before that migration, and declined recommendations
+   * (which never create an ApprovedAction — see startChoiceReview), are
+   * indistinguishable here and both read as null: a real, documented
+   * limitation, not a bug — resolving "declined" vs "not yet decided" needs
+   * a lookup through ABA's ApprovalDecision chain this build doesn't add.
    */
-  chosen: null;
-  outcomeNotes: null;
+  chosen: boolean | null;
+  /** Set once startChoiceReview() approved this recommendation and recordChoiceOutcome() has been called — null until an outcome is on file. */
+  approvedActionId: string | null;
+  /** Most recent recorded/verified/disputed OutcomeObservation summary for that action, if any. */
+  outcomeNotes: string | null;
 }
 
 interface RawDecisionItem {
@@ -171,6 +180,7 @@ export class BusinessDecisionRecommendationService {
     private readonly omIntake: OMIntakeRepository = new OMIntakeRepository(),
     private readonly monitoringPlans: MonitoringPlanRepository = new MonitoringPlanRepository(),
     private readonly monitoredActions: MonitoredActionRepository = new MonitoredActionRepository(),
+    private readonly outcomeObservations: OutcomeObservationRepository = new OutcomeObservationRepository(),
     private readonly twins: TwinComputationService = new TwinComputationService(),
     private readonly workflow: DecisionWorkflowService = new DecisionWorkflowService(),
     private readonly llm: AnthropicClient | null = resolveAnthropicClient()
@@ -244,7 +254,7 @@ export class BusinessDecisionRecommendationService {
 
     if (!chosen) return { approved: false, approvedActionId: null };
 
-    const action = await this.approvedActions.createAction(ctx, businessId, decision.id, `bizdec-action-${stamp}`);
+    const action = await this.approvedActions.createAction(ctx, businessId, decision.id, `bizdec-action-${stamp}`, recommendationId);
     await this.approvedActions.createVersion(ctx, action.id, businessId, 'Approved business decision');
     return { approved: true, approvedActionId: action.id };
   }
@@ -282,18 +292,51 @@ export class BusinessDecisionRecommendationService {
 
   async getHistory(ctx: TenantContext, businessId: string): Promise<DecisionHistoryEntry[]> {
     const { adiCases } = await this.workflow.getDecisionHistory(ctx, businessId);
-    const entries: DecisionHistoryEntry[] = [];
+
+    // One published version per case (same assumption the old code made) —
+    // gathered first so the correlation chain below can run as bulk
+    // lookups (one query per hop for the whole page) instead of N+1s.
+    type Pending = { recommendationId: string; decisionText: string; recommendedAt: string };
+    const pending: Pending[] = [];
     for (const decisionCase of adiCases) {
       const versions = await this.recommendations.getPublishedVersionsForCase(ctx, decisionCase.id);
       const version = versions[0];
       if (!version) continue;
-      entries.push({
+      pending.push({
+        recommendationId: version.recommendationId,
         decisionText: version.summary,
         recommendedAt: version.createdAt instanceof Date ? version.createdAt.toISOString() : String(version.createdAt),
-        chosen: null,
-        outcomeNotes: null,
       });
     }
-    return entries;
+    if (pending.length === 0) return [];
+
+    // Hop 1: recommendation -> approved action (migration 0170 / Block 2).
+    const recommendationIds = pending.map(p => p.recommendationId);
+    const approvedActions = await this.approvedActions.listBySourceRecommendationIds(ctx, recommendationIds);
+    const actionByRecommendationId = new Map(approvedActions.map(a => [a.sourceRecommendationId as string, a]));
+
+    // Hop 2: approved action -> monitored action (OM only creates one once recordChoiceOutcome() runs).
+    const approvedActionIds = approvedActions.map(a => a.id);
+    const monitoredActions = await this.monitoredActions.listByApprovedActionIds(ctx, approvedActionIds);
+    const monitoredByApprovedActionId = new Map(monitoredActions.map(m => [m.approvedActionId, m]));
+
+    // Hop 3: monitored action -> latest decided outcome observation's summary text.
+    const monitoredActionIds = monitoredActions.map(m => m.id);
+    const outcomes = await this.outcomeObservations.listLatestDecidedForActions(ctx, monitoredActionIds);
+    const outcomeByMonitoredActionId = new Map(outcomes.map(o => [o.monitoredActionId, o.summary]));
+
+    return pending.map(p => {
+      const action = actionByRecommendationId.get(p.recommendationId) ?? null;
+      const monitored = action ? monitoredByApprovedActionId.get(action.id) ?? null : null;
+      const outcomeNotes = monitored ? outcomeByMonitoredActionId.get(monitored.id) ?? null : null;
+      return {
+        id: p.recommendationId,
+        decisionText: p.decisionText,
+        recommendedAt: p.recommendedAt,
+        chosen: action ? true : null,
+        approvedActionId: action ? action.id : null,
+        outcomeNotes,
+      };
+    });
   }
 }
