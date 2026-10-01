@@ -828,6 +828,8 @@ SUPA.auth.onAuthStateChange(async (event, session) => {
     if (typeof daInit === 'function') daInit();
     if (typeof bizInit === 'function') bizInit();
     if (typeof clInit === 'function') clInit();
+    if (typeof abaInit === 'function') abaInit();
+    if (typeof omInit === 'function') omInit();
     if (event === 'SIGNED_IN') {
       const modal = document.getElementById('reg-modal');
       if (modal) modal.style.display = 'none';
@@ -938,9 +940,9 @@ async function supabaseSaveSimulation(entry) {
     <button class="sb-platform-link" data-section="intelligence" onclick="nav('intelligence')">Business Intelligence</button>
     <button class="sb-platform-link" data-section="twin"        onclick="nav('twin')">Business Digital Twin</button>
     <button class="sb-platform-link" data-section="simulation"  onclick="nav('simulation')">Simulation</button>
-    <button class="sb-platform-link" data-section="decisions"   onclick="nav('decisions')">AI Decision Intelligence</button>
-    <button class="sb-platform-link" data-section="decisions"   onclick="nav('decisions')">Approved Business Action</button>
-    <button class="sb-platform-link" data-section="decisions"   onclick="nav('decisions')">Outcome Monitoring</button>
+    <button class="sb-platform-link" data-section="decisions"         onclick="nav('decisions')">AI Decision Intelligence</button>
+    <button class="sb-platform-link" data-section="approved-actions"  onclick="nav('approved-actions')">Approved Business Action</button>
+    <button class="sb-platform-link" data-section="outcome-monitoring" onclick="nav('outcome-monitoring')">Outcome Monitoring</button>
     <button class="sb-platform-link" data-section="learning" onclick="nav('learning')">Continuous Learning</button>
   </div>
 
@@ -1053,17 +1055,17 @@ async function supabaseSaveSimulation(entry) {
       <div class="home-card-d">Reads your digital twin and recommends a next decision, with rationale and expected outcome.</div>
       <span class="home-card-tag live">LIVE</span>
     </div>
-    <div class="home-card" onclick="nav('decisions')">
+    <div class="home-card" onclick="nav('approved-actions')">
       <div class="home-card-code">ACT</div>
       <div class="home-card-t">Approved Business Action</div>
-      <div class="home-card-d">Approving a recommendation in AI Decisions runs it through a formal approval chain, not a checkbox.</div>
-      <span class="home-card-tag live">VIA AI DECISIONS</span>
+      <div class="home-card-d">Every recommendation you've approved in AI Decisions, with its formal approval record.</div>
+      <span class="home-card-tag live">LIVE</span>
     </div>
-    <div class="home-card" onclick="nav('decisions')">
+    <div class="home-card" onclick="nav('outcome-monitoring')">
       <div class="home-card-code">MON</div>
       <div class="home-card-t">Outcome Monitoring</div>
-      <div class="home-card-d">Record what actually happened after an approved decision, from the same AI Decisions screen.</div>
-      <span class="home-card-tag live">VIA AI DECISIONS</span>
+      <div class="home-card-d">What actually happened after each approved decision, recorded against the original recommendation.</div>
+      <span class="home-card-tag live">LIVE</span>
     </div>
     <div class="home-card" onclick="nav('learning')">
       <div class="home-card-code">LRN</div>
@@ -2043,6 +2045,52 @@ async function supabaseSaveSimulation(entry) {
     <div style="margin-top:1rem;">
       <button class="btn-sm" onclick="bizLoadDecisionHistory()" style="font-size:11px;">DECISION HISTORY →</button>
       <div id="biz-decision-history" style="display:none;margin-top:.75rem;"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ APPROVED BUSINESS ACTION ══ -->
+<section class="section" id="sec-approved-actions">
+  <div class="pg-title" style="font-size:22px;margin-bottom:.1rem;">APPROVED BUSINESS <span class="c">ACTION</span></div>
+  <div class="pg-sub">// EVERY RECOMMENDATION YOU'VE APPROVED, WITH ITS FORMAL APPROVAL RECORD</div>
+
+  <!-- Auth gate -->
+  <div id="aba-auth-gate" style="display:none;text-align:center;padding:2.5rem 1rem;">
+    <div style="font-size:36px;margin-bottom:.7rem;">🔒</div>
+    <div style="font-family:var(--mono);font-size:14px;color:var(--muted-2);margin-bottom:1rem;">Sign in to access Approved Business Action.</div>
+    <button class="btn-main" onclick="openRegModal()">SIGN IN</button>
+  </div>
+
+  <div id="aba-main" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.1em;">APPROVED ACTIONS</span>
+      <button class="btn-sm" onclick="abaInit()" style="font-size:11px;">↻ REFRESH</button>
+    </div>
+    <div id="aba-list">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted-2);text-align:center;padding:1.5rem;border:1px dashed var(--line);border-radius:8px;">Loading…</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ OUTCOME MONITORING ══ -->
+<section class="section" id="sec-outcome-monitoring">
+  <div class="pg-title" style="font-size:22px;margin-bottom:.1rem;">OUTCOME <span class="c">MONITORING</span></div>
+  <div class="pg-sub">// WHAT ACTUALLY HAPPENED, RECORDED AGAINST EACH APPROVED DECISION</div>
+
+  <!-- Auth gate -->
+  <div id="om-auth-gate" style="display:none;text-align:center;padding:2.5rem 1rem;">
+    <div style="font-size:36px;margin-bottom:.7rem;">🔒</div>
+    <div style="font-family:var(--mono);font-size:14px;color:var(--muted-2);margin-bottom:1rem;">Sign in to access Outcome Monitoring.</div>
+    <button class="btn-main" onclick="openRegModal()">SIGN IN</button>
+  </div>
+
+  <div id="om-main" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.1em;">RECORDED OUTCOMES</span>
+      <button class="btn-sm" onclick="omInit()" style="font-size:11px;">↻ REFRESH</button>
+    </div>
+    <div id="om-list">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted-2);text-align:center;padding:1.5rem;border:1px dashed var(--line);border-radius:8px;">Loading…</div>
     </div>
   </div>
 </section>
@@ -7657,6 +7705,83 @@ async function bizInitDecisions() {
   if (lbl) lbl.textContent = `Powered by claude-haiku-4-5 · grounded in live twin · Business: ${_bizCurrentId}`;
 }
 
+// Approved Business Action and Outcome Monitoring are dedicated views over
+// the same real backend history AI Decisions already writes to
+// (/decision-recommendations/history) — no new backend endpoint, no
+// simulated data. ABA = everything you've approved; OM = everything with
+// a recorded outcome. Acting (approving / recording) still happens on the
+// Decisions screen, where the live recommendation actually is.
+async function _bizLoadApprovalHistory() {
+  if (!_bizCurrentId) return [];
+  const d = await bizBackendFetch('/v1/businesses/' + _bizCurrentId + '/decision-recommendations/history');
+  return d.decisions || [];
+}
+
+function _renderApprovalCard(dec, mode) {
+  return `
+    <div style="background:var(--glass);border:1px solid var(--line);border-radius:10px;padding:1rem;margin-bottom:.75rem;">
+      <div style="font-size:14px;color:var(--fg-2);margin-bottom:.5rem;">${dec.decisionText}</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted-2);margin-bottom:${mode==='outcome' && dec.outcomeNotes ? '.4rem' : '0'};">
+        Approved ${new Date(dec.recommendedAt).toLocaleDateString()}
+      </div>
+      ${mode === 'outcome' && dec.outcomeNotes ? `
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-bottom:.3rem;">ACTUAL OUTCOME</div>
+      <div style="font-size:13px;color:var(--emerald);">${dec.outcomeNotes}</div>` : ''}
+    </div>`;
+}
+
+async function abaInit() {
+  const signedIn = !!(U && U.email && U.supaId);
+  const gate = document.getElementById('aba-auth-gate');
+  const main = document.getElementById('aba-main');
+  if (!signedIn) {
+    if (gate) gate.style.display = 'block';
+    if (main) main.style.display = 'none';
+    return;
+  }
+  if (gate) gate.style.display = 'none';
+  if (main) main.style.display = 'block';
+  const list = document.getElementById('aba-list');
+  if (!list) return;
+  list.innerHTML = '<div style="font-family:var(--mono);font-size:12px;color:var(--muted-2);text-align:center;padding:1.5rem;">Loading…</div>';
+  try {
+    if (!_bizCurrentId) { try { await bizEnsureBusiness(); } catch(e) {} }
+    const decisions = await _bizLoadApprovalHistory();
+    const approved = decisions.filter(d => d.chosen === true);
+    list.innerHTML = approved.length
+      ? approved.map(d => _renderApprovalCard(d, 'approval')).join('')
+      : '<div style="font-family:var(--mono);font-size:12px;color:var(--muted-2);text-align:center;padding:1.5rem;border:1px dashed var(--line);border-radius:8px;">No approved actions yet. Approve a recommendation in AI Decisions — it shows up here.</div>';
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;padding:.75rem;">Couldn\'t load approved actions.</div>';
+  }
+}
+
+async function omInit() {
+  const signedIn = !!(U && U.email && U.supaId);
+  const gate = document.getElementById('om-auth-gate');
+  const main = document.getElementById('om-main');
+  if (!signedIn) {
+    if (gate) gate.style.display = 'block';
+    if (main) main.style.display = 'none';
+    return;
+  }
+  if (gate) gate.style.display = 'none';
+  if (main) main.style.display = 'block';
+  const list = document.getElementById('om-list');
+  if (!list) return;
+  list.innerHTML = '<div style="font-family:var(--mono);font-size:12px;color:var(--muted-2);text-align:center;padding:1.5rem;">Loading…</div>';
+  try {
+    if (!_bizCurrentId) { try { await bizEnsureBusiness(); } catch(e) {} }
+    const decisions = await _bizLoadApprovalHistory();
+    const withOutcome = decisions.filter(d => !!d.outcomeNotes);
+    list.innerHTML = withOutcome.length
+      ? withOutcome.map(d => _renderApprovalCard(d, 'outcome')).join('')
+      : '<div style="font-family:var(--mono);font-size:12px;color:var(--muted-2);text-align:center;padding:1.5rem;border:1px dashed var(--line);border-radius:8px;">No outcomes recorded yet. Record what happened after an approved decision in AI Decisions — it shows up here.</div>';
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;padding:.75rem;">Couldn\'t load recorded outcomes.</div>';
+  }
+}
+
 // Auth-gated init for Continuous Learning. Block 1 scope: prove the CL
 // bundle (window.INFINICUS.CL.runtime, loaded via cl-bundle.js) is actually
 // wired to this page — calls the layer's own diagnose() route rather than
@@ -8039,6 +8164,8 @@ async function daPublishPackage(packageId) {
       if (sec === 'operations') bizInit();
       if (sec === 'twin')       bizInitTwin();
       if (sec === 'decisions')  bizInitDecisions();
+      if (sec === 'approved-actions')    abaInit();
+      if (sec === 'outcome-monitoring')  omInit();
       if (sec === 'learning')   clInit();
     };
   } else {
@@ -8052,6 +8179,8 @@ async function daPublishPackage(packageId) {
           if (sec === 'operations') bizInit();
           if (sec === 'twin')       bizInitTwin();
           if (sec === 'decisions')  bizInitDecisions();
+          if (sec === 'approved-actions')    abaInit();
+          if (sec === 'outcome-monitoring')  omInit();
           if (sec === 'learning')   clInit();
         };
       }
