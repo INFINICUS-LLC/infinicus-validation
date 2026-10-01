@@ -908,6 +908,7 @@ async function supabaseSaveSimulation(entry) {
   </div>
   <div class="hdr-right">
     <button id="pwa-install-btn" onclick="triggerInstall()" title="Install app" style="display:none;align-items:center;gap:5px;background:rgba(0,224,118,.08);border:1px solid rgba(0,224,118,.25);border-radius:7px;padding:5px 10px;color:var(--emerald);font-family:var(--mono);font-size:12px;cursor:pointer;letter-spacing:.05em;">⬇ INSTALL</button>
+    <button id="hdr-signin-btn" class="tut-trigger" onclick="openRegModal()" title="Sign in or create account" style="display:none;border-color:rgba(0,224,96,.35);color:var(--cyan);">LOGIN</button>
     <button class="tut-trigger" onclick="startTutorial()" title="How to use the engine">? <span>HOW IT WORKS</span></button>
     <span class="sim-badge idle" id="sim-badge">● IDLE</span>
   </div>
@@ -6006,15 +6007,18 @@ function renderUserBadge() {
   const badge=$('user-badge');
   const wrap=$('user-badge-wrap');
   const signinBtn=$('signin-btn');
+  const hdrSigninBtn=$('hdr-signin-btn');
   if(!badge) return;
   const demoBtn=$('demo-btn');
   if(!U){
     if(wrap) wrap.style.display='none';
     if(signinBtn) signinBtn.style.display='flex';
+    if(hdrSigninBtn) hdrSigninBtn.style.display='flex';
     if(demoBtn) demoBtn.style.display='block';
     return;
   }
   if(signinBtn) signinBtn.style.display='none';
+  if(hdrSigninBtn) hdrSigninBtn.style.display='none';
   if(demoBtn) demoBtn.style.display='none'; // hide for logged-in users
   const plan=U.plan||'free';
   badge.className='user-badge '+(plan==='none'?'free':plan);
