@@ -165,4 +165,32 @@ export class OutcomeObservationRepository {
       return result.rows.map(rowToObservation);
     });
   }
+
+  /**
+   * Bulk text lookup for getHistory(): for each monitored action, the summary
+   * of its most recently recorded/verified/disputed observation (there can be
+   * more than one observation per monitored action over time — DISTINCT ON
+   * picks the newest). A monitored action with no decided observation yet is
+   * simply absent from the result — callers index by monitoredActionId.
+   */
+  async listLatestDecidedForActions(ctx: TenantContext, monitoredActionIds: string[]): Promise<Array<{ monitoredActionId: string; summary: string; recordedAt: Date }>> {
+    if (monitoredActionIds.length === 0) return [];
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT DISTINCT ON (o.monitored_action_id)
+           o.monitored_action_id AS monitored_action_id, v.summary AS summary, v.recorded_at AS recorded_at
+         FROM outcome_monitoring.outcome_observations o
+         JOIN outcome_monitoring.outcome_observation_versions v
+           ON v.observation_id = o.id AND v.version_number = o.latest_version
+         WHERE o.monitored_action_id = ANY($1::uuid[]) AND o.status IN ('recorded','verified','disputed')
+         ORDER BY o.monitored_action_id, v.recorded_at DESC`,
+        [monitoredActionIds]
+      );
+      return result.rows.map(row => ({
+        monitoredActionId: row.monitored_action_id as string,
+        summary: row.summary as string,
+        recordedAt: row.recorded_at as Date,
+      }));
+    });
+  }
 }
