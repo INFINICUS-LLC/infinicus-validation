@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>INFINICUS ENGINE v3 — Business Reality Simulator</title>
+<title>INFINICUS ENGINE — Business Reality Simulator</title>
 <meta name="description" content="Simulate your business idea across 90 virtual days with a statistical engine, Monte Carlo risk analysis, and a Go/Modify/Stop verdict.">
 <!-- Open Graph -->
 <meta property="og:type" content="website">
@@ -16,7 +16,7 @@
 <meta property="og:site_name" content="INFINICUS ENGINE">
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="INFINICUS ENGINE v3 — Business Reality Simulator">
+<meta name="twitter:title" content="INFINICUS ENGINE — Business Reality Simulator">
 <meta name="twitter:description" content="90-day Monte Carlo simulation · AI venture analysis · Go/Modify/Stop verdict.">
 <meta name="twitter:image" content="https://infinicus-validation.pages.dev/og-image.svg">
 <!-- Canonical -->
@@ -292,7 +292,7 @@ select option{background:var(--navy-800);}
 
   /* ── Print header (branding) ── */
   #sec-report::before{
-    content:'INFINICUS ENGINE v3  ·  90-Day Business Simulation Report';
+    content:'INFINICUS ENGINE  ·  90-Day Business Simulation Report';
     display:block;font-family:monospace;font-size:8pt;color:#666;
     border-bottom:1px solid #ddd;padding-bottom:6pt;margin-bottom:14pt;
     letter-spacing:.08em;
@@ -2236,7 +2236,7 @@ async function supabaseSaveSimulation(entry) {
     <button class="modal-close" onclick="closeRegModal()" aria-label="Close">×</button>
     <div class="modal-logo">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="28" height="28" style="display:block;border-radius:8px;"><rect width="100" height="100" rx="22" fill="#07080a"/><rect x="2" y="2" width="96" height="96" rx="21" fill="none" stroke="#00e676" stroke-width="2" opacity="0.7"/><path d="M 50,50 C 50,34 38,24 28,30 C 18,36 18,64 28,70 C 38,76 50,66 50,50 Z" fill="none" stroke="#00e676" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/><path d="M 50,50 C 50,34 62,24 72,30 C 82,36 82,64 72,70 C 62,76 50,66 50,50 Z" fill="none" stroke="#00e676" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="modal-logo-name">INFIN<span class="c">ICUS</span><span class="modal-logo-ver"> ENGINE v3</span></span>
+      <span class="modal-logo-name">INFINI<span class="c">CUS</span><span class="modal-logo-ver"> ENGINE</span></span>
     </div>
     <!-- Tab switcher -->
     <div class="auth-modal-tabs">
@@ -4592,7 +4592,7 @@ function exportPDF() {
   })();
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>INFINICUS Business Plan — ${p.idea.substring(0,40)}</title>
+<title>Infinicus Business Plan — ${p.idea.substring(0,40)}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
   *{margin:0;padding:0;box-sizing:border-box;}
@@ -4646,7 +4646,7 @@ function exportPDF() {
   <h2>Executive Summary</h2>
   <h3>Business Concept</h3>
   <p>${p.idea}</p>
-  <p>This business plan was generated from a Monte Carlo simulation using the INFINICUS Engine v3 with 500 stochastic runs, applying industry-calibrated cost structures, demand elasticity curves, and real-world volatility bands across a 90-day launch window.</p>
+  <p>This business plan was generated from a Monte Carlo simulation using the Infinicus Engine with 500 stochastic runs, applying industry-calibrated cost structures, demand elasticity curves, and real-world volatility bands across a 90-day launch window.</p>
   <h3>Simulation Parameters</h3>
   <table><tr><th>Parameter</th><th>Value</th></tr>
     <tr><td>Starting Capital</td><td>${curCode} ${fmt2(p.capital)}</td></tr>
@@ -4820,13 +4820,13 @@ function exportPDF() {
   <h1>SECTION 09</h1>
   <h2>Appendix &amp; Methodology</h2>
   <h3>Simulation Methodology</h3>
-  <p>INFINICUS Engine v3 runs a 90-day agent-based simulation of daily business operations: customer acquisition (paid + organic + word-of-mouth), revenue generation (price × purchase frequency × demand shock), cost tracking (fixed overhead + variable COGS + marketing), and cash flow accounting. The process is repeated 500 times with randomised parameter variations (Monte Carlo method) to generate probability distributions of outcomes.</p>
+  <p>INFINICUS Engine runs a 90-day agent-based simulation of daily business operations: customer acquisition (paid + organic + word-of-mouth), revenue generation (price × purchase frequency × demand shock), cost tracking (fixed overhead + variable COGS + marketing), and cash flow accounting. The process is repeated 500 times with randomised parameter variations (Monte Carlo method) to generate probability distributions of outcomes.</p>
   <h3>Industry Model: ${(p.industry||'general').toUpperCase()}</h3>
   <p>The simulation applies industry-specific parameters including fixed cost ratios, variable cost ratios, customer acquisition cost benchmarks, churn rates, organic reach multipliers, visit frequency, and seasonal demand patterns derived from industry research.</p>
   <h3>Limitations</h3>
   <p>This plan is a probabilistic projection, not a guarantee. Real outcomes depend on execution quality, timing, macroeconomic conditions, and factors outside the model's scope. The simulation should be re-run as real data becomes available. INFINICUS is a decision-support tool; consult qualified financial, legal, and business advisors before committing capital.</p>
   <h3>Generated By</h3>
-  <p><strong>INFINICUS ENGINE v3</strong> · infini-cus.com · ${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</p>
+  <p><strong>INFINICUS ENGINE</strong> · infini-cus.com · ${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</p>
   <div style="margin-top:8mm;padding:4mm;background:#f8fafc;border-radius:6px;font-size:8pt;color:#64748b;">
     This document was automatically generated from a Monte Carlo business simulation. It does not constitute financial, legal, or investment advice. Past simulation outcomes do not predict future real-world results. All projections are illustrative only.
   </div>
@@ -5714,7 +5714,7 @@ function renderReport() {
       <strong>Important:</strong> This report is generated by a statistical simulation engine using industry-average parameters.
       It is not financial advice. Real-world results will differ based on execution, market conditions, competition, and timing.
       Always validate assumptions with real customers before significant capital deployment.
-      © 2026 INFINICUS ENGINE v3 · Generated ${new Date().toLocaleDateString()}
+      © 2026 INFINICUS ENGINE · Generated ${new Date().toLocaleDateString()}
     </div>`);
 
   // Async AI plan — use S.aiData cache if verdict section already fetched it
@@ -8656,7 +8656,7 @@ window.INFINICUS.SIMULATION.executeScenario = function(request) {
     base = simulate(params);          /* existing engine, unchanged */
     mc = monteCarlo(params);          /* existing engine, 500 runs, unchanged */
   } catch (error) {
-    return fail('SIM_EXECUTION_FAILED', 'Engine v3 execution failed: ' + String(error && error.message));
+    return fail('SIM_EXECUTION_FAILED', 'Engine  execution failed: ' + String(error && error.message));
   }
 
   var runId = 'simrun_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
@@ -8851,7 +8851,7 @@ document.addEventListener('DOMContentLoaded', function() {
   <strong>Disclaimer:</strong> INFINICUS ENGINE is a statistical simulation tool for educational and planning purposes only. Results are probabilistic projections based on industry averages and are not guarantees. All financial decisions should involve qualified professional advice. Simulated data does not reflect actual market conditions. © 2026 INFINICUS.
 </div>
 <footer style="border-top:1px solid var(--line);padding:1rem 1.75rem;font-family:var(--mono);font-size:11px;color:var(--muted-2);display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;align-items:center;">
-  <span>© 2026 INFINICUS ENGINE v3 · Statistical simulation for educational purposes only</span>
+  <span>© 2026 INFINICUS ENGINE · Statistical simulation for educational purposes only</span>
   <span style="display:flex;gap:1rem;flex-wrap:wrap;">
     <a href="./legal.html#privacy" style="color:var(--muted-2);text-decoration:none;" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color='var(--muted-2)'">Privacy Policy</a>
     <a href="./legal.html#terms" style="color:var(--muted-2);text-decoration:none;" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color='var(--muted-2)'">Terms of Service</a>
