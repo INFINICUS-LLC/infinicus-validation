@@ -1,3 +1,4 @@
+
 import { z } from 'zod';
 
 export const businessIdParamsSchema = z.object({
@@ -43,9 +44,11 @@ export const outcomeResponseSchema = z.object({
 
 export const historyResponseSchema = z.object({
   decisions: z.array(z.object({
+    id: z.string().uuid(),
     decisionText: z.string(),
     recommendedAt: z.string(),
     chosen: z.boolean().nullable(),
+    approvedActionId: z.string().uuid().nullable(),
     outcomeNotes: z.string().nullable(),
   })),
 });
