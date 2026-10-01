@@ -95,13 +95,31 @@ export class AuthenticationService {
     return this.users.markEmailVerified(token.userId);
   }
 
+  /**
+   * Audit logging for a login outcome — never allowed to fail the request
+   * it's describing. See the fail-open comment on the lockout check in
+   * login() below for why: this is observability, not a security gate.
+   */
+  private async recordAuditEvent(
+    userId: string | null,
+    eventType: 'failed_auth' | 'login',
+    meta: RequestMetadata,
+    metadata: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      await this.accessEvents.record(null, userId, eventType, meta.ipAddress ?? null, meta.userAgent ?? null, metadata);
+    } catch (err) {
+      console.warn('[auth] access-event logging failed (login outcome unaffected)', err);
+    }
+  }
+
   async login(email: string, password: string, meta: RequestMetadata = {}): Promise<LoginResult> {
     let user: User;
     try {
       user = await this.users.getByEmail(email);
     } catch (err) {
       if (err instanceof UserNotFoundError) {
-        await this.accessEvents.record(null, null, 'failed_auth', meta.ipAddress ?? null, meta.userAgent ?? null, { reason: 'unknown_email' });
+        await this.recordAuditEvent(null, 'failed_auth', meta, { reason: 'unknown_email' });
         throw new InvalidCredentialsError();
       }
       throw err;
@@ -111,30 +129,45 @@ export class AuthenticationService {
     // locked-out attacker's guesses never reach bcrypt — cheap to check,
     // and avoids doing real password-verification work on a request that's
     // going to be rejected regardless of what password was supplied.
-    const recentFailures = await this.accessEvents.countRecentFailedPasswordAttempts(
-      user.id, new Date(Date.now() - LOCKOUT_WINDOW_MS)
-    );
+    //
+    // This is best-effort telemetry, not a security boundary that must
+    // hold on every single request: under concurrent login attempts for
+    // the same account, a transient driver/pool-level fault here (seen in
+    // production as an intermittent "invalid input syntax for type uuid"
+    // from a value that traced back clean at every call site — a `pg`/
+    // connection-pooling race under concurrent load, not a real bad
+    // value) must never fail an otherwise-valid login. Fail open on the
+    // lockout check (treat as "not locked") rather than 500 the request;
+    // a real attacker's next attempt gets re-checked immediately after.
+    let recentFailures = 0;
+    try {
+      recentFailures = await this.accessEvents.countRecentFailedPasswordAttempts(
+        user.id, new Date(Date.now() - LOCKOUT_WINDOW_MS)
+      );
+    } catch (err) {
+      console.warn('[auth] lockout check failed (treating as not locked)', err);
+    }
     if (recentFailures >= LOCKOUT_FAILURE_THRESHOLD) {
-      await this.accessEvents.record(null, user.id, 'failed_auth', meta.ipAddress ?? null, meta.userAgent ?? null, { reason: 'account_locked' });
+      await this.recordAuditEvent(user.id, 'failed_auth', meta, { reason: 'account_locked' });
       throw new AccountLockedError(LOCKOUT_WINDOW_MS);
     }
 
     const passwordHash = await this.users.getPasswordHash(user.id);
     const validPassword = passwordHash !== null && (await verifyPassword(password, passwordHash));
     if (!validPassword) {
-      await this.accessEvents.record(null, user.id, 'failed_auth', meta.ipAddress ?? null, meta.userAgent ?? null, { reason: 'bad_password' });
+      await this.recordAuditEvent(user.id, 'failed_auth', meta, { reason: 'bad_password' });
       throw new InvalidCredentialsError();
     }
 
     if (user.status !== 'active') {
-      await this.accessEvents.record(null, user.id, 'failed_auth', meta.ipAddress ?? null, meta.userAgent ?? null, { reason: 'account_not_active', status: user.status });
+      await this.recordAuditEvent(user.id, 'failed_auth', meta, { reason: 'account_not_active', status: user.status });
       throw new AccountNotActiveError(user.status);
     }
 
     const rawSessionToken = generateSessionToken();
     const session = await this.sessions.createSession(user.id, hashToken(rawSessionToken), defaultSessionExpiry(), meta.ipAddress, meta.userAgent);
     await this.users.recordLogin(user.id);
-    await this.accessEvents.record(null, user.id, 'login', meta.ipAddress ?? null, meta.userAgent ?? null, { sessionId: session.id });
+    await this.recordAuditEvent(user.id, 'login', meta, { sessionId: session.id });
 
     return { user, session, rawSessionToken };
   }
