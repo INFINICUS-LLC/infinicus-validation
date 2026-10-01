@@ -819,9 +819,15 @@ SUPA.auth.onAuthStateChange(async (event, session) => {
       createdAt:  session.user.created_at || prev.createdAt || Date.now(),
       verifiedAt: Date.now()
     };
-      saveUser(); renderUserBadge();
+    saveUser(); renderUserBadge();
+    // Re-evaluate any already-rendered auth gates (Data Acquisition,
+    // Operations/My Business). Those gates check U.supaId once, at the
+    // moment their section is navigated into — if that happened before
+    // this async Supabase session resolved, they'd otherwise stay locked
+    // forever even though the user is now fully signed in.
     if (typeof daInit === 'function') daInit();
     if (typeof bizInit === 'function') bizInit();
+    if (typeof clInit === 'function') clInit();
     if (event === 'SIGNED_IN') {
       const modal = document.getElementById('reg-modal');
       if (modal) modal.style.display = 'none';
@@ -935,7 +941,7 @@ async function supabaseSaveSimulation(entry) {
     <button class="sb-platform-link" data-section="decisions"   onclick="nav('decisions')">AI Decision Intelligence</button>
     <button class="sb-platform-link" data-section="decisions"   onclick="nav('decisions')">Approved Business Action</button>
     <button class="sb-platform-link" data-section="decisions"   onclick="nav('decisions')">Outcome Monitoring</button>
-    <button class="sb-platform-link" disabled title="Not built yet — roadmap" style="opacity:.35;cursor:default;">Continuous Learning</button>
+    <button class="sb-platform-link" data-section="learning" onclick="nav('learning')">Continuous Learning</button>
   </div>
 
   <hr class="sb-sep">
@@ -1059,11 +1065,11 @@ async function supabaseSaveSimulation(entry) {
       <div class="home-card-d">Record what actually happened after an approved decision, from the same AI Decisions screen.</div>
       <span class="home-card-tag live">VIA AI DECISIONS</span>
     </div>
-    <div class="home-card disabled">
+    <div class="home-card" onclick="nav('learning')">
       <div class="home-card-code">LRN</div>
       <div class="home-card-t">Continuous Learning</div>
       <div class="home-card-d">Feeds recorded outcomes back to sharpen future recommendations.</div>
-      <span class="home-card-tag dev">ROADMAP</span>
+      <span class="home-card-tag live">LIVE</span>
     </div>
   </div>
   <div style="margin-top:1.5rem;font-family:var(--mono);font-size:11px;color:var(--muted-2);text-align:center;">↻ Outcomes retrain the model — the loop feeds Day 1 again, sharper each cycle.</div>
@@ -2037,6 +2043,40 @@ async function supabaseSaveSimulation(entry) {
     <div style="margin-top:1rem;">
       <button class="btn-sm" onclick="bizLoadDecisionHistory()" style="font-size:11px;">DECISION HISTORY →</button>
       <div id="biz-decision-history" style="display:none;margin-top:.75rem;"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ CONTINUOUS LEARNING ══ -->
+<section class="section" id="sec-learning">
+  <div class="pg-title" style="font-size:22px;margin-bottom:.1rem;">CONTINUOUS <span class="c">LEARNING</span></div>
+  <div class="pg-sub">// CL-01 → CL-25 · FEEDS RECORDED OUTCOMES BACK INTO FUTURE RECOMMENDATIONS</div>
+
+  <!-- Auth gate -->
+  <div id="learning-auth-gate" style="display:none;text-align:center;padding:2.5rem 1rem;">
+    <div style="font-size:36px;margin-bottom:.7rem;">🔒</div>
+    <div style="font-family:var(--mono);font-size:14px;color:var(--muted-2);margin-bottom:1rem;">Sign in to access Continuous Learning.</div>
+    <button class="btn-main" onclick="openRegModal()">SIGN IN</button>
+  </div>
+
+  <!-- Content -->
+  <div id="learning-main" style="display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;padding:.6rem .8rem;background:rgba(0,224,96,.04);border:1px solid rgba(0,224,96,.12);border-radius:8px;flex-wrap:wrap;gap:.5rem;">
+      <div style="font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--muted-2);">
+        INFINICUS CL LAYER &nbsp;·&nbsp; CL-01 → CL-25
+      </div>
+      <div id="learning-runtime-status" style="font-family:var(--mono);font-size:10px;">
+        <span style="color:var(--muted-2)">○ LOADING…</span>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.1em;">RECORDED LEARNING HISTORY</span>
+      <span id="learning-history-count" style="font-family:var(--mono);font-size:11px;color:var(--cyan);"></span>
+    </div>
+    <div id="learning-history-list">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted-2);text-align:center;padding:1.5rem;border:1px dashed var(--line);border-radius:8px;">
+        No outcomes recorded yet. Approve a recommendation in AI Decisions, then record what actually happened — it shows up here.
+      </div>
     </div>
   </div>
 </section>
@@ -7403,6 +7443,7 @@ async function bizRunSimulationFromTwin() {
 // bizRecordOutcome() needs this id, since the new backend records outcomes
 // against that real entity rather than reusing the recommendation id.
 let _bizApprovedActions = {};
+let _bizDecisionsCache = {}; // decisionId -> full decision object, so bizRecordOutcome() can describe what was actually decided
 
 async function bizGetDecisions() {
   const area = $('biz-decisions-area');
@@ -7414,10 +7455,12 @@ async function bizGetDecisions() {
   } catch(e) { area.innerHTML = '<div style="color:var(--red);font-family:var(--mono);font-size:12px;padding:.75rem;">' + e.message + '</div>'; }
 }
 
+const riskColor = r => r==='high'?'var(--red)':r==='medium'?'var(--amber)':'var(--emerald)';
+
 function renderDecisions(decisions) {
   const area = $('biz-decisions-area');
   if (!area || !decisions?.length) return;
-  const riskColor = r => r==='high'?'var(--red)':r==='medium'?'var(--amber)':'var(--emerald)';
+  decisions.forEach(d => { _bizDecisionsCache[d.id] = d; });
   area.innerHTML = decisions.map(d => `
     <div style="background:var(--glass);border:1px solid var(--line);border-radius:10px;padding:1rem;margin-bottom:.75rem;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem;">
@@ -7464,7 +7507,78 @@ async function bizRecordOutcome(decisionId) {
     showToast('Outcome recorded ✓');
     const btn = $(`outcome-btn-${decisionId}`);
     if (btn) { btn.textContent = '✓ Outcome saved'; btn.disabled = true; }
+    clRegisterRealOutcome(decisionId, notes, approvedActionId);
   } catch(e) { showToast('Failed to record outcome.'); }
+}
+
+// Feeds a REAL recorded outcome (not simulated data) into the Continuous
+// Learning runtime. Best-effort and fail-open by design, same pattern as
+// the auth fail-open fix: CL is downstream observability/learning, not a
+// gate — a problem here must never block or roll back the outcome save
+// that already succeeded above.
+//
+// runtime.registerLearningState() only persists a fixed shape
+// (learningStateId, learningPackageId, state, confidence, reliability,
+// correlationId, updatedAt) — it's generated code, not ours to edit, and
+// silently drops any other field passed in. So the narrative (what was
+// decided, what actually happened) is kept in a small local history array
+// for display, while the runtime call itself still really registers the
+// state — that part isn't cosmetic, it's what diagnose()'s counts reflect.
+let _clHistory = [];
+(function loadClHistory() {
+  try { _clHistory = JSON.parse(localStorage.getItem('inf_cl_history_v1') || '[]'); } catch (e) { _clHistory = []; }
+})();
+function clRegisterRealOutcome(decisionId, outcomeNotes, approvedActionId) {
+  const decision = _bizDecisionsCache[decisionId] || {};
+  try {
+    const runtime = window.INFINICUS && window.INFINICUS.CL && window.INFINICUS.CL.runtime;
+    if (runtime && typeof runtime.registerLearningState === 'function') {
+      runtime.registerLearningState({
+        learningPackageId: approvedActionId || decisionId,
+        state: 'received',
+        correlationId: decisionId,
+        confidence: null,  // not modeled by the backend yet — left honestly null, never fabricated
+        reliability: null
+      });
+    }
+  } catch (e) {
+    console.warn('[cl] runtime registration failed (outcome save unaffected)', e);
+  }
+  try {
+    _clHistory.unshift({
+      decisionId, approvedActionId,
+      decision: decision.decision || null,
+      riskLevel: decision.riskLevel || null,
+      expectedOutcome: decision.expectedOutcome || null,
+      actualOutcome: outcomeNotes,
+      recordedAt: new Date().toISOString()
+    });
+    _clHistory = _clHistory.slice(0, 50);
+    localStorage.setItem('inf_cl_history_v1', JSON.stringify(_clHistory));
+  } catch (e) { /* localStorage unavailable — history just won't persist across reloads */ }
+  if (typeof clRenderHistory === 'function') clRenderHistory();
+}
+function clRenderHistory() {
+  const list = document.getElementById('learning-history-list');
+  const countEl = document.getElementById('learning-history-count');
+  if (countEl) countEl.textContent = _clHistory.length ? `${_clHistory.length} recorded` : '';
+  if (!list) return;
+  if (!_clHistory.length) {
+    list.innerHTML = '<div style="font-family:var(--mono);font-size:12px;color:var(--muted-2);text-align:center;padding:1.5rem;border:1px dashed var(--line);border-radius:8px;">No outcomes recorded yet. Approve a recommendation in AI Decisions, then record what actually happened — it shows up here.</div>';
+    return;
+  }
+  list.innerHTML = _clHistory.map(h => `
+    <div style="background:var(--glass);border:1px solid var(--line);border-radius:10px;padding:.85rem 1rem;margin-bottom:.6rem;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;flex-wrap:wrap;margin-bottom:.4rem;">
+        <div style="font-size:13px;color:var(--fg-2);flex:1;">${h.decision || '(decision text unavailable)'}</div>
+        ${h.riskLevel ? `<span style="font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid ${riskColor(h.riskLevel)};color:${riskColor(h.riskLevel)};white-space:nowrap;">${h.riskLevel.toUpperCase()} RISK</span>` : ''}
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-bottom:.3rem;">EXPECTED</div>
+      <div style="font-size:12px;color:var(--cyan);margin-bottom:.5rem;">${h.expectedOutcome || '—'}</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-bottom:.3rem;">ACTUAL</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:.4rem;">${h.actualOutcome || '—'}</div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--muted-2);">${new Date(h.recordedAt).toLocaleString()}</div>
+    </div>`).join('');
 }
 
 async function bizLoadDecisionHistory() {
@@ -7541,6 +7655,47 @@ async function bizInitDecisions() {
   if (main)   main.style.display   = 'block';
   const lbl = document.getElementById('decisions-biz-label');
   if (lbl) lbl.textContent = `Powered by claude-haiku-4-5 · grounded in live twin · Business: ${_bizCurrentId}`;
+}
+
+// Auth-gated init for Continuous Learning. Block 1 scope: prove the CL
+// bundle (window.INFINICUS.CL.runtime, loaded via cl-bundle.js) is actually
+// wired to this page — calls the layer's own diagnose() route rather than
+// a hand-written stub. Feeding real OM outcomes into it is a later block.
+function clInit() {
+  const signedIn = !!(U && U.email && U.supaId);
+  const gate = document.getElementById('learning-auth-gate');
+  const main = document.getElementById('learning-main');
+  if (!signedIn) {
+    if (gate) gate.style.display = 'block';
+    if (main) main.style.display = 'none';
+    return;
+  }
+  if (gate) gate.style.display = 'none';
+  if (main) main.style.display = 'block';
+
+  if (typeof clRenderHistory === 'function') clRenderHistory();
+
+  const statusEl = document.getElementById('learning-runtime-status');
+  if (!statusEl) return;
+  try {
+    const runtime = window.INFINICUS && window.INFINICUS.CL && window.INFINICUS.CL.runtime;
+    if (!runtime || typeof runtime.diagnose !== 'function') {
+      statusEl.innerHTML = '<span style="color:var(--red)">✕ CL BUNDLE NOT LOADED</span>';
+      return;
+    }
+    const result = runtime.diagnose();
+    if (!result || !result.ok) {
+      statusEl.innerHTML = '<span style="color:var(--red)">✕ DIAGNOSE FAILED</span>';
+      return;
+    }
+    const d = result.data;
+    statusEl.innerHTML = '<span style="color:var(--cyan)">● ' + d.status.toUpperCase() + '</span>' +
+      '<span style="color:var(--muted-2);margin-left:.5rem;">' +
+      d.serviceCount + ' services · ' + d.routeCount + ' routes · v' + d.version +
+      '</span>';
+  } catch (e) {
+    statusEl.innerHTML = '<span style="color:var(--red)">✕ ' + (e.message || 'ERROR') + '</span>';
+  }
 }
 
 // ─── DATA ACQUISITION (BUILD-31) ─────────────────────────────────────────────
@@ -7884,6 +8039,7 @@ async function daPublishPackage(packageId) {
       if (sec === 'operations') bizInit();
       if (sec === 'twin')       bizInitTwin();
       if (sec === 'decisions')  bizInitDecisions();
+      if (sec === 'learning')   clInit();
     };
   } else {
     // nav may not be defined yet — retry on DOMContentLoaded
@@ -7896,6 +8052,7 @@ async function daPublishPackage(packageId) {
           if (sec === 'operations') bizInit();
           if (sec === 'twin')       bizInitTwin();
           if (sec === 'decisions')  bizInitDecisions();
+          if (sec === 'learning')   clInit();
         };
       }
     });
