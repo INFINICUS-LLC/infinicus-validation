@@ -110,4 +110,22 @@ export class MonitoredActionRepository {
       return rowToAction(result.rows[0]);
     });
   }
+
+  /**
+   * Bulk counterpart to getByApprovedAction for history/listing callers that
+   * have a page of approvedActionIds and need the monitored actions for
+   * whichever of them actually have one — never throws for an id with no
+   * monitored action (most approved actions never reach OM), callers index
+   * the result by approvedActionId.
+   */
+  async listByApprovedActionIds(ctx: TenantContext, approvedActionIds: string[]): Promise<MonitoredAction[]> {
+    if (approvedActionIds.length === 0) return [];
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        'SELECT * FROM outcome_monitoring.monitored_actions WHERE approved_action_id = ANY($1::uuid[])',
+        [approvedActionIds]
+      );
+      return result.rows.map(rowToAction);
+    });
+  }
 }
