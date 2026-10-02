@@ -760,23 +760,45 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
     <h2 class="reg-h">Run the Engine<br>That Powers the <span class="c">Platform</span></h2>
     <p class="reg-sub">Create a free account and run your first 90-day simulation in under 60 seconds — then see how it connects to the rest of the loop.</p>
     <div class="reg-box" id="reg-box">
-      <div class="reg-field">
-        <label class="reg-label" for="reg-name">YOUR NAME</label>
-        <input class="reg-input" type="text" id="reg-name" placeholder="e.g. Amara" autocomplete="given-name" onkeydown="if(event.key==='Enter')document.getElementById('reg-email').focus()">
+      <div class="reg-tabs" style="display:flex;gap:.4rem;margin-bottom:1.25rem;background:rgba(255,255,255,.03);border:1px solid var(--line-2);border-radius:9px;padding:3px;">
+        <button id="reg-tab-register" class="reg-tab active" onclick="switchRegTab('register')" style="flex:1;padding:.55rem;border:none;border-radius:7px;background:rgba(0,224,96,.12);color:var(--cyan);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;cursor:pointer;">CREATE ACCOUNT</button>
+        <button id="reg-tab-signin" class="reg-tab" onclick="switchRegTab('signin')" style="flex:1;padding:.55rem;border:none;border-radius:7px;background:none;color:var(--muted);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;cursor:pointer;">SIGN IN</button>
       </div>
-      <div class="reg-field">
-        <label class="reg-label" for="reg-email">EMAIL ADDRESS</label>
-        <input class="reg-input" type="email" id="reg-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('reg-password').focus()">
+      <!-- Create-account pane -->
+      <div id="reg-pane-register">
+        <div class="reg-field">
+          <label class="reg-label" for="reg-name">YOUR NAME</label>
+          <input class="reg-input" type="text" id="reg-name" placeholder="e.g. Amara" autocomplete="given-name" onkeydown="if(event.key==='Enter')document.getElementById('reg-email').focus()">
+        </div>
+        <div class="reg-field">
+          <label class="reg-label" for="reg-email">EMAIL ADDRESS</label>
+          <input class="reg-input" type="email" id="reg-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('reg-password').focus()">
+        </div>
+        <div class="reg-field">
+          <label class="reg-label" for="reg-password">PASSWORD (8+ CHARACTERS)</label>
+          <input class="reg-input" type="password" id="reg-password" placeholder="At least 8 characters" autocomplete="new-password" onkeydown="if(event.key==='Enter')joinFree()">
+        </div>
+        <div class="reg-err" id="reg-err"></div>
+        <button class="reg-submit" id="reg-btn" onclick="joinFree()">⚡ Create Free Account & Launch Engine →</button>
+        <div class="reg-ok" id="reg-ok">✓ Account created! Launching engine…<br><a href="index.html" style="color:var(--cyan);display:inline-block;margin-top:.5rem;text-decoration:none;border:1px solid rgba(0,224,96,.3);border-radius:6px;padding:.4rem 1rem;font-size:11px;">Open Engine →</a></div>
+        <div class="reg-already">Already have an account? <a onclick="switchRegTab('signin')">Sign in →</a></div>
+        <div class="reg-already" style="margin-top:.5rem;font-size:10px;opacity:.5;">By creating an account you agree to our <a href="legal.html#terms" style="color:var(--cyan);">Terms of Service</a> and <a href="legal.html#privacy" style="color:var(--cyan);">Privacy Policy</a>.</div>
       </div>
-      <div class="reg-field">
-        <label class="reg-label" for="reg-password">PASSWORD (8+ CHARACTERS)</label>
-        <input class="reg-input" type="password" id="reg-password" placeholder="At least 8 characters" autocomplete="new-password" onkeydown="if(event.key==='Enter')joinFree()">
+      <!-- Sign-in pane -->
+      <div id="reg-pane-signin" style="display:none">
+        <div class="reg-field">
+          <label class="reg-label" for="signin-email">EMAIL ADDRESS</label>
+          <input class="reg-input" type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('signin-password').focus()">
+        </div>
+        <div class="reg-field">
+          <label class="reg-label" for="signin-password">PASSWORD</label>
+          <input class="reg-input" type="password" id="signin-password" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLoginLanding()">
+          <p style="text-align:right;margin:.4rem 0 0"><a href="index.html?auth=forgot" style="font-family:var(--mono);font-size:10.5px;color:var(--cyan);text-decoration:underline;">Forgot password?</a></p>
+        </div>
+        <div class="reg-err" id="signin-err"></div>
+        <button class="reg-submit" id="signin-btn-submit" onclick="doLoginLanding()">Sign In →</button>
+        <div class="reg-already">New here? <a onclick="switchRegTab('register')">Create an account →</a></div>
       </div>
-      <div class="reg-err" id="reg-err"></div>
-      <button class="reg-submit" id="reg-btn" onclick="joinFree()">⚡ Create Free Account & Launch Engine →</button>
-      <div class="reg-ok" id="reg-ok">✓ Account created! Launching engine…<br><a href="index.html" style="color:var(--cyan);display:inline-block;margin-top:.5rem;text-decoration:none;border:1px solid rgba(0,224,96,.3);border-radius:6px;padding:.4rem 1rem;font-size:11px;">Open Engine →</a></div>
-      <div class="reg-already">Already have an account? <a onclick="openAccount()">View your account →</a></div>
-      <div class="reg-already" style="margin-top:.5rem;font-size:10px;opacity:.5;">By creating an account you agree to our <a href="legal.html#terms" style="color:var(--cyan);">Terms of Service</a> and <a href="legal.html#privacy" style="color:var(--cyan);">Privacy Policy</a>.</div>
     </div>
     <div class="reg-features">
       <div class="reg-feat-item">Free forever tier</div>
@@ -1202,6 +1224,32 @@ const SUPA = window.supabase.createClient(
   'https://dxheognltijswhtpnndk.supabase.co',
   'sb_publishable_4qESSqE-_s8Wn7Qtjs5qNg_xGaXphch'
 );
+
+// Supabase's email-confirmation and magic-link redirects land here (Site
+// URL is configured to this page), but this marketing page has no engine
+// UI of its own — only index.html does. So: detect that we just arrived
+// from one of those links (not an ordinary page load with an already-
+// stored session — that must NOT auto-redirect, or visiting this page
+// while logged in would be useless) and hand off to index.html, which has
+// the real onAuthStateChange logic to render the signed-in app state.
+const _authLinkLanding =
+  /access_token=|type=signup|type=recovery|type=magiclink|type=email_change/.test(window.location.hash) ||
+  ['access_token','type','token_hash'].some(k => new URLSearchParams(window.location.search).has(k));
+SUPA.auth.onAuthStateChange(async (event, session) => {
+  if (!_authLinkLanding) return;
+  if (event === 'PASSWORD_RECOVERY') {
+    // landing.html has no "set new password" UI — index.html's does.
+    window.location.replace('index.html?auth=reset');
+    return;
+  }
+  if (session?.user) {
+    if (!session.user.email_confirmed_at) {
+      await SUPA.auth.signOut().catch(()=>{});
+      return;
+    }
+    window.location.replace('index.html');
+  }
+});
 </script>
 <script>
 // ══ STATE ═══════════════════════════════════════════════════════════════════
@@ -1335,7 +1383,59 @@ function prefillRegLoggedIn() {
 
 function scrollToReg() {
   if (U) { openAccount(); return; }
+  switchRegTab('signin');
   const el = $('register'); if (el) el.scrollIntoView({behavior:'smooth'});
+}
+
+// ══ SIGN-IN TAB (real account, not the fake flow this page used to have) ══
+function switchRegTab(tab) {
+  const isRegister = tab === 'register';
+  const regPane  = $('reg-pane-register');
+  const signPane = $('reg-pane-signin');
+  if (regPane)  regPane.style.display  = isRegister ? 'block' : 'none';
+  if (signPane) signPane.style.display = isRegister ? 'none'  : 'block';
+  const regTab  = $('reg-tab-register');
+  const signTab = $('reg-tab-signin');
+  [regTab, signTab].forEach(b => { if (b) { b.style.background = 'none'; b.style.color = 'var(--muted)'; } });
+  const activeTab = isRegister ? regTab : signTab;
+  if (activeTab) { activeTab.style.background = 'rgba(0,224,96,.12)'; activeTab.style.color = 'var(--cyan)'; }
+  setTimeout(() => $(isRegister ? 'reg-name' : 'signin-email')?.focus(), 50);
+}
+
+async function doLoginLanding() {
+  const email    = ($('signin-email')?.value    || '').trim();
+  const password =  $('signin-password')?.value || '';
+  const errEl    =  $('signin-err');
+  const btn      =  $('signin-btn-submit');
+  if (!email || !password) {
+    errEl.textContent = 'Email and password required.'; errEl.style.display = 'block'; return;
+  }
+  errEl.style.display = 'none';
+  btn.textContent = 'Signing in…'; btn.disabled = true;
+  try {
+    const { data, error } = await SUPA.auth.signInWithPassword({ email, password });
+    if (error) {
+      errEl.textContent = error.message || 'Sign in failed. Please try again.'; errEl.style.display = 'block';
+      btn.textContent = 'Sign In →'; btn.disabled = false; return;
+    }
+    // Same verification gate as index.html's doLogin() — an account that
+    // exists but was never confirmed must not be usable from either page.
+    if (!data.user?.email_confirmed_at) {
+      await SUPA.auth.signOut().catch(()=>{});
+      errEl.textContent = 'Please verify your email before signing in — check your inbox for the confirmation link.';
+      errEl.style.display = 'block';
+      btn.textContent = 'Sign In →'; btn.disabled = false;
+      return;
+    }
+    // Supabase persists the session in this origin's localStorage, so
+    // index.html's own SUPA client picks it up automatically on load —
+    // no need to duplicate the U-setting logic from onAuthStateChange here.
+    showToast(`Signed in as ${data.user.email} ✓`);
+    setTimeout(() => { window.location.href = 'index.html'; }, 500);
+  } catch (e) {
+    errEl.textContent = 'Network error. Please try again.'; errEl.style.display = 'block';
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+  }
 }
 
 // Remembers which entry path the visitor picked in the hero ("Connect My
