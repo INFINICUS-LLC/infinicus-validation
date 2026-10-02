@@ -6115,6 +6115,18 @@ function openRegModal() {
 }
 function closeRegModal(){ $('reg-modal').style.display='none'; }
 
+// Lets landing.html's own sign-in pane deep-link straight into this modal's
+// forgot-password pane (?auth=forgot) or sign-in pane (?auth=signin)
+// instead of duplicating the reset-password flow on two pages.
+document.addEventListener('DOMContentLoaded', () => {
+  const authParam = new URLSearchParams(location.search).get('auth');
+  if (authParam === 'forgot' || authParam === 'signin') {
+    const modal = $('reg-modal');
+    if (modal) modal.style.display = 'flex';
+    if (typeof switchAuthTab === 'function') switchAuthTab(authParam);
+  }
+});
+
 function switchAuthTab(tab) {
   const panes = { signin: 'auth-pane-signin', register: 'auth-pane-register', forgot: 'auth-pane-forgot', reset: 'auth-pane-reset' };
   Object.entries(panes).forEach(([key, id]) => {
