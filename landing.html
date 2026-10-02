@@ -766,7 +766,11 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
       </div>
       <div class="reg-field">
         <label class="reg-label" for="reg-email">EMAIL ADDRESS</label>
-        <input class="reg-input" type="email" id="reg-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')joinFree()">
+        <input class="reg-input" type="email" id="reg-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('reg-password').focus()">
+      </div>
+      <div class="reg-field">
+        <label class="reg-label" for="reg-password">PASSWORD (8+ CHARACTERS)</label>
+        <input class="reg-input" type="password" id="reg-password" placeholder="At least 8 characters" autocomplete="new-password" onkeydown="if(event.key==='Enter')joinFree()">
       </div>
       <div class="reg-err" id="reg-err"></div>
       <button class="reg-submit" id="reg-btn" onclick="joinFree()">⚡ Create Free Account & Launch Engine →</button>
@@ -1189,6 +1193,16 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
 </div>
 <input type="file" id="photo-input" accept="image/*" style="display:none" onchange="handlePhotoUpload(event)">
 <div id="toast"></div>
+<!-- Supabase JS client — same project as index.html; landing.html's
+     signup form creates real accounts here instead of faking one in
+     localStorage (see joinFree() below). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+const SUPA = window.supabase.createClient(
+  'https://dxheognltijswhtpnndk.supabase.co',
+  'sb_publishable_4qESSqE-_s8Wn7Qtjs5qNg_xGaXphch'
+);
+</script>
 <script>
 // ══ STATE ═══════════════════════════════════════════════════════════════════
 let U = null;
@@ -1223,10 +1237,13 @@ function updateLandingNav() {
   }
 }
 
-// ══ REGISTRATION (no backend — localStorage only) ════════════════════════════
-function joinFree() {
-  const name  = (get('reg-name')  || '').trim();
-  const email = (get('reg-email') || '').trim().toLowerCase();
+// ══ REGISTRATION (real Supabase account — password required, email must be
+// verified before the account can be used; see doLogin()/doRegister() in
+// index.html for the matching sign-in path) ═══════════════════════════════
+async function joinFree() {
+  const name     = (get('reg-name')     || '').trim();
+  const email    = (get('reg-email')    || '').trim().toLowerCase();
+  const password =  get('reg-password') || '';
   const btn   = $('reg-btn');
   const errEl = $('reg-err');
   const okEl  = $('reg-ok');
@@ -1238,17 +1255,41 @@ function joinFree() {
     $('reg-email').focus();
     return;
   }
+  if (password.length < 8) {
+    errEl.textContent = 'Password must be at least 8 characters.';
+    errEl.style.display = 'block';
+    $('reg-password').focus();
+    return;
+  }
   btn.disabled = true;
-  btn.textContent = 'Launching…';
+  btn.textContent = 'Creating account…';
 
   // Detect selected plan tier from URL param or default free
   const urlTier = new URLSearchParams(location.search).get('tier') || 'free';
 
-  U = { name: name || email.split('@')[0], email, plan:'free', simCount:0, createdAt:Date.now() };
-  try { localStorage.setItem('infinicus_user', JSON.stringify(U)); } catch(e) {}
-  try { localStorage.setItem('infinicus_tc_accepted', 'true'); } catch(e) {}
+  let data, error;
+  try {
+    ({ data, error } = await SUPA.auth.signUp({
+      email, password,
+      options: { data: { name: name || email.split('@')[0] } },
+    }));
+  } catch (e) {
+    errEl.textContent = 'Network error. Please try again.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '⚡ Create Free Account & Launch Engine →';
+    return;
+  }
+  if (error) {
+    errEl.textContent = error.message || 'Could not create account. Please try again.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '⚡ Create Free Account & Launch Engine →';
+    return;
+  }
 
-  // ── Google Ads conversion event (AW-18295551736) ──
+  // ── Google Ads conversion event (AW-18295551736) — fires on a real
+  // created account, not on the previous fake localStorage write ──
   if (typeof gtag === 'function') {
     gtag('event', 'conversion', {
       send_to: 'AW-18295551736',   // Google Ads account
@@ -1259,15 +1300,30 @@ function joinFree() {
     });
   }
 
-  // ── Waitlist API — fire & forget (don't block redirect) ──
+  // ── Waitlist API — fire & forget (best-effort marketing list, not auth) ──
   fetch('/api/waitlist', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: name || '', email, tier: urlTier }),
-  }).catch(() => {});  // silent fail — redirect proceeds regardless
+  }).catch(() => {});
 
-  okEl.style.display = 'block';
-  setTimeout(() => { window.location.replace('index.html'); }, 600);
+  const confirmed = data.user?.email_confirmed_at;
+  if (confirmed) {
+    // Supabase auto-confirm is on for this project (rare) — a real session
+    // already exists, so it's safe to continue straight into the engine.
+    okEl.innerHTML = '✓ Account created! Launching engine…<br><a href="index.html" style="color:var(--cyan);display:inline-block;margin-top:.5rem;text-decoration:none;border:1px solid rgba(0,224,96,.3);border-radius:6px;padding:.4rem 1rem;font-size:11px;">Open Engine →</a>';
+    okEl.style.display = 'block';
+    btn.style.display = 'none';
+    setTimeout(() => { window.location.href = 'index.html'; }, 900);
+  } else {
+    // Normal path — do NOT grant access or redirect. The account exists
+    // but is unusable until the verification link is clicked (index.html's
+    // doLogin() rejects sign-in for an unverified address — see there).
+    okEl.innerHTML = '✓ Account created! Check <strong>' + email.replace(/</g,'&lt;') + '</strong> for a verification link, then sign in from the engine.';
+    okEl.style.display = 'block';
+    btn.disabled = true;
+    btn.textContent = 'Check your email to continue →';
+  }
 }
 
 function prefillRegLoggedIn() {
