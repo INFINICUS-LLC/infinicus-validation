@@ -48,6 +48,11 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://app_role:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD in .env}@postgres:5432/infinicus
+      # Compose's internal network resolves "postgres" to a non-localhost
+      # hostname, which packages/configuration's resolveDbSsl() would
+      # otherwise read as "assume TLS" by default — this Postgres instance
+      # doesn't speak TLS, so that default caused a full outage. Pin it off.
+      DB_SSL: "false"
       PORT: "3000"
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://infini-cus.com,https://www.infini-cus.com}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
@@ -80,6 +85,7 @@ services:
     # here so either script can be invoked without extra flags.
     environment:
       DATABASE_URL: postgresql://admin_role:${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD in .env}@postgres:5432/infinicus
+      DB_SSL: "false"
       ADMIN_DATABASE_URL: postgresql://admin_role:${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD in .env}@postgres:5432/infinicus
       APP_ROLE: app_role
     working_dir: /repo
