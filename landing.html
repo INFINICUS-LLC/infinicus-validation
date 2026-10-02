@@ -1348,12 +1348,10 @@ async function joinFree() {
     });
   }
 
-  // ── Waitlist API — fire & forget (best-effort marketing list, not auth) ──
-  fetch('/api/waitlist', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name || '', email, tier: urlTier }),
-  }).catch(() => {});
+  // Waitlist signup removed — account creation no longer auto-subscribes
+  // every new user to the marketing waitlist / fires its notification
+  // email. The explicit "Join Waitlist" button for paid plans (index.html)
+  // is unaffected — that's a separate, deliberate action.
 
   const confirmed = data.user?.email_confirmed_at;
   if (confirmed) {
