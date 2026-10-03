@@ -402,12 +402,13 @@
       "id": "BUILD-32",
       "layer": "BUSINESS-OPERATIONS-RUNTIME",
       "name": "Business Operations Runtime",
-      "status": "ready",
+      "status": "in_progress",
       "dependency": "BUILD-31",
       "specification": "docs/implementation-queue/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-SPECIFICATION.md",
       "notes": "BUILD-32 establishes the production OPERATIONS runtime for Inventory, Procurement, Suppliers, Workforce, and Assets while preserving locked COMMERCE and FINANCE boundaries. Runtime/reconciliation build only; no schema rewrite.",
       "readyAt": "2026-10-03T00:00:00.000Z",
-      "testsPass": false
+      "testsPass": false,
+      "startedAt": "2026-10-03T00:00:00.000Z"
     }
   ],
   "currentReadyBuild": "BUILD-32"
