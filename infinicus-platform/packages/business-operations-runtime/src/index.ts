@@ -11,3 +11,4 @@ export * from './intake/defaultMappers.js';
 export * from './intake/BusinessIntakeService.js';
 export * from './OperationalCommandExecutor.js';
 export * from './publication/OperationalPublicationService.js';
+export * from './events/OperationalEventService.js';
