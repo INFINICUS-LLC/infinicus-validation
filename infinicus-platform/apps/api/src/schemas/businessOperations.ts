@@ -5,6 +5,30 @@ export const operationsBusinessParamsSchema = z.object({
   businessId: z.string().uuid(),
 });
 
+export const operationsIntakeParamsSchema = z.object({
+  businessId: z.string().uuid(),
+  publicationPackageId: z.string().uuid(),
+});
+
+export const operationsIntakeResponseSchema = z.object({
+  publicationPackageId: z.string().uuid(),
+  deliveryId: z.string().uuid(),
+  idempotentReplay: z.boolean(),
+  acceptedRecordCount: z.number().int().min(0),
+  commandCount: z.number().int().min(0),
+  results: z.array(z.object({
+    commandType: z.enum([
+      'record_inventory_movement',
+      'create_purchase_order',
+      'record_supplier_performance',
+      'record_workforce_event',
+      'record_asset_inspection',
+      'record_operational_fact',
+    ]),
+    recordId: z.string().uuid(),
+  })),
+});
+
 export const operationsPeriodQuerySchema = z.object({
   from: z.coerce.date(),
   to: z.coerce.date(),
