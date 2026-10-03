@@ -59,6 +59,34 @@ function rowToPackage(row: Record<string, unknown>): OperationalPublicationPacka
   };
 }
 
+function stablePayloadReference(
+  value: Record<string, string | number | boolean | null>
+): string {
+  return JSON.stringify(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .reduce<Record<string, string | number | boolean | null>>((acc, [key, item]) => {
+        acc[key] = item;
+        return acc;
+      }, {})
+  );
+}
+
+function samePreparation(
+  existing: OperationalPublicationPackage,
+  input: PrepareOperationalPublicationInput
+): boolean {
+  return (
+    existing.businessId === input.businessId &&
+    existing.targetLayer === 'business_intelligence' &&
+    existing.targetBlock === input.targetBlock &&
+    existing.periodStart.getTime() === input.periodStart.getTime() &&
+    existing.periodEnd.getTime() === input.periodEnd.getTime() &&
+    existing.recordCount === input.recordCount &&
+    stablePayloadReference(existing.payloadReference) === stablePayloadReference(input.payloadReference)
+  );
+}
+
 function validatePreparation(input: PrepareOperationalPublicationInput): void {
   if (!input.businessId) throw new OperationalMappingError('businessId is required.');
   if (!input.packageCode.trim()) throw new OperationalMappingError('packageCode is required.');
@@ -107,7 +135,15 @@ export class OperationalPublicationService {
          WHERE business_id = $1 AND package_code = $2`,
         [input.businessId, input.packageCode]
       );
-      if (existing.rowCount === 1) return rowToPackage(existing.rows[0]);
+      if (existing.rowCount === 1) {
+        const existingPackage = rowToPackage(existing.rows[0]);
+        if (!samePreparation(existingPackage, input)) {
+          throw new OperationalMappingError(
+            'packageCode is already associated with a materially different BO publication package.'
+          );
+        }
+        return existingPackage;
+      }
 
       const correlationId = input.correlationId ?? randomUUID();
       const created = await client.query<Record<string, unknown>>(
