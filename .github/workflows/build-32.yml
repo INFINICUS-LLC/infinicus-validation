@@ -6,6 +6,7 @@ on:
       - "infinicus-platform/packages/business-operations-runtime/**"
       - "infinicus-platform/packages/database/**"
       - "infinicus-platform/packages/handoff-contracts/**"
+      - "infinicus-platform/apps/api/**"
       - "infinicus-platform/infrastructure/database/**"
       - ".github/workflows/build-32.yml"
 
@@ -54,14 +55,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint runtime and dependencies
-        run: npx turbo run lint --filter=@infinicus/business-operations-runtime...
+      - name: Lint BUILD-32 runtime and API
+        run: npx turbo run lint --filter=@infinicus/business-operations-runtime... --filter=@infinicus/api...
 
-      - name: Typecheck runtime and dependencies
-        run: npx turbo run typecheck --filter=@infinicus/business-operations-runtime...
+      - name: Typecheck BUILD-32 runtime and API
+        run: npx turbo run typecheck --filter=@infinicus/business-operations-runtime... --filter=@infinicus/api...
 
-      - name: Build runtime and dependencies
-        run: npx turbo run build --filter=@infinicus/business-operations-runtime...
+      - name: Build BUILD-32 runtime and API
+        run: npx turbo run build --filter=@infinicus/business-operations-runtime... --filter=@infinicus/api...
 
       - name: Create least-privilege application role
         run: |
@@ -79,8 +80,8 @@ jobs:
           APP_ROLE="$CI_APP_USER" \
             infrastructure/database/scripts/grant-app-role.sh
 
-      - name: Test BUILD-32 runtime
-        run: npx turbo run test --filter=@infinicus/business-operations-runtime
+      - name: Test BUILD-32 runtime and API
+        run: npx turbo run test --filter=@infinicus/business-operations-runtime --filter=@infinicus/api
         env:
           DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
           ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
