@@ -43,6 +43,21 @@ function rowToRecommendation(row: Record<string, unknown>): DecisionRecommendati
   };
 }
 
+export interface RecommendationRationale {
+  recommendationVersionId: string;
+  statement: string;
+  /** Written by addRationale()'s evidenceReference param — for the twin-grounded flow this holds { expectedOutcome, riskLevel }. */
+  evidenceReference: Record<string, unknown>;
+}
+
+function rowToRationale(row: Record<string, unknown>): RecommendationRationale {
+  return {
+    recommendationVersionId: row.recommendation_version_id as string,
+    statement: row.statement as string,
+    evidenceReference: row.evidence_reference as Record<string, unknown>,
+  };
+}
+
 function rowToVersion(row: Record<string, unknown>): DecisionRecommendationVersion {
   return {
     id: row.id as string,
@@ -200,6 +215,27 @@ export class DecisionRecommendationRepository {
         [caseId]
       );
       return result.rows.map(rowToVersion);
+    });
+  }
+
+  /**
+   * Bulk lookup of each version's rationale (statement + evidence_reference),
+   * keyed by recommendation_version_id — a single query rather than N+1 when
+   * building a history page over many recommendations. recommend() adds
+   * exactly one rationale row per version; DISTINCT ON ... ORDER BY
+   * created_at keeps this correct (earliest wins) even if that ever changes.
+   */
+  async listRationalesForVersions(ctx: TenantContext, recommendationVersionIds: string[]): Promise<RecommendationRationale[]> {
+    if (recommendationVersionIds.length === 0) return [];
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT DISTINCT ON (recommendation_version_id) *
+         FROM ai_decision_intelligence.recommendation_rationales
+         WHERE recommendation_version_id = ANY($1)
+         ORDER BY recommendation_version_id, created_at ASC`,
+        [recommendationVersionIds]
+      );
+      return result.rows.map(rowToRationale);
     });
   }
 }

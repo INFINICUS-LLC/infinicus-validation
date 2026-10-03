@@ -1676,7 +1676,7 @@ async function supabaseSaveSimulation(entry) {
          this section blank. -->
     <div id="biz-service-error" style="display:none;text-align:center;padding:2.5rem 1rem;">
       <div style="font-size:36px;margin-bottom:.7rem;">⚠️</div>
-      <div style="font-family:var(--mono);font-size:13px;color:var(--muted-2);margin-bottom:1rem;">Couldn't reach the operations service. The platform backend may be temporarily unavailable — this isn't something you need to fix.</div>
+      <div id="biz-service-error-text" style="font-family:var(--mono);font-size:13px;color:var(--muted-2);margin-bottom:1rem;">Couldn't reach the operations service. The platform backend may be temporarily unavailable — this isn't something you need to fix.</div>
       <button class="btn-sm" onclick="bizEnsureBusiness()">RETRY →</button>
     </div>
 
@@ -2005,7 +2005,7 @@ async function supabaseSaveSimulation(entry) {
   <!-- No business selected -->
   <div id="twin-no-biz" style="display:none;text-align:center;padding:2.5rem 1rem;">
     <div style="font-size:36px;margin-bottom:.7rem;">⚠️</div>
-    <div style="font-family:var(--mono);font-size:13px;color:var(--muted-2);margin-bottom:1rem;">Couldn't reach the operations service. The platform backend may be temporarily unavailable — this isn't something you need to fix.</div>
+    <div id="twin-no-biz-text" style="font-family:var(--mono);font-size:13px;color:var(--muted-2);margin-bottom:1rem;">Couldn't reach the operations service. The platform backend may be temporarily unavailable — this isn't something you need to fix.</div>
     <button class="btn-sm" onclick="bizInitTwin()">RETRY →</button>
   </div>
 
@@ -2050,7 +2050,7 @@ async function supabaseSaveSimulation(entry) {
   <!-- No business / no twin -->
   <div id="decisions-no-biz" style="display:none;text-align:center;padding:2.5rem 1rem;">
     <div style="font-size:36px;margin-bottom:.7rem;">⚠️</div>
-    <div style="font-family:var(--mono);font-size:13px;color:var(--muted-2);margin-bottom:1rem;">Couldn't reach the operations service. The platform backend may be temporarily unavailable — this isn't something you need to fix.</div>
+    <div id="decisions-no-biz-text" style="font-family:var(--mono);font-size:13px;color:var(--muted-2);margin-bottom:1rem;">Couldn't reach the operations service. The platform backend may be temporarily unavailable — this isn't something you need to fix.</div>
     <button class="btn-sm" onclick="bizInitDecisions()">RETRY →</button>
   </div>
 
@@ -3456,7 +3456,12 @@ const API_BASE_URL = (function () {
     ? 'http://127.0.0.1:3000'
     : 'https://api.infini-cus.com';
 })();
-const BACKEND_ACCOUNT_KEY = 'inf_backend_account_v1';
+// v2: see deriveShadowAccountCredentials() below for why this bumped from
+// v1 — the old key cached a random password against the user's real email,
+// which could become permanently unrecoverable. Bumping the key means every
+// browser picks up a fresh, deterministically-derived account once, instead
+// of continuing to retry a password that can never work again.
+const BACKEND_ACCOUNT_KEY = 'inf_backend_account_v2';
 
 function loadBackendAccount() {
   try { return JSON.parse(localStorage.getItem(BACKEND_ACCOUNT_KEY) || 'null'); } catch (e) { return null; }
@@ -3464,11 +3469,41 @@ function loadBackendAccount() {
 function saveBackendAccount(acct) {
   try { localStorage.setItem(BACKEND_ACCOUNT_KEY, JSON.stringify(acct)); } catch (e) {}
 }
-function randomBackendPassword() {
-  const bytes = new Uint8Array(24);
-  if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
-  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
-  return 'Inf-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('') + '-aA1!';
+// Derives this browser-shadow-account's email AND password deterministically
+// from the signed-in Supabase user's stable, immutable supaId — instead of a
+// random password cached only in this browser's localStorage against the
+// user's real (mutable) email.
+//
+// That older design (randomBackendPassword(), v1 key) had no recovery path:
+// if localStorage was ever cleared, or the account was accessed from a
+// different browser/device, a brand-new random password was generated while
+// the backend still only recognized the old one. Login then failed (401,
+// wrong password), and the automatic fallback to /v1/auth/register also
+// failed (409, that email is already registered) — a dead end with no way
+// back in, surfaced to the user as the generic "Couldn't reach the
+// operations service" message. Repeated retries against the same
+// never-going-to-match password also triggered the backend's login-attempt
+// lockout (429). Traced live via browser DevTools on 2026-10-03.
+//
+// Deriving both the email AND the password from supaId (via SHA-256) fixes
+// this permanently: the exact same credentials are reproduced on every
+// device/browser for a given Supabase account, so login always succeeds
+// without ever needing to store or recover a password. Keying the shadow
+// email off supaId instead of the user's real email also means it can never
+// collide with a prior broken registration under that real email, and stays
+// valid even if the user later changes their real email address.
+async function deriveShadowAccountCredentials(supaId) {
+  const digestHex = async (label) => {
+    const data = new TextEncoder().encode(label + ':' + supaId);
+    const buf = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+  };
+  const emailHash = await digestHex('infinicus-shadow-email-v2');
+  const passwordHash = await digestHex('infinicus-shadow-password-v2');
+  return {
+    email: 'shadow-' + emailHash.slice(0, 32) + '@infini-cus.local',
+    password: 'Inf-' + passwordHash.slice(0, 40) + '-aA1!',
+  };
 }
 async function backendFetch(path, opts) {
   opts = opts || {};
@@ -3493,7 +3528,34 @@ async function backendFetch(path, opts) {
 // Provisions (once per browser, cached thereafter) or reuses a backend
 // tenant/workspace/business tied to the currently-signed-in Supabase user,
 // and returns a fresh session token for it.
+//
+// This is called from several independent places (the onAuthStateChange
+// listener, each layer's own init function, the section-nav handler for
+// Business Operations, the simulation flow) and more than one of those can
+// fire within the same page load — e.g. arriving on Business Operations
+// right as sign-in resolves fires both onAuthStateChange's call AND the
+// section-nav's call within milliseconds of each other. Two concurrent,
+// un-deduplicated calls could both see no cached tenantId and each try to
+// provision a tenant/business, and under heavier concurrency one call's
+// /v1/auth/register could even race another's, returning 409 after the
+// first succeeded a moment earlier — surfacing as the operations UI
+// rendering successfully and then flipping to the error screen a few
+// seconds later as the second, losing call's failure overwrites it. Traced
+// live via browser DevTools on 2026-10-03 (a reported "works, then
+// disappears" symptom).
+//
+// _ensureBackendBusinessInFlight makes every concurrent caller within a
+// given provisioning attempt share the exact same promise instead of
+// racing independent ones, which removes the race at its source rather
+// than just handling its symptoms.
+let _ensureBackendBusinessInFlight = null;
 async function ensureBackendBusiness() {
+  if (_ensureBackendBusinessInFlight) return _ensureBackendBusinessInFlight;
+  _ensureBackendBusinessInFlight = _ensureBackendBusinessUncached()
+    .finally(() => { _ensureBackendBusinessInFlight = null; });
+  return _ensureBackendBusinessInFlight;
+}
+async function _ensureBackendBusinessUncached() {
   if (!U) throw new Error('not signed in');
   // U.supaId only exists after a real Supabase sign-up/sign-in (see
   // onAuthStateChange above) — Public Idea Mode's lightweight email-only
@@ -3502,7 +3564,8 @@ async function ensureBackendBusiness() {
   if (!U.supaId) throw new Error('not signed in with a full account');
   let acct = loadBackendAccount();
   if (!acct || acct.supaId !== U.supaId) {
-    acct = { supaId: U.supaId, email: U.email, password: randomBackendPassword() };
+    const creds = await deriveShadowAccountCredentials(U.supaId);
+    acct = { supaId: U.supaId, email: creds.email, password: creds.password };
     saveBackendAccount(acct);
   }
   let token;
@@ -3510,7 +3573,19 @@ async function ensureBackendBusiness() {
     token = (await backendFetch('/v1/auth/login', { method: 'POST', body: { email: acct.email, password: acct.password } })).rawSessionToken;
   } catch (e) {
     if (e.status !== 401 && e.status !== 404) throw e;
-    await backendFetch('/v1/auth/register', { method: 'POST', body: { email: acct.email, password: acct.password } });
+    try {
+      await backendFetch('/v1/auth/register', { method: 'POST', body: { email: acct.email, password: acct.password } });
+    } catch (regErr) {
+      // A 409 here (account already exists) is not necessarily a real
+      // inconsistency — with the in-flight de-dupe above it should be rare,
+      // but another tab/window running the same deterministic credentials
+      // could still win this exact race. Fall through to the login retry
+      // below rather than failing hard on it: if the account now exists,
+      // login succeeds normally. Only a genuine credential mismatch would
+      // make that retry fail too, which surfaces as a clear error from the
+      // login catch below rather than this generic one.
+      if (regErr.status !== 409) throw regErr;
+    }
     token = (await backendFetch('/v1/auth/login', { method: 'POST', body: { email: acct.email, password: acct.password } })).rawSessionToken;
   }
   acct.token = token;
@@ -7090,6 +7165,12 @@ async function handleIdeaUpload(input) {
 // ── MY BUSINESS ───────────────────────────────────────────────────────
 // State
 let _bizCurrentId   = null;   // selected business_id
+// Holds the classified, cause-specific text (see classifyBackendError()
+// below) from the most recent provisioning failure, so Twin/Decisions —
+// which don't call ensureBackendBusiness() directly, only bizEnsureBusiness()
+// via bizInit() — can show the real reason in their own error blocks too,
+// instead of each falling back to a generic, unhelpful default.
+let _bizLastErrorText = '';
 let _bizCurrentType = 'catalog'; // active event tab
 let _bizCatalog = [];            // cached product list for the active business
 let _bizCatalogLoaded = false;
@@ -7128,6 +7209,52 @@ function bizInit() {
   if (t && !t.value) t.value = fmt(today);
 }
 
+// Classifies a caught provisioning error into a specific, accurate message
+// instead of the one-size-fits-all "couldn't reach the operations service"
+// text every call site previously showed regardless of cause. A real
+// outage, a rate-limit lockout, an expired session, and a genuine bug all
+// looked identical to the user before this — which both hid real bugs
+// behind a reassuring "not your fault" message and gave no actionable
+// information for the cases (like a lockout) that actually are
+// self-resolving and worth explaining as such.
+function classifyBackendError(e) {
+  if (!e) return { summary: 'An unknown error occurred.', detail: '' };
+  // A raw network failure (DNS, CORS, offline, server unreachable) throws a
+  // bare error with no .status — this is the one case the old generic
+  // message actually described accurately, so it's kept for that case only.
+  if (!e.status) {
+    return {
+      summary: "Couldn't reach the operations service.",
+      detail: "The platform backend may be temporarily unavailable, or this browser has no network connection — this isn't something you need to fix."
+    };
+  }
+  if (e.status === 429) {
+    return {
+      summary: 'Too many sign-in attempts — temporarily locked for security.',
+      detail: 'This clears on its own after about 15 minutes. Wait, then retry.'
+    };
+  }
+  if (e.status === 401) {
+    return {
+      summary: 'Your session needs to be refreshed.',
+      detail: 'Try signing out and back in.'
+    };
+  }
+  if (e.status === 403) {
+    return {
+      summary: "You don't have permission for this.",
+      detail: 'If this seems wrong, contact support.'
+    };
+  }
+  if (e.status >= 500) {
+    return {
+      summary: 'The platform backend hit an internal error.',
+      detail: "This is a real server-side issue, not something on your end — try again shortly."
+    };
+  }
+  return { summary: e.message || 'Something went wrong.', detail: '' };
+}
+
 // Provisions (once per browser, cached) the same shadow business the Simulation
 // flow already uses — ensureBackendBusiness(), defined above alongside the
 // backend simulation bridge. The legacy multi-business dropdown/create-business
@@ -7150,6 +7277,10 @@ async function bizEnsureBusiness() {
   } catch (e) {
     if (statusLine) statusLine.textContent = '';
     if (errArea) errArea.style.display = 'block';
+    const { summary, detail } = classifyBackendError(e);
+    _bizLastErrorText = summary + (detail ? ' ' + detail : '');
+    const errText = document.getElementById('biz-service-error-text');
+    if (errText) errText.textContent = _bizLastErrorText;
     const area = document.getElementById('biz-event-area');
     if (area) area.style.display = 'none';
     showToast('Could not set up your business account: ' + e.message);
@@ -7840,7 +7971,11 @@ async function bizInitTwin() {
   if (authGate) authGate.style.display = 'none';
   if (!_bizCurrentId) { try { await bizEnsureBusiness(); } catch(e) {} }
   if (!_bizCurrentId) {
-    if (noBiz)  noBiz.style.display  = 'block';
+    if (noBiz) {
+      noBiz.style.display = 'block';
+      const t = document.getElementById('twin-no-biz-text');
+      if (t) t.textContent = _bizLastErrorText || "Couldn't reach the operations service. The platform backend may be temporarily unavailable — this isn't something you need to fix.";
+    }
     if (main)   main.style.display   = 'none';
     return;
   }
@@ -7865,7 +8000,11 @@ async function bizInitDecisions() {
   if (authGate) authGate.style.display = 'none';
   if (!_bizCurrentId) { try { await bizEnsureBusiness(); } catch(e) {} }
   if (!_bizCurrentId) {
-    if (noBiz)  noBiz.style.display  = 'block';
+    if (noBiz) {
+      noBiz.style.display = 'block';
+      const t = document.getElementById('decisions-no-biz-text');
+      if (t) t.textContent = _bizLastErrorText || "Couldn't reach the operations service. The platform backend may be temporarily unavailable — this isn't something you need to fix.";
+    }
     if (main)   main.style.display   = 'none';
     return;
   }
@@ -7888,12 +8027,19 @@ async function _bizLoadApprovalHistory() {
 }
 
 function _renderApprovalCard(dec, mode) {
+  const hasDetail = !!(dec.rationale || dec.expectedOutcome);
   return `
     <div style="background:var(--glass);border:1px solid var(--line);border-radius:10px;padding:1rem;margin-bottom:.75rem;">
       <div style="font-size:14px;color:var(--fg-2);margin-bottom:.5rem;">${dec.decisionText}</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted-2);margin-bottom:${mode!=='approval' ? '.4rem' : '0'};">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted-2);margin-bottom:${(mode!=='approval' || hasDetail) ? '.4rem' : '0'};">
         Approved ${new Date(dec.recommendedAt).toLocaleDateString()}
       </div>
+      ${dec.rationale ? `
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-bottom:.3rem;">WHY THIS WAS RECOMMENDED</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:.6rem;">${dec.rationale}</div>` : ''}
+      ${dec.expectedOutcome ? `
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-bottom:.3rem;">EXPECTED OUTCOME</div>
+      <div style="font-size:13px;color:var(--cyan);margin-bottom:${mode!=='approval' ? '.6rem' : '0'};">${dec.expectedOutcome}</div>` : ''}
       ${mode === 'outcome' ? `
       <div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-bottom:.3rem;">ACTUAL OUTCOME</div>
       <div style="font-size:13px;color:var(--emerald);">${dec.outcomeNotes}</div>` : ''}

@@ -49,5 +49,7 @@ export const historyResponseSchema = z.object({
     chosen: z.boolean().nullable(),
     approvedActionId: z.string().uuid().nullable(),
     outcomeNotes: z.string().nullable(),
+    rationale: z.string().nullable(),
+    expectedOutcome: z.string().nullable(),
   })),
 });

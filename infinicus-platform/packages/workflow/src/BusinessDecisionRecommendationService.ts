@@ -48,6 +48,10 @@ export interface DecisionHistoryEntry {
   approvedActionId: string | null;
   /** Most recent recorded/verified/disputed OutcomeObservation summary for that action, if any. */
   outcomeNotes: string | null;
+  /** Why the AI recommended this — from recommendation_rationales (written once at recommend() time). Null only for pre-migration rows that predate this field being surfaced. */
+  rationale: string | null;
+  /** The projected impact stated alongside the rationale at recommend() time. Same nullability note as rationale. */
+  expectedOutcome: string | null;
 }
 
 interface RawDecisionItem {
@@ -296,7 +300,7 @@ export class BusinessDecisionRecommendationService {
     // One published version per case (same assumption the old code made) —
     // gathered first so the correlation chain below can run as bulk
     // lookups (one query per hop for the whole page) instead of N+1s.
-    type Pending = { recommendationId: string; decisionText: string; recommendedAt: string };
+    type Pending = { recommendationId: string; versionId: string; decisionText: string; recommendedAt: string };
     const pending: Pending[] = [];
     for (const decisionCase of adiCases) {
       const versions = await this.recommendations.getPublishedVersionsForCase(ctx, decisionCase.id);
@@ -304,11 +308,16 @@ export class BusinessDecisionRecommendationService {
       if (!version) continue;
       pending.push({
         recommendationId: version.recommendationId,
+        versionId: version.id,
         decisionText: version.summary,
         recommendedAt: version.createdAt instanceof Date ? version.createdAt.toISOString() : String(version.createdAt),
       });
     }
     if (pending.length === 0) return [];
+
+    // Rationale + expected outcome, bulk-fetched by version id (one query for the whole page).
+    const rationales = await this.recommendations.listRationalesForVersions(ctx, pending.map(p => p.versionId));
+    const rationaleByVersionId = new Map(rationales.map(r => [r.recommendationVersionId, r]));
 
     // Hop 1: recommendation -> approved action (migration 0170 / Block 2).
     const recommendationIds = pending.map(p => p.recommendationId);
@@ -329,6 +338,7 @@ export class BusinessDecisionRecommendationService {
       const action = actionByRecommendationId.get(p.recommendationId) ?? null;
       const monitored = action ? monitoredByApprovedActionId.get(action.id) ?? null : null;
       const outcomeNotes = monitored ? outcomeByMonitoredActionId.get(monitored.id) ?? null : null;
+      const rationale = rationaleByVersionId.get(p.versionId) ?? null;
       return {
         id: p.recommendationId,
         decisionText: p.decisionText,
@@ -336,6 +346,8 @@ export class BusinessDecisionRecommendationService {
         chosen: action ? true : null,
         approvedActionId: action ? action.id : null,
         outcomeNotes,
+        rationale: rationale ? rationale.statement : null,
+        expectedOutcome: rationale ? (rationale.evidenceReference.expectedOutcome as string | undefined) ?? null : null,
       };
     });
   }
