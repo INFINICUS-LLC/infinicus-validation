@@ -332,6 +332,37 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
     expect(after.rows[0].count).toBe(before.rows[0].count);
   });
 
+  it('rejects reuse of a BO publication package code with different material', async () => {
+    const packageCode = unique('bo-bi-idem');
+    const baseInput = {
+      businessId,
+      packageCode,
+      targetBlock: 'BI-01',
+      periodStart: new Date('2026-10-01T00:00:00.000Z'),
+      periodEnd: new Date('2026-10-02T00:00:00.000Z'),
+      recordCount: 1,
+      payloadReference: {
+        source: 'business_operations.business_events',
+        eventType: 'sale',
+      },
+    };
+
+    const first = await publication.prepare(ctx, baseInput);
+    const replay = await publication.prepare(ctx, {
+      ...baseInput,
+      payloadReference: {
+        eventType: 'sale',
+        source: 'business_operations.business_events',
+      },
+    });
+    expect(replay.id).toBe(first.id);
+
+    await expect(publication.prepare(ctx, {
+      ...baseInput,
+      recordCount: 2,
+    })).rejects.toThrow(/materially different/i);
+  });
+
   it('publishes an operational package to the canonical BO to BI boundary exactly once', async () => {
     const daHandoff = await createPublishedHandoff();
     const intake = await bo.processHandoff(ctx, daHandoff);
