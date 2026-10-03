@@ -66,6 +66,7 @@ export class BusinessIntakeService {
     if (payload.businessId === null) {
       throw new BusinessIntakeRejectedError('Business Operations intake requires a business-scoped publication.');
     }
+    const businessId = payload.businessId;
     if (payload.tenantId !== ctx.tenantId || payload.workspaceId !== ctx.workspaceId) {
       throw new BusinessIntakeRejectedError('Handoff tenant/workspace does not match active context.');
     }
@@ -86,7 +87,7 @@ export class BusinessIntakeService {
       if (pkg.tenant_id !== ctx.tenantId || pkg.workspace_id !== ctx.workspaceId) {
         throw new BusinessIntakeRejectedError('Publication package scope mismatch.');
       }
-      if (pkg.business_id !== payload.businessId) {
+      if (pkg.business_id !== businessId) {
         throw new BusinessIntakeRejectedError('Publication package business scope mismatch.');
       }
       if (pkg.status !== 'published' || pkg.target_layer !== 'business_operations') {
@@ -182,7 +183,7 @@ export class BusinessIntakeService {
           const mapped = this.registry.mapRecord(records[recordIndex], {
             tenantId: ctx.tenantId,
             workspaceId: ctx.workspaceId,
-            businessId: payload.businessId,
+            businessId,
             correlationId: handoff.correlationId,
             sourceReference: reference,
             provenanceReference: provenanceId,
