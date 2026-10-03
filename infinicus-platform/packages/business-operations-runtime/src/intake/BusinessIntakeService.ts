@@ -99,6 +99,12 @@ function stringReferences(values: readonly unknown[], field: string): string[] {
   });
 }
 
+function controlledFailureReason(error: unknown): string {
+  const name = error instanceof Error ? error.name : 'BusinessIntakeFailure';
+  const message = error instanceof Error ? error.message : 'Unknown Business Operations intake failure.';
+  return `${name}: ${message}`.slice(0, 500);
+}
+
 export class BusinessIntakeService {
   private readonly registry: IntakeMapperRegistry;
 
@@ -177,6 +183,62 @@ export class BusinessIntakeService {
     };
   }
 
+  private async recordRejectedDelivery(
+    ctx: TenantContext,
+    publicationPackageId: string,
+    error: unknown
+  ): Promise<void> {
+    await withTenantTransaction(ctx, async (client) => {
+      // Lock the source-owned package only to serialize receipt creation.
+      // The package itself remains immutable from the target layer.
+      const pkg = await client.query(
+        `SELECT id
+         FROM data_acquisition.publication_packages
+         WHERE id = $1
+         FOR UPDATE`,
+        [publicationPackageId]
+      );
+      if (pkg.rowCount !== 1) return;
+
+      const existing = await client.query<Record<string, unknown>>(
+        `SELECT id, delivery_status
+         FROM data_acquisition.publication_deliveries
+         WHERE publication_package_id = $1
+           AND destination_type = 'layer'
+           AND destination_reference = 'business_operations'
+         ORDER BY created_at ASC
+         LIMIT 1
+         FOR UPDATE`,
+        [publicationPackageId]
+      );
+
+      // A successful custody transfer is terminal for this package version.
+      if (existing.rowCount === 1 && existing.rows[0].delivery_status === 'delivered') return;
+
+      const failureReason = controlledFailureReason(error);
+      if (existing.rowCount === 1) {
+        await client.query(
+          `UPDATE data_acquisition.publication_deliveries
+           SET delivery_status = 'failed',
+               attempt_count = attempt_count + 1,
+               last_attempt_at = now(),
+               failure_reason = $2
+           WHERE id = $1`,
+          [existing.rows[0].id, failureReason]
+        );
+        return;
+      }
+
+      await client.query(
+        `INSERT INTO data_acquisition.publication_deliveries
+           (publication_package_id, destination_type, destination_reference,
+            delivery_status, attempt_count, last_attempt_at, failure_reason)
+         VALUES ($1,'layer','business_operations','failed',1,now(),$2)`,
+        [publicationPackageId, failureReason]
+      );
+    });
+  }
+
   async processHandoff(ctx: TenantContext, handoff: DALToBOHandoff): Promise<BusinessIntakeResult> {
     const validation = validateDALToBOHandoff(handoff);
     if (!validation.valid) {
@@ -191,6 +253,7 @@ export class BusinessIntakeService {
     if (payload.tenantId !== ctx.tenantId || payload.workspaceId !== ctx.workspaceId) {
       throw new BusinessIntakeRejectedError('Handoff tenant/workspace does not match active context.');
     }
+    try {
     if (
       payload.quality.qualityScore === null ||
       payload.quality.qualityScore < this.policy.minimumQualityScore
@@ -373,5 +436,9 @@ export class BusinessIntakeService {
         results,
       };
     });
+    } catch (error) {
+      await this.recordRejectedDelivery(ctx, payload.publicationPackageId, error);
+      throw error;
+    }
   }
 }
