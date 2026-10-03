@@ -27,6 +27,7 @@
   "devDependencies": {
     "typescript": "^5.4.0",
     "vitest": "^1.6.0",
-    "@types/pg": "^8.11.6"
+    "@types/pg": "^8.11.6",
+    "@infinicus/data-acquisition-runtime": "workspace:*"
   }
 }
