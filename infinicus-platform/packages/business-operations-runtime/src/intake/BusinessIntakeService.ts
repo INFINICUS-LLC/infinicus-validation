@@ -1,8 +1,12 @@
+import { randomUUID } from 'crypto';
 import {
+  PublicationPackageRepository,
   withTenantTransaction,
+  type PublicationPackage,
   type TenantContext,
 } from '@infinicus/database';
 import {
+  DAL_TO_BO_CONTRACT_VERSION,
   validateDALToBOHandoff,
   type DALToBOHandoff,
 } from '@infinicus/handoff-contracts';
@@ -46,14 +50,131 @@ function recordsFromPayload(payload: unknown): unknown[] {
   throw new BusinessIntakeRejectedError('Manual submission payload does not contain records array.');
 }
 
+export interface BusinessIntakePolicy {
+  minimumQualityScore: number;
+  minimumReliabilityScore: number;
+}
+
+export const DEFAULT_BUSINESS_INTAKE_POLICY: BusinessIntakePolicy = Object.freeze({
+  minimumQualityScore: 0.80,
+  minimumReliabilityScore: 0.70,
+});
+
+function hasCriticalLimitation(limitations: readonly unknown[]): boolean {
+  return limitations.some((value) => {
+    if (typeof value === 'string') return /^critical\s*:/i.test(value.trim());
+    if (value && typeof value === 'object') {
+      const severity = (value as { severity?: unknown }).severity;
+      return typeof severity === 'string' && severity.toLowerCase() === 'critical';
+    }
+    return false;
+  });
+}
+
+function toContractDataReference(value: Record<string, unknown>): Record<string, string | number | boolean | null> {
+  const result: Record<string, string | number | boolean | null> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (
+      item === null ||
+      typeof item === 'string' ||
+      typeof item === 'number' ||
+      typeof item === 'boolean'
+    ) {
+      result[key] = item;
+      continue;
+    }
+    throw new BusinessIntakeRejectedError(
+      `Publication data reference contains unsupported value at ${key}.`
+    );
+  }
+  return result;
+}
+
+function stringReferences(values: readonly unknown[], field: string): string[] {
+  return values.map((value, index) => {
+    if (typeof value !== 'string' || value.length === 0) {
+      throw new BusinessIntakeRejectedError(`${field}[${index}] must be a non-empty string.`);
+    }
+    return value;
+  });
+}
+
 export class BusinessIntakeService {
   private readonly registry: IntakeMapperRegistry;
 
   constructor(
     registry?: IntakeMapperRegistry,
-    private readonly executor = new OperationalCommandExecutor()
+    private readonly executor = new OperationalCommandExecutor(),
+    private readonly publicationPackages = new PublicationPackageRepository(),
+    private readonly policy: BusinessIntakePolicy = DEFAULT_BUSINESS_INTAKE_POLICY
   ) {
     this.registry = registry ?? registerDefaultMappers(new IntakeMapperRegistry());
+  }
+
+  async processPublishedPackage(
+    ctx: TenantContext,
+    businessId: string,
+    publicationPackageId: string
+  ): Promise<BusinessIntakeResult> {
+    const pkg = await this.publicationPackages.findById(ctx, publicationPackageId);
+    if (pkg.businessId !== businessId) {
+      throw new BusinessIntakeRejectedError('Published Data Acquisition package not found in business scope.');
+    }
+    return this.processHandoff(ctx, this.handoffFromPublication(ctx, pkg));
+  }
+
+  private handoffFromPublication(ctx: TenantContext, pkg: PublicationPackage): DALToBOHandoff {
+    if (pkg.status !== 'published' || pkg.publishedAt === null) {
+      throw new BusinessIntakeRejectedError('Publication package is not published.');
+    }
+    if (pkg.targetLayer !== 'business_operations') {
+      throw new BusinessIntakeRejectedError('Publication package does not target Business Operations.');
+    }
+    if (pkg.businessId === null) {
+      throw new BusinessIntakeRejectedError('Business Operations intake requires a business-scoped publication.');
+    }
+
+    return {
+      handoffId: randomUUID(),
+      sourceLayer: 'DAL',
+      sourceBlock: 'DA-24',
+      targetLayer: 'BO',
+      targetBlock: pkg.targetBlock,
+      correlationId: pkg.correlationId,
+      lineage: [],
+      status: 'ready',
+      createdAt: new Date().toISOString(),
+      payload: {
+        contractVersion: DAL_TO_BO_CONTRACT_VERSION,
+        tenantId: ctx.tenantId,
+        workspaceId: ctx.workspaceId,
+        businessId: pkg.businessId,
+        publicationPackageId: pkg.id,
+        packageType: pkg.packageType,
+        packageVersion: pkg.packageVersion,
+        targetLayer: 'business_operations',
+        targetBlock: pkg.targetBlock,
+        status: 'published',
+        publishedAt: pkg.publishedAt.toISOString(),
+        recordCount: pkg.recordCount,
+        source: {
+          sourceSystem: 'INFINICUS_DA',
+          dataReference: toContractDataReference(pkg.dataReference),
+        },
+        schemaReferenceId: pkg.schemaReferenceId,
+        quality: {
+          qualityScore: pkg.qualityScore,
+          reliabilityScore: pkg.reliabilityScore,
+        },
+        provenanceReferenceIds: stringReferences(pkg.provenanceReferenceIds, 'provenanceReferenceIds'),
+        consentReferenceIds: [],
+        limitations: pkg.limitations.map((value) =>
+          typeof value === 'string' ? value : JSON.stringify(value)
+        ),
+        warnings: [],
+        idempotencyKey: `dal-to-bo:${pkg.id}:${pkg.packageVersion}`,
+      },
+    };
   }
 
   async processHandoff(ctx: TenantContext, handoff: DALToBOHandoff): Promise<BusinessIntakeResult> {
@@ -69,6 +190,28 @@ export class BusinessIntakeService {
     const businessId = payload.businessId;
     if (payload.tenantId !== ctx.tenantId || payload.workspaceId !== ctx.workspaceId) {
       throw new BusinessIntakeRejectedError('Handoff tenant/workspace does not match active context.');
+    }
+    if (
+      payload.quality.qualityScore === null ||
+      payload.quality.qualityScore < this.policy.minimumQualityScore
+    ) {
+      throw new BusinessIntakeRejectedError(
+        `Publication quality is below the Business Operations threshold (${this.policy.minimumQualityScore}).`
+      );
+    }
+    if (
+      payload.quality.reliabilityScore !== null &&
+      payload.quality.reliabilityScore < this.policy.minimumReliabilityScore
+    ) {
+      throw new BusinessIntakeRejectedError(
+        `Publication reliability is below the Business Operations threshold (${this.policy.minimumReliabilityScore}).`
+      );
+    }
+    if (payload.recordCount > 0 && payload.provenanceReferenceIds.length === 0) {
+      throw new BusinessIntakeRejectedError('Published records require provenance references.');
+    }
+    if (hasCriticalLimitation(payload.limitations)) {
+      throw new BusinessIntakeRejectedError('Publication contains an unresolved critical limitation.');
     }
 
     return withTenantTransaction(ctx, async (client) => {
