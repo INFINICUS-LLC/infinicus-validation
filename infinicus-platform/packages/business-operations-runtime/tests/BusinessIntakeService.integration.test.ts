@@ -158,10 +158,10 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
     );
     await adminPool.query(
       `INSERT INTO identity.users
-         (id, tenant_id, email, display_name, status)
-       VALUES ($1,$2,'build32-integration@example.test','BUILD-32 Integration User','active')
+         (id, email, status)
+       VALUES ($1,'build32-integration@example.test','active')
        ON CONFLICT (id) DO NOTHING`,
-      [UID, T1]
+      [UID]
     );
     const biz = await adminPool.query<{ id: string }>(
       `INSERT INTO platform.businesses
