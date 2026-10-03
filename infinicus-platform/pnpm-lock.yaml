@@ -81,6 +81,9 @@ importers:
       '@infinicus/configuration':
         specifier: workspace:*
         version: link:../../packages/configuration
+      '@infinicus/business-operations-runtime':
+        specifier: workspace:*
+        version: link:../../packages/business-operations-runtime
       '@infinicus/data-acquisition-runtime':
         specifier: workspace:*
         version: link:../../packages/data-acquisition-runtime
