@@ -516,12 +516,33 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
     expect(acknowledgements.rows[0].count).toBe('1');
   });
 
-  it('rejects quality below the DA to BO threshold before applying domain writes', async () => {
+  it('rejects quality below the DA to BO threshold without domain writes and records failure', async () => {
     const handoff = await createPublishedHandoff();
     handoff.payload.quality.qualityScore = 0.79;
 
     await expect(bo.processHandoff(ctx, handoff))
       .rejects.toThrow(/quality is below/i);
+
+    const delivery = await adminPool.query<{ delivery_status: string; attempt_count: number; failure_reason: string }>(
+      `SELECT delivery_status, attempt_count, failure_reason
+       FROM data_acquisition.publication_deliveries
+       WHERE publication_package_id = $1
+         AND destination_type = 'layer'
+         AND destination_reference = 'business_operations'`,
+      [handoff.payload.publicationPackageId]
+    );
+    expect(delivery.rowCount).toBe(1);
+    expect(delivery.rows[0].delivery_status).toBe('failed');
+    expect(delivery.rows[0].attempt_count).toBe(1);
+    expect(delivery.rows[0].failure_reason).toMatch(/BusinessIntakeRejectedError/);
+
+    const domainWrites = await adminPool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM business_operations.business_events
+       WHERE tenant_id = $1 AND business_id = $2 AND correlation_id = $3`,
+      [T1, businessId, handoff.correlationId]
+    );
+    expect(domainWrites.rows[0].count).toBe('0');
   });
 
   it('rejects a scored source reliability below the DA to BO threshold', async () => {
