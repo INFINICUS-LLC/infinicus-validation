@@ -469,6 +469,22 @@ importers:
         specifier: ^1.6.0
         version: 1.6.1(@types/node@22.20.1)(lightningcss@1.33.0)
 
+  packages/business-operations-runtime:
+    dependencies:
+      '@infinicus/database':
+        specifier: workspace:*
+        version: link:../database
+      '@infinicus/handoff-contracts':
+        specifier: workspace:*
+        version: link:../handoff-contracts
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@26.1.1)(lightningcss@1.33.0)
+
   packages/data-acquisition-runtime:
     dependencies:
       '@infinicus/database':
