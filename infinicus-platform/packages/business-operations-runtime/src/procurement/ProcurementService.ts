@@ -107,6 +107,6 @@ export class ProcurementService {
       if (!approvedBy) throw new Error('approvedBy is required when approving a purchase order');
       return this.purchaseOrders.approve(ctx, purchaseOrderId, approvedBy);
     }
-    return this.purchaseOrders.updateStatus(ctx, purchaseOrderId, nextStatus);
+    return this.purchaseOrders.transitionStatus(ctx, purchaseOrderId, po.poStatus, nextStatus);
   }
 }
