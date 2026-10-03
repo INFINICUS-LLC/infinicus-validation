@@ -6,6 +6,8 @@ import {
   assetsResponseSchema,
   inventoryResponseSchema,
   operationsBusinessParamsSchema,
+  operationsIntakeParamsSchema,
+  operationsIntakeResponseSchema,
   operationsListQuerySchema,
   operationsPeriodQuerySchema,
   operationsSummaryResponseSchema,
@@ -26,6 +28,39 @@ function iso(value: Date | null): string | null {
 export default async function businessOperationsRoutes(app: FastifyInstance) {
   const server = app.withTypeProvider<ZodTypeProvider>();
   const readGuards = [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')];
+
+  server.post('/v1/businesses/:businessId/operations/intake/:publicationPackageId', {
+    schema: {
+      tags: ['operations'],
+      summary: 'Consume a published Data Acquisition package into Business Operations',
+      params: operationsIntakeParamsSchema,
+      response: {
+        200: operationsIntakeResponseSchema,
+        400: errorResponseSchema,
+        401: errorResponseSchema,
+        402: errorResponseSchema,
+        403: errorResponseSchema,
+        404: errorResponseSchema,
+        409: errorResponseSchema,
+      },
+    },
+    preHandler: [
+      app.authenticate,
+      app.resolveTenantContext,
+      app.requirePermission('bo:write'),
+      app.requireActiveSubscription(),
+      app.requireIdempotencyKey,
+    ],
+  }, async (request, reply) => {
+    const { businessId, publicationPackageId } = request.params;
+    await businesses.getById(request.ctx!, businessId);
+    const result = await operations.intake.processPublishedPackage(
+      request.ctx!,
+      businessId,
+      publicationPackageId
+    );
+    return reply.status(200).send(result);
+  });
 
   server.get('/v1/businesses/:businessId/operations/summary', {
     schema: {
