@@ -463,7 +463,7 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
   <div class="nav-right">
     <!-- Logged-out state -->
     <button class="nav-btn-ghost nav-logged-out" onclick="scrollToReg()">Sign In</button>
-    <a class="nav-btn-cta nav-logged-out" href="index.html">Try Engine →</a>
+    <a class="nav-btn-cta nav-logged-out" href="#register" onclick="switchRegTab('signin')">Try Engine →</a>
     <!-- Logged-in state (hidden until JS runs) -->
     <button class="nav-user-chip" id="nav-user-chip" onclick="openAccount()">
       <span>👤</span><span id="nav-user-name">Account</span><span style="font-size:8px;opacity:.6;">▾</span>
@@ -477,7 +477,7 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
   <a class="nav-link" href="#features" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">Features</a>
   <a class="nav-link" href="#pricing" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">Pricing</a>
   <a class="nav-link" href="#faq" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">FAQ</a>
-  <a class="nav-btn-cta" href="index.html" style="margin-top:.5rem;justify-content:center;display:flex;">Try Engine Free →</a>
+  <a class="nav-btn-cta" href="#register" style="margin-top:.5rem;justify-content:center;display:flex;" onclick="handleTryEngineClick(event)">Try Engine Free →</a>
 </div>
 
 <!-- ══ HERO ══════════════════════════════════════════════════════════════ -->
@@ -1262,6 +1262,24 @@ document.addEventListener('DOMContentLoaded', () => {
   updateLandingNav();
   if (U) prefillRegLoggedIn();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(()=>{});
+
+  // The cached infinicus_user flag read above is only ever written by
+  // index.html's onAuthStateChange listener — this page never re-verifies
+  // it against the actual Supabase session. If it goes stale (session
+  // expired, signed out elsewhere, locked out, etc.) this page still shows
+  // the logged-in nav state ("▶ Open Engine", an unconditional
+  // href="index.html" with no guard) instead of "Try Engine →". Clicking
+  // it then just bounces straight back here via index.html's own auth
+  // guard, with nothing explaining why — reported live as the "Try
+  // Engine" button "just pops back to landing" on 2026-10-03. Re-verify
+  // once on load and correct the nav if the cache disagrees.
+  SUPA.auth.getSession().then(({ data }) => {
+    const reallySignedIn = !!(data?.session?.user && data.session.user.email_confirmed_at);
+    if (reallySignedIn || !U) return; // cache already agrees (or was already empty)
+    U = null;
+    try { localStorage.removeItem('infinicus_user'); } catch(e) {}
+    updateLandingNav();
+  }).catch(() => {});
 });
 
 // ══ LANDING NAV STATE ════════════════════════════════════════════════════════
@@ -1383,6 +1401,28 @@ function scrollToReg() {
   if (U) { openAccount(); return; }
   switchRegTab('signin');
   const el = $('register'); if (el) el.scrollIntoView({behavior:'smooth'});
+}
+
+// Handler for the one "Try Engine" CTA not already gated by the
+// .nav-logged-out CSS class (the mobile nav link, always present in the
+// DOM). Deliberately kept as simple and synchronous as "Connect My
+// Existing Business" above (href="#register" + a plain onclick, no
+// network/async check in the handler) — an earlier version tried to be
+// cleverer here (re-verifying the live Supabase session on every click, or
+// gating on the cached U flag with extra async "correction" passes) and
+// that complexity itself kept causing new bugs (a stale-cache race that
+// let clicks slip through to index.html, reported live as "looping to the
+// sim engine and T&C" on 2026-10-03). Trusting the already-resolved U from
+// page load, the same way every other nav element on this page does, is
+// simpler and has not had that problem.
+function handleTryEngineClick(event) {
+  if (U) {
+    if (event) event.preventDefault();
+    window.location.href = 'index.html';
+    return;
+  }
+  closeMobileNav();
+  switchRegTab('signin');
 }
 
 // ══ SIGN-IN TAB (real account, not the fake flow this page used to have) ══
