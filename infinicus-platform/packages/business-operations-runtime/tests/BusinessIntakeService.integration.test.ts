@@ -543,6 +543,22 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
       [T1, businessId, handoff.correlationId]
     );
     expect(domainWrites.rows[0].count).toBe('0');
+
+    handoff.payload.quality.qualityScore = 1;
+    const retry = await bo.processHandoff(ctx, handoff);
+    expect(retry.idempotentReplay).toBe(false);
+    expect(retry.commandCount).toBe(1);
+
+    const recoveredDelivery = await adminPool.query<{ delivery_status: string; attempt_count: number }>(
+      `SELECT delivery_status, attempt_count
+       FROM data_acquisition.publication_deliveries
+       WHERE publication_package_id = $1
+         AND destination_type = 'layer'
+         AND destination_reference = 'business_operations'`,
+      [handoff.payload.publicationPackageId]
+    );
+    expect(recoveredDelivery.rows[0].delivery_status).toBe('delivered');
+    expect(recoveredDelivery.rows[0].attempt_count).toBe(2);
   });
 
   it('rejects a scored source reliability below the DA to BO threshold', async () => {
