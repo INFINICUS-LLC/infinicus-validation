@@ -409,6 +409,30 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
     expect(acknowledgements.rows[0].count).toBe('1');
   });
 
+  it('rejects quality below the DA to BO threshold before applying domain writes', async () => {
+    const handoff = await createPublishedHandoff();
+    handoff.payload.quality.qualityScore = 0.79;
+
+    await expect(bo.processHandoff(ctx, handoff))
+      .rejects.toThrow(/quality is below/i);
+  });
+
+  it('rejects a scored source reliability below the DA to BO threshold', async () => {
+    const handoff = await createPublishedHandoff();
+    handoff.payload.quality.reliabilityScore = 0.69;
+
+    await expect(bo.processHandoff(ctx, handoff))
+      .rejects.toThrow(/reliability is below/i);
+  });
+
+  it('rejects unresolved critical limitations', async () => {
+    const handoff = await createPublishedHandoff();
+    handoff.payload.limitations = ['critical: source reconciliation incomplete'];
+
+    await expect(bo.processHandoff(ctx, handoff))
+      .rejects.toThrow(/critical limitation/i);
+  });
+
   it('rejects a handoff whose active tenant/workspace does not match the payload', async () => {
     const handoff = await createPublishedHandoff();
     const wrongCtx: TenantContext = {
