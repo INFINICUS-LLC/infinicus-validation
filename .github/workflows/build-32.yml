@@ -80,8 +80,16 @@ jobs:
           APP_ROLE="$CI_APP_USER" \
             infrastructure/database/scripts/grant-app-role.sh
 
-      - name: Test BUILD-32 runtime and API
-        run: npx turbo run test --filter=@infinicus/business-operations-runtime --filter=@infinicus/api
+      - name: Test BUILD-32 runtime
+        run: pnpm --filter @infinicus/business-operations-runtime test
         env:
           DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
           ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          DB_SSL: "false"
+
+      - name: Test BUILD-32 API surface
+        run: pnpm --filter @infinicus/api exec vitest run tests/businessOperations.integration.test.ts
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          DB_SSL: "false"
