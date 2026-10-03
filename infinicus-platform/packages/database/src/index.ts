@@ -221,7 +221,7 @@ export type {
   ReasoningRequest, ReasoningRun,
   DecisionEvidence,
   DecisionAlternative,
-  DecisionRecommendation, DecisionRecommendationVersion,
+  DecisionRecommendation, DecisionRecommendationVersion, RecommendationRationale,
   DecisionConfidenceScore,
   DecisionPolicy,
   DecisionMonitoringRequirement, DecisionReviewSchedule,
