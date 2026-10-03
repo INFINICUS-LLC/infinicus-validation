@@ -90,6 +90,21 @@ function toContractDataReference(value: Record<string, unknown>): Record<string,
   return result;
 }
 
+function contractLimitations(values: readonly unknown[]): string[] {
+  return values.map((value) => {
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object') {
+      const severity = (value as { severity?: unknown }).severity;
+      const description = (value as { description?: unknown }).description;
+      if (typeof severity === 'string' && severity.toLowerCase() === 'critical') {
+        return `critical: ${typeof description === 'string' ? description : JSON.stringify(value)}`;
+      }
+      return JSON.stringify(value);
+    }
+    return String(value);
+  });
+}
+
 function stringReferences(values: readonly unknown[], field: string): string[] {
   return values.map((value, index) => {
     if (typeof value !== 'string' || value.length === 0) {
@@ -174,9 +189,7 @@ export class BusinessIntakeService {
         },
         provenanceReferenceIds: stringReferences(pkg.provenanceReferenceIds, 'provenanceReferenceIds'),
         consentReferenceIds: [],
-        limitations: pkg.limitations.map((value) =>
-          typeof value === 'string' ? value : JSON.stringify(value)
-        ),
+        limitations: contractLimitations(pkg.limitations),
         warnings: [],
         idempotencyKey: `dal-to-bo:${pkg.id}:${pkg.packageVersion}`,
       },
