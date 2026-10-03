@@ -9,6 +9,7 @@ import { DataAcquisitionService } from '@infinicus/data-acquisition-runtime';
 import type { DALToBOHandoff } from '@infinicus/handoff-contracts';
 import { BusinessIntakeService } from '../src/intake/BusinessIntakeService.js';
 import { OperationalPublicationService } from '../src/publication/OperationalPublicationService.js';
+import { ProcurementService } from '../src/procurement/ProcurementService.js';
 import { BusinessIntakeRejectedError } from '../src/errors.js';
 
 const RUN = !!process.env.DATABASE_URL;
@@ -135,6 +136,8 @@ async function cleanTenant(): Promise<void> {
 
   // Canonical fixtures.
   if (businessId) {
+    await adminPool.query(`DELETE FROM platform.employees WHERE business_id = $1`, [businessId]);
+    await adminPool.query(`DELETE FROM platform.suppliers WHERE business_id = $1`, [businessId]);
     await adminPool.query(`DELETE FROM platform.businesses WHERE id = $1`, [businessId]);
   }
   await adminPool.query(`DELETE FROM identity.users WHERE id = $1`, [UID]);
@@ -146,6 +149,7 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
   const da = new DataAcquisitionService();
   const bo = new BusinessIntakeService();
   const publication = new OperationalPublicationService();
+  const procurement = new ProcurementService();
 
   beforeAll(async () => {
     const appUrl = process.env.DATABASE_URL!;
@@ -330,6 +334,78 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
     expect(second.idempotentReplay).toBe(true);
     expect(second.commandCount).toBe(0);
     expect(after.rows[0].count).toBe(before.rows[0].count);
+  });
+
+  it('guards procurement transitions and emits purchase-order approval atomically', async () => {
+    const supplier = await adminPool.query<{ id: string }>(
+      `INSERT INTO platform.suppliers
+         (tenant_id, workspace_id, business_id, name, supplier_code, risk_status, status)
+       VALUES ($1,$2,$3,'BUILD-32 Procurement Supplier',$4,'low','active')
+       RETURNING id`,
+      [T1, WS1, businessId, unique('proc-supplier')]
+    );
+    const employee = await adminPool.query<{ id: string }>(
+      `INSERT INTO platform.employees
+         (tenant_id, workspace_id, business_id, employee_code, display_name, employment_status, status)
+       VALUES ($1,$2,$3,$4,'BUILD-32 Approver','active','active')
+       RETURNING id`,
+      [T1, WS1, businessId, unique('proc-employee')]
+    );
+
+    const created = await procurement.createPurchaseOrder(ctx, {
+      businessId,
+      supplierId: supplier.rows[0].id,
+      poNumber: unique('PO'),
+      totalAmount: 250,
+    });
+    expect(created.poStatus).toBe('draft');
+
+    await expect(
+      procurement.transitionPurchaseOrder(
+        ctx,
+        businessId,
+        created.id,
+        'approved',
+        employee.rows[0].id
+      )
+    ).rejects.toThrow(/draft -> approved/);
+
+    const submitted = await procurement.transitionPurchaseOrder(
+      ctx,
+      businessId,
+      created.id,
+      'submitted'
+    );
+    expect(submitted.poStatus).toBe('submitted');
+
+    const approved = await procurement.transitionPurchaseOrder(
+      ctx,
+      businessId,
+      created.id,
+      'approved',
+      employee.rows[0].id
+    );
+    expect(approved.poStatus).toBe('approved');
+    expect(approved.approvedBy).toBe(employee.rows[0].id);
+
+    const outbox = await adminPool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM events.outbox_events
+       WHERE tenant_id = $1
+         AND event_type = 'bo.purchase_order.approved'
+         AND aggregate_id = $2`,
+      [T1, created.id]
+    );
+    expect(outbox.rows[0].count).toBe('1');
+
+    await expect(
+      procurement.transitionPurchaseOrder(
+        ctx,
+        businessId,
+        created.id,
+        'cancelled'
+      )
+    ).rejects.toThrow(/approved -> cancelled|cannot/i);
   });
 
   it('rejects reuse of a BO publication package code with different material', async () => {
