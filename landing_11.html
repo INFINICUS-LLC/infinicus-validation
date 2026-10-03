@@ -1,0 +1,1895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>INFINICUS — Business Operating &amp; Decision-Intelligence Platform</title>
+<meta name="description" content="Simulate a business idea before you risk capital, or connect a real business and get AI-recommended decisions grounded in its live data. Nine layers, one operating loop — a human always approves before anything happens.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="INFINICUS — Know What's Happening In Your Business, And What To Do Next">
+<meta property="og:description" content="Simulation, live business operations, a digital twin, and AI-recommended decisions — one connected platform. Free to start. No card required.">
+<meta property="og:image" content="/og-image.svg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://infini-cus.com/">
+<link rel="icon" type="image/svg+xml" href="/infinicus-mark.svg">
+<meta name="theme-color" content="#00e676">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600;700&family=Sora:wght@700;800;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ══ TOKENS & RESET ═══════════════════════════════════════════════════════ */
+:root{
+  --navy:#060a14;--n800:#0a1020;--n700:#0e1628;--n600:#141e35;
+  --glass:rgba(255,255,255,.04);--glass-2:rgba(255,255,255,.07);--glass-3:rgba(255,255,255,.10);
+  --line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.13);
+  --cyan:#00e676;--purple:#8b5cf6;--emerald:#10b981;--amber:#f59e0b;--red:#f43f5e;
+  --text:#e9eefb;--fg-2:#b8c2d8;--muted:#8893ad;--muted-2:#5d6885;
+  --mono:'IBM Plex Mono',monospace;--sans:'Inter',system-ui,sans-serif;--head:'Sora',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:var(--sans);color:var(--text);-webkit-font-smoothing:antialiased;background:var(--navy);min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.012) 2px,rgba(0,0,0,.012) 4px);pointer-events:none;z-index:1000;}
+body.ao-open{overflow:hidden;}
+
+/* ══ AMBIENT ══════════════════════════════════════════════════════════════ */
+.noise{position:fixed;inset:0;opacity:.03;pointer-events:none;z-index:999;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+.orb{position:fixed;border-radius:50%;filter:blur(120px);pointer-events:none;z-index:0;}
+.orb-1{width:700px;height:700px;top:-200px;left:-150px;background:radial-gradient(circle,rgba(0,224,96,.12),transparent 70%);}
+.orb-2{width:600px;height:600px;top:20%;right:-200px;background:radial-gradient(circle,rgba(139,92,246,.1),transparent 70%);}
+.orb-3{width:500px;height:500px;bottom:-100px;left:30%;background:radial-gradient(circle,rgba(16,185,129,.07),transparent 70%);}
+
+/* ══ SHARED UI — CARDS ════════════════════════════════════════════════════ */
+.card{background:var(--glass);border:1px solid var(--line);border-radius:13px;padding:1.25rem 1.5rem;margin-bottom:1.25rem;}
+.card-h{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--cyan);margin-bottom:1.1rem;display:flex;align-items:center;gap:.45rem;}
+.card-h::before{content:'//';color:var(--muted-2);}
+
+/* ══ SHARED UI — FORMS ════════════════════════════════════════════════════ */
+.fg{display:flex;flex-direction:column;gap:.35rem;}
+.fl{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--muted-2);}
+.fi{background:rgba(255,255,255,.04);border:1px solid var(--line-2);border-radius:8px;padding:.6rem .85rem;color:var(--text);font-family:var(--mono);font-size:11.5px;outline:none;transition:border-color .15s;width:100%;}
+.fi:focus{border-color:rgba(0,224,96,.4);background:rgba(0,224,96,.03);}
+.fi:disabled{opacity:.35;cursor:not-allowed;}
+.fi.err{border-color:rgba(244,63,94,.4);}
+select.fi{cursor:pointer;}
+select.fi option{background:var(--n700);}
+textarea.fi{resize:vertical;}
+.fh{font-family:var(--mono);font-size:8.5px;color:var(--muted-2);margin-top:.25rem;}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.9rem;}
+.frow.s{grid-template-columns:1fr;}
+.frow.t{grid-template-columns:1fr 1fr 1fr;}
+
+/* ══ SHARED UI — BUTTONS ══════════════════════════════════════════════════ */
+.btn-primary{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.08em;padding:.62rem 1.4rem;background:linear-gradient(135deg,rgba(0,224,96,.14),rgba(139,92,246,.1));border:1px solid rgba(0,224,96,.35);border-radius:8px;color:var(--cyan);cursor:pointer;transition:all .15s;}
+.btn-primary:hover:not(:disabled){background:linear-gradient(135deg,rgba(0,224,96,.22),rgba(139,92,246,.18));box-shadow:0 0 20px rgba(0,224,96,.12);}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+.btn-ghost{font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;padding:.62rem 1.2rem;background:none;border:1px solid var(--line-2);border-radius:8px;color:var(--muted);cursor:pointer;transition:all .15s;}
+.btn-ghost:hover{color:var(--text);background:var(--glass);}
+.btn-sm{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;padding:.42rem .9rem;background:var(--glass);border:1px solid var(--line-2);border-radius:7px;color:var(--muted-2);cursor:pointer;transition:all .15s;}
+.btn-sm:hover{color:var(--text);background:var(--glass-2);}
+.btn-danger{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.07em;padding:.55rem 1rem;background:rgba(244,63,94,.07);border:1px solid rgba(244,63,94,.28);border-radius:8px;color:var(--red);cursor:pointer;transition:all .15s;}
+.btn-danger:hover{background:rgba(244,63,94,.14);}
+.btn-row{display:flex;align-items:center;gap:.65rem;margin-top:1.1rem;flex-wrap:wrap;}
+
+/* ══ SHARED UI — MESSAGES / BADGES ═══════════════════════════════════════ */
+.msg{font-family:var(--mono);font-size:9.5px;padding:.45rem .7rem;border-radius:6px;margin-top:.55rem;display:none;}
+.msg.ok{color:var(--cyan);background:rgba(0,224,96,.07);border:1px solid rgba(0,224,96,.2);}
+.msg.err{color:var(--red);background:rgba(244,63,94,.07);border:1px solid rgba(244,63,94,.2);}
+.badge{font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;padding:2px 7px;border-radius:4px;display:inline-block;}
+.badge.v{background:rgba(16,185,129,.12);color:var(--emerald);border:1px solid rgba(16,185,129,.25);}
+.badge.w{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2);}
+.badge.p{background:rgba(139,92,246,.1);color:var(--purple);border:1px solid rgba(139,92,246,.2);}
+
+/* ══ SHARED UI — TOGGLES ═════════════════════════════════════════════════ */
+.tgl-row{display:flex;align-items:center;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.tgl-row:last-child{border-bottom:none;}
+.tgl-lbl{font-size:13px;color:var(--fg-2);}
+.tgl-sub{font-family:var(--mono);font-size:9px;color:var(--muted-2);margin-top:.2rem;}
+.tgl{position:relative;width:40px;height:22px;flex-shrink:0;}
+.tgl input{opacity:0;width:0;height:0;}
+.tgl-sl{position:absolute;inset:0;background:rgba(255,255,255,.09);border-radius:22px;cursor:pointer;transition:.2s;border:1px solid var(--line);}
+.tgl-sl::before{content:'';position:absolute;width:16px;height:16px;left:2px;top:2px;background:var(--muted-2);border-radius:50%;transition:.2s;}
+.tgl input:checked+.tgl-sl{background:rgba(0,224,96,.18);border-color:rgba(0,224,96,.4);}
+.tgl input:checked+.tgl-sl::before{transform:translateX(18px);background:var(--cyan);}
+
+/* ══ SHARED UI — TABLES ══════════════════════════════════════════════════ */
+.tbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10px;}
+.tbl th{text-align:left;padding:.5rem .7rem;color:var(--muted-2);letter-spacing:.09em;font-size:8.5px;border-bottom:1px solid var(--line);}
+.tbl td{padding:.65rem .7rem;border-bottom:1px solid rgba(255,255,255,.04);color:var(--fg-2);vertical-align:middle;}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tr:hover td{background:rgba(255,255,255,.02);}
+
+/* ══ SHARED UI — PROGRESS BARS ═══════════════════════════════════════════ */
+.pb-wrap{margin-bottom:.85rem;}
+.pb-labels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted-2);margin-bottom:.35rem;}
+.pb{height:5px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden;}
+.pb-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--cyan),var(--emerald));transition:width .8s cubic-bezier(.4,0,.2,1);}
+
+/* ══ SHARED UI — STAT BOXES ══════════════════════════════════════════════ */
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.85rem;margin-bottom:1.25rem;}
+.stat-box{background:var(--glass);border:1px solid var(--line);border-radius:11px;padding:1rem;text-align:center;}
+.stat-v{font-family:var(--head);font-size:28px;font-weight:800;color:var(--cyan);line-height:1;}
+.stat-l{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--muted-2);margin-top:.35rem;}
+
+/* ══ SHARED UI — MODAL + TOAST ═══════════════════════════════════════════ */
+.overlay{position:fixed;inset:0;background:rgba(4,6,13,.92);backdrop-filter:blur(14px);z-index:900;align-items:center;justify-content:center;display:none;}
+.overlay.open{display:flex;}
+.modal-box{background:var(--n800);border:1px solid var(--line-2);border-radius:16px;padding:2rem;max-width:400px;width:90%;text-align:center;}
+#toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(20px);background:var(--n700);border:1px solid var(--line-2);border-radius:8px;padding:.6rem 1.25rem;font-family:var(--mono);font-size:11px;color:var(--cyan);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:1100;white-space:nowrap;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ══ LANDING — NAV ════════════════════════════════════════════════════════ */
+nav{display:flex;align-items:center;gap:1rem;padding:.85rem 2rem;border-bottom:1px solid var(--line);background:rgba(6,10,20,.88);backdrop-filter:blur(24px);position:sticky;top:0;z-index:200;}
+.logo{font-family:var(--head);font-size:18px;font-weight:800;display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--text);flex-shrink:0;}
+.logo-mark{width:30px;height:30px;border-radius:8px;background:var(--n700);display:grid;place-items:center;box-shadow:0 0 18px rgba(0,224,96,.4);}
+.logo-c{color:var(--cyan);}
+.nav-links{display:flex;align-items:center;margin:0 auto;}
+.nav-link{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--muted);text-decoration:none;padding:.45rem .9rem;border-radius:6px;transition:color .15s;}
+.nav-link:hover{color:var(--text);}
+.nav-right{display:flex;align-items:center;gap:.65rem;flex-shrink:0;}
+.nav-btn-ghost{font-family:var(--mono);font-size:10px;letter-spacing:.07em;color:var(--muted);background:none;border:1px solid var(--line-2);border-radius:7px;padding:.45rem .9rem;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;transition:all .15s;}
+.nav-btn-ghost:hover{color:var(--cyan);border-color:rgba(0,224,96,.3);}
+.nav-btn-cta{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;color:#04060d;background:var(--cyan);border:none;border-radius:7px;padding:.45rem 1.1rem;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;transition:all .15s;}
+.nav-btn-cta:hover{background:#00ff88;box-shadow:0 0 20px rgba(0,224,96,.35);}
+/* User chip in nav (logged in state) */
+.nav-user-chip{display:none;align-items:center;gap:.5rem;font-family:var(--mono);font-size:10px;color:var(--fg-2);background:var(--glass);border:1px solid var(--line-2);border-radius:7px;padding:.4rem .85rem;cursor:pointer;transition:all .15s;}
+.nav-user-chip:hover{border-color:rgba(0,224,96,.3);color:var(--cyan);}
+.nav-user-chip.visible{display:flex;}
+.nav-hamburger{display:none;background:none;border:1px solid var(--line-2);border-radius:7px;color:var(--muted);cursor:pointer;padding:.4rem .7rem;font-size:16px;}
+/* Mobile nav */
+#mobile-nav{display:none;position:relative;z-index:199;background:rgba(6,10,20,.98);border-bottom:1px solid var(--line);padding:1rem 1.5rem;flex-direction:column;gap:.5rem;}
+
+/* ══ LANDING — HERO ═══════════════════════════════════════════════════════ */
+.hero{position:relative;z-index:1;padding:5.5rem 2rem 4rem;text-align:center;max-width:900px;margin:0 auto;}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:.5rem;font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;color:var(--cyan);background:rgba(0,224,96,.07);border:1px solid rgba(0,224,96,.2);border-radius:100px;padding:.4rem 1rem;margin-bottom:1.75rem;}
+.hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:pulse 2s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.8);}}
+.hero-h{font-family:var(--head);font-size:clamp(36px,7vw,76px);font-weight:900;line-height:1.04;letter-spacing:-.025em;margin-bottom:1.4rem;}
+.hero-h .hl{color:var(--cyan);}
+.hero-h .hl-p{color:var(--purple);}
+.hero-sub{font-size:clamp(15px,2.2vw,19px);color:var(--fg-2);line-height:1.65;max-width:640px;margin:0 auto 2.5rem;font-weight:400;}
+.hero-actions{display:flex;align-items:center;justify-content:center;gap:.9rem;flex-wrap:wrap;margin-bottom:2.5rem;}
+.btn-hero-primary{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;color:#04060d;background:var(--cyan);border:none;border-radius:10px;padding:.85rem 2rem;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:.5rem;transition:all .2s;}
+.btn-hero-primary:hover{background:#00ff88;box-shadow:0 0 30px rgba(0,224,96,.4);transform:translateY(-1px);}
+.btn-hero-secondary{font-family:var(--mono);font-size:12px;letter-spacing:.07em;color:var(--muted);background:rgba(255,255,255,.04);border:1px solid var(--line-2);border-radius:10px;padding:.85rem 1.75rem;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:.5rem;transition:all .2s;}
+.btn-hero-secondary:hover{color:var(--text);background:rgba(255,255,255,.08);}
+.hero-proof{font-family:var(--mono);font-size:9px;letter-spacing:.07em;color:var(--muted-2);}
+.hero-proof span{color:var(--muted);}
+
+/* ══ LANDING — TERMINAL ═══════════════════════════════════════════════════ */
+.terminal-wrap{position:relative;z-index:1;max-width:860px;margin:0 auto 5rem;padding:0 2rem;}
+.terminal{background:rgba(8,12,22,.95);border:1px solid var(--line-2);border-radius:14px;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04);}
+.term-bar{display:flex;align-items:center;gap:.5rem;padding:.75rem 1rem;background:rgba(255,255,255,.03);border-bottom:1px solid var(--line);}
+.term-dot{width:11px;height:11px;border-radius:50%;}
+.term-dot:nth-child(1){background:#ff5f56;}.term-dot:nth-child(2){background:#ffbd2e;}.term-dot:nth-child(3){background:#27c93f;}
+.term-title{font-family:var(--mono);font-size:10px;color:var(--muted-2);margin:0 auto;letter-spacing:.06em;}
+.term-body{padding:1.5rem;font-family:var(--mono);font-size:11.5px;line-height:2;overflow:auto;}
+.term-row{display:flex;gap:.75rem;}
+.term-key{color:var(--muted-2);min-width:120px;flex-shrink:0;}
+.term-val{color:var(--text);}
+.term-val.green{color:var(--cyan);}.term-val.amber{color:var(--amber);}.term-val.red{color:var(--red);}
+.term-divider{border:none;border-top:1px solid var(--line);margin:.5rem 0;}
+.term-verdict{font-weight:700;font-size:13px;color:var(--cyan);}
+
+/* ══ LANDING — STATS BAR ══════════════════════════════════════════════════ */
+.stats-bar{position:relative;z-index:1;display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:rgba(255,255,255,.02);}
+.stat-item{padding:1.75rem 1.5rem;text-align:center;border-right:1px solid var(--line);}
+.stat-item:last-child{border-right:none;}
+.stat-n{font-family:var(--head);font-size:32px;font-weight:900;color:var(--cyan);line-height:1;margin-bottom:.3rem;}
+.stat-l{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;color:var(--muted-2);}
+
+/* ══ LANDING — SECTIONS ═══════════════════════════════════════════════════ */
+.section{position:relative;z-index:1;padding:5rem 2rem;}
+.section.alt{background:rgba(255,255,255,.018);}
+.section-inner{max-width:1080px;margin:0 auto;}
+.section-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;color:var(--cyan);margin-bottom:.75rem;}
+.section-h{font-family:var(--head);font-size:clamp(26px,4vw,42px);font-weight:800;line-height:1.12;margin-bottom:1rem;}
+.section-sub{font-size:16px;color:var(--fg-2);line-height:1.65;max-width:580px;}
+
+/* ══ LANDING — STEPS ══════════════════════════════════════════════════════ */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;margin-top:3.5rem;}
+.step{position:relative;padding:2rem;background:var(--glass);border:1px solid var(--line);border-radius:14px;transition:border-color .2s;}
+.step:hover{border-color:rgba(0,224,96,.2);}
+.step-num{font-family:var(--head);font-size:48px;font-weight:900;color:rgba(0,224,96,.1);line-height:1;margin-bottom:.75rem;}
+.step-icon{font-size:26px;margin-bottom:.75rem;}
+.step-h{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--cyan);margin-bottom:.5rem;}
+.step-body{font-size:13.5px;color:var(--fg-2);line-height:1.65;}
+.step-connector{position:absolute;top:50%;right:-1.1rem;transform:translateY(-50%);color:var(--muted-2);font-size:18px;z-index:2;}
+
+/* ══ LANDING — 9-LAYER PIPELINE ═══════════════════════════════════════════ */
+.pipe-card{width:148px;display:flex;flex-direction:column;align-items:center;text-align:center;padding:1.1rem .75rem;background:var(--glass);border:1px solid var(--line);border-radius:10px;}
+.pipe-ic{width:42px;height:42px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:12px;margin-bottom:.75rem;border:1px solid var(--line-2);}
+.pipe-t{font-family:var(--head);font-weight:700;font-size:13px;margin-bottom:.4rem;}
+.pipe-d{font-family:var(--mono);font-size:10px;color:var(--muted-2);line-height:1.45;}
+.pipe-badge{font-family:var(--mono);font-size:8px;letter-spacing:.06em;padding:2px 7px;border-radius:10px;margin-top:.6rem;border:1px solid;}
+.pipe-arrow{display:flex;align-items:center;color:var(--muted-2);font-size:16px;padding:0 2px;}
+@media(max-width:900px){.pipe-arrow{display:none;}}
+
+/* ══ LANDING — FEATURES ═══════════════════════════════════════════════════ */
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem;margin-top:3.5rem;}
+.feat-card{padding:1.75rem;background:var(--glass);border:1px solid var(--line);border-radius:14px;transition:all .2s;}
+.feat-card:hover{background:var(--glass-2);border-color:rgba(139,92,246,.25);transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.3);}
+.feat-icon{font-size:28px;margin-bottom:1rem;}
+.feat-h{font-size:15px;font-weight:600;margin-bottom:.5rem;}
+.feat-body{font-size:13px;color:var(--muted);line-height:1.65;}
+.feat-tag{display:inline-block;font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;padding:2px 7px;border-radius:4px;margin-top:.75rem;}
+.feat-tag.free{background:rgba(93,104,133,.15);color:var(--muted);border:1px solid var(--line);}
+.feat-tag.pro{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2);}
+.feat-tag.ai{background:rgba(139,92,246,.1);color:var(--purple);border:1px solid rgba(139,92,246,.2);}
+
+/* ══ LANDING — SIM PREVIEW ════════════════════════════════════════════════ */
+.sim-split{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:center;margin-top:3.5rem;}
+.sim-fields{display:flex;flex-direction:column;gap:.85rem;}
+.sim-field{display:flex;flex-direction:column;gap:.3rem;}
+.sim-label{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--muted-2);}
+.sim-input-fake{background:rgba(255,255,255,.04);border:1px solid var(--line-2);border-radius:8px;padding:.6rem .85rem;font-family:var(--mono);font-size:11px;color:var(--fg-2);}
+.sim-input-fake.filled{border-color:rgba(0,224,96,.25);color:var(--text);}
+.sim-btn-fake{padding:.75rem;background:linear-gradient(135deg,rgba(0,224,96,.2),rgba(139,92,246,.15));border:1px solid rgba(0,224,96,.4);border-radius:9px;text-align:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--cyan);letter-spacing:.08em;margin-top:.25rem;}
+.sim-result{background:rgba(8,12,22,.9);border:1px solid var(--line-2);border-radius:12px;overflow:hidden;}
+.sim-result-bar{padding:.6rem .9rem;background:rgba(255,255,255,.03);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;}
+.sim-result-title{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);letter-spacing:.08em;}
+.sim-result-badge{font-family:var(--mono);font-size:9px;padding:2px 8px;border-radius:4px;background:rgba(0,224,96,.12);color:var(--cyan);border:1px solid rgba(0,224,96,.25);}
+.sim-metrics{padding:1.1rem;display:flex;flex-direction:column;gap:.6rem;}
+.sim-metric{display:flex;align-items:center;justify-content:space-between;}
+.sim-metric-l{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.sim-metric-v{font-family:var(--mono);font-size:11px;font-weight:600;}
+
+/* ══ LANDING — PRICING ════════════════════════════════════════════════════ */
+.pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-top:3rem;}
+.plan-card{padding:1.75rem 1.5rem;background:var(--glass);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;gap:.5rem;position:relative;transition:all .2s;}
+.plan-card:hover{transform:translateY(-3px);box-shadow:0 20px 48px rgba(0,0,0,.35);}
+.plan-card.featured{background:rgba(0,224,96,.05);border-color:rgba(0,224,96,.3);box-shadow:0 0 40px rgba(0,224,96,.08);}
+.plan-badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;background:var(--cyan);color:#04060d;padding:3px 10px;border-radius:100px;white-space:nowrap;font-weight:700;}
+.plan-icon{font-size:24px;margin-bottom:.25rem;}
+.plan-name{font-family:var(--head);font-size:14px;font-weight:800;letter-spacing:.02em;}
+.plan-price{font-family:var(--head);font-size:28px;font-weight:900;line-height:1;margin:.25rem 0;}
+.plan-price span{font-size:13px;font-weight:400;color:var(--muted);font-family:var(--mono);}
+.plan-desc{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);line-height:1.5;margin-bottom:.5rem;}
+.plan-divider{height:1px;background:var(--line);margin:.5rem 0;}
+.plan-feat{font-family:var(--mono);font-size:9.5px;color:var(--fg-2);line-height:1.9;padding-left:.15rem;}
+.plan-feat li{list-style:none;display:flex;align-items:flex-start;gap:.45rem;}
+.plan-feat li::before{content:'✓';color:var(--cyan);flex-shrink:0;margin-top:1px;}
+.plan-feat li.dim::before{content:'—';color:var(--muted-2);}
+.plan-feat li.dim{color:var(--muted-2);}
+.plan-cta{margin-top:auto;padding:.65rem;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.07em;border-radius:9px;cursor:pointer;text-align:center;transition:all .15s;border:1px solid var(--line-2);background:var(--glass);color:var(--muted);text-decoration:none;display:block;}
+.plan-cta:hover{color:var(--text);background:var(--glass-2);}
+.plan-cta.primary{background:var(--cyan);color:#04060d;border-color:transparent;}
+.plan-cta.primary:hover{background:#00ff88;box-shadow:0 0 24px rgba(0,224,96,.3);}
+
+/* ══ LANDING — REGISTRATION ═══════════════════════════════════════════════ */
+.reg-section{position:relative;z-index:1;padding:6rem 2rem;background:radial-gradient(ellipse 80% 50% at 50% 50%,rgba(0,224,96,.06),transparent 70%);border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+.reg-inner{max-width:540px;margin:0 auto;text-align:center;}
+.reg-h{font-family:var(--head);font-size:clamp(28px,5vw,48px);font-weight:900;line-height:1.1;margin-bottom:.85rem;}
+.reg-h .c{color:var(--cyan);}
+.reg-sub{font-size:15px;color:var(--fg-2);line-height:1.65;margin-bottom:2.5rem;}
+.reg-box{background:rgba(8,12,22,.9);border:1px solid var(--line-2);border-radius:18px;padding:2.25rem;box-shadow:0 24px 64px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.03);}
+.reg-field{margin-bottom:1rem;}
+.reg-label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;color:var(--muted-2);margin-bottom:.4rem;text-align:left;}
+.reg-input{width:100%;background:rgba(255,255,255,.045);border:1px solid var(--line-2);border-radius:9px;padding:.75rem 1rem;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color .15s,background .15s;}
+.reg-input:focus{border-color:rgba(0,224,96,.5);background:rgba(0,224,96,.03);}
+.reg-input::placeholder{color:var(--muted-2);}
+.reg-submit{width:100%;padding:.9rem;margin-top:.35rem;background:linear-gradient(135deg,var(--cyan) 0%,#00c8ff 100%);border:none;border-radius:10px;color:#04060d;font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.09em;cursor:pointer;transition:all .2s;}
+.reg-submit:hover{transform:translateY(-1px);box-shadow:0 8px 28px rgba(0,224,96,.4);}
+.reg-submit:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+.reg-err{font-family:var(--mono);font-size:10.5px;color:var(--red);margin-top:.6rem;padding:.5rem .75rem;background:rgba(244,63,94,.07);border:1px solid rgba(244,63,94,.2);border-radius:7px;display:none;text-align:left;}
+.reg-ok{font-family:var(--mono);font-size:11px;color:var(--cyan);margin-top:.6rem;padding:1rem;background:rgba(0,224,96,.07);border:1px solid rgba(0,224,96,.25);border-radius:9px;text-align:center;display:none;line-height:1.8;}
+.reg-already{font-family:var(--mono);font-size:9px;color:var(--muted-2);margin-top:1rem;text-align:center;}
+.reg-already a{color:var(--cyan);cursor:pointer;text-decoration:underline;}
+.reg-features{display:flex;justify-content:center;gap:1.5rem;flex-wrap:wrap;margin-top:2rem;}
+.reg-feat-item{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);display:flex;align-items:center;gap:.35rem;}
+.reg-feat-item::before{content:'✓';color:var(--cyan);}
+
+/* ══ LANDING — TESTIMONIALS ═══════════════════════════════════════════════ */
+.testimonials{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem;margin-top:3rem;}
+.testi-card{padding:1.5rem;background:var(--glass);border:1px solid var(--line);border-radius:12px;}
+.testi-stars{color:var(--amber);font-size:13px;margin-bottom:.75rem;letter-spacing:.1em;}
+.testi-quote{font-size:13.5px;color:var(--fg-2);line-height:1.7;margin-bottom:1rem;font-style:italic;}
+.testi-author{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);}
+.testi-author strong{color:var(--text);display:block;font-style:normal;}
+
+/* ══ LANDING — FAQ ════════════════════════════════════════════════════════ */
+.faq-list{margin-top:2.5rem;display:flex;flex-direction:column;gap:.75rem;max-width:740px;}
+.faq-item{border:1px solid var(--line);border-radius:11px;overflow:hidden;}
+.faq-q{width:100%;background:var(--glass);border:none;padding:1.1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;font-size:14.5px;color:var(--text);cursor:pointer;text-align:left;transition:background .15s;}
+.faq-q:hover{background:var(--glass-2);}
+.faq-chevron{color:var(--muted);font-size:12px;transition:transform .2s;flex-shrink:0;}
+.faq-item.open .faq-chevron{transform:rotate(180deg);color:var(--cyan);}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .25s ease,padding .25s ease;font-size:13.5px;color:var(--fg-2);line-height:1.7;padding:0 1.25rem;background:rgba(0,0,0,.15);}
+.faq-item.open .faq-a{max-height:260px;padding:.85rem 1.25rem 1.1rem;}
+
+/* ══ LANDING — FOOTER ═════════════════════════════════════════════════════ */
+footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem 2rem 2rem;}
+.footer-inner{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:2.5rem;}
+.footer-tagline{font-family:var(--mono);font-size:10px;color:var(--muted-2);line-height:1.65;margin:.75rem 0 1rem;max-width:240px;}
+.footer-col-h{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--muted);margin-bottom:.85rem;}
+.footer-links{display:flex;flex-direction:column;gap:.5rem;}
+.footer-links a{font-family:var(--mono);font-size:10px;color:var(--muted-2);text-decoration:none;transition:color .15s;}
+.footer-links a:hover{color:var(--cyan);}
+.footer-bottom{max-width:1080px;margin:2rem auto 0;padding-top:1.5rem;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;}
+.footer-copy{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);}
+.tag{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;letter-spacing:.09em;padding:3px 9px;border-radius:4px;}
+.tag.free{background:rgba(93,104,133,.12);color:var(--muted);border:1px solid var(--line);}
+.tag.cyan{background:rgba(0,224,96,.1);color:var(--cyan);border:1px solid rgba(0,224,96,.22);}
+
+/* ══ ACCOUNT OVERLAY — STRUCTURE ══════════════════════════════════════════ */
+.ao-overlay{position:fixed;inset:0;z-index:600;background:var(--navy);display:none;flex-direction:column;overflow:hidden;}
+.ao-overlay.open{display:flex;}
+/* Account overlay header */
+.ao-header{display:flex;align-items:center;gap:12px;padding:.85rem 1.75rem;border-bottom:1px solid var(--line);background:rgba(6,10,20,.92);backdrop-filter:blur(20px);flex-shrink:0;z-index:10;}
+.ao-header-right{margin-left:auto;display:flex;align-items:center;gap:.75rem;}
+.ao-hdr-btn{font-family:var(--mono);font-size:9.5px;color:var(--muted);background:none;border:1px solid var(--line);border-radius:6px;padding:5px 11px;cursor:pointer;letter-spacing:.05em;text-decoration:none;transition:all .15s;display:inline-flex;align-items:center;gap:.35rem;}
+.ao-hdr-btn:hover{color:var(--cyan);border-color:rgba(0,224,96,.25);}
+.ao-page{display:flex;flex:1;min-height:0;overflow:hidden;}
+
+/* ══ ACCOUNT OVERLAY — SIDEBAR ════════════════════════════════════════════ */
+.ao-sidebar{width:248px;flex-shrink:0;border-right:1px solid var(--line);display:flex;flex-direction:column;background:rgba(6,10,20,.45);overflow-y:auto;}
+.ao-sb-profile{padding:1.5rem 1.25rem 1.25rem;border-bottom:1px solid var(--line);text-align:center;}
+.ao-avatar-wrap{position:relative;display:inline-block;margin-bottom:.75rem;cursor:pointer;}
+.ao-avatar{width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,rgba(0,224,96,.25),rgba(139,92,246,.25));border:2px solid rgba(0,224,96,.3);display:flex;align-items:center;justify-content:center;font-family:var(--head);font-size:26px;font-weight:800;color:var(--cyan);overflow:hidden;margin:0 auto;}
+.ao-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.ao-avatar-cam{position:absolute;bottom:1px;right:1px;width:22px;height:22px;border-radius:50%;background:var(--cyan);border:2px solid var(--navy);display:flex;align-items:center;justify-content:center;font-size:10px;color:#04060d;}
+.ao-sb-name{font-family:var(--head);font-size:13px;font-weight:700;margin-bottom:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ao-sb-email{font-family:var(--mono);font-size:9px;color:var(--muted-2);margin-bottom:.5rem;word-break:break-all;}
+.ao-plan-chip{display:inline-flex;align-items:center;font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;padding:3px 9px;border-radius:100px;}
+.ao-plan-chip.free{background:rgba(93,104,133,.15);color:var(--muted);border:1px solid var(--line);}
+.ao-plan-chip.starter{background:rgba(0,224,96,.1);color:var(--cyan);border:1px solid rgba(0,224,96,.25);}
+.ao-plan-chip.growth{background:rgba(139,92,246,.12);color:var(--purple);border:1px solid rgba(139,92,246,.25);}
+.ao-plan-chip.professional{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2);}
+.ao-sb-nav{flex:1;padding:.75rem .65rem;overflow-y:auto;}
+.ao-grp-label{font-family:var(--mono);font-size:8px;letter-spacing:.14em;color:var(--muted-2);padding:.6rem .7rem .3rem;}
+.ao-item{display:flex;align-items:center;gap:.7rem;padding:.55rem .7rem;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;color:var(--muted);border:none;background:none;width:100%;text-align:left;transition:all .15s;}
+.ao-item:hover{color:var(--text);background:var(--glass);}
+.ao-item.active{color:var(--cyan);background:rgba(0,224,96,.08);}
+.ao-item .ic{font-size:13px;width:18px;text-align:center;flex-shrink:0;}
+.ao-sb-bottom{padding:.75rem;border-top:1px solid var(--line);flex-shrink:0;}
+.ao-signout-btn{width:100%;font-family:var(--mono);font-size:10px;color:var(--red);background:rgba(244,63,94,.06);border:1px solid rgba(244,63,94,.18);border-radius:8px;padding:.55rem;cursor:pointer;letter-spacing:.05em;transition:all .15s;}
+.ao-signout-btn:hover{background:rgba(244,63,94,.12);}
+
+/* ══ ACCOUNT OVERLAY — CONTENT ════════════════════════════════════════════ */
+.ao-content{flex:1;padding:2rem 2.5rem;overflow-y:auto;min-width:0;}
+.ao-sec{display:none;animation:fadeUp .2s ease;}
+.ao-sec.active{display:block;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+.ao-sec-h{font-family:var(--head);font-size:22px;font-weight:800;margin-bottom:.2rem;}
+.ao-sec-sub{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);letter-spacing:.08em;margin-bottom:1.75rem;}
+
+/* ══ ACCOUNT — SPECIFIC COMPONENTS ═══════════════════════════════════════ */
+.photo-area{display:flex;align-items:center;gap:1.25rem;padding-bottom:1.25rem;border-bottom:1px solid var(--line);margin-bottom:1.25rem;}
+.photo-avatar{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,rgba(0,224,96,.25),rgba(139,92,246,.25));border:2px solid rgba(0,224,96,.3);display:flex;align-items:center;justify-content:center;font-family:var(--head);font-size:28px;font-weight:800;color:var(--cyan);overflow:hidden;flex-shrink:0;cursor:pointer;}
+.photo-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.ai-row{display:flex;align-items:center;padding:.6rem 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.ai-row:last-child{border-bottom:none;}
+.ai-label{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);width:160px;flex-shrink:0;}
+.ai-val{font-family:var(--mono);font-size:10.5px;color:var(--fg-2);}
+.plan-hero{display:flex;align-items:center;gap:1rem;padding:1.1rem 1.25rem;background:rgba(0,224,96,.05);border:1px solid rgba(0,224,96,.2);border-radius:12px;margin-bottom:1.25rem;}
+.plan-hero-icon{font-size:30px;flex-shrink:0;}
+.plan-hero-name{font-family:var(--head);font-size:16px;font-weight:800;color:var(--cyan);}
+.plan-hero-desc{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);margin-top:.2rem;}
+.api-box{display:flex;align-items:center;gap:.6rem;background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:.6rem 1rem;margin-bottom:.75rem;}
+.api-val{font-family:var(--mono);font-size:11px;color:var(--cyan);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.04em;}
+.ps-bar{height:4px;border-radius:2px;background:rgba(255,255,255,.07);overflow:hidden;margin-top:.4rem;}
+.ps-fill{height:100%;border-radius:2px;width:0%;transition:width .3s,background .3s;}
+.qr-box{width:136px;height:136px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;padding:4px;}
+.backup-grid{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-top:.75rem;}
+.bc{font-family:var(--mono);font-size:10px;background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:6px;padding:.35rem .6rem;text-align:center;letter-spacing:.08em;color:var(--text);}
+.dev-row{display:flex;align-items:center;gap:1rem;padding:.75rem 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.dev-row:last-child{border-bottom:none;}
+.dev-ic{font-size:24px;width:36px;text-align:center;flex-shrink:0;}
+.dev-info{flex:1;}
+.dev-name{font-size:12.5px;color:var(--text);margin-bottom:.2rem;display:flex;align-items:center;gap:.5rem;}
+.dev-meta{font-family:var(--mono);font-size:9px;color:var(--muted-2);}
+.curr-badge{font-family:var(--mono);font-size:8px;padding:1px 6px;border-radius:3px;background:rgba(0,224,96,.1);color:var(--cyan);border:1px solid rgba(0,224,96,.25);}
+.danger-card{border:1px solid rgba(244,63,94,.2);border-radius:13px;padding:1.25rem 1.5rem;background:rgba(244,63,94,.025);}
+.danger-h{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--red);margin-bottom:1rem;}
+.danger-item{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 0;border-bottom:1px solid rgba(244,63,94,.08);}
+.danger-item:last-child{border-bottom:none;}
+.danger-item-title{font-size:13px;color:var(--text);margin-bottom:.2rem;}
+.danger-item-sub{font-family:var(--mono);font-size:9px;color:var(--muted-2);}
+.conn-row{display:flex;align-items:center;gap:1rem;padding:.8rem 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.conn-row:last-child{border-bottom:none;}
+.conn-icon{font-size:22px;width:34px;text-align:center;flex-shrink:0;}
+.conn-info{flex:1;}
+.conn-name{font-size:13px;color:var(--text);margin-bottom:.15rem;}
+.conn-desc{font-family:var(--mono);font-size:9px;color:var(--muted-2);}
+
+/* ══ RESPONSIVE ═══════════════════════════════════════════════════════════ */
+@media(max-width:1024px){.pricing-grid{grid-template-columns:1fr 1fr;}.ao-sidebar{width:220px;}}
+@media(max-width:900px){
+  .steps{grid-template-columns:1fr;}.step-connector{display:none;}
+  .features-grid{grid-template-columns:1fr 1fr;}.testimonials{grid-template-columns:1fr;}
+  .sim-split{grid-template-columns:1fr;}.stats-bar{grid-template-columns:1fr 1fr;}
+  .stat-item:nth-child(2){border-right:none;}.stat-item:nth-child(3){border-top:1px solid var(--line);}
+  .footer-inner{grid-template-columns:1fr 1fr;}.nav-links{display:none;}
+  .ao-sidebar{width:200px;}
+}
+@media(max-width:768px){
+  .ao-page{flex-direction:column;overflow-y:auto;}
+  .ao-sidebar{width:100%;border-right:none;border-bottom:1px solid var(--line);flex-direction:row;flex-wrap:wrap;flex-shrink:0;}
+  .ao-sb-profile{padding:.75rem 1rem;border-bottom:none;border-right:1px solid var(--line);display:flex;align-items:center;gap:.75rem;text-align:left;flex-shrink:0;}
+  .ao-avatar{width:42px;height:42px;font-size:16px;}.ao-avatar-cam{display:none;}
+  .ao-sb-name{font-size:12px;margin-bottom:0;}.ao-sb-email{display:none;}
+  .ao-sb-nav{display:flex;flex-direction:row;padding:.5rem;overflow-x:auto;scrollbar-width:none;flex:1;}
+  .ao-grp-label{display:none;}.ao-item{flex-direction:row;white-space:nowrap;flex-shrink:0;font-size:9px;padding:.4rem .7rem;}
+  .ao-item .ic{font-size:11px;width:auto;}.ao-sb-bottom{display:none;}
+  .ao-content{padding:1.25rem;overflow-y:visible;}
+}
+@media(max-width:600px){
+  nav{padding:.75rem 1.25rem;}.hero{padding:3.5rem 1.25rem 2.5rem;}
+  .features-grid,.pricing-grid{grid-template-columns:1fr;}
+  .stats-bar{grid-template-columns:1fr 1fr;}.section{padding:3.5rem 1.25rem;}
+  .nav-hamburger{display:block;}.nav-right .nav-btn-ghost{display:none;}
+  .reg-box{padding:1.5rem;}.stat-grid{grid-template-columns:1fr 1fr;}
+  .frow{grid-template-columns:1fr;}.frow.t{grid-template-columns:1fr 1fr;}
+  .footer-inner{grid-template-columns:1fr;}
+}
+</style>
+<!-- Google tag (gtag.js) — consent-gated -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=AW-18295551736"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+  gtag('js', new Date());
+  gtag('config', 'AW-18295551736');
+  (function(){var c=localStorage.getItem('inf_cookie_consent');if(c==='granted'){gtag('consent','update',{ad_storage:'granted',analytics_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});}})();
+</script>
+<!-- Sentry Error Monitoring -->
+<script src="https://browser.sentry-cdn.com/7.109.0/bundle.min.js" crossorigin="anonymous"></script>
+<script>if(window.Sentry){Sentry.init({dsn:'https://5796c47d3f6c0f8d2ba058619b3ca229@o4511679886524416.ingest.de.sentry.io/4511679992102992',release:'infinicus@3.0.0',environment:location.hostname==='localhost'?'development':'production',tracesSampleRate:0.1,beforeSend:function(e){return location.hostname==='localhost'?null:e;}});}</script>
+</head>
+<body>
+<div class="noise"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+<!-- ══ LANDING PAGE ══════════════════════════════════════════════════════ -->
+<nav>
+  <a class="logo" href="./landing.html">
+    <div class="logo-mark">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="22" height="22">
+        <rect width="100" height="100" rx="22" fill="#07080a"/>
+        <path d="M50,50 C50,34 38,24 28,30 C18,36 18,64 28,70 C38,76 50,66 50,50Z" fill="none" stroke="#00e676" stroke-width="9" stroke-linecap="round"/>
+        <path d="M50,50 C50,34 62,24 72,30 C82,36 82,64 72,70 C62,76 50,66 50,50Z" fill="none" stroke="#00e676" stroke-width="9" stroke-linecap="round"/>
+      </svg>
+    </div>
+    INFIN<span class="logo-c">ICUS</span>
+  </a>
+  <div class="nav-links">
+    <a class="nav-link" href="#how-it-works">How It Works</a>
+    <a class="nav-link" href="#features">Features</a>
+    <a class="nav-link" href="#pricing">Pricing</a>
+    <a class="nav-link" href="#faq">FAQ</a>
+  </div>
+  <div class="nav-right">
+    <!-- Logged-out state -->
+    <button class="nav-btn-ghost nav-logged-out" onclick="scrollToReg()">Sign In</button>
+    <a class="nav-btn-cta nav-logged-out" href="index.html" onclick="return handleTryEngineClick(event)">Try Engine →</a>
+    <!-- Logged-in state (hidden until JS runs) -->
+    <button class="nav-user-chip" id="nav-user-chip" onclick="openAccount()">
+      <span>👤</span><span id="nav-user-name">Account</span><span style="font-size:8px;opacity:.6;">▾</span>
+    </button>
+    <a class="nav-btn-cta nav-logged-in" id="nav-engine-btn" href="index.html" style="display:none;" onclick="return handleTryEngineClick(event)">▶ Open Engine</a>
+    <button class="nav-hamburger" onclick="toggleMobileNav(this)">☰</button>
+  </div>
+</nav>
+<div id="mobile-nav" style="display:none;">
+  <a class="nav-link" href="#how-it-works" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">How It Works</a>
+  <a class="nav-link" href="#features" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">Features</a>
+  <a class="nav-link" href="#pricing" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">Pricing</a>
+  <a class="nav-link" href="#faq" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">FAQ</a>
+  <a class="nav-btn-cta" href="index.html" style="margin-top:.5rem;justify-content:center;display:flex;" onclick="return handleTryEngineClick(event)">Try Engine Free →</a>
+</div>
+
+<!-- ══ HERO ══════════════════════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="hero-eyebrow">
+    <span class="hero-eyebrow-dot"></span>
+    BUSINESS OPERATING &amp; DECISION-INTELLIGENCE PLATFORM
+  </div>
+  <h1 class="hero-h">
+    Know <span class="hl">What's Happening</span><br>
+    In Your Business — And<br>
+    <span class="hl-p">What To Do Next</span>
+  </h1>
+  <p class="hero-sub">Connect your sales, expenses, inventory, and customer data — or prepare an idea before you launch it. INFINICUS builds a live model of your business, recommends the next decision, and lets you test it before committing money.</p>
+  <div class="hero-actions" id="hero-actions">
+    <a class="btn-hero-primary" href="#register" onclick="setLandingIntent('operations')">Connect My Existing Business</a>
+    <a class="btn-hero-secondary" href="#register" onclick="setLandingIntent('data')">Prepare My Business for Launch</a>
+  </div>
+  <p class="hero-proof">No credit card · <span>Free forever tier</span> · Not sure yet? <a href="#how-it-works" style="color:var(--cyan);">See how the platform works ↓</a></p>
+</section>
+
+<!-- ══ TERMINAL DEMO ══════════════════════════════════════════════════════ -->
+<div class="terminal-wrap">
+  <div class="terminal">
+    <div class="term-bar">
+      <div class="term-dot"></div><div class="term-dot"></div><div class="term-dot"></div>
+      <div class="term-title">INFINICUS PLATFORM — LIVE READOUT</div>
+    </div>
+    <div class="term-body">
+      <div class="term-row"><span class="term-key">BUSINESS</span><span class="term-val">Lagos Premium Laundry Service</span></div>
+      <div class="term-row"><span class="term-key">LAYER</span><span class="term-val green">SIMULATION</span></div>
+      <div class="term-row"><span class="term-key">CAPITAL</span><span class="term-val">₦1,200,000 starting</span></div>
+      <div class="term-row"><span class="term-key">SIMULATION</span><span class="term-val green">90 days · 1,000 Monte Carlo runs</span></div>
+      <hr class="term-divider">
+      <div class="term-row"><span class="term-key">AVG REVENUE</span><span class="term-val green">₦3,840,000 / month</span></div>
+      <div class="term-row"><span class="term-key">NET PROFIT</span><span class="term-val green">₦920,000 / month</span></div>
+      <div class="term-row"><span class="term-key">BREAK-EVEN</span><span class="term-val amber">Day 38</span></div>
+      <div class="term-row"><span class="term-key">SURVIVAL RATE</span><span class="term-val green">73% (p50)</span></div>
+      <div class="term-row"><span class="term-key">BIGGEST RISK</span><span class="term-val red">Customer acquisition cost spike</span></div>
+      <hr class="term-divider">
+      <div class="term-row"><span class="term-key">VERDICT</span><span class="term-val term-verdict green">▶ GO — Strong unit economics. Scale marketing by Day 45.</span></div>
+      <div class="term-row"><span class="term-key">AI DECISION</span><span class="term-val" style="color:var(--purple);">Recommends scaling — awaiting your approval</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STATS BAR ══════════════════════════════════════════════════════════ -->
+<div class="stats-bar">
+  <div class="stat-item"><div class="stat-n">9</div><div class="stat-l">PLATFORM LAYERS</div></div>
+  <div class="stat-item"><div class="stat-n">1K</div><div class="stat-l">MONTE CARLO RUNS</div></div>
+  <div class="stat-item"><div class="stat-n">12+</div><div class="stat-l">INDUSTRIES MODELLED</div></div>
+  <div class="stat-item"><div class="stat-n">&lt;60s</div><div class="stat-l">TIME TO FIRST VERDICT</div></div>
+</div>
+
+<!-- ══ HOW THE PLATFORM WORKS: 9-LAYER LOOP ═══════════════════════════════ -->
+<section class="section" id="how-it-works">
+  <div class="section-inner">
+    <div class="section-label">// HOW THE PLATFORM WORKS</div>
+    <h2 class="section-h">One loop: data in,<br>decision out, outcome tracked</h2>
+    <p class="section-sub">Nine layers, one continuous cycle. AI recommends at every step — a human always approves before anything happens to the real business.</p>
+
+    <div style="display:flex;align-items:stretch;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:3rem;">
+      <div style="display:flex;align-items:stretch;">
+        <div class="pipe-card"><div class="pipe-ic" style="color:var(--cyan);border-color:rgba(0,224,96,.25);">DA</div><div class="pipe-t">Data Acquisition</div><div class="pipe-d">Every sale, expense, or inventory change you log is the entry point.</div></div>
+        <div class="pipe-arrow">→</div>
+      </div>
+      <div style="display:flex;align-items:stretch;">
+        <div class="pipe-card"><div class="pipe-ic" style="color:var(--cyan);border-color:rgba(0,224,96,.25);">OPS</div><div class="pipe-t">Business Operations</div><div class="pipe-d">Log sales, expenses, inventory, and team activity from one operating view.</div></div>
+        <div class="pipe-arrow">→</div>
+      </div>
+      <div style="display:flex;align-items:stretch;">
+        <div class="pipe-card"><div class="pipe-ic" style="color:var(--muted);border-color:var(--line-2);">BI</div><div class="pipe-t">Business Intelligence</div><div class="pipe-d">Analytics and reporting over your operations data.</div><div class="pipe-badge" style="background:rgba(93,104,133,.15);color:var(--muted);border-color:var(--line);">IN DEVELOPMENT</div></div>
+        <div class="pipe-arrow">→</div>
+      </div>
+      <div style="display:flex;align-items:stretch;">
+        <div class="pipe-card"><div class="pipe-ic" style="color:var(--purple);border-color:rgba(139,92,246,.25);">DT</div><div class="pipe-t">Digital Twin</div><div class="pipe-d">A live model of your business, recomputed from real operations data.</div></div>
+        <div class="pipe-arrow">→</div>
+      </div>
+      <div style="display:flex;align-items:stretch;">
+        <div class="pipe-card" style="position:relative;"><div class="pipe-badge" style="position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--cyan);color:#04060d;border-color:transparent;font-weight:700;">START HERE</div><div class="pipe-ic" style="color:var(--cyan);border-color:rgba(0,224,96,.25);">SIM</div><div class="pipe-t">Simulation</div><div class="pipe-d">1,000-run Monte Carlo test of any decision or idea — no real business required.</div></div>
+        <div class="pipe-arrow">→</div>
+      </div>
+      <div style="display:flex;align-items:stretch;">
+        <div class="pipe-card"><div class="pipe-ic" style="color:var(--purple);border-color:rgba(139,92,246,.25);">AI</div><div class="pipe-t">AI Decision Intelligence</div><div class="pipe-d">Reads your twin and recommends a next decision. Never acts alone.</div></div>
+        <div class="pipe-arrow">→</div>
+      </div>
+      <div style="display:flex;align-items:stretch;">
+        <div class="pipe-card"><div class="pipe-ic" style="color:var(--emerald);border-color:rgba(16,185,129,.25);">ACT</div><div class="pipe-t">Approved Action</div><div class="pipe-d">Runs through a formal approval chain once you say go.</div></div>
+        <div class="pipe-arrow">→</div>
+      </div>
+      <div style="display:flex;align-items:stretch;">
+        <div class="pipe-card"><div class="pipe-ic" style="color:var(--emerald);border-color:rgba(16,185,129,.25);">MON</div><div class="pipe-t">Outcome Monitoring</div><div class="pipe-d">Tracks what actually happened after an approved decision.</div></div>
+        <div class="pipe-arrow">→</div>
+      </div>
+      <div style="display:flex;align-items:stretch;">
+        <div class="pipe-card"><div class="pipe-ic" style="color:var(--cyan);border-color:rgba(0,224,96,.25);">LRN</div><div class="pipe-t">Continuous Learning</div><div class="pipe-d">Feeds outcomes back to sharpen future recommendations.</div><div class="pipe-badge" style="background:rgba(93,104,133,.15);color:var(--muted);border-color:var(--line);">ROADMAP</div></div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:center;margin-top:1.5rem;">
+      <div style="display:flex;align-items:center;gap:.6rem;font-family:var(--mono);font-size:11.5px;color:var(--muted-2);border:1px dashed var(--line-2);border-radius:20px;padding:.5rem 1.1rem;">
+        ↻ Outcomes retrain the model — the loop feeds Day 1 again, sharper each cycle
+      </div>
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:1rem;">
+      <div style="display:flex;align-items:center;gap:.7rem;font-family:var(--mono);font-size:12px;color:#c9c2f5;background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.3);border-radius:8px;padding:.7rem 1.25rem;">
+        <span style="color:var(--purple);">◆</span>
+        AI Decision Intelligence recommends. It never acts alone — Approved Business Action only runs once a human signs off.
+      </div>
+    </div>
+
+    <div style="margin-top:4rem;">
+      <div class="section-label">// FASTEST PATH IN — SIMULATION</div>
+      <h3 style="font-family:var(--head);font-size:22px;font-weight:800;margin:.5rem 0 0;">No real business yet? Three steps to a verdict.</h3>
+      <div class="steps">
+        <div class="step"><div class="step-num">01</div><div class="step-icon">📝</div><div class="step-h">INPUT YOUR IDEA</div><div class="step-body">Enter your business idea, starting capital, price, marketing budget, team size and location. Takes under 90 seconds.</div><div class="step-connector">→</div></div>
+        <div class="step"><div class="step-num">02</div><div class="step-icon">⚙️</div><div class="step-h">ENGINE SIMULATES</div><div class="step-body">We run 1,000 Monte Carlo scenarios across 90 days with real market volatility, industry cost benchmarks, and demand shocks.</div><div class="step-connector">→</div></div>
+        <div class="step"><div class="step-num">03</div><div class="step-icon">🎯</div><div class="step-h">GET YOUR VERDICT</div><div class="step-body">Receive a Go / Modify / Stop verdict, then connect your real business anytime to keep the loop running with live data.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ FEATURES ════════════════════════════════════════════════════════════ -->
+<section class="section alt" id="features">
+  <div class="section-inner">
+    <div class="section-label">// CAPABILITIES</div>
+    <h2 class="section-h">Everything you need to validate<br>before you commit</h2>
+    <div class="features-grid">
+      <div class="feat-card"><div class="feat-icon">📊</div><div class="feat-h">Monte Carlo Risk Engine</div><div class="feat-body">1,000 scenario runs per simulation. P10–P90 probability bands show best, median, and worst-case outcomes with statistical confidence.</div><span class="feat-tag free">FREE</span></div>
+      <div class="feat-card"><div class="feat-icon">🏭</div><div class="feat-h">Industry-Calibrated Models</div><div class="feat-body">Food, retail, services, tech, logistics, education and more — each with real cost structures, margin benchmarks, and demand seasonality built in.</div><span class="feat-tag free">FREE</span></div>
+      <div class="feat-card"><div class="feat-icon">🌍</div><div class="feat-h">Multi-Currency Support</div><div class="feat-body">Run in USD, GBP, EUR, NGN, KES, GHS, ZAR, INR and 12+ more currencies. All results display in your chosen currency.</div><span class="feat-tag free">FREE</span></div>
+      <div class="feat-card"><div class="feat-icon">🤖</div><div class="feat-h">AI Venture Analysis</div><div class="feat-body">GPT-powered analysis evaluates market fit, unit economics, risk factors, and growth levers through the Venture Engine framework.</div><span class="feat-tag ai">AI</span></div>
+      <div class="feat-card"><div class="feat-icon">📈</div><div class="feat-h">Sensitivity Analysis</div><div class="feat-body">See exactly how changes in price, marketing spend, team size, and market size affect your survival probability. Know your biggest leverage points.</div><span class="feat-tag pro">STARTER+</span></div>
+      <div class="feat-card"><div class="feat-icon">🔄</div><div class="feat-h">Scenario Comparison</div><div class="feat-body">Run multiple versions of your idea side by side. Compare conservative vs aggressive vs base case to find the optimal go-to-market strategy.</div><span class="feat-tag pro">GROWTH+</span></div>
+      <div class="feat-card"><div class="feat-icon">📋</div><div class="feat-h">Exportable Reports</div><div class="feat-body">Download a full PDF report with all charts, metrics, and AI analysis. Share with co-founders, investors, or advisors in one click.</div><span class="feat-tag pro">STARTER+</span></div>
+      <div class="feat-card"><div class="feat-icon">🔗</div><div class="feat-h">Shareable Results</div><div class="feat-body">Generate a unique share link for your simulation results. Anyone with the link can view your full dashboard — perfect for feedback.</div><span class="feat-tag free">FREE</span></div>
+      <div class="feat-card"><div class="feat-icon">💾</div><div class="feat-h">Simulation History</div><div class="feat-body">Every simulation is saved. Return to any previous run, restore it to the dashboard, or compare it against newer iterations.</div><span class="feat-tag free">FREE</span></div>
+    </div>
+
+    <div style="margin-top:3.5rem;">
+      <div class="section-label">// BEYOND SIMULATION — THE LIVE PLATFORM</div>
+      <h3 style="font-family:var(--head);font-size:22px;font-weight:800;margin:.5rem 0 1rem;">Connect a real business and the loop keeps running</h3>
+      <p class="section-sub" style="margin-bottom:0;">Simulation is where most people start. These layers pick up once you connect a real business.</p>
+      <div class="features-grid" style="margin-top:2rem;">
+        <div class="feat-card"><div class="feat-icon">🧾</div><div class="feat-h">Business Operations</div><div class="feat-body">Log sales, expenses, inventory, customer, and team events. KPI summaries roll up automatically over any date range.</div><span class="feat-tag free">FREE</span></div>
+        <div class="feat-card"><div class="feat-icon">🪞</div><div class="feat-h">Digital Twin</div><div class="feat-body">A continuously-updated model of your real business — profit, burn rate, churn, headcount — recomputed from operations data.</div><span class="feat-tag free">FREE</span></div>
+        <div class="feat-card"><div class="feat-icon">🤖</div><div class="feat-h">AI Decision Intelligence</div><div class="feat-body">Reads your digital twin and recommends specific next decisions with rationale and expected outcome. Never acts alone.</div><span class="feat-tag ai">AI</span></div>
+        <div class="feat-card"><div class="feat-icon">✅</div><div class="feat-h">Approve &amp; Track Outcomes</div><div class="feat-body">Approve or decline a recommendation, then record what actually happened — a real audit trail from suggestion to result.</div><span class="feat-tag free">FREE</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SIM PREVIEW ════════════════════════════════════════════════════════ -->
+<section class="section">
+  <div class="section-inner">
+    <div class="section-label">// THE ENGINE</div>
+    <h2 class="section-h">A full business dashboard,<br>not just a calculator</h2>
+    <p class="section-sub">Day-by-day revenue curves, customer acquisition flows, cash burn, Monte Carlo bands, and a live verdict — all from a single set of inputs.</p>
+    <div class="sim-split">
+      <div class="sim-fields">
+        <div class="sim-field"><div class="sim-label">BUSINESS IDEA</div><div class="sim-input-fake filled">Organic Grocery Delivery — Nairobi</div></div>
+        <div class="sim-field"><div class="sim-label">STARTING CAPITAL</div><div class="sim-input-fake filled">KES 800,000</div></div>
+        <div class="sim-field"><div class="sim-label">PRICE PER ORDER</div><div class="sim-input-fake filled">KES 1,200</div></div>
+        <div class="sim-field"><div class="sim-label">MARKETING BUDGET / MONTH</div><div class="sim-input-fake filled">KES 45,000</div></div>
+        <div class="sim-field"><div class="sim-label">INDUSTRY</div><div class="sim-input-fake filled">Food & Beverage</div></div>
+        <div class="sim-field"><div class="sim-label">TEAM SIZE</div><div class="sim-input-fake filled">3 people</div></div>
+        <div class="sim-btn-fake">▶ RUN 90-DAY SIMULATION →</div>
+      </div>
+      <div>
+        <div class="sim-result">
+          <div class="sim-result-bar"><span class="sim-result-title">SIMULATION OUTPUT — DAY 90</span><span class="sim-result-badge">✓ COMPLETE</span></div>
+          <div class="sim-metrics">
+            <div class="sim-metric"><span class="sim-metric-l">VERDICT</span><span class="sim-metric-v" style="color:var(--cyan)">▶ GO</span></div>
+            <div class="sim-metric"><span class="sim-metric-l">SURVIVAL RATE</span><span class="sim-metric-v" style="color:var(--emerald)">68%</span></div>
+            <div class="sim-metric"><span class="sim-metric-l">BREAK-EVEN</span><span class="sim-metric-v" style="color:var(--amber)">Day 41</span></div>
+            <div class="sim-metric"><span class="sim-metric-l">AVG MONTHLY REVENUE</span><span class="sim-metric-v" style="color:var(--cyan)">KES 2.1M</span></div>
+            <div class="sim-metric"><span class="sim-metric-l">PROFITABLE DAYS</span><span class="sim-metric-v">52 / 90</span></div>
+            <div class="sim-metric"><span class="sim-metric-l">BIGGEST RISK</span><span class="sim-metric-v" style="color:var(--red)">Logistics cost spike</span></div>
+            <div class="sim-metric"><span class="sim-metric-l">P10 REVENUE</span><span class="sim-metric-v" style="color:var(--muted)">KES 890K</span></div>
+            <div class="sim-metric"><span class="sim-metric-l">P90 REVENUE</span><span class="sim-metric-v" style="color:var(--emerald)">KES 4.2M</span></div>
+          </div>
+        </div>
+        <div style="margin-top:.85rem;font-family:var(--mono);font-size:9.5px;color:var(--muted-2);text-align:center;">Powered by Monte Carlo · 1,000 simulation runs · 90 virtual days</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ OPERATING VIEW (real business) ═══════════════════════════════════════ -->
+<section class="section alt">
+  <div class="section-inner">
+    <div class="section-label">// THE OPERATING VIEW</div>
+    <h2 class="section-h">Once you connect a real business,<br>the same dashboard keeps going</h2>
+    <p class="section-sub">Digital twin, AI recommendation, and outcome tracking — from one connected model, not three separate tools.</p>
+    <div style="margin-top:2.5rem;background:rgba(8,12,22,.9);border:1px solid var(--line-2);border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.4);">
+      <div style="display:flex;gap:2px;background:rgba(255,255,255,.06);border-bottom:1px solid var(--line);flex-wrap:wrap;">
+        <div style="padding:.85rem 1.35rem;font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--text);border-bottom:2px solid var(--cyan);">DIGITAL TWIN</div>
+        <div style="padding:.85rem 1.35rem;font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--muted);">AI DECISIONS</div>
+        <div style="padding:.85rem 1.35rem;font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--muted);">OUTCOME MONITOR</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:0;">
+        <div style="padding:1.75rem;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:1rem;">
+          <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2);letter-spacing:.08em;">DIGITAL TWIN — CURRENT STATE</div>
+          <div><div style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2);">BUSINESS</div><div style="font-size:14px;">Organic Grocery Delivery — Nairobi</div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.85rem;font-family:var(--mono);font-size:11.5px;">
+            <div><div style="color:var(--muted-2);">PROFIT (30d)</div><div>KES 612,000</div></div>
+            <div><div style="color:var(--muted-2);">REVENUE (30d)</div><div>KES 2.1M</div></div>
+            <div><div style="color:var(--muted-2);">CHURN (30d)</div><div style="color:var(--amber);">4.2%</div></div>
+            <div><div style="color:var(--muted-2);">SNAPSHOT AGE</div><div style="color:var(--cyan);">Fresh — 4 min</div></div>
+          </div>
+          <div style="margin-top:auto;background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:.85rem;font-family:var(--mono);font-size:10.5px;color:#c9c2f5;">
+            AI DECISION: Reduce logistics spend 8% and reroute to Zone 3. <span style="color:var(--purple);">Awaiting approval →</span>
+          </div>
+        </div>
+        <div style="padding:1.75rem;display:flex;flex-direction:column;gap:1rem;">
+          <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2);letter-spacing:.08em;">RECOMMENDATION → APPROVAL → OUTCOME</div>
+          <div style="display:flex;flex-direction:column;gap:.6rem;font-family:var(--mono);font-size:11px;">
+            <div style="display:flex;justify-content:space-between;padding:.5rem .75rem;background:rgba(255,255,255,.03);border-radius:7px;"><span>1. AI recommends a decision</span><span style="color:var(--cyan);">✓ generated</span></div>
+            <div style="display:flex;justify-content:space-between;padding:.5rem .75rem;background:rgba(255,255,255,.03);border-radius:7px;"><span>2. You approve or decline</span><span style="color:var(--purple);">⏸ awaiting you</span></div>
+            <div style="display:flex;justify-content:space-between;padding:.5rem .75rem;background:rgba(255,255,255,.03);border-radius:7px;"><span>3. Outcome is recorded</span><span style="color:var(--muted-2);">— pending</span></div>
+          </div>
+          <div style="background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.25);border-radius:8px;padding:.85rem;font-family:var(--mono);font-size:10.5px;color:#a7f3d3;">
+            Once approved, the decision runs through a real approval record — not a checkbox — so outcome tracking has something to compare against.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ PRICING ═════════════════════════════════════════════════════════════ -->
+<section class="section alt" id="pricing">
+  <div class="section-inner" style="text-align:center;">
+    <div class="section-label" style="display:inline-block;">// PRICING</div>
+    <h2 class="section-h" style="margin-top:.5rem;">Start free. Scale when ready.</h2>
+    <p class="section-sub" style="margin:0 auto 1rem;text-align:center;">Every plan includes the simulation engine and the operating loop it feeds — Operations, Digital Twin, and AI Decisions. Upgrade for deeper simulation analysis and team features.</p>
+    <div class="pricing-grid">
+      <div class="plan-card">
+        <div class="plan-icon">🌱</div><div class="plan-name">FREE</div>
+        <div class="plan-price">$0<span>/mo</span></div>
+        <div class="plan-desc">For founders just getting started</div>
+        <div class="plan-divider"></div>
+        <ul class="plan-feat"><li>1 simulation / day</li><li>Full 90-day dashboard</li><li>Go/Modify/Stop verdict</li><li>History (20 slots)</li><li>Shareable links</li><li class="dim">Sensitivity analysis</li><li class="dim">PDF export</li><li class="dim">AI analysis</li></ul>
+        <a class="plan-cta" href="#register">Get Started Free</a>
+      </div>
+      <div class="plan-card">
+        <div class="plan-icon">⚡</div><div class="plan-name">STARTER</div>
+        <div class="plan-price">$19<span>/mo</span></div>
+        <div class="plan-desc">For active founders validating fast</div>
+        <div class="plan-divider"></div>
+        <ul class="plan-feat"><li>Unlimited simulations</li><li>Full dashboard</li><li>Sensitivity analysis</li><li>PDF report export</li><li>10 AI analyses / month</li><li>60-day business plan</li><li class="dim">Scenario comparison</li><li class="dim">API access</li></ul>
+        <a class="plan-cta" href="#register">Start Starter</a>
+      </div>
+      <div class="plan-card featured">
+        <div class="plan-badge">MOST POPULAR</div>
+        <div class="plan-icon">🚀</div><div class="plan-name">GROWTH</div>
+        <div class="plan-price">$49<span>/mo</span></div>
+        <div class="plan-desc">For founders building with conviction</div>
+        <div class="plan-divider"></div>
+        <ul class="plan-feat"><li>Everything in Starter</li><li>Scenario comparison</li><li>Competitor benchmarking</li><li>30 AI analyses / month</li><li>Capital alternatives engine</li><li>White-label PDF</li><li>Priority support</li><li class="dim">API access</li></ul>
+        <a class="plan-cta primary" href="#register">Start Growth</a>
+      </div>
+      <div class="plan-card">
+        <div class="plan-icon">💎</div><div class="plan-name">PROFESSIONAL</div>
+        <div class="plan-price">$99<span>/mo</span></div>
+        <div class="plan-desc">For investors and serial founders</div>
+        <div class="plan-divider"></div>
+        <ul class="plan-feat"><li>Everything in Growth</li><li>Unlimited AI analyses</li><li>REST API access</li><li>Team accounts (5 seats)</li><li>Bulk simulation runner</li><li>Custom industry models</li><li>Dedicated support</li><li>Early feature access</li></ul>
+        <a class="plan-cta" href="#register">Start Professional</a>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ══ REGISTRATION ════════════════════════════════════════════════════════ -->
+<section class="reg-section" id="register">
+  <div class="reg-inner">
+    <div class="section-label" style="display:inline-block;margin-bottom:.75rem;">// GET STARTED</div>
+    <h2 class="reg-h">Run the Engine<br>That Powers the <span class="c">Platform</span></h2>
+    <p class="reg-sub">Create a free account and run your first 90-day simulation in under 60 seconds — then see how it connects to the rest of the loop.</p>
+    <div class="reg-box" id="reg-box">
+      <div class="reg-tabs" style="display:flex;gap:.4rem;margin-bottom:1.25rem;background:rgba(255,255,255,.03);border:1px solid var(--line-2);border-radius:9px;padding:3px;">
+        <button id="reg-tab-register" class="reg-tab active" onclick="switchRegTab('register')" style="flex:1;padding:.55rem;border:none;border-radius:7px;background:rgba(0,224,96,.12);color:var(--cyan);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;cursor:pointer;">CREATE ACCOUNT</button>
+        <button id="reg-tab-signin" class="reg-tab" onclick="switchRegTab('signin')" style="flex:1;padding:.55rem;border:none;border-radius:7px;background:none;color:var(--muted);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;cursor:pointer;">SIGN IN</button>
+      </div>
+      <!-- Create-account pane -->
+      <div id="reg-pane-register">
+        <div class="reg-field">
+          <label class="reg-label" for="reg-name">YOUR NAME</label>
+          <input class="reg-input" type="text" id="reg-name" placeholder="e.g. Amara" autocomplete="given-name" onkeydown="if(event.key==='Enter')document.getElementById('reg-email').focus()">
+        </div>
+        <div class="reg-field">
+          <label class="reg-label" for="reg-email">EMAIL ADDRESS</label>
+          <input class="reg-input" type="email" id="reg-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('reg-password').focus()">
+        </div>
+        <div class="reg-field">
+          <label class="reg-label" for="reg-password">PASSWORD (8+ CHARACTERS)</label>
+          <input class="reg-input" type="password" id="reg-password" placeholder="At least 8 characters" autocomplete="new-password" onkeydown="if(event.key==='Enter')joinFree()">
+        </div>
+        <div class="reg-err" id="reg-err"></div>
+        <button class="reg-submit" id="reg-btn" onclick="joinFree()">⚡ Create Free Account & Launch Engine →</button>
+        <div class="reg-ok" id="reg-ok">✓ Account created! Launching engine…<br><a href="index.html" style="color:var(--cyan);display:inline-block;margin-top:.5rem;text-decoration:none;border:1px solid rgba(0,224,96,.3);border-radius:6px;padding:.4rem 1rem;font-size:11px;">Open Engine →</a></div>
+        <div class="reg-already">Already have an account? <a onclick="switchRegTab('signin')">Sign in →</a></div>
+        <div class="reg-already" style="margin-top:.5rem;font-size:10px;opacity:.5;">By creating an account you agree to our <a href="legal.html#terms" style="color:var(--cyan);">Terms of Service</a> and <a href="legal.html#privacy" style="color:var(--cyan);">Privacy Policy</a>.</div>
+      </div>
+      <!-- Sign-in pane -->
+      <div id="reg-pane-signin" style="display:none">
+        <div class="reg-field">
+          <label class="reg-label" for="signin-email">EMAIL ADDRESS</label>
+          <input class="reg-input" type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('signin-password').focus()">
+        </div>
+        <div class="reg-field">
+          <label class="reg-label" for="signin-password">PASSWORD</label>
+          <input class="reg-input" type="password" id="signin-password" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLoginLanding()">
+          <p style="text-align:right;margin:.4rem 0 0"><a href="index.html?auth=forgot" style="font-family:var(--mono);font-size:10.5px;color:var(--cyan);text-decoration:underline;">Forgot password?</a></p>
+        </div>
+        <div class="reg-err" id="signin-err"></div>
+        <button class="reg-submit" id="signin-btn-submit" onclick="doLoginLanding()">Sign In →</button>
+        <div class="reg-already">New here? <a onclick="switchRegTab('register')">Create an account →</a></div>
+      </div>
+    </div>
+    <div class="reg-features">
+      <div class="reg-feat-item">Free forever tier</div>
+      <div class="reg-feat-item">No credit card</div>
+      <div class="reg-feat-item">Results in 60 seconds</div>
+      <div class="reg-feat-item">Cancel anytime</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ TESTIMONIALS ════════════════════════════════════════════════════════ -->
+<section class="section">
+  <div class="section-inner" style="text-align:center;">
+    <div class="section-label" style="display:inline-block;">// WHAT FOUNDERS SAY</div>
+    <h2 class="section-h" style="margin-top:.5rem;">Built for builders who move fast<br>and think with data</h2>
+    <div class="testimonials">
+      <div class="testi-card"><div class="testi-stars">★★★★★</div><p class="testi-quote">"I was about to invest ₦2M into a food delivery idea. INFINICUS showed me it would break even on Day 71 with a 43% survival rate. I pivoted the model and reran — now at 68%. That's the kind of insight that saves you from expensive mistakes."</p><div class="testi-author"><strong>Emeka O.</strong>Lagos, Nigeria · E-commerce Founder</div></div>
+      <div class="testi-card"><div class="testi-stars">★★★★★</div><p class="testi-quote">"The Monte Carlo probability bands are incredibly useful. Seeing the P10 vs P90 revenue range told me my downside was manageable and my upside was real. Gave me the confidence to quit my job and launch."</p><div class="testi-author"><strong>Amara K.</strong>Nairobi, Kenya · SaaS Founder</div></div>
+      <div class="testi-card"><div class="testi-stars">★★★★★</div><p class="testi-quote">"I ran 6 different versions of my tutoring business — different pricing, different markets, different team sizes. The scenario comparison feature saved me weeks of spreadsheet work and probably $30K in wrong decisions."</p><div class="testi-author"><strong>Daniel M.</strong>Accra, Ghana · EdTech Founder</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ FAQ ═════════════════════════════════════════════════════════════════ -->
+<section class="section alt" id="faq">
+  <div class="section-inner">
+    <div class="section-label">// FAQ</div>
+    <h2 class="section-h">Common questions</h2>
+    <div class="faq-list">
+      <div class="faq-item"><button class="faq-q" onclick="toggleFaq(this)">Do I need a real, running business to use this?<span class="faq-chevron">▾</span></button><div class="faq-a">No. Simulation works from zero — test an idea before it exists. Once you have a real business, connect it through Operations and the rest of the loop (digital twin, AI recommendations, outcome tracking) comes online from the same account.</div></div>
+      <div class="faq-item"><button class="faq-q" onclick="toggleFaq(this)">Does the AI ever act on its own?<span class="faq-chevron">▾</span></button><div class="faq-a">No. AI Decision Intelligence only recommends. Every choice — approve or decline — is yours, and it's recorded through a formal approval step, not a checkbox. Nothing executes without that explicit approval.</div></div>
+      <div class="faq-item"><button class="faq-q" onclick="toggleFaq(this)">How accurate is the simulation?<span class="faq-chevron">▾</span></button><div class="faq-a">The engine uses industry-calibrated cost structures, demand elasticity curves, and real-world volatility bands derived from thousands of business data points. Monte Carlo with 1,000 runs gives you statistically meaningful probability distributions — not a single optimistic forecast. That said, it's a simulation tool: real-world results depend on execution, timing, and factors no model can fully predict.</div></div>
+      <div class="faq-item"><button class="faq-q" onclick="toggleFaq(this)">What industries does INFINICUS support?<span class="faq-chevron">▾</span></button><div class="faq-a">Currently: Food & Beverage, Retail, Services, Technology / SaaS, Logistics & Delivery, Education & Training, Health & Wellness, Real Estate, Manufacturing, Media & Content, Hospitality, and a General model. Each industry has its own cost ratios, demand curves, and margin benchmarks built in.</div></div>
+      <div class="faq-item"><button class="faq-q" onclick="toggleFaq(this)">Do I need technical skills to use it?<span class="faq-chevron">▾</span></button><div class="faq-a">None. You enter plain language inputs: your idea, capital, price, marketing budget, and location. The engine handles all the maths. Results are explained in plain English alongside the data. If you've ever used a calculator, you can use INFINICUS.</div></div>
+      <div class="faq-item"><button class="faq-q" onclick="toggleFaq(this)">What does Go / Modify / Stop actually mean?<span class="faq-chevron">▾</span></button><div class="faq-a"><strong style="color:var(--emerald)">GO</strong> — Strong unit economics and survival probability above 55%. <strong style="color:var(--amber)">MODIFY</strong> — Potential but significant risks; specific changes to price, capital, or market are recommended. <strong style="color:var(--red)">STOP</strong> — Under these parameters, the model consistently fails across most scenarios. Fundamental rethinking is needed.</div></div>
+      <div class="faq-item"><button class="faq-q" onclick="toggleFaq(this)">Is my data private?<span class="faq-chevron">▾</span></button><div class="faq-a">Yes. Simulation data is stored in your browser's local storage by default — it never leaves your device unless you choose to share a result link. If you connect a real business, that operations data is stored securely on the platform, isolated to your account. We do not sell or share your business ideas or data with anyone.</div></div>
+      <div class="faq-item"><button class="faq-q" onclick="toggleFaq(this)">Can I use INFINICUS on mobile?<span class="faq-chevron">▾</span></button><div class="faq-a">Yes. INFINICUS ENGINE is a Progressive Web App (PWA) — it works on any modern mobile browser and can be installed to your home screen. The full simulation, dashboard, and AI analysis all work on mobile. Some advanced chart interactions work better on desktop.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ CTA STRIP ═══════════════════════════════════════════════════════════ -->
+<section class="section" style="padding:4rem 2rem;text-align:center;position:relative;z-index:1;background:radial-gradient(ellipse 60% 80% at 50% 50%,rgba(0,224,96,.05),transparent 70%);">
+  <div style="max-width:640px;margin:0 auto;">
+    <h2 style="font-family:var(--head);font-size:clamp(24px,4vw,38px);font-weight:900;margin-bottom:.85rem;">Don't guess. Run the loop.</h2>
+    <p style="font-size:15px;color:var(--fg-2);line-height:1.65;margin-bottom:2rem;">Your first simulation is free — no card required. The rest of the platform is waiting underneath it.</p>
+    <div style="display:flex;gap:.85rem;justify-content:center;flex-wrap:wrap;">
+      <a class="btn-hero-primary" href="#register">⚡ Start Free Simulation</a>
+      <a class="btn-hero-secondary" href="#features">See the Full Platform →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ══ FOOTER ══════════════════════════════════════════════════════════════ -->
+<footer>
+  <div class="footer-inner">
+    <div>
+      <a class="logo" href="./landing.html">
+        <div class="logo-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="22" height="22"><rect width="100" height="100" rx="22" fill="#07080a"/><path d="M50,50 C50,34 38,24 28,30 C18,36 18,64 28,70 C38,76 50,66 50,50Z" fill="none" stroke="#00e676" stroke-width="9" stroke-linecap="round"/><path d="M50,50 C50,34 62,24 72,30 C82,36 82,64 72,70 C62,76 50,66 50,50Z" fill="none" stroke="#00e676" stroke-width="9" stroke-linecap="round"/></svg></div>
+        INFIN<span class="logo-c">ICUS</span>
+      </a>
+      <p class="footer-tagline">The operating and decision-intelligence platform for running a business on data — from simulation to approved action.</p>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;"><span class="tag cyan">9 LAYERS</span><span class="tag free">PWA</span></div>
+    </div>
+    <div><div class="footer-col-h">PRODUCT</div><div class="footer-links"><a href="#how-it-works">How It Works</a><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="index.html">Launch Engine</a><a href="#" onclick="openAccount();return false;">Account</a></div></div>
+    <div><div class="footer-col-h">RESOURCES</div><div class="footer-links"><a href="#faq">FAQ</a><a href="legal.html#privacy">Privacy Policy</a><a href="legal.html#terms">Terms of Service</a><a href="legal.html#disclaimer">Disclaimer</a></div></div>
+    <div><div class="footer-col-h">COMPANY</div><div class="footer-links"><a href="legal.html#about">About</a><a href="legal.html#contact">Contact</a><a href="legal.html#cookies">Cookie Policy</a><a href="legal.html#refund">Refund Policy</a></div></div>
+  </div>
+  <div class="footer-bottom">
+    <span class="footer-copy">© 2026 INFINICUS ENGINE. All rights reserved.</span>
+    <span class="footer-copy" style="color:var(--muted-2);">Built for founders who think before they leap.</span>
+  </div>
+</footer>
+<!-- ══ ACCOUNT OVERLAY ═════════════════════════════════════════════════════ -->
+<div class="ao-overlay" id="ao-overlay">
+  <!-- Overlay Header -->
+  <header class="ao-header">
+    <a class="logo" href="./landing.html" onclick="closeAccount();return false;">
+      <div class="logo-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="22" height="22"><rect width="100" height="100" rx="22" fill="#07080a"/><path d="M50,50 C50,34 38,24 28,30 C18,36 18,64 28,70 C38,76 50,66 50,50Z" fill="none" stroke="#00e676" stroke-width="9" stroke-linecap="round"/><path d="M50,50 C50,34 62,24 72,30 C82,36 82,64 72,70 C62,76 50,66 50,50Z" fill="none" stroke="#00e676" stroke-width="9" stroke-linecap="round"/></svg></div>
+      INFIN<span class="logo-c">ICUS</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted-2);font-weight:300;align-self:flex-end;margin-bottom:2px;">ENGINE v3</span>
+    </a>
+    <div class="ao-header-right">
+      <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted-2);letter-spacing:.06em;">ACCOUNT SETTINGS</span>
+      <a class="ao-hdr-btn" href="./index.html">▶ Open Engine</a>
+      <button class="ao-hdr-btn" onclick="closeAccount()">← Back to Landing</button>
+    </div>
+  </header>
+  <!-- Overlay Layout -->
+  <div class="ao-page">
+    <!-- Sidebar -->
+    <aside class="ao-sidebar">
+      <div class="ao-sb-profile">
+        <div class="ao-avatar-wrap" onclick="document.getElementById('photo-input').click()">
+          <div class="ao-avatar" id="ao-sb-avatar">?</div>
+          <div class="ao-avatar-cam">✎</div>
+        </div>
+        <div class="ao-sb-name" id="ao-sb-name">—</div>
+        <div class="ao-sb-email" id="ao-sb-email">—</div>
+        <span class="ao-plan-chip free" id="ao-sb-plan">FREE</span>
+      </div>
+      <div class="ao-sb-nav">
+        <div class="ao-grp-label">ACCOUNT</div>
+        <button class="ao-item active" data-tab="profile"   onclick="showTab('profile')"><span class="ic">👤</span>Profile</button>
+        <button class="ao-item"        data-tab="security"  onclick="showTab('security')"><span class="ic">🔒</span>Security</button>
+        <div class="ao-grp-label">SETTINGS</div>
+        <button class="ao-item" data-tab="preferences" onclick="showTab('preferences')"><span class="ic">⚙️</span>Preferences</button>
+        <button class="ao-item" data-tab="subscription" onclick="showTab('subscription')"><span class="ic">💳</span>Subscription</button>
+        <div class="ao-grp-label">ACTIVITY</div>
+        <button class="ao-item" data-tab="stats"     onclick="showTab('stats')"><span class="ic">📊</span>Stats</button>
+        <button class="ao-item" data-tab="developer" onclick="showTab('developer')"><span class="ic">⌨️</span>Developer</button>
+        <div class="ao-grp-label" style="color:rgba(244,63,94,.5);">DANGER</div>
+        <button class="ao-item" data-tab="danger" onclick="showTab('danger')" style="color:rgba(244,63,94,.65);"><span class="ic">⚠️</span>Danger Zone</button>
+      </div>
+      <div class="ao-sb-bottom">
+        <button class="ao-signout-btn" onclick="signOut()">⎋  Sign Out</button>
+      </div>
+    </aside>
+    <!-- Content -->
+    <main class="ao-content">
+
+      <!-- ████ PROFILE ████ -->
+      <div class="ao-sec active" id="tab-profile">
+        <div class="ao-sec-h">Profile</div>
+        <div class="ao-sec-sub">// PERSONAL INFORMATION & IDENTITY</div>
+        <div class="card">
+          <div class="card-h">PHOTO & IDENTITY</div>
+          <div class="photo-area">
+            <div class="photo-avatar" id="profile-avatar" onclick="document.getElementById('photo-input').click()">?</div>
+            <div>
+              <div style="font-size:13px;color:var(--text);margin-bottom:.3rem;">Profile Photo</div>
+              <div style="font-family:var(--mono);font-size:9px;color:var(--muted-2);margin-bottom:.6rem;">PNG or JPG · Max 2 MB</div>
+              <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                <button class="btn-sm" onclick="document.getElementById('photo-input').click()">Upload Photo</button>
+                <button class="btn-sm" id="rm-photo-btn" onclick="removePhoto()" style="display:none;">Remove</button>
+              </div>
+            </div>
+          </div>
+          <div class="frow">
+            <div class="fg"><label class="fl">FULL NAME</label><input class="fi" type="text" id="f-name" placeholder="Your full name" autocomplete="name"></div>
+            <div class="fg"><label class="fl">USERNAME</label><input class="fi" type="text" id="f-username" placeholder="@username"></div>
+          </div>
+          <div class="frow">
+            <div class="fg">
+              <label class="fl">EMAIL &nbsp;<span class="badge v" id="email-verify-badge">VERIFIED</span></label>
+              <input class="fi" type="email" id="f-email" disabled>
+              <div class="fh">Email cannot be changed here.</div>
+            </div>
+            <div class="fg"><label class="fl">PHONE (OPTIONAL)</label><input class="fi" type="tel" id="f-phone" placeholder="+1 555 000 0000" autocomplete="tel"></div>
+          </div>
+          <div class="frow">
+            <div class="fg">
+              <label class="fl">COUNTRY</label>
+              <select class="fi" id="f-country">
+                <option value="">Select country…</option>
+                <option>United States</option><option>United Kingdom</option><option>Canada</option><option>Australia</option>
+                <option>Germany</option><option>France</option><option>Netherlands</option><option>Sweden</option>
+                <option>Japan</option><option>South Korea</option><option>Singapore</option><option>India</option>
+                <option>Nigeria</option><option>South Africa</option><option>Kenya</option><option>Ghana</option>
+                <option>Ethiopia</option><option>Tanzania</option><option>Uganda</option>
+                <option>Brazil</option><option>Mexico</option><option>Argentina</option>
+                <option>UAE</option><option>Saudi Arabia</option><option>Israel</option>
+                <option>New Zealand</option><option>Other</option>
+              </select>
+            </div>
+            <div class="fg"><label class="fl">CITY / LOCATION</label><input class="fi" type="text" id="f-city" placeholder="e.g. Lagos"></div>
+          </div>
+          <div class="frow s">
+            <div class="fg"><label class="fl">BIO (OPTIONAL)</label><textarea class="fi" id="f-bio" rows="3" placeholder="Founder, investor, or builder? Tell us about yourself…"></textarea></div>
+          </div>
+          <div class="msg ok" id="profile-ok">✓ Profile saved successfully.</div>
+          <div class="msg err" id="profile-err"></div>
+          <div class="btn-row">
+            <button class="btn-primary" onclick="saveProfile()">Save Changes</button>
+            <button class="btn-ghost" onclick="loadProfile()">Cancel</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h">ACCOUNT INFO</div>
+          <div class="ai-row"><div class="ai-label">Member since</div><div class="ai-val" id="ai-created">—</div></div>
+          <div class="ai-row"><div class="ai-label">Account ID</div><div class="ai-val" id="ai-id" style="font-size:9.5px;color:var(--muted-2);">—</div></div>
+          <div class="ai-row"><div class="ai-label">Current plan</div><div class="ai-val"><span class="badge p" id="ai-plan">FREE</span></div></div>
+          <div class="ai-row"><div class="ai-label">Email status</div><div class="ai-val"><span class="badge v">✓ VERIFIED</span></div></div>
+          <div class="ai-row"><div class="ai-label">2FA</div><div class="ai-val"><span class="badge w" id="ai-2fa">NOT ENABLED</span></div></div>
+          <div class="ai-row"><div class="ai-label">Last login</div><div class="ai-val" id="ai-last-login">This session</div></div>
+        </div>
+      </div>
+
+      <!-- ████ SECURITY ████ -->
+      <div class="ao-sec" id="tab-security">
+        <div class="ao-sec-h">Security</div>
+        <div class="ao-sec-sub">// PASSWORD, 2FA, CONNECTED ACCOUNTS & SESSIONS</div>
+        <div class="card">
+          <div class="card-h">CHANGE PASSWORD</div>
+          <div class="frow s"><div class="fg"><label class="fl">CURRENT PASSWORD</label><input class="fi" type="password" id="s-cur" placeholder="Enter current password"></div></div>
+          <div class="frow">
+            <div class="fg">
+              <label class="fl">NEW PASSWORD</label>
+              <input class="fi" type="password" id="s-new" placeholder="Minimum 8 characters" oninput="checkStrength(this.value)">
+              <div class="ps-bar"><div class="ps-fill" id="ps-fill"></div></div>
+              <div class="fh" id="ps-lbl" style="margin-top:.3rem;">—</div>
+            </div>
+            <div class="fg"><label class="fl">CONFIRM NEW PASSWORD</label><input class="fi" type="password" id="s-conf" placeholder="Repeat new password"></div>
+          </div>
+          <div class="msg ok" id="pass-ok">✓ Password changed successfully.</div>
+          <div class="msg err" id="pass-err"></div>
+          <div class="btn-row"><button class="btn-primary" onclick="changePassword()">Update Password</button></div>
+        </div>
+        <div class="card">
+          <div class="card-h">TWO-FACTOR AUTHENTICATION</div>
+          <div class="tgl-row" style="margin-bottom:.75rem;">
+            <div><div class="tgl-lbl">Enable Authenticator App (2FA)</div><div class="tgl-sub">Require a 6-digit code from Google Authenticator or Authy on every sign-in</div></div>
+            <label class="tgl"><input type="checkbox" id="twofa-toggle" onchange="on2FAToggle(this)"><span class="tgl-sl"></span></label>
+          </div>
+          <div id="twofa-panel" style="display:none;border-top:1px solid var(--line);padding-top:1rem;">
+            <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted-2);text-align:center;margin-bottom:.9rem;">Scan with your authenticator app, then enter the 6-digit code below to verify.</div>
+            <div class="qr-box">
+              <svg viewBox="0 0 100 100" width="120" height="120" xmlns="http://www.w3.org/2000/svg">
+                <rect width="100" height="100" fill="white"/>
+                <rect x="8" y="8" width="32" height="32" fill="black" rx="2"/><rect x="12" y="12" width="24" height="24" fill="white"/><rect x="16" y="16" width="16" height="16" fill="black"/>
+                <rect x="60" y="8" width="32" height="32" fill="black" rx="2"/><rect x="64" y="12" width="24" height="24" fill="white"/><rect x="68" y="16" width="16" height="16" fill="black"/>
+                <rect x="8" y="60" width="32" height="32" fill="black" rx="2"/><rect x="12" y="64" width="24" height="24" fill="white"/><rect x="16" y="68" width="16" height="16" fill="black"/>
+                <rect x="44" y="8" width="8" height="8" fill="black"/><rect x="44" y="20" width="8" height="8" fill="black"/>
+                <rect x="8" y="44" width="8" height="8" fill="black"/><rect x="20" y="44" width="8" height="8" fill="black"/>
+                <rect x="44" y="44" width="8" height="8" fill="black"/><rect x="60" y="44" width="8" height="8" fill="black"/><rect x="76" y="44" width="8" height="8" fill="black"/>
+                <rect x="44" y="60" width="8" height="8" fill="black"/><rect x="60" y="60" width="8" height="8" fill="black"/>
+                <rect x="76" y="60" width="8" height="8" fill="black"/><rect x="44" y="76" width="8" height="8" fill="black"/>
+                <rect x="60" y="76" width="8" height="8" fill="black"/><rect x="76" y="76" width="8" height="8" fill="black"/>
+              </svg>
+            </div>
+            <div style="font-family:var(--mono);font-size:9px;color:var(--muted-2);text-align:center;margin-bottom:.75rem;">Manual key: <span style="color:var(--cyan);">INFI-XXXX-YYYY-ZZZZ-0000</span></div>
+            <div class="frow s"><div class="fg"><label class="fl">VERIFICATION CODE</label><input class="fi" type="text" id="twofa-code" placeholder="000 000" maxlength="7" style="text-align:center;letter-spacing:.4em;font-size:18px;"></div></div>
+            <div class="btn-row"><button class="btn-primary" onclick="verify2FA()">Verify & Enable</button></div>
+            <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--line);">
+              <div style="font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.08em;margin-bottom:.65rem;">⚠ BACKUP CODES — SAVE THESE IN A SAFE PLACE</div>
+              <div class="backup-grid">
+                <div class="bc">A3F9-7K2M</div><div class="bc">X8R1-9P4N</div>
+                <div class="bc">B2J6-4L7T</div><div class="bc">Q5W3-8M1V</div>
+                <div class="bc">N7H2-6C9R</div><div class="bc">Y4E8-1D5S</div>
+              </div>
+              <div class="btn-row"><button class="btn-sm" onclick="downloadBackupCodes()">↓ Download Backup Codes</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h">CONNECTED ACCOUNTS</div>
+          <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted-2);margin-bottom:1rem;line-height:1.65;">Connect third-party accounts for faster sign-in and additional integrations.</div>
+          <div class="conn-row"><div class="conn-icon">🔵</div><div class="conn-info"><div class="conn-name">Google</div><div class="conn-desc">Sign in with Google · Calendar sync</div></div><button class="btn-sm" onclick="showToast('Google connect coming soon.')">Connect</button></div>
+          <div class="conn-row"><div class="conn-icon">⬛</div><div class="conn-info"><div class="conn-name">GitHub</div><div class="conn-desc">Sign in with GitHub · Repository access</div></div><button class="btn-sm" onclick="showToast('GitHub connect coming soon.')">Connect</button></div>
+          <div class="conn-row"><div class="conn-icon">🔷</div><div class="conn-info"><div class="conn-name">LinkedIn</div><div class="conn-desc">Import professional background</div></div><button class="btn-sm" onclick="showToast('LinkedIn connect coming soon.')">Connect</button></div>
+          <div class="conn-row"><div class="conn-icon">🟠</div><div class="conn-info"><div class="conn-name">Slack</div><div class="conn-desc">Receive simulation alerts in Slack</div></div><button class="btn-sm" onclick="showToast('Slack connect coming soon.')">Connect</button></div>
+        </div>
+        <div class="card">
+          <div class="card-h">ACTIVE SESSIONS</div>
+          <div id="sessions-list">
+            <div class="dev-row"><div class="dev-ic">💻</div><div class="dev-info"><div class="dev-name">Chrome on Windows &nbsp;<span class="curr-badge">CURRENT</span></div><div class="dev-meta">Active now · This device</div></div></div>
+            <div class="dev-row"><div class="dev-ic">📱</div><div class="dev-info"><div class="dev-name">Mobile Browser</div><div class="dev-meta">2 hours ago · Mobile</div></div><button class="btn-sm" onclick="revokeSession(this)">Revoke</button></div>
+          </div>
+          <div class="btn-row"><button class="btn-danger" onclick="revokeAllSessions()" style="font-size:9px;">Revoke All Other Sessions</button></div>
+        </div>
+        <div class="card">
+          <div class="card-h">LOGIN HISTORY</div>
+          <table class="tbl"><thead><tr><th>DATE & TIME</th><th>DEVICE</th><th>LOCATION</th><th>STATUS</th></tr></thead><tbody id="login-hist"></tbody></table>
+        </div>
+      </div>
+
+      <!-- ████ PREFERENCES ████ -->
+      <div class="ao-sec" id="tab-preferences">
+        <div class="ao-sec-h">Preferences</div>
+        <div class="ao-sec-sub">// NOTIFICATIONS, PRIVACY, LANGUAGE & THEME</div>
+        <div class="card">
+          <div class="card-h">NOTIFICATIONS</div>
+          <div class="tgl-row"><div><div class="tgl-lbl">Simulation Complete</div><div class="tgl-sub">Email when your simulation finishes</div></div><label class="tgl"><input type="checkbox" id="n-sim" checked><span class="tgl-sl"></span></label></div>
+          <div class="tgl-row"><div><div class="tgl-lbl">Weekly Digest</div><div class="tgl-sub">Your activity summary every Monday</div></div><label class="tgl"><input type="checkbox" id="n-digest"><span class="tgl-sl"></span></label></div>
+          <div class="tgl-row"><div><div class="tgl-lbl">Product Updates</div><div class="tgl-sub">New features and improvements</div></div><label class="tgl"><input type="checkbox" id="n-product" checked><span class="tgl-sl"></span></label></div>
+          <div class="tgl-row"><div><div class="tgl-lbl">Marketing Emails</div><div class="tgl-sub">Tips, guides, and promotional content</div></div><label class="tgl"><input type="checkbox" id="n-mkt"><span class="tgl-sl"></span></label></div>
+        </div>
+        <div class="card">
+          <div class="card-h">PRIVACY</div>
+          <div class="tgl-row"><div><div class="tgl-lbl">Share Usage Analytics</div><div class="tgl-sub">Anonymous usage data to help improve INFINICUS</div></div><label class="tgl"><input type="checkbox" id="p-analytics" checked><span class="tgl-sl"></span></label></div>
+          <div class="tgl-row"><div><div class="tgl-lbl">Public Profile</div><div class="tgl-sub">Allow others to view your simulation count and verdict history</div></div><label class="tgl"><input type="checkbox" id="p-public"><span class="tgl-sl"></span></label></div>
+          <div class="tgl-row"><div><div class="tgl-lbl">Personalised AI Suggestions</div><div class="tgl-sub">Use your simulation history to personalise AI analysis output</div></div><label class="tgl"><input type="checkbox" id="p-ai" checked><span class="tgl-sl"></span></label></div>
+        </div>
+        <div class="card">
+          <div class="card-h">APPEARANCE & LANGUAGE</div>
+          <div class="frow">
+            <div class="fg"><label class="fl">LANGUAGE</label><select class="fi" id="pref-lang"><option value="en">English (Default)</option><option value="fr">Français</option><option value="es">Español</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="ar">العربية</option><option value="sw">Kiswahili</option><option value="ja">日本語</option><option value="zh">中文</option></select></div>
+            <div class="fg"><label class="fl">THEME</label><select class="fi" id="pref-theme"><option value="dark">Dark (Default)</option><option value="light">Light (Coming Soon)</option><option value="system">Follow System</option></select></div>
+          </div>
+          <div class="frow">
+            <div class="fg"><label class="fl">DEFAULT CURRENCY</label><select class="fi" id="pref-currency"><option value="USD">USD — US Dollar</option><option value="EUR">EUR — Euro</option><option value="GBP">GBP — British Pound</option><option value="NGN">NGN — Naira</option><option value="KES">KES — Kenyan Shilling</option><option value="GHS">GHS — Ghanaian Cedi</option><option value="ZAR">ZAR — Rand</option><option value="INR">INR — Indian Rupee</option><option value="JPY">JPY — Japanese Yen</option><option value="CAD">CAD — Canadian Dollar</option><option value="AUD">AUD — Australian Dollar</option><option value="AED">AED — UAE Dirham</option></select></div>
+            <div class="fg"><label class="fl">DATE FORMAT</label><select class="fi" id="pref-date"><option value="mdy">MM/DD/YYYY</option><option value="dmy">DD/MM/YYYY</option><option value="ymd">YYYY-MM-DD</option></select></div>
+          </div>
+          <div class="msg ok" id="pref-ok">✓ Preferences saved.</div>
+          <div class="btn-row"><button class="btn-primary" onclick="savePreferences()">Save Preferences</button></div>
+        </div>
+      </div>
+
+      <!-- ████ SUBSCRIPTION ████ -->
+      <div class="ao-sec" id="tab-subscription">
+        <div class="ao-sec-h">Subscription</div>
+        <div class="ao-sec-sub">// PLAN, BILLING & PAYMENT</div>
+        <div class="plan-hero">
+          <div class="plan-hero-icon" id="ph-icon">🌱</div>
+          <div><div class="plan-hero-name" id="ph-name">FREE PLAN</div><div class="plan-hero-desc" id="ph-desc">1 simulation · Basic dashboard · Verdict only</div></div>
+          <div style="margin-left:auto;flex-shrink:0;"><button class="btn-primary" onclick="closeAccount();setTimeout(()=>document.querySelector('#pricing').scrollIntoView({behavior:'smooth'}),300);">Upgrade Plan →</button></div>
+        </div>
+        <div class="card">
+          <div class="card-h">USAGE THIS PERIOD</div>
+          <div class="pb-wrap"><div class="pb-labels"><span>Simulations</span><span id="u-sim-lbl">0 / 1</span></div><div class="pb"><div class="pb-fill" id="u-sim-bar" style="width:0%"></div></div></div>
+          <div class="pb-wrap"><div class="pb-labels"><span>AI Analyses</span><span id="u-ai-lbl">0 / 10</span></div><div class="pb"><div class="pb-fill" id="u-ai-bar" style="width:0%;background:linear-gradient(90deg,var(--purple),var(--cyan));"></div></div></div>
+          <div class="pb-wrap"><div class="pb-labels"><span>Saved History Slots</span><span id="u-hist-lbl">0 / 20</span></div><div class="pb"><div class="pb-fill" id="u-hist-bar" style="width:0%;background:linear-gradient(90deg,var(--amber),var(--emerald));"></div></div></div>
+        </div>
+        <div class="card">
+          <div class="card-h">BILLING HISTORY</div>
+          <table class="tbl"><thead><tr><th>DATE</th><th>DESCRIPTION</th><th>AMOUNT</th><th>STATUS</th></tr></thead><tbody><tr><td colspan="4" style="text-align:center;color:var(--muted-2);padding:1.5rem;font-family:var(--mono);font-size:10px;">No billing history — you are on the Free plan.</td></tr></tbody></table>
+        </div>
+        <div class="card">
+          <div class="card-h">PAYMENT METHOD</div>
+          <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2);padding:.5rem 0 1rem;">No payment method on file. Upgrade to a paid plan to add one.</div>
+          <button class="btn-ghost" style="font-size:10px;" onclick="showToast('Payment methods available after upgrading.')">+ Add Payment Method</button>
+        </div>
+      </div>
+
+      <!-- ████ STATS ████ -->
+      <div class="ao-sec" id="tab-stats">
+        <div class="ao-sec-h">Stats & Activity</div>
+        <div class="ao-sec-sub">// YOUR SIMULATION PERFORMANCE AT A GLANCE</div>
+        <div class="stat-grid">
+          <div class="stat-box"><div class="stat-v" id="st-total">0</div><div class="stat-l">TOTAL SIMULATIONS</div></div>
+          <div class="stat-box"><div class="stat-v" id="st-saved">0</div><div class="stat-l">SAVED IN HISTORY</div></div>
+          <div class="stat-box"><div class="stat-v" id="st-go">0</div><div class="stat-l">GO VERDICTS</div></div>
+          <div class="stat-box"><div class="stat-v" id="st-surv" style="color:var(--emerald);">—</div><div class="stat-l">AVG SURVIVAL RATE</div></div>
+          <div class="stat-box"><div class="stat-v" id="st-top-ind" style="font-size:13px;color:var(--purple);">—</div><div class="stat-l">TOP INDUSTRY</div></div>
+          <div class="stat-box"><div class="stat-v" id="st-scenarios" style="color:var(--amber);">0</div><div class="stat-l">SCENARIOS SAVED</div></div>
+        </div>
+        <div class="card">
+          <div class="card-h">RECENT SIMULATIONS</div>
+          <table class="tbl"><thead><tr><th>IDEA</th><th>INDUSTRY</th><th>VERDICT</th><th>SURVIVAL</th><th>DATE</th></tr></thead><tbody id="recent-body"></tbody></table>
+        </div>
+        <div class="card">
+          <div class="card-h">SAVED SCENARIOS</div>
+          <div id="scenarios-wrap"><div style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2);">No scenarios saved. Use the Compare tab in the engine to save scenarios.</div></div>
+        </div>
+        <div class="card">
+          <div class="card-h">PROJECTS CREATED</div>
+          <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2);">Projects feature coming soon — track multiple business ideas across simulations.</div>
+        </div>
+      </div>
+
+      <!-- ████ DEVELOPER ████ -->
+      <div class="ao-sec" id="tab-developer">
+        <div class="ao-sec-h">Developer</div>
+        <div class="ao-sec-sub">// API KEYS & INTEGRATIONS</div>
+        <div class="card">
+          <div class="card-h">API KEY</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);line-height:1.75;margin-bottom:1rem;">Your API key grants full programmatic access to your account. Keep it secret — do not expose it in client-side code or public repositories.</div>
+          <div class="api-box">
+            <div class="api-val" id="api-display">iex_••••••••••••••••••••••••••••••••••••••••</div>
+            <button class="btn-sm" id="api-reveal-btn" onclick="toggleApiKey()">Reveal</button>
+            <button class="btn-sm" onclick="copyApiKey()">Copy</button>
+          </div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--muted-2);margin-bottom:1rem;">Created: <span id="api-created">—</span> &nbsp;·&nbsp; Last used: Never</div>
+          <div class="msg ok" id="api-msg"></div>
+          <div class="btn-row">
+            <button class="btn-ghost" onclick="generateApiKey()" style="font-size:10px;">↺ Generate Key</button>
+            <button class="btn-danger" onclick="revokeApiKey()" style="font-size:9px;">Revoke</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h">API USAGE</div>
+          <div class="pb-wrap"><div class="pb-labels"><span>Requests this month</span><span style="color:var(--muted-2);">0 / 1,000</span></div><div class="pb"><div class="pb-fill" style="width:0%"></div></div></div>
+          <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted-2);margin-top:.5rem;">API access is available on the Professional plan. &nbsp;<button onclick="showTab('subscription')" style="background:none;border:none;color:var(--cyan);font-family:var(--mono);font-size:9.5px;cursor:pointer;text-decoration:underline;">Upgrade →</button></div>
+        </div>
+        <div class="card">
+          <div class="card-h">DOCUMENTATION</div>
+          <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2);line-height:1.75;margin-bottom:1rem;">Full REST API documentation, SDKs, and integration guides are in development. Join the waitlist to be notified at launch.</div>
+          <button class="btn-ghost" style="font-size:10px;" onclick="showToast('Added to API waitlist ✓')">Join API Waitlist</button>
+        </div>
+      </div>
+
+      <!-- ████ DANGER ZONE ████ -->
+      <div class="ao-sec" id="tab-danger">
+        <div class="ao-sec-h">Danger Zone</div>
+        <div class="ao-sec-sub">// EXPORT, CLEAR DATA, DELETE ACCOUNT</div>
+        <div class="danger-card">
+          <div class="danger-h">⚠ IRREVERSIBLE ACTIONS — READ CAREFULLY BEFORE PROCEEDING</div>
+          <div class="danger-item"><div><div class="danger-item-title">Export All Data</div><div class="danger-item-sub">Download your profile, simulation history, scenarios, and preferences as a JSON file.</div></div><button class="btn-ghost" onclick="exportData()" style="white-space:nowrap;font-size:9.5px;">↓ Export JSON</button></div>
+          <div class="danger-item"><div><div class="danger-item-title">Clear Simulation History</div><div class="danger-item-sub">Permanently delete all saved simulation runs. Cannot be undone.</div></div><button class="btn-danger" onclick="clearHistory()" style="white-space:nowrap;">Clear History</button></div>
+          <div class="danger-item"><div><div class="danger-item-title">Reset All Preferences</div><div class="danger-item-sub">Restore all settings to defaults. Your account and history are not affected.</div></div><button class="btn-danger" onclick="resetPrefs()" style="white-space:nowrap;">Reset</button></div>
+          <div class="danger-item"><div><div class="danger-item-title">Delete Account</div><div class="danger-item-sub">Permanently delete your account and all data. This is irreversible.</div></div><button class="btn-danger" onclick="openDeleteModal()" style="white-space:nowrap;font-weight:700;">Delete Account</button></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ══ DELETE CONFIRM OVERLAY ══════════════════════════════════════════════ -->
+<div class="overlay" id="delete-overlay">
+  <div class="modal-box">
+    <div style="font-size:38px;margin-bottom:.75rem;">⚠️</div>
+    <div style="font-family:var(--head);font-size:18px;font-weight:800;color:var(--red);margin-bottom:.5rem;">Delete Account?</div>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.65;margin-bottom:1.25rem;">This will permanently delete your account, all simulations, history, and preferences. This action cannot be undone.</div>
+    <div class="fg" style="margin-bottom:1.1rem;text-align:left;">
+      <label class="fl">TYPE YOUR EMAIL TO CONFIRM</label>
+      <input class="fi err" type="email" id="del-confirm-email" placeholder="your@email.com">
+    </div>
+    <div style="display:flex;gap:.65rem;justify-content:center;">
+      <button class="btn-ghost" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn-danger" onclick="deleteAccount()" style="font-weight:700;padding:.62rem 1.25rem;">Delete Forever</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="photo-input" accept="image/*" style="display:none" onchange="handlePhotoUpload(event)">
+<div id="toast"></div>
+<!-- Supabase JS client — same project as index.html; landing.html's
+     signup form creates real accounts here instead of faking one in
+     localStorage (see joinFree() below). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+const SUPA = window.supabase.createClient(
+  'https://dxheognltijswhtpnndk.supabase.co',
+  'sb_publishable_4qESSqE-_s8Wn7Qtjs5qNg_xGaXphch'
+);
+
+// Supabase's email-confirmation and magic-link redirects land here (Site
+// URL is configured to this page), but this marketing page has no engine
+// UI of its own — only index.html does. So: detect that we just arrived
+// from one of those links (not an ordinary page load with an already-
+// stored session — that must NOT auto-redirect, or visiting this page
+// while logged in would be useless) and hand off to index.html, which has
+// the real onAuthStateChange logic to render the signed-in app state.
+const _authLinkLanding =
+  /access_token=|type=signup|type=recovery|type=magiclink|type=email_change/.test(window.location.hash) ||
+  ['access_token','type','token_hash'].some(k => new URLSearchParams(window.location.search).has(k));
+SUPA.auth.onAuthStateChange(async (event, session) => {
+  if (!_authLinkLanding) return;
+  if (event === 'PASSWORD_RECOVERY') {
+    // landing.html has no "set new password" UI — index.html's does.
+    window.location.replace('index.html?auth=reset');
+    return;
+  }
+  if (session?.user) {
+    if (!session.user.email_confirmed_at) {
+      await SUPA.auth.signOut().catch(()=>{});
+      return;
+    }
+    window.location.replace('index.html');
+  }
+});
+</script>
+<script>
+// ══ STATE ═══════════════════════════════════════════════════════════════════
+let U = null;
+let _apiKey = null, _apiRevealed = false;
+
+// ══ PAGE LOAD ════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  try { U = JSON.parse(localStorage.getItem('infinicus_user') || 'null'); } catch(e) {}
+  updateLandingNav();
+  if (U) prefillRegLoggedIn();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(()=>{});
+
+  // The cached infinicus_user flag read above is only ever written by
+  // index.html's onAuthStateChange listener — this page never re-verifies
+  // it against the actual Supabase session. If it goes stale (session
+  // expired, signed out elsewhere, locked out, etc.) this page still shows
+  // the logged-in nav state ("▶ Open Engine", an unconditional
+  // href="index.html" with no guard) instead of "Try Engine →". Clicking
+  // it then just bounces straight back here via index.html's own auth
+  // guard, with nothing explaining why — reported live as the "Try
+  // Engine" button "just pops back to landing" on 2026-10-03. Re-verify
+  // once on load and correct the nav if the cache disagrees.
+  SUPA.auth.getSession().then(({ data }) => {
+    const reallySignedIn = !!(data?.session?.user && data.session.user.email_confirmed_at);
+    if (reallySignedIn || !U) return; // cache already agrees (or was already empty)
+    U = null;
+    try { localStorage.removeItem('infinicus_user'); } catch(e) {}
+    updateLandingNav();
+  }).catch(() => {});
+});
+
+// ══ LANDING NAV STATE ════════════════════════════════════════════════════════
+function updateLandingNav() {
+  const chip = $('nav-user-chip');
+  const engineBtn = $('nav-engine-btn');
+  const loggedOutBtns = document.querySelectorAll('.nav-logged-out');
+  if (U) {
+    if (chip) { chip.classList.add('visible'); set('nav-user-name', U.name || U.email.split('@')[0]); }
+    if (engineBtn) engineBtn.style.display = 'inline-flex';
+    loggedOutBtns.forEach(el => el.style.display = 'none');
+    // Update hero CTAs
+    const heroActions = $('hero-actions');
+    if (heroActions) heroActions.innerHTML =
+      `<a class="btn-hero-primary" href="index.html">▶ Open Engine →</a>
+       <button class="btn-hero-secondary" onclick="openAccount()">⚙ My Account</button>`;
+  } else {
+    if (chip) chip.classList.remove('visible');
+    if (engineBtn) engineBtn.style.display = 'none';
+    loggedOutBtns.forEach(el => el.style.display = '');
+  }
+}
+
+// ══ REGISTRATION (real Supabase account — password required, email must be
+// verified before the account can be used; see doLogin()/doRegister() in
+// index.html for the matching sign-in path) ═══════════════════════════════
+async function joinFree() {
+  const name     = (get('reg-name')     || '').trim();
+  const email    = (get('reg-email')    || '').trim().toLowerCase();
+  const password =  get('reg-password') || '';
+  const btn   = $('reg-btn');
+  const errEl = $('reg-err');
+  const okEl  = $('reg-ok');
+  errEl.style.display = 'none';
+  okEl.style.display  = 'none';
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    errEl.textContent = 'Please enter a valid email address.';
+    errEl.style.display = 'block';
+    $('reg-email').focus();
+    return;
+  }
+  if (password.length < 8) {
+    errEl.textContent = 'Password must be at least 8 characters.';
+    errEl.style.display = 'block';
+    $('reg-password').focus();
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Creating account…';
+
+  // Detect selected plan tier from URL param or default free
+  const urlTier = new URLSearchParams(location.search).get('tier') || 'free';
+
+  let data, error;
+  try {
+    ({ data, error } = await SUPA.auth.signUp({
+      email, password,
+      options: { data: { name: name || email.split('@')[0] } },
+    }));
+  } catch (e) {
+    errEl.textContent = 'Network error. Please try again.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '⚡ Create Free Account & Launch Engine →';
+    return;
+  }
+  if (error) {
+    errEl.textContent = error.message || 'Could not create account. Please try again.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '⚡ Create Free Account & Launch Engine →';
+    return;
+  }
+
+  // ── Google Ads conversion event (AW-18295551736) — fires on a real
+  // created account, not on the previous fake localStorage write ──
+  if (typeof gtag === 'function') {
+    gtag('event', 'conversion', {
+      send_to: 'AW-18295551736',   // Google Ads account
+      event_category: 'signup',
+      event_label: urlTier,
+      value: urlTier === 'growth' ? 29 : urlTier === 'professional' ? 79 : 0,
+      currency: 'USD',
+    });
+  }
+
+  // Waitlist signup removed — account creation no longer auto-subscribes
+  // every new user to the marketing waitlist / fires its notification
+  // email. The explicit "Join Waitlist" button for paid plans (index.html)
+  // is unaffected — that's a separate, deliberate action.
+
+  const confirmed = data.user?.email_confirmed_at;
+  if (confirmed) {
+    // Supabase auto-confirm is on for this project (rare) — a real session
+    // already exists, so it's safe to continue straight into the engine.
+    okEl.innerHTML = '✓ Account created! Launching engine…<br><a href="index.html" style="color:var(--cyan);display:inline-block;margin-top:.5rem;text-decoration:none;border:1px solid rgba(0,224,96,.3);border-radius:6px;padding:.4rem 1rem;font-size:11px;">Open Engine →</a>';
+    okEl.style.display = 'block';
+    btn.style.display = 'none';
+    setTimeout(() => { window.location.href = 'index.html'; }, 900);
+  } else {
+    // Normal path — do NOT grant access or redirect. The account exists
+    // but is unusable until the verification link is clicked (index.html's
+    // doLogin() rejects sign-in for an unverified address — see there).
+    okEl.innerHTML = '✓ Account created! Check <strong>' + email.replace(/</g,'&lt;') + '</strong> for a verification link, then sign in from the engine.';
+    okEl.style.display = 'block';
+    btn.disabled = true;
+    btn.textContent = 'Check your email to continue →';
+  }
+}
+
+function prefillRegLoggedIn() {
+  const btn = $('reg-btn');
+  if (btn) btn.textContent = '▶ Open Engine — Welcome back, ' + (U.name || U.email.split('@')[0]) + '!';
+  const nameEl = $('reg-name'); if (nameEl) nameEl.value = U.name || '';
+  const emailEl = $('reg-email'); if (emailEl) emailEl.value = U.email || '';
+}
+
+function scrollToReg() {
+  if (U) { openAccount(); return; }
+  switchRegTab('signin');
+  const el = $('register'); if (el) el.scrollIntoView({behavior:'smooth'});
+}
+
+// Shared handler for every "Try Engine"/"Open Engine" CTA on this page.
+// A static href="index.html" (what these used to be) sends a logged-out —
+// or stale-logged-in-looking — visitor straight into index.html, which
+// bounces them right back here via its own auth guard with no explanation:
+// a confusing navigation round-trip (reported live as "looping to the sim
+// engine and T&C" on 2026-10-03).
+//
+// An earlier version of this gated on the cached `U` variable synchronously
+// (if (U) return true;) — but U is only corrected against the real Supabase
+// session by a separate async check on page load (see DOMContentLoaded
+// below), so clicking quickly after the page loads could race that check:
+// U still reads as stale-truthy, this function waves the click straight
+// through to index.html, and ONLY THEN does index.html's own guard (which
+// properly awaits the real session) catch the problem and bounce back —
+// producing exactly that loop.
+//
+// Fix: always prevent the default navigation first, then verify the real,
+// live session here before deciding anything — never trust the cached U
+// flag for this decision at all.
+async function handleTryEngineClick(event) {
+  if (event) event.preventDefault();
+  closeMobileNav();
+  let reallySignedIn = false;
+  try {
+    const { data } = await SUPA.auth.getSession();
+    reallySignedIn = !!(data?.session?.user && data.session.user.email_confirmed_at);
+  } catch (e) {}
+  if (reallySignedIn) {
+    window.location.href = 'index.html';
+    return false;
+  }
+  switchRegTab('signin');
+  const el = $('register'); if (el) el.scrollIntoView({behavior:'smooth'});
+  return false;
+}
+
+// ══ SIGN-IN TAB (real account, not the fake flow this page used to have) ══
+function switchRegTab(tab) {
+  const isRegister = tab === 'register';
+  const regPane  = $('reg-pane-register');
+  const signPane = $('reg-pane-signin');
+  if (regPane)  regPane.style.display  = isRegister ? 'block' : 'none';
+  if (signPane) signPane.style.display = isRegister ? 'none'  : 'block';
+  const regTab  = $('reg-tab-register');
+  const signTab = $('reg-tab-signin');
+  [regTab, signTab].forEach(b => { if (b) { b.style.background = 'none'; b.style.color = 'var(--muted)'; } });
+  const activeTab = isRegister ? regTab : signTab;
+  if (activeTab) { activeTab.style.background = 'rgba(0,224,96,.12)'; activeTab.style.color = 'var(--cyan)'; }
+  setTimeout(() => $(isRegister ? 'reg-name' : 'signin-email')?.focus(), 50);
+}
+
+async function doLoginLanding() {
+  const email    = ($('signin-email')?.value    || '').trim();
+  const password =  $('signin-password')?.value || '';
+  const errEl    =  $('signin-err');
+  const btn      =  $('signin-btn-submit');
+  if (!email || !password) {
+    errEl.textContent = 'Email and password required.'; errEl.style.display = 'block'; return;
+  }
+  errEl.style.display = 'none';
+  btn.textContent = 'Signing in…'; btn.disabled = true;
+  try {
+    const { data, error } = await SUPA.auth.signInWithPassword({ email, password });
+    if (error) {
+      errEl.textContent = error.message || 'Sign in failed. Please try again.'; errEl.style.display = 'block';
+      btn.textContent = 'Sign In →'; btn.disabled = false; return;
+    }
+    // Same verification gate as index.html's doLogin() — an account that
+    // exists but was never confirmed must not be usable from either page.
+    if (!data.user?.email_confirmed_at) {
+      await SUPA.auth.signOut().catch(()=>{});
+      errEl.textContent = 'Please verify your email before signing in — check your inbox for the confirmation link.';
+      errEl.style.display = 'block';
+      btn.textContent = 'Sign In →'; btn.disabled = false;
+      return;
+    }
+    // Supabase persists the session in this origin's localStorage, so
+    // index.html's own SUPA client picks it up automatically on load —
+    // no need to duplicate the U-setting logic from onAuthStateChange here.
+    showToast(`Signed in as ${data.user.email} ✓`);
+    setTimeout(() => { window.location.href = 'index.html'; }, 500);
+  } catch (e) {
+    errEl.textContent = 'Network error. Please try again.'; errEl.style.display = 'block';
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+  }
+}
+
+// Remembers which entry path the visitor picked in the hero ("Connect My
+// Existing Business" vs "Prepare My Business for Launch") so index.html can
+// land them on the right section right after signup, instead of always
+// dropping everyone into the Simulation setup form.
+function setLandingIntent(intent) {
+  try { localStorage.setItem('inf_landing_intent', intent); } catch (e) {}
+}
+
+// ══ ACCOUNT OVERLAY ══════════════════════════════════════════════════════════
+function openAccount() {
+  if (!U) { scrollToReg(); return; }
+  $('ao-overlay').classList.add('open');
+  document.body.classList.add('ao-open');
+  initAccountUI();
+}
+function closeAccount() {
+  $('ao-overlay').classList.remove('open');
+  document.body.classList.remove('ao-open');
+}
+function initAccountUI() {
+  populateSidebar();
+  loadProfile();
+  loadPreferences();
+  loadApiKey();
+  renderStats();
+  renderLoginHistory();
+  updateSubscription();
+  showTab('profile');
+}
+
+// ══ ACCOUNT TAB NAVIGATION ════════════════════════════════════════════════════
+function showTab(id) {
+  document.querySelectorAll('.ao-sec').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.ao-item').forEach(b => b.classList.remove('active'));
+  const sec = $('tab-' + id); if (sec) sec.classList.add('active');
+  const btn = document.querySelector(`.ao-item[data-tab="${id}"]`); if (btn) btn.classList.add('active');
+  const content = document.querySelector('.ao-content'); if (content) content.scrollTop = 0;
+  if (id === 'stats') renderStats();
+}
+
+// ══ SIDEBAR ══════════════════════════════════════════════════════════════════
+function populateSidebar() {
+  const p = prefs();
+  const name = p.name || (U ? U.email.split('@')[0] : '');
+  const initials = name.split(' ').map(w => (w[0]||'').toUpperCase()).slice(0,2).join('') || 'U';
+  const plan = (U && U.plan) || 'free';
+  set('ao-sb-name', name);
+  set('ao-sb-email', U ? U.email : '');
+  const planEl = $('ao-sb-plan');
+  if (planEl) { planEl.textContent = plan.toUpperCase(); planEl.className = 'ao-plan-chip ' + plan; }
+  setAvatar(['ao-sb-avatar','profile-avatar'], initials, p.photo);
+  const rmBtn = $('rm-photo-btn'); if (rmBtn) rmBtn.style.display = p.photo ? '' : 'none';
+  // Account info
+  if (U) {
+    set('ai-created', U.createdAt ? new Date(U.createdAt).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}) : '—');
+    set('ai-id', 'usr_' + ((U.createdAt||Date.now()).toString(36)));
+    const pb = $('ai-plan'); if (pb) pb.textContent = plan.toUpperCase();
+    const tfb = $('ai-2fa'); if (tfb && p.twofa) { tfb.textContent='ENABLED'; tfb.className='badge v'; }
+  }
+}
+function setAvatar(ids, initials, photo) {
+  ids.forEach(id => {
+    const el = $(id); if (!el) return;
+    el.innerHTML = photo ? `<img src="${photo}" alt="avatar">` : initials;
+  });
+}
+
+// ══ PROFILE ═══════════════════════════════════════════════════════════════════
+function loadProfile() {
+  const p = prefs();
+  val('f-name',     p.name     || '');
+  val('f-username', p.username || (U ? U.email.split('@')[0] : ''));
+  val('f-email',    U ? U.email : '');
+  val('f-phone',    p.phone    || '');
+  val('f-country',  p.country  || '');
+  val('f-city',     p.city     || '');
+  val('f-bio',      p.bio      || '');
+  hideMsg('profile');
+}
+function saveProfile() {
+  const name = (get('f-name') || '').trim();
+  if (!name) { showMsg('profile','err','Please enter your name.'); return; }
+  const p = prefs();
+  p.name     = name;
+  p.username = (get('f-username') || '').replace('@','');
+  p.phone    = get('f-phone');
+  p.country  = get('f-country');
+  p.city     = get('f-city');
+  p.bio      = get('f-bio');
+  savePrefs(p);
+  populateSidebar();
+  showMsg('profile','ok');
+  showToast('Profile saved ✓');
+}
+function handlePhotoUpload(e) {
+  const file = e.target.files[0]; if (!file) return;
+  if (file.size > 2*1024*1024) { showToast('Photo must be under 2 MB'); return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const p = prefs(); p.photo = ev.target.result; savePrefs(p);
+    setAvatar(['ao-sb-avatar','profile-avatar'], '', ev.target.result);
+    const rmBtn = $('rm-photo-btn'); if (rmBtn) rmBtn.style.display = '';
+    showToast('Photo updated ✓');
+  };
+  reader.readAsDataURL(file);
+}
+function removePhoto() {
+  const p = prefs(); delete p.photo; savePrefs(p);
+  const rmBtn = $('rm-photo-btn'); if (rmBtn) rmBtn.style.display = 'none';
+  populateSidebar();
+  showToast('Photo removed.');
+}
+
+// ══ SECURITY ══════════════════════════════════════════════════════════════════
+async function changePassword() {
+  const cur = get('s-cur'), nw = get('s-new'), conf = get('s-conf');
+  hideMsg('pass');
+  if (!cur) { showMsg('pass','err','Enter your current password.'); return; }
+  if (nw.length < 8) { showMsg('pass','err','New password must be at least 8 characters.'); return; }
+  if (nw !== conf) { showMsg('pass','err','Passwords do not match.'); return; }
+  try {
+    const res = await fetch('/api/auth/change-password', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email: U.email, currentPassword:cur, newPassword:nw})
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) { showMsg('pass','err', data.error || 'Could not change password.'); return; }
+    showMsg('pass','ok');
+    ['s-cur','s-new','s-conf'].forEach(id => val(id,''));
+    $('ps-fill').style.width = '0%'; set('ps-lbl','—');
+    showToast('Password updated ✓');
+  } catch(e) { showMsg('pass','err','Network error. Please try again.'); }
+}
+function checkStrength(v) {
+  const fill = $('ps-fill'), lbl = $('ps-lbl'); if (!fill) return;
+  if (!v) { fill.style.width='0%'; if (lbl) lbl.textContent='—'; return; }
+  let s = 0;
+  if (v.length >= 8) s++; if (v.length >= 12) s++;
+  if (/[A-Z]/.test(v)) s++; if (/[0-9]/.test(v)) s++; if (/[^A-Za-z0-9]/.test(v)) s++;
+  const labs=['','Weak','Fair','Good','Strong','Very Strong'];
+  const cols=['','#f43f5e','#f59e0b','#f59e0b','#10b981','#00e676'];
+  fill.style.width=(s*20)+'%'; fill.style.background=cols[s]||'#f43f5e';
+  if (lbl) { lbl.textContent=labs[s]||''; lbl.style.color=cols[s]||'var(--muted-2)'; }
+}
+function on2FAToggle(cb) { $('twofa-panel').style.display = cb.checked ? 'block' : 'none'; }
+function verify2FA() {
+  const code = (get('twofa-code')||'').replace(/\s/g,'');
+  if (code.length !== 6 || !/^\d+$/.test(code)) { showToast('Enter a valid 6-digit code.'); return; }
+  const p = prefs(); p.twofa = true; savePrefs(p);
+  const tfb = $('ai-2fa'); if (tfb) { tfb.textContent='ENABLED'; tfb.className='badge v'; }
+  showToast('2FA enabled ✓');
+}
+function downloadBackupCodes() {
+  const codes = ['A3F9-7K2M','X8R1-9P4N','B2J6-4L7T','Q5W3-8M1V','N7H2-6C9R','Y4E8-1D5S'];
+  const blob = new Blob([`INFINICUS ENGINE v3 — 2FA Backup Codes\nGenerated: ${new Date().toISOString()}\n\n${codes.join('\n')}\n\nStore these somewhere safe.`],{type:'text/plain'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='infinicus-backup-codes.txt'; a.click();
+}
+function revokeSession(btn) {
+  const row = btn.closest('.dev-row'); row.style.opacity='.4';
+  btn.textContent='Revoked'; btn.disabled=true; showToast('Session revoked.');
+}
+function revokeAllSessions() {
+  document.querySelectorAll('#sessions-list .dev-row').forEach((row,i) => {
+    if (i>0) { row.style.opacity='.4'; const b=row.querySelector('button'); if(b){b.textContent='Revoked';b.disabled=true;} }
+  });
+  showToast('All other sessions revoked.');
+}
+function renderLoginHistory() {
+  const rows=[
+    {t:'Just now',    d:'Chrome · Windows',s:true},
+    {t:'2 hours ago', d:'Mobile Browser',  s:true},
+    {t:'Yesterday',   d:'Chrome · Windows',s:true},
+    {t:'3 days ago',  d:'Firefox · Mac',   s:true},
+    {t:'Last week',   d:'Safari · iPhone', s:true},
+  ];
+  const lh = $('login-hist');
+  if (lh) lh.innerHTML = rows.map(r =>
+    `<tr><td>${r.t}</td><td>${r.d}</td><td>Your location</td><td><span class="badge ${r.s?'v':'w'}">${r.s?'✓ SUCCESS':'✗ FAILED'}</span></td></tr>`
+  ).join('');
+}
+
+// ══ PREFERENCES ═══════════════════════════════════════════════════════════════
+function loadPreferences() {
+  const p = prefs();
+  check('n-sim',     p.notifSim     !== false);
+  check('n-digest',  p.notifDigest  || false);
+  check('n-product', p.notifProduct !== false);
+  check('n-mkt',     p.notifMkt     || false);
+  check('p-analytics',p.privAnalytics !== false);
+  check('p-public',  p.privPublic   || false);
+  check('p-ai',      p.privAI       !== false);
+  val('pref-lang',     p.language   || 'en');
+  val('pref-theme',    p.theme      || 'dark');
+  val('pref-currency', p.currency   || 'USD');
+  val('pref-date',     p.dateFormat || 'dmy');
+}
+function savePreferences() {
+  const p = prefs();
+  p.notifSim=checked('n-sim'); p.notifDigest=checked('n-digest');
+  p.notifProduct=checked('n-product'); p.notifMkt=checked('n-mkt');
+  p.privAnalytics=checked('p-analytics'); p.privPublic=checked('p-public'); p.privAI=checked('p-ai');
+  p.language=get('pref-lang'); p.theme=get('pref-theme');
+  p.currency=get('pref-currency'); p.dateFormat=get('pref-date');
+  savePrefs(p); showMsg('pref','ok'); showToast('Preferences saved ✓');
+}
+
+// ══ SUBSCRIPTION ══════════════════════════════════════════════════════════════
+function updateSubscription() {
+  const plan = (U && U.plan) || 'free';
+  const icons={free:'🌱',starter:'⚡',growth:'🚀',professional:'💎'};
+  const names={free:'FREE PLAN',starter:'STARTER',growth:'GROWTH',professional:'PROFESSIONAL'};
+  const descs={
+    free:'1 simulation · Basic dashboard · Verdict only',
+    starter:'Unlimited simulations · Full dashboard · Report & 60-day plan',
+    growth:'Everything in Starter + Sensitivity analysis & Scenario comparison',
+    professional:'Everything in Growth + AI analysis · API access · White-label export',
+  };
+  set('ph-icon',icons[plan]||'🌱'); set('ph-name',names[plan]||'FREE PLAN'); set('ph-desc',descs[plan]||'');
+  const simCount = (U && U.simCount) || 0;
+  const isPaid = plan !== 'free';
+  set('u-sim-lbl', isPaid ? `${simCount} / ∞` : `${simCount} / 1`);
+  const simBar = $('u-sim-bar'); if (simBar) simBar.style.width = (isPaid ? 0 : Math.min(100, simCount*100)) + '%';
+  const aiUsed = parseInt(localStorage.getItem('infinicus_ai_count')||'0');
+  set('u-ai-lbl',`${aiUsed} / 10`);
+  const aiBar = $('u-ai-bar'); if (aiBar) aiBar.style.width = Math.min(100, aiUsed*10) + '%';
+  let hist=[]; try { hist=JSON.parse(localStorage.getItem('infinicus_history')||'[]'); } catch(e) {}
+  set('u-hist-lbl',`${hist.length} / 20`);
+  const hBar = $('u-hist-bar'); if (hBar) hBar.style.width = Math.min(100, hist.length/20*100) + '%';
+}
+
+// ══ STATS ═════════════════════════════════════════════════════════════════════
+function renderStats() {
+  let hist=[], scenarios=[];
+  try { hist=JSON.parse(localStorage.getItem('infinicus_history')||'[]'); } catch(e) {}
+  try { scenarios=JSON.parse(localStorage.getItem('infinicus_scenarios')||'[]'); } catch(e) {}
+  const goCount = hist.filter(h => h.verdict==='go').length;
+  const avgSurv = hist.length ? Math.round(hist.reduce((s,h) => s+(h.surv||0),0)/hist.length) : null;
+  const indCount={}; hist.forEach(h => { indCount[h.industry]=(indCount[h.industry]||0)+1; });
+  const topInd = Object.entries(indCount).sort((a,b)=>b[1]-a[1])[0];
+  set('st-total', (U&&U.simCount)||0);
+  set('st-saved', hist.length);
+  set('st-go', goCount);
+  set('st-surv', avgSurv!==null ? avgSurv+'%' : '—');
+  set('st-top-ind', topInd ? topInd[0].toUpperCase() : '—');
+  set('st-scenarios', scenarios.length);
+  const body = $('recent-body');
+  if (body) body.innerHTML = hist.length===0
+    ? `<tr><td colspan="5" style="text-align:center;color:var(--muted-2);padding:1.5rem;font-family:var(--mono);font-size:10px;">No simulations yet. <a href="./index.html" style="color:var(--cyan);">Run your first one →</a></td></tr>`
+    : hist.slice(0,10).map(h => {
+        const vc=h.verdict==='go'?'var(--emerald)':h.verdict==='modify'?'var(--amber)':'var(--red)';
+        const sc=h.surv>=55?'var(--emerald)':h.surv>=35?'var(--amber)':'var(--red)';
+        return `<tr><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${h.idea||''}</td><td>${h.industry||''}</td><td style="color:${vc};font-weight:700;">${(h.verdict||'').toUpperCase()}</td><td style="color:${sc}">${h.surv||0}%</td><td>${h.date||''}</td></tr>`;
+      }).join('');
+  const sw = $('scenarios-wrap');
+  if (sw) sw.innerHTML = scenarios.length===0
+    ? `<div style="font-family:var(--mono);font-size:10.5px;color:var(--muted-2);">No scenarios saved. Use the Compare tab in the engine to save scenarios.</div>`
+    : scenarios.map((sc,i) => `<div style="display:flex;align-items:center;padding:.6rem 0;border-bottom:1px solid rgba(255,255,255,.05);"><div style="flex:1;font-family:var(--mono);font-size:10.5px;">${sc.idea||'Scenario '+(i+1)}</div><div style="font-family:var(--mono);font-size:9.5px;color:var(--muted-2);margin-left:1rem;">${sc.industry||''}</div></div>`).join('');
+}
+
+// ══ DEVELOPER ═════════════════════════════════════════════════════════════════
+function loadApiKey() {
+  const p = prefs(); _apiKey = p.apiKey || null;
+  if (p.apiKeyCreated) set('api-created', new Date(p.apiKeyCreated).toLocaleDateString());
+}
+function toggleApiKey() {
+  if (!_apiKey) { showToast('Generate a key first.'); return; }
+  _apiRevealed = !_apiRevealed;
+  set('api-display', _apiRevealed ? _apiKey : 'iex_••••••••••••••••••••••••••••••••••••••••');
+  set('api-reveal-btn', _apiRevealed ? 'Hide' : 'Reveal');
+}
+function copyApiKey() {
+  if (!_apiKey) { showToast('Generate a key first.'); return; }
+  navigator.clipboard.writeText(_apiKey).then(()=>showToast('API key copied ✓')).catch(()=>{});
+}
+function generateApiKey() {
+  if (_apiKey && !confirm('Replace the existing API key? The old key will stop working immediately.')) return;
+  const bytes = new Uint8Array(30); crypto.getRandomValues(bytes);
+  _apiKey = 'iex_' + Array.from(bytes, b=>b.toString(16).padStart(2,'0')).join('');
+  _apiRevealed = true;
+  const p = prefs(); p.apiKey=_apiKey; p.apiKeyCreated=Date.now(); savePrefs(p);
+  set('api-display', _apiKey); set('api-reveal-btn','Hide'); set('api-created','just now');
+  showToast('API key generated ✓');
+}
+function revokeApiKey() {
+  if (!_apiKey) { showToast('No key to revoke.'); return; }
+  if (!confirm('Revoke this API key? Any integrations using it will stop working.')) return;
+  _apiKey=null; _apiRevealed=false;
+  const p=prefs(); delete p.apiKey; delete p.apiKeyCreated; savePrefs(p);
+  set('api-display','iex_••••••••••••••••••••••••••••••••••••••••');
+  set('api-reveal-btn','Reveal'); set('api-created','—');
+  showToast('API key revoked.');
+}
+
+// ══ DANGER ZONE ═══════════════════════════════════════════════════════════════
+function exportData() {
+  let hist=[], scen=[];
+  try { hist=JSON.parse(localStorage.getItem('infinicus_history')||'[]'); } catch(e) {}
+  try { scen=JSON.parse(localStorage.getItem('infinicus_scenarios')||'[]'); } catch(e) {}
+  const p=prefs();
+  const data = {
+    exportedAt: new Date().toISOString(),
+    user: { email:U?U.email:'', plan:U?U.plan:'free', createdAt:U?U.createdAt:null },
+    profile: { name:p.name, username:p.username, phone:p.phone, country:p.country, city:p.city, bio:p.bio },
+    simulationHistory: hist.map(h=>({id:h.id,date:h.date,idea:h.idea,industry:h.industry,verdict:h.verdict,revenue:h.rev,profit:h.profit,survivalRate:h.surv})),
+    savedScenarios: scen,
+    preferences: { language:p.language, currency:p.currency, theme:p.theme },
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`infinicus-export-${Date.now()}.json`; a.click();
+  showToast('Data exported ✓');
+}
+function clearHistory() {
+  if (!confirm('Delete all simulation history? This cannot be undone.')) return;
+  try { localStorage.removeItem('infinicus_history'); } catch(e) {}
+  renderStats(); showToast('History cleared.');
+}
+function resetPrefs() {
+  if (!confirm('Reset all preferences to defaults?')) return;
+  try { localStorage.removeItem('infinicus_prefs'); } catch(e) {}
+  loadPreferences(); showToast('Preferences reset to defaults.');
+}
+function openDeleteModal()  { $('delete-overlay').classList.add('open'); }
+function closeDeleteModal() { $('delete-overlay').classList.remove('open'); }
+function deleteAccount() {
+  const typed=(get('del-confirm-email')||'').trim().toLowerCase();
+  if (!U || typed !== U.email.toLowerCase()) { showToast('Email does not match.'); return; }
+  ['infinicus_user','infinicus_history','infinicus_scenarios','infinicus_prefs',
+   'infinicus_v3','infinicus_tc_accepted','infinicus_ai_count'].forEach(k => {
+    try { localStorage.removeItem(k); } catch(e) {}
+  });
+  showToast('Account deleted. Redirecting…');
+  setTimeout(() => { U=null; closeDeleteModal(); closeAccount(); updateLandingNav(); }, 1500);
+}
+
+// ══ SIGN OUT ══════════════════════════════════════════════════════════════════
+function signOut() {
+  try { localStorage.removeItem('infinicus_user'); } catch(e) {}
+  U = null;
+  closeAccount();
+  updateLandingNav();
+  showToast('Signed out.');
+}
+
+// ══ PREFS STORAGE ═════════════════════════════════════════════════════════════
+function prefs()      { try { return JSON.parse(localStorage.getItem('infinicus_prefs')||'{}'); } catch(e) { return {}; } }
+function savePrefs(p) { try { localStorage.setItem('infinicus_prefs', JSON.stringify(p)); } catch(e) {} }
+
+// ══ FAQ ═══════════════════════════════════════════════════════════════════════
+function toggleFaq(btn) {
+  const item = btn.closest('.faq-item');
+  const isOpen = item.classList.contains('open');
+  document.querySelectorAll('.faq-item.open').forEach(i => i.classList.remove('open'));
+  if (!isOpen) item.classList.add('open');
+}
+
+// ══ MOBILE NAV ════════════════════════════════════════════════════════════════
+function toggleMobileNav(btn) {
+  const nav = $('mobile-nav');
+  const open = nav.style.display === 'flex';
+  nav.style.display = open ? 'none' : 'flex';
+  btn.textContent = open ? '☰' : '✕';
+}
+function closeMobileNav() {
+  const nav = $('mobile-nav'); if (nav) nav.style.display = 'none';
+  const btn = document.querySelector('.nav-hamburger'); if (btn) btn.textContent = '☰';
+}
+
+// ══ SHARED HELPERS ════════════════════════════════════════════════════════════
+function $(id)        { return document.getElementById(id); }
+function get(id)      { return (($(id)||{}).value) || ''; }
+function val(id, v)   { const el=$(id); if(el) el.value = v; }
+function set(id, v)   { const el=$(id); if(el) el.textContent = v; }
+function check(id, v) { const el=$(id); if(el) el.checked = !!v; }
+function checked(id)  { return !!(($(id)||{}).checked); }
+function showMsg(prefix, type, msg) {
+  const ok = $(prefix+'-ok'), err = $(prefix+'-err');
+  if (ok)  ok.style.display  = type==='ok'  ? 'block' : 'none';
+  if (err) { err.style.display = type==='err' ? 'block' : 'none'; if(msg) err.textContent=msg; }
+}
+function hideMsg(p) { showMsg(p,''); }
+function showToast(msg, dur=2800) {
+  const t = $('toast'); if (!t) return;
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => t.classList.remove('show'), dur);
+}
+</script>
+
+<!-- ══ COOKIE CONSENT BANNER ══ -->
+<div id="cookie-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:rgba(10,16,32,.97);border-top:1px solid rgba(255,255,255,.1);backdrop-filter:blur(16px);padding:.85rem 1.5rem;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;font-family:monospace;font-size:10.5px;color:#8893ad;">
+  <span style="flex:1;min-width:220px;line-height:1.6;">We use cookies to measure ad performance. No personal data is sold. <a href="/legal.html" style="color:#00e060;text-decoration:none;">Privacy Policy</a></span>
+  <div style="display:flex;gap:.6rem;flex-shrink:0;">
+    <button onclick="setCookieConsent('denied')" style="font-family:monospace;font-size:10px;padding:5px 14px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:none;color:#8893ad;cursor:pointer;">Decline</button>
+    <button onclick="setCookieConsent('granted')" style="font-family:monospace;font-size:10px;padding:5px 14px;border-radius:6px;border:none;background:#00e060;color:#060a14;cursor:pointer;font-weight:700;">Accept</button>
+  </div>
+</div>
+<script>
+(function(){var c=localStorage.getItem('inf_cookie_consent');if(!c){var b=document.getElementById('cookie-banner');if(b)b.style.display='flex';}})();
+function setCookieConsent(choice){localStorage.setItem('inf_cookie_consent',choice);if(choice==='granted'&&typeof gtag==='function'){gtag('consent','update',{ad_storage:'granted',analytics_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});}var b=document.getElementById('cookie-banner');if(b)b.style.display='none';}
+</script>
+</body>
+</html>
