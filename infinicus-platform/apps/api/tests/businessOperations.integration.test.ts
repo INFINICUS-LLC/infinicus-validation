@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { Pool } from 'pg';
 import { loadConfig } from '@infinicus/configuration';
+import { DataAcquisitionService } from '@infinicus/data-acquisition-runtime';
 import {
   closePool,
   createPool,
@@ -22,6 +23,7 @@ let adminPool: Pool;
 let ctx: TenantContext;
 let token: string;
 let businessId: string;
+let intakePackageId: string;
 
 function unique(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -97,6 +99,40 @@ describe.runIf(RUN)('BUILD-32 Operations API — live PostgreSQL', () => {
       [T1, WS1, unique('build32-api-biz')]
     );
     businessId = biz.rows[0].id;
+
+    const da = new DataAcquisitionService();
+    const source = await da.registerSource(ctx, {
+      businessId,
+      name: 'BUILD-32 API intake source',
+      sourceCode: unique('build32-api-source'),
+      sourceType: 'manual',
+      sensitivityLevel: 'internal',
+      status: 'active',
+    });
+    const intake = await da.submitManualIntake(ctx, {
+      businessId,
+      dataSourceId: source.id,
+      submissionType: 'operations',
+      records: [{
+        recordType: 'operational_fact',
+        data: {
+          eventType: 'expense',
+          amount: 42.75,
+          category: 'build32-api-intake',
+          notes: 'Operations API intake test',
+        },
+      }],
+      sourceReference: 'integration://build32-api',
+      submittedBy: ctx.userId,
+    });
+    const prepared = await da.preparePublicationPackage(
+      ctx,
+      businessId,
+      intake.collectionRunId,
+      { targetBlock: 'BO-RUNTIME' }
+    );
+    const published = await da.publishPackage(ctx, businessId, prepared.id);
+    intakePackageId = published.id;
 
     const supplier = await adminPool.query<{ id: string }>(
       `INSERT INTO platform.suppliers
@@ -185,6 +221,59 @@ describe.runIf(RUN)('BUILD-32 Operations API — live PostgreSQL', () => {
     await app?.close();
     await adminPool?.end();
     await closePool();
+  });
+
+  it('requires authentication for Operations intake', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/businesses/${businessId}/operations/intake/${intakePackageId}`,
+      headers: {
+        'x-tenant-id': T1,
+        'x-workspace-id': WS1,
+        'idempotency-key': unique('unauth-intake'),
+      },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('consumes a canonical published DA package through the Operations API', async () => {
+    const first = await app.inject({
+      method: 'POST',
+      url: `/v1/businesses/${businessId}/operations/intake/${intakePackageId}`,
+      headers: {
+        ...headers(),
+        'idempotency-key': unique('build32-intake'),
+      },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.json().publicationPackageId).toBe(intakePackageId);
+    expect(first.json().idempotentReplay).toBe(false);
+    expect(first.json().acceptedRecordCount).toBe(1);
+    expect(first.json().commandCount).toBe(1);
+
+    const event = await adminPool.query<{ amount: string; category: string }>(
+      `SELECT amount, category
+       FROM business_operations.business_events
+       WHERE tenant_id = $1 AND business_id = $2 AND event_type = 'expense'
+         AND category = 'build32-api-intake'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [T1, businessId]
+    );
+    expect(event.rowCount).toBe(1);
+    expect(Number(event.rows[0].amount)).toBeCloseTo(42.75, 2);
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: `/v1/businesses/${businessId}/operations/intake/${intakePackageId}`,
+      headers: {
+        ...headers(),
+        'idempotency-key': unique('build32-intake-replay'),
+      },
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json().idempotentReplay).toBe(true);
+    expect(replay.json().commandCount).toBe(0);
   });
 
   it('rejects unauthenticated Operations reads', async () => {
