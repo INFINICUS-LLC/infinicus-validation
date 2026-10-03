@@ -577,6 +577,18 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
       .rejects.toThrow(/critical limitation/i);
   });
 
+  it('rejects a handoff from the wrong workspace within the same tenant', async () => {
+    const handoff = await createPublishedHandoff();
+    const wrongWorkspaceCtx: TenantContext = {
+      tenantId: ctx.tenantId,
+      workspaceId: '32222222-3200-0000-0000-000000000098',
+      userId: ctx.userId,
+    };
+
+    await expect(bo.processHandoff(wrongWorkspaceCtx, handoff))
+      .rejects.toBeInstanceOf(BusinessIntakeRejectedError);
+  });
+
   it('rejects a handoff whose active tenant/workspace does not match the payload', async () => {
     const handoff = await createPublishedHandoff();
     const wrongCtx: TenantContext = {
