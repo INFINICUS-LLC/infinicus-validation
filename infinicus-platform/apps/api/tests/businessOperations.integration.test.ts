@@ -39,7 +39,13 @@ describe.runIf(RUN)('BUILD-32 Operations API — live PostgreSQL', () => {
   beforeAll(async () => {
     const appUrl = process.env.DATABASE_URL!;
     const adminUrl = process.env.ADMIN_DATABASE_URL ?? appUrl;
-    createPool({ connectionString: appUrl, ssl: true });
+    const config = loadConfig({
+      DATABASE_URL: appUrl,
+      DB_SSL: process.env.DB_SSL ?? 'false',
+      NODE_ENV: 'test',
+      LOG_LEVEL: 'silent',
+    });
+    createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     adminPool = new Pool({ connectionString: adminUrl });
 
     await adminPool.query(
@@ -55,7 +61,6 @@ describe.runIf(RUN)('BUILD-32 Operations API — live PostgreSQL', () => {
       [WS1, T1]
     );
 
-    const config = loadConfig({ DATABASE_URL: appUrl, NODE_ENV: 'test', LOG_LEVEL: 'silent' });
     app = await buildApp(config);
     await app.ready();
 
