@@ -50,7 +50,7 @@ export class SupplierService {
         riskStatus: row.risk_status as string,
         status: row.status as string,
         latestPerformanceScore: row.overall_score === null ? null : Number(row.overall_score),
-        latestPerformanceAt: row.period_end as Date | null,
+        latestPerformanceAt: row.period_end === null ? null : new Date(String(row.period_end)),
       }));
     });
   }
@@ -75,8 +75,8 @@ export class SupplierService {
         id: row.id as string,
         businessId: row.business_id as string,
         supplierId: row.supplier_id as string,
-        periodStart: row.period_start as Date,
-        periodEnd: row.period_end as Date,
+        periodStart: new Date(String(row.period_start)),
+        periodEnd: new Date(String(row.period_end)),
         overallScore: Number(row.overall_score),
       }));
     });
