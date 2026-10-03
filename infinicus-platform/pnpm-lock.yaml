@@ -481,6 +481,9 @@ importers:
         specifier: ^8.12.0
         version: 8.22.0
     devDependencies:
+      '@infinicus/data-acquisition-runtime':
+        specifier: workspace:*
+        version: link:../data-acquisition-runtime
       '@types/pg':
         specifier: ^8.11.6
         version: 8.20.0
