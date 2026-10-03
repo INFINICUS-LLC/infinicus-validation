@@ -43,12 +43,40 @@ function optionalInt(env: NodeJS.ProcessEnv, key: string, fallback: number): num
   return parsed;
 }
 
-function resolveDbSsl(env: NodeJS.ProcessEnv, databaseUrl: string): boolean {
+function resolveDbSsl(env: NodeJS.ProcessEnv, databaseUrl: string, resolvedEnv: InfinicusConfig['env']): boolean {
   const raw = env.DB_SSL;
   if (raw !== undefined) return raw === 'true' || raw === '1';
+
+  // DB_SSL wasn't set explicitly. Previously this silently guessed `true`
+  // for any non-localhost hostname — but plenty of real non-localhost
+  // Postgres targets (a Docker Compose service name, a private VPC host)
+  // don't speak TLS at all, so that guess caused a full outage once a
+  // deploy used one. Guessing wrong here means either a refused connection
+  // or, worse, a connection that silently drops TLS protection — both are
+  // unacceptable to leave to a guess in a real deployment, so this now
+  // fails closed exactly like every other required value in this file.
+  if (resolvedEnv === 'production' || resolvedEnv === 'staging') {
+    throw new ConfigurationError(
+      'DB_SSL is not set. Set it explicitly ("true" or "false") for production/staging — ' +
+        'this value is not guessed from the database hostname.'
+    );
+  }
+
+  // Local development/test only: keep the old heuristic as a convenience
+  // (most devs never set DB_SSL for a local Postgres), but make the guess
+  // visible instead of silent so a misconfigured non-local dev DB is caught
+  // early rather than discovered as a connection failure.
   try {
     const host = new URL(databaseUrl).hostname;
-    return host !== 'localhost' && host !== '127.0.0.1';
+    const guessed = host !== 'localhost' && host !== '127.0.0.1';
+    if (guessed) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[configuration] DB_SSL not set; guessing dbSsl=true because DATABASE_URL host "${host}" isn't localhost. ` +
+          'Set DB_SSL explicitly to silence this warning and avoid relying on the guess.'
+      );
+    }
+    return guessed;
   } catch {
     return true;
   }
@@ -70,7 +98,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): InfinicusConfi
   return {
     env: resolvedEnv,
     databaseUrl,
-    dbSsl: resolveDbSsl(env, databaseUrl),
+    dbSsl: resolveDbSsl(env, databaseUrl, resolvedEnv),
     port: optionalInt(env, 'PORT', 3000),
     logLevel: env.LOG_LEVEL ?? (resolvedEnv === 'production' ? 'info' : 'debug'),
     rateLimitMax: optionalInt(env, 'RATE_LIMIT_MAX', 100),
