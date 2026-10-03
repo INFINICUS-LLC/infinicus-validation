@@ -21,10 +21,12 @@
   },
   "dependencies": {
     "@infinicus/database": "workspace:*",
-    "@infinicus/handoff-contracts": "workspace:*"
+    "@infinicus/handoff-contracts": "workspace:*",
+    "pg": "^8.12.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "@types/pg": "^8.11.6"
   }
 }
