@@ -477,7 +477,13 @@ importers:
       '@infinicus/handoff-contracts':
         specifier: workspace:*
         version: link:../handoff-contracts
+      pg:
+        specifier: ^8.12.0
+        version: 8.22.0
     devDependencies:
+      '@types/pg':
+        specifier: ^8.11.6
+        version: 8.20.0
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
