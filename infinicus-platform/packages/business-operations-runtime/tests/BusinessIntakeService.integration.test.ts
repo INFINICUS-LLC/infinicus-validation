@@ -8,6 +8,7 @@ import {
 import { DataAcquisitionService } from '@infinicus/data-acquisition-runtime';
 import type { DALToBOHandoff } from '@infinicus/handoff-contracts';
 import { BusinessIntakeService } from '../src/intake/BusinessIntakeService.js';
+import { OperationalPublicationService } from '../src/publication/OperationalPublicationService.js';
 import { BusinessIntakeRejectedError } from '../src/errors.js';
 
 const RUN = !!process.env.DATABASE_URL;
@@ -35,6 +36,14 @@ async function cleanTenant(): Promise<void> {
      WHERE publication_package_id IN (
        SELECT id FROM data_acquisition.publication_packages WHERE tenant_id = ANY($1)
      )`,
+    [tenantIds]
+  );
+  await adminPool.query(
+    `DELETE FROM business_operations.bo_handoff_records WHERE tenant_id = ANY($1)`,
+    [tenantIds]
+  );
+  await adminPool.query(
+    `DELETE FROM business_operations.bo_publication_packages WHERE tenant_id = ANY($1)`,
     [tenantIds]
   );
   await adminPool.query(
@@ -136,6 +145,7 @@ async function cleanTenant(): Promise<void> {
 describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
   const da = new DataAcquisitionService();
   const bo = new BusinessIntakeService();
+  const publication = new OperationalPublicationService();
 
   beforeAll(async () => {
     const appUrl = process.env.DATABASE_URL!;
@@ -320,6 +330,83 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
     expect(second.idempotentReplay).toBe(true);
     expect(second.commandCount).toBe(0);
     expect(after.rows[0].count).toBe(before.rows[0].count);
+  });
+
+  it('publishes an operational package to the canonical BO to BI boundary exactly once', async () => {
+    const daHandoff = await createPublishedHandoff();
+    const intake = await bo.processHandoff(ctx, daHandoff);
+    expect(intake.commandCount).toBe(1);
+
+    const prepared = await publication.prepare(ctx, {
+      businessId,
+      packageCode: unique('bo-bi-package'),
+      targetBlock: 'BI-01',
+      periodStart: new Date('2026-10-01T00:00:00.000Z'),
+      periodEnd: new Date('2026-10-02T00:00:00.000Z'),
+      recordCount: 1,
+      payloadReference: {
+        source: 'business_operations.business_events',
+        businessId,
+        eventType: 'sale',
+      },
+    });
+    expect(prepared.packageStatus).toBe('ready');
+
+    const first = await publication.dispatchToBusinessIntelligence(
+      ctx,
+      businessId,
+      prepared.id
+    );
+    expect(first.sourceLayer).toBe('BO');
+    expect(first.targetLayer).toBe('BI');
+    expect(first.status).toBe('ready');
+    expect(first.payload.boPublicationPackageId).toBe(prepared.id);
+    expect(first.payload.packageStatus).toBe('dispatched');
+
+    const second = await publication.dispatchToBusinessIntelligence(
+      ctx,
+      businessId,
+      prepared.id
+    );
+    expect(second.handoffId).toBe(first.handoffId);
+
+    const dispatchAudit = await adminPool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM business_operations.bo_handoff_records
+       WHERE publication_id = $1 AND handoff_type = 'dispatch'`,
+      [prepared.id]
+    );
+    expect(dispatchAudit.rows[0].count).toBe('1');
+
+    const outbox = await adminPool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM events.outbox_events
+       WHERE tenant_id = $1
+         AND event_type = 'bo.data.published'
+         AND aggregate_id = $2`,
+      [T1, prepared.id]
+    );
+    expect(outbox.rows[0].count).toBe('1');
+
+    const acknowledged = await publication.acknowledge(
+      ctx,
+      businessId,
+      prepared.id,
+      'BI accepted operational package'
+    );
+    expect(acknowledged.packageStatus).toBe('received');
+    expect(acknowledged.acknowledgedAt).not.toBeNull();
+
+    const replayedAck = await publication.acknowledge(ctx, businessId, prepared.id);
+    expect(replayedAck.packageStatus).toBe('received');
+
+    const acknowledgements = await adminPool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM business_operations.bo_handoff_records
+       WHERE publication_id = $1 AND handoff_type = 'acknowledgement'`,
+      [prepared.id]
+    );
+    expect(acknowledgements.rows[0].count).toBe('1');
   });
 
   it('rejects a handoff whose active tenant/workspace does not match the payload', async () => {
