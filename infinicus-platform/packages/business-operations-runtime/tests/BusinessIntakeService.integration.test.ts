@@ -403,9 +403,9 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
         ctx,
         businessId,
         created.id,
-        'cancelled'
+        'submitted'
       )
-    ).rejects.toThrow(/approved -> cancelled|cannot/i);
+    ).rejects.toThrow(/approved -> submitted/i);
   });
 
   it('rejects reuse of a BO publication package code with different material', async () => {
