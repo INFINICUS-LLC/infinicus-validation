@@ -96,6 +96,12 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   PublicationNotReadyError: 409,
   QualityThresholdError: 409,
 
+  // Business Operations runtime (BUILD-32)
+  BusinessIntakeRejectedError: 400,
+  UnsupportedOperationalRecordTypeError: 400,
+  OperationalMappingError: 400,
+  OperationalStateTransitionError: 409,
+
   // Fastify / schema validation
   FST_ERR_VALIDATION: 400,
 };
