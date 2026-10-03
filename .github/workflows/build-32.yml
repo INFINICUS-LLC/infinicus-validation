@@ -9,6 +9,9 @@ on:
       - "infinicus-platform/apps/api/**"
       - "infinicus-platform/infrastructure/database/**"
       - ".github/workflows/build-32.yml"
+      - ".claude/state/implementation-status.json"
+      - "docs/implementation-queue/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-SPECIFICATION.md"
+      - "docs/implementation-queue/00-IMPLEMENTATION-MANIFEST.md"
 
 defaults:
   run:
@@ -54,6 +57,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Formal BUILD-32 preflight
+        run: node ../scripts/build-control/build-preflight.mjs BUILD-32
 
       - name: Lint BUILD-32 runtime and API
         run: npx turbo run lint --filter=@infinicus/business-operations-runtime... --filter=@infinicus/api...
