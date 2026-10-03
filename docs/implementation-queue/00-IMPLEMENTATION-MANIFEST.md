@@ -32,6 +32,10 @@ All builds in strict execution order. Execute one at a time.
 | BUILD-25 | OBS | Logging, monitoring, and alerting | completed |
 | BUILD-26 | SEC-PRIV | Security, privacy, and retention | completed |
 | BUILD-27 | PERF | Performance and load readiness | completed |
+| BUILD-28 | BILLING | Billing | completed |
+| BUILD-29 | INCIDENT | Incident response | completed |
+| BUILD-30 | LAUNCH | Launch readiness | completed |
+| BUILD-31 | DATA-ACQUISITION-RUNTIME | Data Acquisition Runtime Foundation | completed |
 
 ## Superseded Builds
 
@@ -48,52 +52,44 @@ never execute it."* The required build route is
 
 ## Current Ready Build
 
-`BUILD-28` (BILLING — Billing). Per the user's explicit instruction to
-continue through full completion of all builds (BUILD-24 through
-BUILD-30) without per-build check-ins, each build's own "do not
-automatically start the next build" checkpoint is superseded for the
-remainder of this queue by that standing instruction. BUILD-27 delivered
-a live load-test tool (`load-test.mjs`) with real p50/p95/p99/throughput
-measurements, live database/Simulation/ADI concurrency tests, outbox-
-throughput measurement, a large-tenant test, connection-pool resilience
-testing, and a capacity plan/SLO doc grounded in real measurements. It
-found and fixed three genuine defects via live testing: outbox emission
-is not wired into any domain write path anywhere in the monorepo (the
-`emit_*` SQL functions exist but have zero call sites outside their own
-migrations); `export-tenant.sh` (BUILD-22) and `delete-tenant-data.mjs`
-(BUILD-26) only ever set `app.tenant_id`, silently producing incomplete
-exports/erasures for the majority of tenant-scoped tables (whose RLS
-also requires `app.workspace_id`) — fixed to loop per-workspace; and
-`delete-tenant-data.mjs` crashed outright on a tenant with real
-audit-trail history in the ~210 append-only (`forbid_mutation`) tables
-across every domain — fixed to skip those tables and honestly report
-what was retained rather than crash or silently claim full erasure. No
-migrations were added.
+`BUILD-32` (BUSINESS-OPERATIONS-RUNTIME — Business Operations Runtime).
+
+BUILD-31 is completed. BUILD-32 is the first build in the post-BUILD-31
+architecture-expansion route and is governed by the locked eight-domain
+architecture. It converts the existing Business Operations persistence into
+a production OPERATIONS runtime while preserving COMMERCE and FINANCE
+boundaries.
 
 ## Pending Builds
 
-| ID | Layer | Description | Depends on |
-|---|---|---|---|
-| BUILD-28 | BILLING | Billing | BUILD-27 (completed) |
-| BUILD-29 | INCIDENT | Incident response | BUILD-28 |
-| BUILD-30 | LAUNCH | Launch readiness | BUILD-29 |
+No build after BUILD-32 is authorized yet. BUILD-33+ remain proposed roadmap
+items only and require separate frozen specifications after BUILD-32 completes.
 
-All specifications for BUILD-13 through BUILD-30 are staged in this
-directory (frozen, checksum-verified against their source packages) but
-remain `pending` until their dependency completes — only one build is
-`ready` at a time per `CLAUDE-QUEUE-INSTRUCTIONS.md`. See
-`docs/architecture/PERSISTENCE-STAGE-MAP.md`,
-`docs/implementation-queue/MASTER-PRODUCTION-ROUTE.md`, and
-`CLAUDE-MASTER-EXECUTION-INSTRUCTIONS.md` (repo root) for the full route,
-and `docs/architecture/DECISION-LEDGER.md` for frozen architectural
-decisions (AD-001 through AD-027) governing all remaining builds.
+## BUILD-32 Specification: Business Operations Runtime
 
-Also unresolved from BUILD-10 (candidate future work, no specification
-authored yet): fixing the `digital-twin/dt-bundle.js` header-comment syntax
-defect (`.claude/state/reports/BUILD-10-PLATFORM-completion.md`); adding
-`vitest` to (or removing the unusable `test` script from) the 18 placeholder
-monorepo packages; wiring `DT-24`→Simulation and `ADI-24`→ABA; completing
-the six placeholder handoff-contract files.
+**Authoritative specification:**
+[BUILD-32-BUSINESS-OPERATIONS-RUNTIME-SPECIFICATION.md](./BUILD-32-BUSINESS-OPERATIONS-RUNTIME-SPECIFICATION.md)
+
+Status: ready.
+
+Dependency: BUILD-31 completed.
+
+Primary scope:
+
+```text
+OPERATIONS
+├── Inventory
+├── Procurement
+├── Suppliers
+├── Workforce
+└── Assets
+```
+
+BUILD-32 is a runtime/reconciliation build over existing
+`platform.*` canonical entities and `business_operations.*` operational
+persistence. It must not rewrite frozen migrations or absorb COMMERCE or
+FINANCE ownership.
+
 
 ---
 
