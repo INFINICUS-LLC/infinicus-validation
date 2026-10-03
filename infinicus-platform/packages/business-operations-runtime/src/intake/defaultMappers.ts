@@ -1,4 +1,4 @@
-import type { IntakeMapper, IntakeMappingContext, OperationalCommand } from '../types.js';
+import type { IntakeMapper, OperationalCommand } from '../types.js';
 import {
   optionalFiniteNumber,
   optionalString,
