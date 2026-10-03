@@ -3,8 +3,10 @@ import {
   type TenantContext,
 } from '@infinicus/database';
 import { AssetService } from './assets/AssetService.js';
+import { BusinessIntakeService } from './intake/BusinessIntakeService.js';
 import { InventoryService } from './inventory/InventoryService.js';
 import { ProcurementService } from './procurement/ProcurementService.js';
+import { OperationalPublicationService } from './publication/OperationalPublicationService.js';
 import { SupplierService } from './suppliers/SupplierService.js';
 import { WorkforceService } from './workforce/WorkforceService.js';
 
@@ -19,6 +21,8 @@ export interface OperationsSummary {
 }
 
 export class BusinessOperationsService {
+  readonly intake = new BusinessIntakeService();
+  readonly publication = new OperationalPublicationService();
   readonly inventory = new InventoryService();
   readonly procurement = new ProcurementService();
   readonly suppliers = new SupplierService();
