@@ -49,8 +49,8 @@ export class WorkforceService {
         assignmentType: row.assignment_type as string,
         title: row.title as string,
         allocationPct: Number(row.allocation_pct),
-        validFrom: row.valid_from as Date,
-        validTo: row.valid_to as Date | null,
+        validFrom: new Date(String(row.valid_from)),
+        validTo: row.valid_to === null ? null : new Date(String(row.valid_to)),
         status: row.status as string,
       }));
     });
