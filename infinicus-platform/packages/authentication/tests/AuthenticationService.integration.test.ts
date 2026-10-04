@@ -184,7 +184,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
         await expect(service.login(email, 'Wrong-Password-9!')).rejects.toBeInstanceOf(InvalidCredentialsError);
       }
       await expect(service.login(email, STRONG_PASSWORD)).rejects.toBeInstanceOf(AccountLockedError);
-    });
+    }, 15_000);
 
     it('records a failed_auth access event with reason=account_locked when lockout triggers', async () => {
       const { email, user } = await registerAndActivate(service, users);
@@ -195,7 +195,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const events = await accessEvents.listForUser(user.id);
       const lockEvent = events.find((e) => e.eventType === 'failed_auth' && e.metadata.reason === 'account_locked');
       expect(lockEvent).toBeDefined();
-    });
+    }, 15_000);
 
     it('does not lock an account that has fewer than the threshold\'s worth of recent failures', async () => {
       const { email } = await registerAndActivate(service, users);
