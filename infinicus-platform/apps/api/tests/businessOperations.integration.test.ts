@@ -211,8 +211,8 @@ describe.runIf(RUN)('BUILD-32 Operations API — live PostgreSQL', () => {
 
     await adminPool.query(
       `INSERT INTO business_operations.business_events
-         (tenant_id, workspace_id, business_id, event_type, amount, quantity, category)
-       VALUES ($1,$2,$3,'sale',250,4,'api-fixture')`,
+         (tenant_id, workspace_id, business_id, event_type, amount, quantity, category, occurred_at)
+       VALUES ($1,$2,$3,'sale',250,4,'api-fixture','2026-10-02T12:00:00Z')`,
       [T1, WS1, businessId]
     );
   });
