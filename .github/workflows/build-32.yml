@@ -1,0 +1,101 @@
+name: BUILD-32 Operations Runtime CI
+
+on:
+  pull_request:
+    paths:
+      - "infinicus-platform/packages/business-operations-runtime/**"
+      - "infinicus-platform/packages/database/**"
+      - "infinicus-platform/packages/handoff-contracts/**"
+      - "infinicus-platform/apps/api/**"
+      - "infinicus-platform/infrastructure/database/**"
+      - ".github/workflows/build-32.yml"
+      - ".claude/state/implementation-status.json"
+      - "docs/implementation-queue/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-SPECIFICATION.md"
+      - "docs/implementation-queue/00-IMPLEMENTATION-MANIFEST.md"
+
+defaults:
+  run:
+    working-directory: infinicus-platform
+
+env:
+  CI_ADMIN_USER: infinicus_ci_admin
+  CI_ADMIN_PASSWORD: ci_admin_pw
+  CI_APP_USER: app_test_user
+  CI_APP_PASSWORD: ci_app_pw
+  CI_DB_NAME: infinicus_ci
+
+jobs:
+  operations-runtime:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: infinicus_ci_admin
+          POSTGRES_PASSWORD: ci_admin_pw
+          POSTGRES_DB: infinicus_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: infinicus-platform/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: infinicus-platform/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Formal BUILD-32 preflight
+        run: node ../scripts/build-control/build-preflight.mjs BUILD-32
+
+      - name: Lint BUILD-32 runtime and API
+        run: npx turbo run lint --filter=@infinicus/business-operations-runtime... --filter=@infinicus/api...
+
+      - name: Typecheck BUILD-32 runtime and API
+        run: npx turbo run typecheck --filter=@infinicus/business-operations-runtime... --filter=@infinicus/api...
+
+      - name: Build BUILD-32 runtime and API
+        run: npx turbo run build --filter=@infinicus/business-operations-runtime... --filter=@infinicus/api...
+
+      - name: Create least-privilege application role
+        run: |
+          PGPASSWORD="$CI_ADMIN_PASSWORD" psql -h localhost -U "$CI_ADMIN_USER" -d "$CI_DB_NAME" -c \
+            "CREATE ROLE ${CI_APP_USER} LOGIN PASSWORD '${CI_APP_PASSWORD}';"
+
+      - name: Apply migrations
+        run: |
+          DATABASE_URL="postgresql://${CI_ADMIN_USER}:${CI_ADMIN_PASSWORD}@localhost:5432/${CI_DB_NAME}" \
+            infrastructure/deployment/scripts/migration-gate.sh
+
+      - name: Grant application role access
+        run: |
+          ADMIN_DATABASE_URL="postgresql://${CI_ADMIN_USER}:${CI_ADMIN_PASSWORD}@localhost:5432/${CI_DB_NAME}" \
+          APP_ROLE="$CI_APP_USER" \
+            infrastructure/database/scripts/grant-app-role.sh
+
+      - name: Test BUILD-32 runtime
+        run: pnpm --filter @infinicus/business-operations-runtime test
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          DB_SSL: "false"
+
+      - name: Test BUILD-32 API surface
+        run: pnpm --filter @infinicus/api exec vitest run tests/businessOperations.integration.test.ts
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          DB_SSL: "false"

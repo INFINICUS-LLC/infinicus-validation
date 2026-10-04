@@ -124,7 +124,7 @@ jobs:
       - name: Test
         run: >
           npx turbo run test
-          --filter=@infinicus/database --filter=@infinicus/configuration --filter=@infinicus/observability
+          --filter=@infinicus/database --filter=@infinicus/configuration --filter=@infinicus/observability --filter=@infinicus/business-operations-runtime
           --filter=@infinicus/authentication --filter=@infinicus/authorization --filter=@infinicus/onboarding
           --filter=@infinicus/workflow --filter=@infinicus/api --filter=@infinicus/web
         env:

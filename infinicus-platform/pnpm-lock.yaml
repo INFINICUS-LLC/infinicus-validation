@@ -84,6 +84,9 @@ importers:
       '@infinicus/configuration':
         specifier: workspace:*
         version: link:../../packages/configuration
+      '@infinicus/business-operations-runtime':
+        specifier: workspace:*
+        version: link:../../packages/business-operations-runtime
       '@infinicus/data-acquisition-runtime':
         specifier: workspace:*
         version: link:../../packages/data-acquisition-runtime
@@ -471,6 +474,31 @@ importers:
       vitest:
         specifier: ^1.6.0
         version: 1.6.1(@types/node@22.20.1)(lightningcss@1.33.0)
+
+  packages/business-operations-runtime:
+    dependencies:
+      '@infinicus/database':
+        specifier: workspace:*
+        version: link:../database
+      '@infinicus/handoff-contracts':
+        specifier: workspace:*
+        version: link:../handoff-contracts
+      pg:
+        specifier: ^8.12.0
+        version: 8.22.0
+    devDependencies:
+      '@infinicus/data-acquisition-runtime':
+        specifier: workspace:*
+        version: link:../data-acquisition-runtime
+      '@types/pg':
+        specifier: ^8.11.6
+        version: 8.20.0
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@26.1.1)(lightningcss@1.33.0)
 
   packages/data-acquisition-runtime:
     dependencies:
