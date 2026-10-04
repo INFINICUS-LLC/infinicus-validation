@@ -40,7 +40,7 @@ export default async function BusinessesPage({
 
   ensurePool();
   const service = new DecisionWorkflowService();
-  const businesses = await service.listBusinesses(ctx);
+  const { items: businesses } = await service.listBusinesses(ctx);
   const query = ctxQuery(ctx);
 
   return (
