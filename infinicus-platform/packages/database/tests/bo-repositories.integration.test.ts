@@ -443,12 +443,15 @@ describe.runIf(run)('PurchaseOrderRepository', () => {
     expect(found.id).toBe(po.id);
   });
 
-  it('approve sets status and approved_by', async () => {
+  it('approve sets status and approved_by after submission', async () => {
     const po = await repo.create(ctx1, {
       businessId: BIZ1,
       supplierId: SUPP1,
       poNumber:   uniqueCode('PO'),
     });
+    const submitted = await repo.transitionStatus(ctx1, po.id, 'draft', 'submitted');
+    expect(submitted.poStatus).toBe('submitted');
+
     const approved = await repo.approve(ctx1, po.id, UID);
     expect(approved.poStatus).toBe('approved');
     expect(approved.approvedBy).toBe(UID);
