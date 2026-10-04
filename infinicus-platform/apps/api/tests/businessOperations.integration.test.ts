@@ -6,6 +6,7 @@ import { DataAcquisitionService } from '@infinicus/data-acquisition-runtime';
 import {
   closePool,
   createPool,
+  BusinessEventRepository,
   MembershipRepository,
   RoleRepository,
   UserRepository,
@@ -24,6 +25,7 @@ let ctx: TenantContext;
 let token: string;
 let businessId: string;
 let intakePackageId: string;
+let saleOccurredAt: Date;
 
 function unique(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -209,12 +211,14 @@ describe.runIf(RUN)('BUILD-32 Operations API — live PostgreSQL', () => {
       [T1, WS1, businessId, asset.rows[0].id]
     );
 
-    await adminPool.query(
-      `INSERT INTO business_operations.business_events
-         (tenant_id, workspace_id, business_id, event_type, amount, quantity, category, occurred_at)
-       VALUES ($1,$2,$3,'sale',250,4,'api-fixture','2026-10-02T12:00:00Z')`,
-      [T1, WS1, businessId]
-    );
+    const saleEvent = await new BusinessEventRepository().logEvent(ctx, {
+      businessId,
+      eventType: 'sale',
+      amount: 250,
+      quantity: 4,
+      category: 'api-fixture',
+    });
+    saleOccurredAt = saleEvent.occurredAt;
   });
 
   afterAll(async () => {
@@ -295,9 +299,11 @@ describe.runIf(RUN)('BUILD-32 Operations API — live PostgreSQL', () => {
   });
 
   it('returns the canonical Operations summary', async () => {
+    const from = new Date(saleOccurredAt.getTime() - 60_000).toISOString();
+    const to = new Date(saleOccurredAt.getTime() + 60_000).toISOString();
     const res = await app.inject({
       method: 'GET',
-      url: `/v1/businesses/${businessId}/operations/summary?from=2026-10-01&to=2026-10-04`,
+      url: `/v1/businesses/${businessId}/operations/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       headers: headers(),
     });
     expect(res.statusCode).toBe(200);
