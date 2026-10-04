@@ -10,7 +10,7 @@ import {
   EventLedgerValidationError,
 } from './errors.js';
 
-export interface StoredBusinessEvent<TPayload = unknown> extends BusinessEventEnvelope<TPayload> {}
+export type StoredBusinessEvent<TPayload = unknown> = BusinessEventEnvelope<TPayload>;
 
 function rowToEvent(row: Record<string, unknown>): StoredBusinessEvent {
   return {
