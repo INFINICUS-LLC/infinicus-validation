@@ -54,14 +54,20 @@ never execute it."* The required build route is
 
 ## Current Ready Build
 
-None. BUILD-32 is completed; see its completion report at
-`.claude/state/reports/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-completion.md`.
-No later build is ready for implementation.
+**BUILD-33 — Cross-Domain Business Event Architecture**
+
+Authoritative frozen specification:
+[BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md](./BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md)
+
+SHA-256: `c0eafc51292374a35a085ef3db6bc2170ae548d18d47ca5749b8e263e86ce25f`
+
+Status: **ready**. Dependency BUILD-32 is completed and merged. Migration
+baseline is 0001–0170; 0171 is the first permitted BUILD-33 migration if
+required. Implementation has not started.
 
 ## Pending Builds
 
-BUILD-33 remains specification preparation only. Later implementation requires
-a separately frozen specification and explicit queue readiness.
+BUILD-34+ remain planned only and are not authorized for implementation.
 
 ## BUILD-32 Specification: Business Operations Runtime
 
