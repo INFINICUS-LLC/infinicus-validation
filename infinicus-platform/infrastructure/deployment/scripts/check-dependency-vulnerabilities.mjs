@@ -27,6 +27,12 @@ const ALLOWLIST = [
     reason:
       'Transitive dependency of Next.js\'s built-in image-optimization component (next/image). apps/web never imports next/image (verified via grep) — no code path in this repository invokes sharp/libvips, so the vulnerable image-processing routines are never executed.',
   },
+  {
+    githubAdvisoryId: 'GHSA-rgj7-g3m4-5g8c',
+    package: 'sharp',
+    reason:
+      'Transitive dependency of Next.js image optimization. apps/web does not import or render next/image and does not expose an image-optimization upload/processing path, so untrusted input cannot reach sharp/libheif in this repository. Next.js itself is upgraded to the patched 15.5.x line; this exception is limited to the otherwise unreachable transitive sharp advisory.',
+  },
 
   // BUILD-30 launch-acceptance findings:
   // esbuild and vite are transitive dependencies of vitest.
