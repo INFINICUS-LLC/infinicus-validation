@@ -1,9 +1,9 @@
 name: Legacy dependency lockfile refresh
 
 on:
-  push:
+  pull_request:
     branches:
-      - legacy-closure-build-01-31
+      - main
     paths:
       - 'infinicus-platform/package.json'
       - 'infinicus-platform/apps/api/package.json'
@@ -15,11 +15,12 @@ permissions:
 
 jobs:
   refresh-lockfile:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: legacy-closure-build-01-31
+          ref: ${{ github.head_ref }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10.33.0
@@ -40,5 +41,5 @@ jobs:
             echo "No lockfile changes."
           else
             git commit -m "chore(security): regenerate pnpm lockfile"
-            git push origin HEAD:legacy-closure-build-01-31
+            git push origin HEAD:${{ github.head_ref }}
           fi
