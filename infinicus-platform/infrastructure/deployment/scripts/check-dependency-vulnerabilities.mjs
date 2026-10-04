@@ -14,6 +14,8 @@
 
 import { spawnSync } from 'node:child_process';
 
+// Legacy closure security reconciliation: runtime-reachable advisories are upgraded; exceptions remain advisory-specific and require unreachable-path evidence.
+
 const ALLOWLIST = [
   {
     githubAdvisoryId: 'GHSA-5xrq-8626-4rwp',
