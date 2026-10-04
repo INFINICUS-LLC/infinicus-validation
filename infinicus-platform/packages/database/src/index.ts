@@ -13,6 +13,18 @@ export {
 export type { DbConfig, TenantContext, PoolStats } from './client.js';
 export { runMigrations } from './migrate.js';
 
+
+// ── Cross-domain eventing repositories (BUILD-33) ───────────────────────────
+export {
+  EventLedgerRepository,
+  EventingError,
+  EventLedgerValidationError,
+  EventLedgerScopeError,
+  EventLedgerConflictError,
+  EventLedgerNotFoundError,
+} from './eventing/index.js';
+export type { StoredBusinessEvent } from './eventing/index.js';
+
 // ── Data Acquisition repositories ─────────────────────────────────────────────
 export {
   DataSourceRepository,
