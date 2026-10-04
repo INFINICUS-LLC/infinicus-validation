@@ -533,6 +533,9 @@ importers:
       '@infinicus/configuration':
         specifier: workspace:*
         version: link:../configuration
+      '@infinicus/event-contracts':
+        specifier: workspace:*
+        version: link:../event-contracts
       '@infinicus/shared-types':
         specifier: workspace:*
         version: link:../shared-types
