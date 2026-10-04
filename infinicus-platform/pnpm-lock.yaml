@@ -8,7 +8,7 @@ overrides:
   postcss: 8.5.23
   fast-uri@>=3.0.0 <4.0.0: 3.1.8
   fast-uri@>=4.0.0 <5.0.0: 4.1.5
-  brace-expansion@>=5.0.0 <6.0.0: 5.0.11
+  brace-expansion@>=5.0.0 <6.0.0: 5.0.12
 
 importers:
 
@@ -1485,8 +1485,8 @@ packages:
   bcryptjs@2.4.3:
     resolution: {integrity: sha512-V/Hy/X9Vt7f3BbPJEi8BdVFMByHi+jNXrYkW3huaybV/kQ0KJg0Y6PkEMbn+zeT+i+SiKZ/HMqJGIIt4LZDqNQ==}
 
-  brace-expansion@5.0.11:
-    resolution: {integrity: sha512-awigjhi6cLTh90bdw6+QJ9CtmJmyYhEIi70iCbc8Rozn04Fw9FeQIBjv/E22FFGuCGx1bLJyUfB64x/szUSXUg==}
+  brace-expansion@5.0.12:
+    resolution: {integrity: sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==}
     engines: {node: 20 || >=22}
 
   cac@6.7.14:
@@ -3035,7 +3035,7 @@ snapshots:
 
   bcryptjs@2.4.3: {}
 
-  brace-expansion@5.0.11:
+  brace-expansion@5.0.12:
     dependencies:
       balanced-match: 4.0.4
 
@@ -3453,7 +3453,7 @@ snapshots:
 
   minimatch@10.2.6:
     dependencies:
-      brace-expansion: 5.0.11
+      brace-expansion: 5.0.12
 
   minipass@7.1.3: {}
 
