@@ -51,6 +51,9 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@26.1.1)(lightningcss@1.33.0)
 
   apps/api:
     dependencies:
@@ -534,6 +537,9 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@26.1.1)(lightningcss@1.33.0)
 
   packages/handoff-contracts:
     dependencies:
@@ -612,6 +618,9 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@26.1.1)(lightningcss@1.33.0)
 
   packages/simulation-engine:
     devDependencies:
