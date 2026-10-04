@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "lastUpdated": "2026-10-04T17:39:00Z",
+  "lastUpdated": "2026-10-04T18:39:00Z",
   "platform": "INFINICUS ENGINE v3",
   "builds": [
     {
@@ -416,13 +416,14 @@
       "id": "BUILD-33",
       "layer": "DATA-EVENT-LEDGER",
       "name": "Cross-Domain Business Event Architecture",
-      "status": "ready",
+      "status": "in_progress",
       "dependency": "BUILD-32",
       "specification": "docs/implementation-queue/BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md",
       "specificationSha256": "c0eafc51292374a35a085ef3db6bc2170ae548d18d47ca5749b8e263e86ce25f",
-      "notes": "Frozen after BUILD-32 completion and merge. Reuses the existing events schema/outbox infrastructure, extends @infinicus/event-contracts, authorizes an additive immutable events.business_event_ledger and database eventing repositories, preserves handoff contracts and legacy producers, and reserves migration 0171 as the first permitted BUILD-33 migration if required. Implementation has not started.",
+      "notes": "Frozen after BUILD-32 completion and merge. Reuses the existing events schema/outbox infrastructure, extends @infinicus/event-contracts, authorizes an additive immutable events.business_event_ledger and database eventing repositories, preserves handoff contracts and legacy producers, and reserves migration 0171 as the first permitted BUILD-33 migration if required. Implementation has not started. Implementation started from frozen specification; BUILD-34 remains blocked.",
       "readyAt": "2026-10-04T17:39:00Z",
-      "testsPass": false
+      "testsPass": false,
+      "startedAt": "2026-10-04T18:39:00Z"
     }
   ],
   "currentReadyBuild": "BUILD-33"
