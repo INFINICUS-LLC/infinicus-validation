@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "lastUpdated": "2026-10-04T17:11:35Z",
+  "lastUpdated": "2026-10-04T17:39:00Z",
   "platform": "INFINICUS ENGINE v3",
   "builds": [
     {
@@ -411,7 +411,19 @@
       "startedAt": "2026-10-03T00:00:00.000Z",
       "completedAt": "2026-10-04T17:11:35Z",
       "report": ".claude/state/reports/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-completion.md"
+    },
+    {
+      "id": "BUILD-33",
+      "layer": "DATA-EVENT-LEDGER",
+      "name": "Cross-Domain Business Event Architecture",
+      "status": "ready",
+      "dependency": "BUILD-32",
+      "specification": "docs/implementation-queue/BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md",
+      "specificationSha256": "c0eafc51292374a35a085ef3db6bc2170ae548d18d47ca5749b8e263e86ce25f",
+      "notes": "Frozen after BUILD-32 completion and merge. Reuses the existing events schema/outbox infrastructure, extends @infinicus/event-contracts, authorizes an additive immutable events.business_event_ledger and database eventing repositories, preserves handoff contracts and legacy producers, and reserves migration 0171 as the first permitted BUILD-33 migration if required. Implementation has not started.",
+      "readyAt": "2026-10-04T17:39:00Z",
+      "testsPass": false
     }
   ],
-  "currentReadyBuild": null
+  "currentReadyBuild": "BUILD-33"
 }
