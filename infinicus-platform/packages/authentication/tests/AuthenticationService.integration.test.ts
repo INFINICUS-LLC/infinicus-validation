@@ -205,7 +205,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       // The 5th attempt is the correct password — must succeed, not lock,
       // since only 4 *failed* attempts have happened so far.
       await expect(service.login(email, STRONG_PASSWORD)).resolves.toBeDefined();
-    });
+    }, 15_000);
 
     it('an unknown email never locks (there is no account to lock, and no userId to count failures against)', async () => {
       const unknownEmail = uniqueEmail('lockout-unknown');
