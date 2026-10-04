@@ -3,10 +3,11 @@ import { loadConfig, ConfigurationError } from '../src/index.js';
 
 describe('loadConfig', () => {
   it('loads a valid config from a full environment', () => {
-    const config = loadConfig({ DATABASE_URL: 'postgresql://x', NODE_ENV: 'production', PORT: '4000' });
+    const config = loadConfig({ DATABASE_URL: 'postgresql://x', NODE_ENV: 'production', PORT: '4000', DB_SSL: 'true' });
     expect(config).toEqual({
       env: 'production',
       databaseUrl: 'postgresql://x',
+      dbSsl: true,
       port: 4000,
       logLevel: 'info',
       rateLimitMax: 100,
@@ -111,6 +112,7 @@ describe('loadConfig', () => {
       loadConfig({
         NODE_ENV: 'production',
         DATABASE_URL: 'postgresql://prod_app_role:x9k2m@prod-db.internal:5432/infinicus_production',
+        DB_SSL: 'true',
       })
     ).not.toThrow();
   });
@@ -122,5 +124,47 @@ describe('loadConfig', () => {
         DATABASE_URL: 'postgresql://infinicus_test_admin:local_admin_pw@localhost:5432/infinicus_test',
       })
     ).not.toThrow();
+  });
+
+  describe('dbSsl resolution', () => {
+    it('respects an explicit DB_SSL=true', () => {
+      const config = loadConfig({ DATABASE_URL: 'postgresql://x', DB_SSL: 'true' });
+      expect(config.dbSsl).toBe(true);
+    });
+
+    it('respects an explicit DB_SSL=false, even for a non-localhost host (regression: Docker Compose outage)', () => {
+      const config = loadConfig({ DATABASE_URL: 'postgresql://postgres:5432/infinicus', DB_SSL: 'false' });
+      expect(config.dbSsl).toBe(false);
+    });
+
+    it('accepts "1" and "0" as well as "true"/"false"', () => {
+      expect(loadConfig({ DATABASE_URL: 'postgresql://x', DB_SSL: '1' }).dbSsl).toBe(true);
+      expect(loadConfig({ DATABASE_URL: 'postgresql://x', DB_SSL: '0' }).dbSsl).toBe(false);
+    });
+
+    it('throws ConfigurationError in production when DB_SSL is unset — no longer silently guessed', () => {
+      expect(() =>
+        loadConfig({ NODE_ENV: 'production', DATABASE_URL: 'postgresql://prod-db.internal/infinicus' })
+      ).toThrow(ConfigurationError);
+    });
+
+    it('throws ConfigurationError in staging when DB_SSL is unset', () => {
+      expect(() =>
+        loadConfig({ NODE_ENV: 'staging', DATABASE_URL: 'postgresql://staging-db.internal/infinicus' })
+      ).toThrow(ConfigurationError);
+    });
+
+    it('falls back to the hostname heuristic in development when DB_SSL is unset', () => {
+      const local = loadConfig({ DATABASE_URL: 'postgresql://localhost:5432/infinicus' });
+      expect(local.dbSsl).toBe(false);
+
+      const remote = loadConfig({ DATABASE_URL: 'postgresql://some-host:5432/infinicus' });
+      expect(remote.dbSsl).toBe(true);
+    });
+
+    it('falls back to the hostname heuristic in test when DB_SSL is unset', () => {
+      const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: 'postgresql://localhost:5432/infinicus_test' });
+      expect(config.dbSsl).toBe(false);
+    });
   });
 });

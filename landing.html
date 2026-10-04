@@ -793,11 +793,32 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
         <div class="reg-field">
           <label class="reg-label" for="signin-password">PASSWORD</label>
           <input class="reg-input" type="password" id="signin-password" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLoginLanding()">
-          <p style="text-align:right;margin:.4rem 0 0"><a href="index.html?auth=forgot" style="font-family:var(--mono);font-size:10.5px;color:var(--cyan);text-decoration:underline;">Forgot password?</a></p>
+          <p style="text-align:right;margin:.4rem 0 0"><a href="#" onclick="event.preventDefault();switchRegTab('forgot')" style="font-family:var(--mono);font-size:10.5px;color:var(--cyan);text-decoration:underline;">Forgot password?</a></p>
         </div>
         <div class="reg-err" id="signin-err"></div>
         <button class="reg-submit" id="signin-btn-submit" onclick="doLoginLanding()">Sign In →</button>
         <div class="reg-already">New here? <a onclick="switchRegTab('register')">Create an account →</a></div>
+      </div>
+      <!-- Forgot-password pane — handled entirely on this page (no
+           navigation to index.html) because index.html's AUTH GUARD
+           requires a signed-in session to even load, and someone
+           requesting a reset link is by definition not signed in yet.
+           Routing this step through index.html?auth=forgot used to bounce
+           straight back here before the pane ever showed — reported live
+           as "the forgot password button loops like the try engine
+           button" on 2026-10-03. The actual "set new password" step (after
+           clicking the emailed link) still happens on index.html, which is
+           fine: that step signs the user into a real recovery session
+           first, so the guard lets it through. -->
+      <div id="reg-pane-forgot" style="display:none">
+        <p class="reg-sub" style="margin-bottom:1rem;">Enter your account email and we'll send you a reset link.</p>
+        <div class="reg-field">
+          <label class="reg-label" for="forgot-email-landing">EMAIL ADDRESS</label>
+          <input class="reg-input" type="email" id="forgot-email-landing" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')doForgotPasswordLanding()">
+        </div>
+        <div class="reg-err" id="forgot-err-landing"></div>
+        <button class="reg-submit" id="forgot-btn-landing" onclick="doForgotPasswordLanding()">Send Reset Link →</button>
+        <div class="reg-already"><a onclick="switchRegTab('signin')">← Back to sign in</a></div>
       </div>
     </div>
     <div class="reg-features">
@@ -1428,16 +1449,61 @@ function handleTryEngineClick(event) {
 // ══ SIGN-IN TAB (real account, not the fake flow this page used to have) ══
 function switchRegTab(tab) {
   const isRegister = tab === 'register';
-  const regPane  = $('reg-pane-register');
-  const signPane = $('reg-pane-signin');
-  if (regPane)  regPane.style.display  = isRegister ? 'block' : 'none';
-  if (signPane) signPane.style.display = isRegister ? 'none'  : 'block';
+  const isForgot   = tab === 'forgot';
+  const regPane    = $('reg-pane-register');
+  const signPane   = $('reg-pane-signin');
+  const forgotPane = $('reg-pane-forgot');
+  if (regPane)    regPane.style.display    = isRegister ? 'block' : 'none';
+  if (signPane)   signPane.style.display   = (!isRegister && !isForgot) ? 'block' : 'none';
+  if (forgotPane) forgotPane.style.display = isForgot ? 'block' : 'none';
+  // The CREATE ACCOUNT / SIGN IN switcher only applies to those two panes —
+  // forgot-password is a linear sub-flow reached by a link, not a tab (same
+  // pattern as index.html's own auth modal).
+  const tabsEl = document.querySelector('#reg-box .reg-tabs');
+  if (tabsEl) tabsEl.style.display = isForgot ? 'none' : 'flex';
   const regTab  = $('reg-tab-register');
   const signTab = $('reg-tab-signin');
   [regTab, signTab].forEach(b => { if (b) { b.style.background = 'none'; b.style.color = 'var(--muted)'; } });
-  const activeTab = isRegister ? regTab : signTab;
-  if (activeTab) { activeTab.style.background = 'rgba(0,224,96,.12)'; activeTab.style.color = 'var(--cyan)'; }
-  setTimeout(() => $(isRegister ? 'reg-name' : 'signin-email')?.focus(), 50);
+  if (!isForgot) {
+    const activeTab = isRegister ? regTab : signTab;
+    if (activeTab) { activeTab.style.background = 'rgba(0,224,96,.12)'; activeTab.style.color = 'var(--cyan)'; }
+  }
+  const focusId = isForgot ? 'forgot-email-landing' : (isRegister ? 'reg-name' : 'signin-email');
+  setTimeout(() => $(focusId)?.focus(), 50);
+}
+
+async function doForgotPasswordLanding() {
+  const email = ($('forgot-email-landing')?.value || '').trim();
+  const errEl = $('forgot-err-landing');
+  const btn   = $('forgot-btn-landing');
+  if (!email || !email.includes('@')) {
+    errEl.style.color = ''; errEl.textContent = 'Valid email required.'; errEl.style.display = 'block'; return;
+  }
+  errEl.style.display = 'none';
+  btn.textContent = 'Sending…'; btn.disabled = true;
+  try {
+    // redirectTo points at index.html, not this page — that's where the
+    // PASSWORD_RECOVERY handling and "set new password" pane actually live
+    // (see index.html's onAuthStateChange listener). Must be listed under
+    // this Supabase project's Auth ▸ URL Configuration ▸ Redirect URLs, or
+    // the emailed link will fail to return the user there.
+    const { error } = await SUPA.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/index.html'
+    });
+    // Same message regardless of whether the address has an account — a
+    // differing message here would let this form enumerate registered emails.
+    if (error && (!error.status || error.status >= 500)) {
+      errEl.style.color = ''; errEl.textContent = 'Something went wrong. Please try again.'; errEl.style.display = 'block';
+      btn.textContent = 'Send Reset Link →'; btn.disabled = false; return;
+    }
+    errEl.style.color = 'var(--green)';
+    errEl.textContent = `If an account exists for ${email}, a reset link is on its way — check your inbox.`;
+    errEl.style.display = 'block';
+    btn.textContent = 'Send Reset Link →'; btn.disabled = false;
+  } catch (e) {
+    errEl.style.color = ''; errEl.textContent = 'Network error. Please try again.'; errEl.style.display = 'block';
+    btn.textContent = 'Send Reset Link →'; btn.disabled = false;
+  }
 }
 
 async function doLoginLanding() {

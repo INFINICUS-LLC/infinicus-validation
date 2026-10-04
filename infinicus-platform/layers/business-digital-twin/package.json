@@ -2,7 +2,7 @@
   "name": "@infinicus/layer-business-digital-twin",
   "version": "0.0.1",
   "private": true,
-  "description": "Business Digital Twin Layer \u2014 live stateful business model",
+  "description": "Business Digital Twin Layer — live stateful business model",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,7 +15,7 @@
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "vitest run",
+    "test": "node ../../scripts/run-block-tests.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {

@@ -2,7 +2,7 @@
   "name": "@infinicus/layer-data-acquisition",
   "version": "0.0.1",
   "private": true,
-  "description": "Data Acquisition Layer \u2014 ingests and validates raw business data",
+  "description": "Data Acquisition Layer — ingests and validates raw business data",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,7 +15,7 @@
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "vitest run",
+    "test": "node ../../scripts/run-block-tests.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {

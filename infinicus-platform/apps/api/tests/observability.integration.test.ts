@@ -128,7 +128,13 @@ describe.runIf(run)('errorHandler — unhandled-error persistence — live Postg
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    createPool({ connectionString: process.env.DATABASE_URL!, ssl: true });
+    const config = loadConfig({
+      DATABASE_URL: process.env.DATABASE_URL!,
+      DB_SSL: process.env.DB_SSL,
+      NODE_ENV: 'test',
+      LOG_LEVEL: 'silent',
+    });
+    createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     app = Fastify({ logger: false });
     await app.register(correlationIdPlugin);
     await app.register(errorHandlerPlugin);

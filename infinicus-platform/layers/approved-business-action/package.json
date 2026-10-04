@@ -2,7 +2,7 @@
   "name": "@infinicus/layer-approved-business-action",
   "version": "0.0.1",
   "private": true,
-  "description": "Approved Business Action Layer \u2014 action governance and execution",
+  "description": "Approved Business Action Layer — action governance and execution",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,7 +15,7 @@
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "vitest run",
+    "test": "node ../../scripts/run-block-tests.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {

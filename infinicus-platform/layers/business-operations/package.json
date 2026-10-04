@@ -2,7 +2,7 @@
   "name": "@infinicus/layer-business-operations",
   "version": "0.0.1",
   "private": true,
-  "description": "Business Operations Layer \u2014 process execution and operational context",
+  "description": "Business Operations Layer — process execution and operational context",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,7 +15,7 @@
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "vitest run",
+    "test": "node ../../scripts/run-block-tests.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {

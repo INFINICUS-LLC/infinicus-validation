@@ -8,7 +8,6 @@ name: INFINICUS Platform CI
 # Two jobs:
 #   validate                  — lint, typecheck, build, and the full live
 #                                 -database test suite (every package).
-#   build-and-smoke-test-image — builds the immutable apps/api Docker
 #                                 image (tagged by infrastructure/deployment
 #                                 /scripts/version.sh's git-derived version),
 #                                 runs it for real, and smoke-tests it.
@@ -20,6 +19,7 @@ name: INFINICUS Platform CI
 on:
   push:
     branches:
+      - "main"
       - "claude/**"
     paths:
       - "infinicus-platform/**"

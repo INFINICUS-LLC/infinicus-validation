@@ -1331,35 +1331,20 @@ async function supabaseSaveSimulation(entry) {
 <section class="section" id="sec-intelligence">
   <div class="pg-title" style="font-size:22px;margin-bottom:.1rem;">BUSINESS <span class="c">INTELLIGENCE</span></div>
   <div class="pg-sub">// KPI DASHBOARD · ECONOMY · CUSTOMERS · FORECAST · HISTORY</div>
-  <div style="font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.1em;margin-bottom:1.2rem;margin-top:1rem;">SELECT A MODULE TO EXPLORE</div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.85rem;">
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('dashboard')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">01</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">KPI DASHBOARD</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Core simulation metrics — revenue, profit, runway, customer acquisition.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('economy')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">02</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">ECONOMY</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Revenue vs expenses, daily cashflow chart, burn analysis.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('customers')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">03</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">CUSTOMERS</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Acquisition curve, LTV, churn, channel breakdown.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('forecast')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">04</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">FORECAST</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">6-month and 12-month financial projections with growth curves.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('history')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">05</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">HISTORY</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">All previous simulation runs — compare, restore, track progress.</div>
-    </div>
+  <!-- Same in-layer tab pattern as Simulation (see biTab() below). These 5
+       modules are the SAME underlying sections Simulation uses — biTab()
+       borrows the live node into #bi-tab-slot on demand instead of copying
+       it, so there is only ever one copy of each chart/result and its
+       data-population logic never has to run twice. -->
+  <div class="biz-tabs" id="bi-tabs" style="margin-top:1rem;margin-bottom:1.2rem;">
+    <button class="biz-tab active" data-bitab="dashboard" onclick="biTab('dashboard')">① KPI DASHBOARD</button>
+    <button class="biz-tab" data-bitab="economy" onclick="biTab('economy')">② ECONOMY</button>
+    <button class="biz-tab" data-bitab="customers" onclick="biTab('customers')">③ CUSTOMERS</button>
+    <button class="biz-tab" data-bitab="forecast" onclick="biTab('forecast')">④ FORECAST</button>
+    <button class="biz-tab" data-bitab="history" onclick="biTab('history')">⑤ HISTORY</button>
   </div>
-  <div style="margin-top:1.5rem;font-family:var(--mono);font-size:11px;color:var(--muted-2);text-align:center;">Run a simulation in DATA ACQ first to populate these modules.</div>
+  <div style="margin-bottom:1rem;font-family:var(--mono);font-size:11px;color:var(--muted-2);">Run a simulation in the Simulation layer first to populate these modules.</div>
+  <div id="bi-tab-slot"></div>
 </section>
 
 <section class="section" id="sec-dashboard">
@@ -1468,65 +1453,26 @@ async function supabaseSaveSimulation(entry) {
 <section class="section" id="sec-simulation">
   <div class="pg-title" style="font-size:22px;margin-bottom:.1rem;">SIMULATION <span class="c">ENGINE</span></div>
   <div class="pg-sub">// SETUP · MONTE CARLO · SENSITIVITY · SCENARIO COMPARISON · VERDICT · REPORT</div>
-  <div style="font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.1em;margin-bottom:1.2rem;margin-top:1rem;">SELECT A MODULE — EVERY SIMULATION STEP LIVES HERE</div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.85rem;">
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('data')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">01</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">INPUT</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Start here — enter your business idea, parameters, market, and financials.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('dashboard')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">02</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">DASHBOARD</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Live KPI overview after a run — cash, burn rate, runway, at a glance.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('verdict')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">03</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">VERDICT</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">AI business health assessment — GO, MODIFY, or STOP recommendation.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('risk')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">04</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">RISK / MONTE CARLO</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">500-run probability distribution — cash outcomes, failure rates, upside range.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('sensitivity')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">05</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">SENSITIVITY</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Which variables move the needle most — heatmap of all key drivers.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('economy')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">06</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">ECONOMY</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Revenue, expenses, and cashflow over the life of the simulation.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('customers')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">07</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">CUSTOMERS</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Acquisition, retention, and lifetime value across the run.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('forecast')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">08</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">FORECAST</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">6-month and 12-month projections extending your simulation.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('compare')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">09</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">COMPARE</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Side-by-side scenario comparison — test different assumptions head to head.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('history')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">10</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">HISTORY</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Your last 20 runs, stored locally in your browser.</div>
-    </div>
-    <div style="background:var(--glass);border:1px solid var(--line-2);border-radius:12px;padding:1.2rem;cursor:pointer;transition:all .2s;" onclick="nav('report')" onmouseover="this.style.borderColor='rgba(0,224,96,.35)'" onmouseout="this.style.borderColor='rgba(255,255,255,.14)'">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:.12em;margin-bottom:.5rem;">11</div>
-      <div style="font-family:var(--head);font-size:16px;font-weight:700;margin-bottom:.3rem;">REPORT</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;">Full printable business plan — PDF export, shareable link.</div>
-    </div>
+  <!-- All 11 simulation modules live inside this one layer as tabs — switching
+       modules no longer navigates to a different top-level layer. simTab(id)
+       (see script below) moves the real module section into #sim-tab-slot and
+       toggles its visibility; nav(id) for any of these ids now redirects here
+       automatically, so every existing "jump to X" button/link across the
+       platform keeps working unchanged. -->
+  <div class="biz-tabs" id="sim-tabs" style="margin-top:1rem;margin-bottom:1.2rem;">
+    <button class="biz-tab active" data-simtab="data" onclick="simTab('data')">① INPUT</button>
+    <button class="biz-tab" data-simtab="dashboard" onclick="simTab('dashboard')">② DASHBOARD</button>
+    <button class="biz-tab" data-simtab="verdict" onclick="simTab('verdict')">③ VERDICT</button>
+    <button class="biz-tab" data-simtab="risk" onclick="simTab('risk')">④ RISK</button>
+    <button class="biz-tab" data-simtab="sensitivity" onclick="simTab('sensitivity')">⑤ SENSITIVITY</button>
+    <button class="biz-tab" data-simtab="economy" onclick="simTab('economy')">⑥ ECONOMY</button>
+    <button class="biz-tab" data-simtab="customers" onclick="simTab('customers')">⑦ CUSTOMERS</button>
+    <button class="biz-tab" data-simtab="forecast" onclick="simTab('forecast')">⑧ FORECAST</button>
+    <button class="biz-tab" data-simtab="compare" onclick="simTab('compare')">⑨ COMPARE</button>
+    <button class="biz-tab" data-simtab="history" onclick="simTab('history')">⑩ HISTORY</button>
+    <button class="biz-tab" data-simtab="report" onclick="simTab('report')">⑪ REPORT</button>
   </div>
-  <div style="margin-top:1.5rem;font-family:var(--mono);font-size:11px;color:var(--muted-2);text-align:center;">Start at INPUT to unlock the rest of the modules.</div>
+  <div id="sim-tab-slot"></div>
 </section>
 
 <section class="section" id="sec-risk">
@@ -3420,7 +3366,89 @@ function updateSimModuleNav(activeId) {
   select.value = activeId;
 }
 
+// ─── SIMULATION ENGINE — IN-LAYER TABS ──────────────────────────────────────
+// The 11 SIM_MODULES ids used to each be their own top-level `.section`,
+// so "jumping" between them (hub tiles, the JUMP TO dropdown, in-page
+// buttons like VIEW FULL REPORT) fully navigated away from the Simulation
+// layer. They now live permanently as children of #sim-tab-slot inside
+// sec-simulation — moved there once by simTabInit() — and simTab() just
+// toggles which one is visible via inline style (never detached from the
+// document, so every existing getElementById-based render function that
+// populates them still finds its target regardless of which tab is
+// showing). nav(id) below redirects any of these 11 ids into simTab(),
+// so no other call site in the file had to change.
+let simLastTab = 'data';
+function simTabInit() {
+  if (simTabInit._done) return;
+  const slot = $('sim-tab-slot');
+  SIM_MODULES.forEach(m => {
+    const el = $('sec-' + m.id);
+    if (el) { el.style.display = 'none'; slot.appendChild(el); }
+  });
+  simTabInit._done = true;
+}
+function simTab(id) {
+  if (!SIM_MODULES.some(m => m.id === id)) { nav(id); return; }
+  simTabInit();
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nb').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.sb-link,.sb-platform-link').forEach(b => b.classList.remove('active'));
+  $('sec-simulation').classList.add('active');
+  const btn = document.querySelector(`.nb[data-section="simulation"]`);
+  if (btn) btn.classList.add('active');
+  const sbLink = document.querySelector(`.sb-link[data-section="simulation"],.sb-platform-link[data-section="simulation"]`);
+  if (sbLink) sbLink.classList.add('active');
+  SIM_MODULES.forEach(m => { const el = $('sec-' + m.id); if (el) el.style.display = (m.id === id ? 'block' : 'none'); });
+  document.querySelectorAll('#sim-tabs .biz-tab').forEach(b => b.classList.toggle('active', b.dataset.simtab === id));
+  simLastTab = id;
+  updateSimModuleNav(id);
+  closeSidebar();
+  window.scrollTo(0,0);
+  if (id==='sensitivity'&&S.done) updateSensitivity();
+  if (id==='compare'){renderScenarioSlots();renderComparisonTable();}
+  if (id==='history') renderHistory();
+  if (id==='forecast') renderForecast();
+}
+
+// ─── BUSINESS INTELLIGENCE — IN-LAYER TABS ──────────────────────────────────
+// BI_MODULES is a subset of SIM_MODULES — the exact 5 result sections BI's
+// hub always pointed at. biTab() borrows the one real node for whichever
+// module is requested (appendChild moves it out of wherever it currently
+// lives — #sim-tab-slot or #bi-tab-slot — it is never duplicated or
+// detached from the document). BI's own hub tiles call biTab() directly
+// (see sec-intelligence above), so nav('dashboard'|'economy'|'customers'|
+// 'forecast'|'history') from anywhere else in the file still means "show
+// it in the Simulation layer" (post-run auto-navigation, etc.) — unchanged
+// from Block 1.
+const BI_MODULES = ['dashboard','economy','customers','forecast','history'];
+let biLastTab = 'dashboard';
+function biTab(id) {
+  if (!BI_MODULES.includes(id)) { nav(id); return; }
+  const slot = $('bi-tab-slot');
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nb').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.sb-link,.sb-platform-link').forEach(b => b.classList.remove('active'));
+  $('sec-intelligence').classList.add('active');
+  const btn = document.querySelector(`.nb[data-section="intelligence"]`);
+  if (btn) btn.classList.add('active');
+  const sbLink = document.querySelector(`.sb-link[data-section="intelligence"],.sb-platform-link[data-section="intelligence"]`);
+  if (sbLink) sbLink.classList.add('active');
+  BI_MODULES.forEach(mId => { const el = $('sec-' + mId); if (el) el.style.display = 'none'; });
+  const target = $('sec-' + id);
+  if (target) { slot.appendChild(target); target.style.display = 'block'; }
+  document.querySelectorAll('#bi-tabs .biz-tab').forEach(b => b.classList.toggle('active', b.dataset.bitab === id));
+  biLastTab = id;
+  updateSimModuleNav('intelligence'); // hides the Simulation-only "JUMP TO" dropdown while in BI
+  closeSidebar();
+  window.scrollTo(0,0);
+  if (id==='history') renderHistory();
+  if (id==='forecast') renderForecast();
+}
+
 function nav(id) {
+  if (id === 'simulation') { simTab(simLastTab); return; }
+  if (id === 'intelligence') { biTab(biLastTab); return; }
+  if (SIM_MODULES.some(m => m.id === id)) { simTab(id); return; }
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.sb-link,.sb-platform-link').forEach(b=>b.classList.remove('active'));
@@ -3432,10 +3460,6 @@ function nav(id) {
   updateSimModuleNav(id);
   closeSidebar();
   window.scrollTo(0,0);
-  if (id==='sensitivity'&&S.done) updateSensitivity();
-  if (id==='compare'){renderScenarioSlots();renderComparisonTable();}
-  if (id==='history') renderHistory();
-  if (id==='forecast') renderForecast();
 }
 
 // ─── BACKEND SIMULATION BRIDGE ───────────────────────────────────────────────
@@ -3447,9 +3471,11 @@ function nav(id) {
 // This block is purely additive: it never reads, writes, or otherwise
 // touches Supabase auth, landing.html's signup, or account.html.
 //
-// Phase 4: point API_BASE_URL at the real OCI-hosted HTTPS API once it's
-// provisioned (or set localStorage.inf_api_base_url for local testing
-// without editing this file — see docs/production-readiness/).
+// Already pointed at the real production API — deployed on Hetzner (see
+// infrastructure/deployment/oci/docker-compose.yml; the "oci" directory
+// name is a legacy artifact of an earlier, abandoned OCI hosting plan).
+// Set localStorage.inf_api_base_url for local testing without editing
+// this file — see docs/production-readiness/.
 const API_BASE_URL = (function () {
   try { const override = localStorage.getItem('inf_api_base_url'); if (override) return override; } catch (e) {}
   return (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
@@ -6909,28 +6935,105 @@ if ('serviceWorker' in navigator) {
 <script>
 const TUT={
   i:0,on:false,
-  STEPS:[
-    {ico:'🚀',ttl:'Welcome to INFINICUS ENGINE',bdy:'Test any business idea before spending a cent. This 60-second guide shows you exactly how the engine works.',el:null,pos:'center'},
-    {ico:'⚡',ttl:'Quick-Start Templates',bdy:"Pick any industry preset to instantly fill the form with realistic numbers — or fill it in yourself.",el:'.pills',pos:'below'},
-    {ico:'💡',ttl:'Describe Your Business',bdy:'Write what you sell, how you sell it, and who buys it. The AI analysis uses this text to generate venture insights.',el:'#i-idea',pos:'below'},
-    {ico:'💰',ttl:'Starting Capital',bdy:'How much money are you launching with? The engine tracks your cash balance day by day across 90 virtual days.',el:'#i-cap',pos:'below'},
-    {ico:'📍',ttl:'Your Location',bdy:'City and country affects foot traffic density, local market size, and customer acquisition rates in the model.',el:'#i-loc',pos:'below'},
-    {ico:'🏭',ttl:'Industry Vertical',bdy:'Sets realistic conversion rates, seasonal patterns, and cost structures specific to your type of business.',el:'#i-ind',pos:'below'},
-    {ico:'💵',ttl:'Price Per Sale',bdy:'What you charge per customer. Revenue = Price × simulated daily customers. The engine finds your break-even point.',el:'#i-price',pos:'above'},
-    {ico:'▶',ttl:'Start The Simulation',bdy:'Runs 90 virtual business days using Monte Carlo risk modeling and agent-based customer behavior. Takes ~5 seconds.',el:'#launch-btn',pos:'above'},
-    {ico:'📊',ttl:'Results Dashboard',bdy:'Revenue, daily customers, burn rate, profitable days, and cash flow charts all appear here after the run.',el:'[data-section="dashboard"]',pos:'below'},
-    {ico:'🎯',ttl:'GO / MODIFY / STOP Verdict',bdy:'The engine gives you a clear verdict — plus capital alternatives and a survival probability score.',el:'[data-section="verdict"]',pos:'below'},
-    {ico:'🤖',ttl:'AI Report & PDF Export',bdy:'Full AI venture analysis: market fit score, risk profile, and strategic recommendations. Export as PDF.',el:'[data-section="report"]',pos:'below'},
-    {ico:'✅',ttl:"You're Ready to Simulate",bdy:"Pick a template or fill in your own details, then hit START SIMULATION. Most runs finish in under 10 seconds.",el:null,pos:'center'}
-  ],
+  // Keyed by section id (the part of a section's DOM id after "sec-", e.g.
+  // 'data', 'operations', 'twin' — see nav(id)). Each layer gets its own
+  // walkthrough; a section not yet in this map falls back to 'data' (the
+  // original Simulation tutorial) rather than showing nothing. "HOW IT
+  // WORKS" used to always force-navigate to the Simulation form regardless
+  // of what layer you were actually looking at — fixed by start() below
+  // reading the CURRENT active section instead of hardcoding nav('data').
+  STEPS_BY_SECTION:{
+    data:[
+      {ico:'🚀',ttl:'Welcome to INFINICUS ENGINE',bdy:'Test any business idea before spending a cent. This 60-second guide shows you exactly how the engine works.',el:null,pos:'center'},
+      {ico:'⚡',ttl:'Quick-Start Templates',bdy:"Pick any industry preset to instantly fill the form with realistic numbers — or fill it in yourself.",el:'.pills',pos:'below'},
+      {ico:'💡',ttl:'Describe Your Business',bdy:'Write what you sell, how you sell it, and who buys it. The AI analysis uses this text to generate venture insights.',el:'#i-idea',pos:'below'},
+      {ico:'💰',ttl:'Starting Capital',bdy:'How much money are you launching with? The engine tracks your cash balance day by day across 90 virtual days.',el:'#i-cap',pos:'below'},
+      {ico:'📍',ttl:'Your Location',bdy:'City and country affects foot traffic density, local market size, and customer acquisition rates in the model.',el:'#i-loc',pos:'below'},
+      {ico:'🏭',ttl:'Industry Vertical',bdy:'Sets realistic conversion rates, seasonal patterns, and cost structures specific to your type of business.',el:'#i-ind',pos:'below'},
+      {ico:'💵',ttl:'Price Per Sale',bdy:'What you charge per customer. Revenue = Price × simulated daily customers. The engine finds your break-even point.',el:'#i-price',pos:'above'},
+      {ico:'▶',ttl:'Start The Simulation',bdy:'Runs 90 virtual business days using Monte Carlo risk modeling and agent-based customer behavior. Takes ~5 seconds.',el:'#launch-btn',pos:'above'},
+      {ico:'📊',ttl:'Results Dashboard',bdy:'Revenue, daily customers, burn rate, profitable days, and cash flow charts all appear here after the run.',el:'[data-simtab="dashboard"]',pos:'below'},
+      {ico:'🎯',ttl:'GO / MODIFY / STOP Verdict',bdy:'The engine gives you a clear verdict — plus capital alternatives and a survival probability score.',el:'[data-simtab="verdict"]',pos:'below'},
+      {ico:'🤖',ttl:'AI Report & PDF Export',bdy:'Full AI venture analysis: market fit score, risk profile, and strategic recommendations. Export as PDF.',el:'[data-simtab="report"]',pos:'below'},
+      {ico:'✅',ttl:"You're Ready to Simulate",bdy:"Pick a template or fill in your own details, then hit START SIMULATION. Most runs finish in under 10 seconds.",el:null,pos:'center'}
+    ],
+    operations:[
+      {ico:'🧾',ttl:'Business Operations',bdy:'This is where you log what actually happens in your business — every sale, expense, inventory change, customer and team event becomes a real record.',el:null,pos:'center'},
+      {ico:'🗂',ttl:'Pick An Event Type',bdy:'Switch tabs to log a CATALOG sale, open or close the REGISTER, or record a SALE, EXPENSE, INVENTORY change, CUSTOMER or TEAM event.',el:'.biz-tabs',pos:'below'},
+      {ico:'🛒',ttl:'Catalog & Cart',bdy:'Tap a product to add it to the current order. COMPLETE ORDER records it as a real sale — no typing amounts by hand.',el:'#biz-panel-catalog',pos:'below'},
+      {ico:'➕',ttl:'Build Your Catalog',bdy:'No products yet? Add one here — name, price, and category — and it shows up as a tap-to-add tile.',el:'#biz-catalog-add-toggle',pos:'above'},
+      {ico:'📊',ttl:'KPI Summary',bdy:'Pick a date range and hit REFRESH KPIs to see revenue, expenses and other metrics computed from the events you just logged.',el:'#biz-from-date',pos:'above'},
+      {ico:'🔗',ttl:"What's Next",bdy:"Everything you log here feeds your Digital Twin — your business's live, continuously-updated snapshot.",el:null,pos:'center'}
+    ],
+    acquisition:[
+      {ico:'📥',ttl:'Data Acquisition',bdy:'This layer registers governed data sources and intake batches, with quality scoring and provenance tracking, before anything reaches the rest of the platform.',el:null,pos:'center'},
+      {ico:'🗂',ttl:'Four Stages',bdy:'SOURCES, MANUAL INTAKE, RUNS, and PUBLISH — data moves through each stage in order.',el:'.biz-tabs',pos:'below'},
+      {ico:'🗂',ttl:'Register A Source',bdy:'Before submitting data, register where it comes from — name, source code, type, and a sensitivity level (public, internal, confidential, restricted).',el:'#da-panel-sources',pos:'below'},
+      {ico:'📥',ttl:'Manual Intake',bdy:'Pick a registered source and paste a JSON array of records. This submits a collection run for validation and quality scoring.',el:'button[onclick*="daTab(\'intake\'"]',pos:'above'},
+      {ico:'🔍',ttl:'Runs',bdy:'Select a run to see its validation results, quality score, and full provenance — where every record came from.',el:'button[onclick*="daTab(\'runs\'"]',pos:'above'},
+      {ico:'📤',ttl:'Publish',bdy:'Once a run passes validation, prepare and publish it so the rest of the platform — Operations, the Twin, Simulation — can use it.',el:'button[onclick*="daTab(\'publish\'"]',pos:'above'},
+      {ico:'🔗',ttl:"What's Next",bdy:'Published data flows into Business Operations and your Digital Twin.',el:null,pos:'center'}
+    ],
+    intelligence:[
+      {ico:'🧠',ttl:'Business Intelligence',bdy:'Five analysis tabs, all populated by a simulation run — if a tab looks empty, run a simulation first.',el:null,pos:'center'},
+      {ico:'📊',ttl:'KPI Dashboard',bdy:'Core simulation metrics — revenue, profit, runway, customer acquisition.',el:'[data-bitab="dashboard"]',pos:'below'},
+      {ico:'💹',ttl:'Economy',bdy:'Revenue vs. expenses, daily cashflow chart, burn analysis.',el:'[data-bitab="economy"]',pos:'below'},
+      {ico:'👥',ttl:'Customers',bdy:'Acquisition curve, lifetime value, churn, and channel breakdown.',el:'[data-bitab="customers"]',pos:'below'},
+      {ico:'🔮',ttl:'Forecast',bdy:'6-month and 12-month financial projections with growth curves.',el:'[data-bitab="forecast"]',pos:'below'},
+      {ico:'📜',ttl:'History',bdy:'Every previous simulation run — compare them, restore one, or track progress over time.',el:'[data-bitab="history"]',pos:'below'}
+    ],
+    twin:[
+      {ico:'🪞',ttl:'Business Digital Twin',bdy:"Your business's live, continuously-updated snapshot — assembled from everything logged in Operations and Acquisition.",el:null,pos:'center'},
+      {ico:'⟳',ttl:'Load Or Refresh',bdy:'LOAD TWIN shows your cached snapshot; FORCE REFRESH recomputes it right now from your latest events.',el:'button[onclick="bizLoadTwin()"]',pos:'below'},
+      {ico:'▶',ttl:'Test A Decision First',bdy:"Before committing to a change, run a simulation seeded from this twin's real numbers.",el:'button[onclick="bizRunSimulationFromTwin()"]',pos:'above'},
+      {ico:'⚙️',ttl:'DT Layer Status',bdy:'This status bar shows the Digital Twin layer\'s live health across its 24 processing blocks (DT-01 → DT-24).',el:'#dt-runtime-status',pos:'below'},
+      {ico:'🔗',ttl:"What's Next",bdy:'Once your twin is live, head to AI Decision Intelligence for recommendations grounded in it.',el:null,pos:'center'}
+    ],
+    decisions:[
+      {ico:'🤖',ttl:'AI Decision Intelligence',bdy:'Recommendations grounded in your live twin — never fabricated.',el:null,pos:'center'},
+      {ico:'⚡',ttl:'Get Decisions',bdy:'Click GET DECISIONS to have the AI analyze your twin and surface a ranked set of recommended moves.',el:'button[onclick="bizGetDecisions()"]',pos:'below'},
+      {ico:'💡',ttl:'Rationale, Not Just A Verdict',bdy:'Each recommendation appears here with its reasoning and the outcome it projects — not just a title.',el:'#biz-decisions-area',pos:'below'},
+      {ico:'📜',ttl:'Decision History',bdy:'Shows every past recommendation, whether you approved it, and what you later recorded as the outcome.',el:'button[onclick="bizLoadDecisionHistory()"]',pos:'above'},
+      {ico:'🔗',ttl:"What's Next",bdy:'Approve a recommendation here to send it to Approved Business Action.',el:null,pos:'center'}
+    ],
+    'approved-actions':[
+      {ico:'✅',ttl:'Approved Business Action',bdy:"Every recommendation you've formally approved, along with the reasoning the AI gave at the time.",el:null,pos:'center'},
+      {ico:'📋',ttl:'Why It Was Recommended',bdy:'Each card shows WHY THIS WAS RECOMMENDED and the EXPECTED OUTCOME the AI projected — not just a title and a date.',el:'#aba-list',pos:'below'},
+      {ico:'↻',ttl:'Refresh',bdy:'Pulls the latest approved actions from the backend.',el:'button[onclick="abaInit()"]',pos:'above'},
+      {ico:'🔗',ttl:"What's Next",bdy:'Head to Outcome Monitoring to record what actually happened for each one.',el:null,pos:'center'}
+    ],
+    'outcome-monitoring':[
+      {ico:'📈',ttl:'Outcome Monitoring',bdy:'Record what actually happened for each approved action, so the platform can compare reality to the AI\'s prediction.',el:null,pos:'center'},
+      {ico:'📝',ttl:'Record An Outcome',bdy:'Pending approved actions show a RECORD OUTCOME button. Once recorded, the card shows the expected outcome next to what actually happened.',el:'#om-list',pos:'below'},
+      {ico:'↻',ttl:'Refresh',bdy:'Pulls the latest recorded outcomes from the backend.',el:'button[onclick="omInit()"]',pos:'above'},
+      {ico:'🔗',ttl:"What's Next",bdy:'Recorded outcomes feed Continuous Learning, improving future recommendations.',el:null,pos:'center'}
+    ],
+    learning:[
+      {ico:'🔁',ttl:'Continuous Learning',bdy:'CL-01 → CL-25 feeds your recorded outcomes back into future AI recommendations, so the system improves from your real results.',el:null,pos:'center'},
+      {ico:'⚙️',ttl:'CL Layer Status',bdy:"This status bar shows the Continuous Learning layer's live health across its 25 processing blocks.",el:'#learning-runtime-status',pos:'below'},
+      {ico:'📜',ttl:'Learning History',bdy:'Every outcome you\'ve recorded shows up here — the record of what the AI predicted versus what actually happened.',el:'#learning-history-list',pos:'below'},
+      {ico:'🏁',ttl:'The Full Loop',bdy:'Data Acquisition → Operations → Digital Twin → AI Decisions → Approved Action → Outcome Monitoring → Continuous Learning — and back around.',el:null,pos:'center'}
+    ]
+  },
+  steps:null,
   start(){
     this.i=0;this.on=true;
-    if(typeof nav==='function')nav('data');
+    const activeEl=document.querySelector('.section.active');
+    const currentId=activeEl?activeEl.id.replace(/^sec-/,''):'data';
+    this.steps=this.STEPS_BY_SECTION[currentId];
+    if(!this.steps){
+      // No tutorial for this layer yet — fall back to Simulation's, and
+      // navigate there since its steps target elements that only exist on
+      // that section (same behavior this always had before this layer
+      // existed).
+      this.steps=this.STEPS_BY_SECTION.data;
+      if(typeof nav==='function')nav('data');
+    }
     document.getElementById('tut-ov').style.display='block';
     this.draw();
   },
   draw(){
-    const s=this.STEPS[this.i],n=this.STEPS.length;
+    const s=this.steps[this.i],n=this.steps.length;
     document.getElementById('tut-ico').textContent=s.ico;
     document.getElementById('tut-lbl').textContent='STEP '+(this.i+1)+' OF '+n;
     document.getElementById('tut-ttl').textContent=s.ttl;
@@ -6962,7 +7065,7 @@ const TUT={
       bx.style.cssText='display:block;position:fixed;top:'+top+'px;left:'+left+'px;width:'+bw+'px;transform:none;bottom:auto;right:auto;';
     },380);
   },
-  next(){if(this.i>=this.STEPS.length-1){this.end();return;}this.i++;this.draw();},
+  next(){if(this.i>=this.steps.length-1){this.end();return;}this.i++;this.draw();},
   back(){if(this.i<=0)return;this.i--;this.draw();},
   end(){
     this.on=false;

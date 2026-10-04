@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Legal — INFINICUS ENGINE v3</title>
-<meta name="description" content="Privacy Policy, Terms of Service, AI Disclaimer and all legal documents for INFINICUS ENGINE v3.">
+<meta name="robots" content="noindex">
+<title>Legal Center — INFINICUS</title>
+<meta name="description" content="INFINICUS privacy, terms, AI disclaimer and related legal policies. Pre-launch publication candidate; entity and operational details require verification.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&family=Sora:wght@700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/svg+xml" href="./infinicus-mark.svg">
@@ -13,7 +14,7 @@
   --navy:#060a14;--navy-800:#0a1020;--navy-700:#0e1628;
   --glass:rgba(255,255,255,.04);--line:rgba(255,255,255,.09);--line-2:rgba(255,255,255,.14);
   --cyan:#00e060;--emerald:#10b981;--amber:#f59e0b;--red:#f43f5e;--purple:#8b5cf6;
-  --text:#e9eefb;--muted:#8893ad;--muted-2:#5d6885;
+  --text:#e9eefb;--muted:#8893ad;--muted-2:#97a3bd;
   --mono:'IBM Plex Mono',monospace;--sans:'Inter',system-ui,sans-serif;--head:'Sora',sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -39,13 +40,14 @@ header{display:flex;align-items:center;justify-content:space-between;padding:.85
 .sidebar-note{font-family:var(--mono);font-size:8.5px;color:var(--muted-2);margin-top:1rem;padding:.75rem;background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.15);border-radius:6px;line-height:1.6;}
 
 /* CONTENT */
-.content{padding:2.5rem 2rem;max-width:820px;}
+.content{padding:2.5rem 2rem;max-width:820px;min-width:0;}
 @media(max-width:600px){.content{padding:1.5rem 1rem;}}
+h1{font-family:var(--head);font-size:28px;margin-bottom:1rem;}
 
-.effective{font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-bottom:2.5rem;padding:.6rem 1rem;border-left:2px solid var(--amber);background:rgba(245,158,11,.04);}
+.effective{font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-bottom:2.5rem;padding:.6rem 1rem;border-left:2px solid var(--amber);background:rgba(245,158,11,.04);line-height:1.8;}
 
 /* SECTIONS */
-.legal-section{margin-bottom:3rem;padding-bottom:2.5rem;border-bottom:1px solid var(--line);}
+.legal-section{margin-bottom:3rem;padding-bottom:2.5rem;border-bottom:1px solid var(--line);scroll-margin-top:100px;}
 .legal-section:last-child{border-bottom:none;}
 .section-tag{font-family:var(--mono);font-size:9px;color:var(--cyan);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.5rem;}
 .section-title{font-family:var(--head);font-size:22px;font-weight:800;margin-bottom:1rem;letter-spacing:-.01em;}
@@ -58,12 +60,24 @@ header{display:flex;align-items:center;justify-content:space-between;padding:.85
 .section-body a:hover{text-decoration:underline;}
 .highlight-box{background:rgba(244,63,94,.06);border:1px solid rgba(244,63,94,.2);border-left:3px solid var(--red);border-radius:8px;padding:1rem 1.25rem;margin:1rem 0;font-family:var(--mono);font-size:11px;line-height:1.75;color:var(--text);}
 .info-box{background:rgba(0,224,96,.04);border:1px solid rgba(0,224,96,.15);border-left:3px solid var(--cyan);border-radius:8px;padding:1rem 1.25rem;margin:1rem 0;font-family:var(--mono);font-size:11px;line-height:1.75;color:var(--text);}
-.placeholder{color:var(--amber);font-style:italic;}
+.skip{position:absolute;left:-10000px;}
+.skip:focus{left:12px;top:12px;z-index:200;background:var(--navy);padding:12px;color:var(--cyan);}
+a:focus-visible{outline:2px solid var(--cyan);outline-offset:4px;}
 
 /* FOOTER */
 footer{border-top:1px solid var(--line);padding:1.5rem 2rem;font-family:var(--mono);font-size:9.5px;color:var(--muted-2);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;}
 footer a{color:var(--muted);text-decoration:none;}
 footer a:hover{color:var(--cyan);}
+
+@media print{
+  header,.sidebar,footer,#cookie-banner{display:none}
+  .layout{display:block}
+  body{background:white;color:black}
+  .content{max-width:none;padding:0}
+  .section-body,.section-body h3,.section-title,.effective,.highlight-box,.info-box{color:black}
+  .legal-section{break-inside:auto}
+  a{color:inherit}
+}
 </style>
 <!-- Google tag (gtag.js) — consent-gated -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18295551736"></script>
@@ -80,10 +94,11 @@ footer a:hover{color:var(--cyan);}
 <script>if(window.Sentry){Sentry.init({dsn:'https://5796c47d3f6c0f8d2ba058619b3ca229@o4511679886524416.ingest.de.sentry.io/4511679992102992',release:'infinicus@3.0.0',environment:location.hostname==='localhost'?'development':'production',tracesSampleRate:0.1,beforeSend:function(e){return location.hostname==='localhost'?null:e;}});}</script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to legal content</a>
 
 <header>
   <a class="logo" href="./index.html">
-    INFIN<span class="c">ICUS</span> <span class="logo-ver">ENGINE v3</span>
+    INFIN<span class="c">ICUS</span> <span class="logo-ver">LEGAL CENTER</span>
   </a>
   <a class="back-btn" href="./index.html">← Back to Engine</a>
 </header>
@@ -92,284 +107,275 @@ footer a:hover{color:var(--cyan);}
 
   <!-- SIDEBAR NAV -->
   <aside class="sidebar">
-    <div class="sidebar-title">Legal Documents</div>
-    <a href="#privacy">1. Privacy Policy</a>
-    <a href="#terms">2. Terms of Service</a>
-    <a href="#cookies">3. Cookie Policy</a>
-    <a href="#ai-disclaimer">4. AI Disclaimer</a>
-    <a href="#aup">5. Acceptable Use</a>
-    <a href="#ip">6. Intellectual Property</a>
-    <a href="#refund">7. Refund Policy</a>
-    <a href="#dmca">8. Contact & DMCA</a>
-    <div class="sidebar-note">⚠ These documents are a starter framework. Review with a qualified lawyer before commercial use.</div>
+    <nav aria-label="Legal documents">
+      <div class="sidebar-title">Legal Documents</div>
+      <a href="#status">01. Publication &amp; Entity Status</a>
+      <a href="#privacy">02. Privacy Policy</a>
+      <a href="#terms">03. Terms of Service</a>
+      <a href="#cookies">04. Cookies &amp; Browser Storage</a>
+      <a href="#ai-disclaimer">05. AI Disclaimer</a>
+      <a href="#aup">06. Acceptable Use Policy</a>
+      <a href="#ip">07. Intellectual Property</a>
+      <a href="#refund">08. Billing &amp; Refunds</a>
+      <a href="#dmca">09. Contact &amp; DMCA</a>
+      <a href="#dpa">10. Data Processing Addendum</a>
+      <a href="#subprocessors">11. Providers &amp; Subprocessors</a>
+      <a href="#security">12. Security</a>
+      <a href="#readiness">13. Publication Requirements</a>
+    </nav>
+    <div class="sidebar-note">⚠ Publication candidate. Entity, jurisdiction and public contact details require confirmation before this page is published as effective. See the lawyer brief for what changed and why.</div>
   </aside>
 
   <!-- MAIN CONTENT -->
-  <main class="content">
-
+  <main class="content" id="main">
+    <h1>INFINICUS Legal Center</h1>
     <div class="effective">
-      Effective Date: <strong>June 2026</strong> &nbsp;·&nbsp; Jurisdiction: <span class="placeholder">[Uganda / East Africa — confirm with your lawyer]</span> &nbsp;·&nbsp; Operated by: <span class="placeholder">[INFINICUS / your registered entity name]</span>
+      Revised October 3, 2026 · Planned entity: <strong>INFINICUS LLC, Wyoming</strong> · Formation unverified · <strong style="color:#f43f5e;">Not yet effective</strong>
     </div>
 
-    <!-- 1. PRIVACY POLICY -->
-    <div class="legal-section" id="privacy">
+    <!-- 01. PUBLICATION & ENTITY STATUS -->
+    <section class="legal-section" id="status" aria-labelledby="status-title">
       <div class="section-tag">01</div>
-      <div class="section-title">Privacy Policy</div>
+      <h2 class="section-title" id="status-title">Publication &amp; Entity Status</h2>
       <div class="section-body">
-        <p>INFINICUS ENGINE v3 ("we", "our", "the Service") is committed to protecting your privacy. This policy explains what data we collect, how we use it, and your rights.</p>
-
-        <h3>What We Collect</h3>
-        <ul>
-          <li><strong>Simulation inputs</strong> — business idea, capital, price, industry, location. These are entered by you and processed locally in your browser.</li>
-          <li><strong>Email address</strong> — collected voluntarily when you choose to receive your simulation report. Stored locally in your browser only.</li>
-          <li><strong>Usage data</strong> — simulation count, verdict outcomes, industry selections. Stored in your browser's localStorage. We do not transmit this to external servers.</li>
-          <li><strong>AI prompt data</strong> — when you run a simulation, your business description and simulation metrics are sent to Anthropic's API to generate AI analysis. See Anthropic's privacy policy at <a href="https://www.anthropic.com/privacy" target="_blank">anthropic.com/privacy</a>.</li>
-        </ul>
-
-        <h3>What We Do NOT Collect</h3>
-        <ul>
-          <li>We do not collect payment card details (processed externally if applicable).</li>
-          <li>We do not sell, rent, or share your personal data with advertisers.</li>
-          <li>We do not use tracking cookies or third-party ad networks.</li>
-          <li>We do not store simulation data on our servers — all results exist in your browser only.</li>
-        </ul>
-
-        <h3>Data Storage</h3>
-        <p>All personal data (name, email, simulation history) is stored in your browser's localStorage. Clearing your browser data will permanently delete it. We have no server-side copy.</p>
-
-        <h3>Third-Party Services</h3>
-        <ul>
-          <li><strong>Anthropic</strong> — AI analysis provider. Data sent: business description, simulation metrics, verdict. See <a href="https://www.anthropic.com/privacy" target="_blank">Anthropic Privacy Policy</a>.</li>
-          <li><strong>Cloudflare</strong> — Hosting and CDN provider. Cloudflare may log IP addresses and request metadata per their privacy policy at <a href="https://www.cloudflare.com/privacypolicy/" target="_blank">cloudflare.com/privacypolicy</a>.</li>
-          <li><strong>Google Fonts</strong> — Typography provider. May collect usage data per Google's privacy policy.</li>
-        </ul>
-
-        <h3>Your Rights</h3>
-        <p>You may delete all locally stored data at any time by clearing your browser's localStorage. To request deletion of any email address submitted to us, contact us at <span class="placeholder">[your contact email]</span>.</p>
-
-        <h3>Contact</h3>
-        <p>Privacy questions: <span class="placeholder">[privacy@yourdomain.com]</span></p>
+        <div class="highlight-box"><strong>Pre-launch notice — confirmation required.</strong> INFINICUS LLC is the planned Wyoming entity. Formation has not been verified for this edition. This page does not represent that the LLC exists, has accepted a contract, or owns assets already. The current legal operator and privacy controller must be identified before collecting personal data or accepting customers under this notice.</div>
+        <p>Revision date: October 3, 2026. Effective date: not yet assigned. The proposed service terms below take effect only when a verified operator publishes an effective edition and obtains any required acceptance. Existing customer agreements and mandatory legal rights are not changed by this draft.</p>
+        <p>Outstanding publication details are listed in <a href="#readiness">Publication Requirements</a>. No registration number, public address, contact mailbox or certification is implied by this page.</p>
       </div>
-    </div>
+    </section>
 
-    <!-- 2. TERMS OF SERVICE -->
-    <div class="legal-section" id="terms">
+    <!-- 02. PRIVACY POLICY -->
+    <section class="legal-section" id="privacy" aria-labelledby="privacy-title">
       <div class="section-tag">02</div>
-      <div class="section-title">Terms of Service</div>
+      <h2 class="section-title" id="privacy-title">Privacy Policy</h2>
       <div class="section-body">
-        <div class="highlight-box">⚠ By using INFINICUS ENGINE, you agree to these terms. If you do not agree, do not use the Service.</div>
-
-        <h3>The Service</h3>
-        <p>INFINICUS ENGINE v3 is a business simulation tool that uses statistical modelling and AI analysis to generate probabilistic assessments of business concepts. It is provided for educational and planning purposes only.</p>
-
-        <h3>Not Financial Advice</h3>
-        <p>Nothing produced by this Service — including GO/MODIFY/STOP verdicts, revenue projections, survival rates, AI analysis, or 60-day plans — constitutes financial, investment, legal, or business advice. See the AI Disclaimer section for full detail.</p>
-
-        <h3>Eligibility</h3>
-        <p>You must be at least 18 years old to use this Service. By using it, you confirm you are of legal age in your jurisdiction.</p>
-
-        <h3>User Obligations</h3>
+        <p>This policy describes INFINICUS's privacy practices as the platform actually operates today. "INFINICUS," "we" and "our" refer to the operator to be verified in <a href="#status">Entity Status</a>; the entity name does not change what data is actually collected, described below.</p>
+        <h3>Information and purposes</h3>
         <ul>
-          <li>You will not use the Service to simulate illegal business activities.</li>
-          <li>You will not attempt to reverse-engineer, scrape, or exploit the Service's API.</li>
-          <li>You will not abuse the AI analysis endpoint (rate limits apply: 10 requests per hour).</li>
-          <li>You will not misrepresent simulation results to investors, lenders, or partners as verified financial projections.</li>
+          <li><strong>Account data</strong> — when you create an account, your email address and authentication credentials are collected and stored by Supabase, our authentication and database provider, on our behalf. We do not see or store your raw password.</li>
+          <li><strong>Business and integration data</strong> — if you use Business Operations, Business Digital Twin, AI Decision Intelligence, Approved Business Action, Outcome Monitoring, Data Acquisition, or Continuous Learning, the records you enter (sales, expenses, inventory, customer and team events, data sources, approved decisions, and recorded outcomes) are stored server-side in our own database, associated with your account, so they persist across devices and sessions. Depending on the source, this may include information about your own customers, staff or other people — you are responsible for having authority to provide it.</li>
+          <li><strong>Simulation Engine inputs</strong> — the standalone Simulation Engine (business idea, capital, price, industry, location) runs its Monte Carlo calculations in your browser. Simulation history saved for a signed-in account is stored server-side; simulation history for a signed-out visitor is kept only in that browser's localStorage.</li>
+          <li><strong>AI inputs and outputs</strong> — business descriptions, simulation metrics, and live business-platform data you choose to analyze are sent to Anthropic's API to generate AI narrative analysis and AI Decision Intelligence recommendations. This is a currently enabled, confirmed data flow — not a hypothetical one. See Anthropic's privacy policy at <a href="https://www.anthropic.com/privacy" target="_blank">anthropic.com/privacy</a>.</li>
+          <li><strong>Technical information</strong> — requests, IP addresses, device/browser information, and diagnostic events are processed by our hosting, CDN and error-monitoring services (Cloudflare, Hetzner, Sentry — see <a href="#subprocessors">Providers &amp; Subprocessors</a>) for delivery, security, troubleshooting and reliability.</li>
+          <li><strong>Advertising/analytics cookies</strong> — if you accept this page's cookie banner, we set consent-mode cookies that enable Google ad-performance measurement and analytics (see <a href="#cookies">Cookies &amp; Browser Storage</a>).</li>
+          <li><strong>Browser storage</strong> — UI preferences, cached labels, feature-seen flags, your cookie-consent choice, and — for signed-out visitors — Simulation Engine history are held in your browser's localStorage.</li>
         </ul>
-
-        <h3>Intellectual Property</h3>
-        <p>The INFINICUS ENGINE software, brand, simulation algorithms, and design are the intellectual property of <span class="placeholder">[your entity]</span>. You may not copy, reproduce, or commercialise any part of the Service without written permission.</p>
-
-        <h3>Limitation of Liability</h3>
-        <p>To the maximum extent permitted by law, INFINICUS and its operators shall not be liable for any direct, indirect, incidental, or consequential damages arising from use of the Service, including but not limited to financial losses resulting from reliance on simulation outputs.</p>
-
-        <h3>Modifications</h3>
-        <p>We reserve the right to modify these terms at any time. Continued use of the Service after changes constitutes acceptance of the updated terms.</p>
-
-        <h3>Governing Law</h3>
-        <p>These terms are governed by the laws of <span class="placeholder">[Uganda / your jurisdiction]</span>. Any disputes shall be resolved in the courts of <span class="placeholder">[your jurisdiction]</span>.</p>
+        <h3>Service operation and learning</h3>
+        <p>Business data supports the Business Operations, BI/KPI, Digital Twin, simulation, AI Decision Intelligence and Outcome Monitoring workflows described above. "Continuous learning" refers to feedback and evaluation features; it does not itself authorize training general-purpose AI models on your data. Any use for model training or a materially different purpose would require a separately disclosed basis and appropriate terms. No AI-provider training or retention guarantee is made here — confirm Anthropic's current terms directly.</p>
+        <h3>Roles and lawful processing</h3>
+        <p>For account administration and our own service operations, the verified operator acts as a controller. When we process personal data for a business customer's purposes and instructions, roles must be defined in the applicable <a href="#dpa">DPA</a>. Business customers are responsible for having authority to provide data, give instructions and connect third-party systems. Contract performance, legitimate interests, consent and legal obligations may be the relevant basis depending on the activity and your jurisdiction; this draft does not assert that consent alone covers every activity.</p>
+        <h3>Recipients and international processing</h3>
+        <p>Information is made available to the confirmed service providers listed in <a href="#subprocessors">Providers &amp; Subprocessors</a>, to integrations you authorize, or as required by law. Any corporate-transaction disclosure would require appropriate safeguards. Exact hosting regions, recipient legal entities and cross-border transfer safeguards for Hetzner and Supabase have not been verified for this edition; this page makes no U.S.-only, EU-only or other residency promise. We do not sell or rent your personal data to third parties; whether any ad-sharing arrangement would count as a "sale" or "share" under laws like the CCPA still needs legal confirmation.</p>
+        <h3>Retention and deletion</h3>
+        <p>No fixed retention period is established by this draft. The final policy must specify retention periods or criteria for account data, business records, logs, diagnostics, backups and provider-held information. Clearing your browser's local storage affects that device only — it does not delete server-side account or business data. Account closure and server-side deletion require contacting us at the channel in <a href="#dmca">Contact</a>, once verified.</p>
+        <h3>Your choices and rights</h3>
+        <p>Depending on applicable law, you may have rights to access, correct, delete or obtain a copy of your personal data, restrict or object to processing, or withdraw consent. Mandatory statutory rights and response periods remain applicable regardless of this draft. The INFINICUS privacy request channel is <strong>not yet verified</strong>; it must be published in <a href="#dmca">Contact</a> before this notice takes effect.</p>
+        <h3>Children and sensitive information</h3>
+        <p>INFINICUS is for adults using it for business purposes, not children. Do not provide unnecessary sensitive personal data, payment-card credentials, passwords or private keys in prompts or uploads.</p>
       </div>
-    </div>
+    </section>
 
-    <!-- 3. COOKIE POLICY -->
-    <div class="legal-section" id="cookies">
+    <!-- 03. TERMS OF SERVICE -->
+    <section class="legal-section" id="terms" aria-labelledby="terms-title">
       <div class="section-tag">03</div>
-      <div class="section-title">Cookie Policy</div>
+      <h2 class="section-title" id="terms-title">Terms of Service</h2>
       <div class="section-body">
-        <div class="info-box">✓ INFINICUS ENGINE does not use tracking cookies or advertising cookies. We use only essential browser storage.</div>
+        <div class="info-box">Proposed terms for the INFINICUS platform. See <a href="#status">Entity Status</a> for the unconfirmed operator and effective date.</div>
+        <h3>The platform</h3>
+        <p>INFINICUS is a business operations and decision-intelligence platform encompassing Business Operations, Business Intelligence and KPI analysis, Digital Twin modeling, the Simulation Engine, AI Decision Intelligence, Data Acquisition, Approved Actions, Outcome Monitoring, Continuous Learning, and POS/external integrations. Availability depends on the features actually enabled for your account and your agreement; this description is not a promise that every capability is available to every user.</p>
+        <h3>Eligibility and accounts</h3>
+        <p>You must be at least 18 and have authority to accept these terms for yourself or your organization. Protect your account credentials, manage authorized users, and notify us of suspected misuse through the verified contact channel once available. You are responsible for lawful access to any data and connected systems you bring into the platform.</p>
+        <h3>Permissions and approved actions</h3>
+        <p>An AI analysis or recommendation is not authorization to change an external system, spend money, or make a commitment. Actions require your explicit approval within the Approved Business Action workflow. Review scope, destination, cost and consequences before approving. Integration availability, permission controls, retries, reversibility and audit records depend on the specific integration and your agreement — no universal rollback guarantee is made. Disconnecting an integration stops future access but does not necessarily reverse actions already completed.</p>
+        <h3>Use and third-party services</h3>
+        <p>Use the platform within applicable permissions, published plan limits, and the <a href="#aup">Acceptable Use Policy</a>. Third-party services (Anthropic, Supabase, Cloudflare, Hetzner, Google) have their own terms and availability outside our control. You must have the necessary licenses and permissions for any external data you bring in. Outputs, forecasts and AI-generated content require your review — see the <a href="#ai-disclaimer">AI Disclaimer</a>.</p>
+        <h3>Availability, suspension and termination</h3>
+        <p>No uptime or uninterrupted-access guarantee is made in this edition. We may restrict access to address unlawful use, material breaches, or security risks. Notice and an opportunity to remedy will be given when practicable; urgent risks may require immediate action. Data export and post-termination data retention must still be specified before customer onboarding — see <a href="#readiness">Publication Requirements</a>.</p>
+        <h3>Disclaimers and responsibility</h3>
+        <p>To the extent permitted by law, the platform and its outputs are provided "as is" and "as available," without warranties of accuracy or fitness for a particular purpose. Forecasts, verdicts and AI-generated recommendations are not guarantees. Nothing here excludes liability that cannot lawfully be excluded, or mandatory consumer rights. No monetary liability cap has been set for this edition — that is a decision for counsel.</p>
+        <h3>Changes and governing law</h3>
+        <p>Material changes will be communicated with an updated effective date. Once INFINICUS LLC is verified as the contracting entity, the proposed choice is Wyoming law, excluding conflict-of-laws rules, with Wyoming courts of competent jurisdiction, subject to mandatory law and non-waivable venue rights. This is a drafting proposal, not a confirmed jurisdiction — see <a href="#status">Entity Status</a>.</p>
+      </div>
+    </section>
 
-        <h3>What We Use</h3>
+    <!-- 04. COOKIES & BROWSER STORAGE -->
+    <section class="legal-section" id="cookies" aria-labelledby="cookies-title">
+      <div class="section-tag">04</div>
+      <h2 class="section-title" id="cookies-title">Cookies &amp; Browser Storage</h2>
+      <div class="section-body">
+        <div class="info-box">On your first visit anywhere on the site, including this page, a cookie banner asks you to accept or decline advertising/analytics cookies. If you accept, we and Google may use cookies to measure ad performance and site usage. If you decline, only essential browser storage and security cookies are used.</div>
+        <h3>What this site actually loads</h3>
+        <p>This Legal Center page loads the same scripts as the rest of the platform: a consent-gated Google advertising/analytics tag, Sentry error monitoring, and Google Fonts. None of these are hidden from this page — a claim that any INFINICUS page loads no trackers would be inaccurate and is not made here.</p>
         <ul>
-          <li><strong>localStorage</strong> — stores your simulation history, user profile, and currency preference locally in your browser. Not a cookie; never transmitted to our servers.</li>
-          <li><strong>sessionStorage</strong> — stores temporary event data during your session. Cleared when you close the browser tab.</li>
+          <li><strong>Essential storage</strong> — Supabase sets a session token (cookie or local storage, depending on sign-in method) so you stay signed in between visits. Cloudflare may set a <code>__cf_bm</code> cookie for bot management; this is a security cookie with no advertising purpose.</li>
+          <li><strong>Functional storage (localStorage)</strong> — your cookie-consent choice, UI preferences, cached labels, feature-seen flags, and signed-out Simulation Engine history. Not a cookie; kept in your browser only.</li>
+          <li><strong>sessionStorage</strong> — temporary event data, cleared when you close the tab.</li>
+          <li><strong>Optional — consent-mode cookies (only if you click Accept)</strong> — enable Google ad-performance measurement and analytics (ad storage, analytics storage, ad user data, ad personalization). Never set if you click Decline.</li>
+          <li><strong>Error monitoring (Sentry)</strong> — loaded on page view to capture errors and performance traces for reliability; this is not gated by the cookie banner because it does not set advertising cookies, but it does transmit diagnostic data (see <a href="#subprocessors">Providers &amp; Subprocessors</a>).</li>
         </ul>
-
         <h3>Third-Party Cookies</h3>
         <ul>
-          <li><strong>Google Fonts</strong> — may set cookies for font caching. These are functional and non-tracking.</li>
-          <li><strong>Cloudflare</strong> — may set a __cf_bm cookie for bot management. This is a security cookie with no advertising purpose.</li>
+          <li><strong>Google (Ads/Analytics)</strong> — if you accept the banner, Google may set cookies for ad-performance measurement and analytics. See <a href="https://policies.google.com/technologies/cookies" target="_blank">Google's cookie policy</a>.</li>
+          <li><strong>Google Fonts</strong> — may set cookies for font caching; functional and non-tracking.</li>
+          <li><strong>Cloudflare</strong> — the <code>__cf_bm</code> security cookie described above.</li>
         </ul>
-
         <h3>Your Choices</h3>
-        <p>You can clear all localStorage data at any time via your browser settings (Settings → Privacy → Clear Site Data). This will reset your simulation history, saved scenarios, and user profile.</p>
+        <p>You can change your cookie choice at any time by clearing your browser's site data for this domain, which shows the consent banner again on your next visit. Declining does not affect your ability to create an account or use the Service — it only disables ad-performance/analytics cookies. Clearing all localStorage resets signed-out Simulation Engine history and UI preferences but does not delete your account or server-stored business data.</p>
       </div>
-    </div>
+    </section>
 
-    <!-- 4. AI DISCLAIMER -->
-    <div class="legal-section" id="ai-disclaimer">
-      <div class="section-tag">04</div>
-      <div class="section-title">AI Disclaimer</div>
-      <div class="section-body">
-        <div class="highlight-box">
-          ⚠ CRITICAL DISCLAIMER — READ BEFORE ACTING ON ANY RESULT<br><br>
-          The GO, MODIFY, and STOP verdicts produced by INFINICUS ENGINE are outputs of a statistical simulation model. They are NOT guarantees, predictions, or professional advice of any kind. Do not invest real money, quit your job, or make major life decisions based solely on a simulation result.
-        </div>
-
-        <h3>What the Engine Actually Does</h3>
-        <p>INFINICUS ENGINE runs a stochastic 60-day simulation using industry-average parameters, Monte Carlo sampling (500 runs), and user-supplied inputs. It models probable cash flow trajectories under randomised conditions. The AI analysis is generated by Anthropic's Claude model based on the simulation outputs.</p>
-
-        <h3>What It Cannot Do</h3>
-        <ul>
-          <li>It cannot predict actual market conditions, competitor actions, regulatory changes, or macroeconomic events.</li>
-          <li>It cannot account for your personal execution ability, relationships, or domain expertise.</li>
-          <li>It cannot verify whether your input assumptions (price, demand, costs) are accurate for your specific market.</li>
-          <li>It cannot replace a business plan, financial model, market research, or professional due diligence.</li>
-          <li>It cannot provide legal, tax, accounting, or investment advice.</li>
-        </ul>
-
-        <h3>AI-Generated Content</h3>
-        <p>The AI analysis (headline, summary, actions, investor note) is generated by a large language model (Anthropic Claude). AI outputs may contain errors, hallucinations, or outdated information. Always verify AI-generated recommendations with domain experts.</p>
-
-        <h3>No Warranty</h3>
-        <p>The Service is provided "as is" without any warranty of accuracy, completeness, or fitness for purpose. Simulation results will differ from real-world outcomes.</p>
-
-        <h3>Professional Advice</h3>
-        <p>Before investing capital, launching a business, or presenting projections to investors, consult qualified professionals: a business advisor, accountant, lawyer, and/or financial advisor.</p>
-      </div>
-    </div>
-
-    <!-- 5. ACCEPTABLE USE POLICY -->
-    <div class="legal-section" id="aup">
+    <!-- 05. AI DISCLAIMER -->
+    <section class="legal-section" id="ai-disclaimer" aria-labelledby="ai-disclaimer-title">
       <div class="section-tag">05</div>
-      <div class="section-title">Acceptable Use Policy</div>
+      <h2 class="section-title" id="ai-disclaimer-title">AI Disclaimer</h2>
       <div class="section-body">
-        <p>You agree not to use INFINICUS ENGINE for any of the following purposes:</p>
-
-        <h3>Prohibited Uses</h3>
-        <ul>
-          <li>Simulating businesses that are illegal in your jurisdiction (e.g. unlicensed financial services, controlled substances, weapons).</li>
-          <li>Using simulation outputs to deceive investors, lenders, banks, or partners by presenting them as verified financial forecasts.</li>
-          <li>Automating or scripting requests to the AI analysis API to bypass rate limits.</li>
-          <li>Reverse-engineering the simulation engine, algorithms, or scoring models.</li>
-          <li>Reproducing, reselling, or white-labelling the Service without a written commercial licence.</li>
-          <li>Using the Service to generate content that promotes fraud, money laundering, or financial crime.</li>
-          <li>Attempting to access other users' data, accounts, or stored information.</li>
-        </ul>
-
-        <h3>Fair Use</h3>
-        <p>The free tier is limited to reasonable personal use. Automated bulk simulation runs that abuse the AI endpoint will result in IP-level rate limiting. The current limit is 10 AI analysis requests per IP address per hour.</p>
-
-        <h3>Enforcement</h3>
-        <p>We reserve the right to terminate access to any user or IP address that violates this policy without notice.</p>
+        <div class="highlight-box"><strong>Review before acting.</strong> GO, MODIFY and STOP verdicts, scores, forecasts, Digital Twin states and AI recommendations are decision-support outputs. They are not guarantees of success or verified statements about the future. Do not invest funds, make major commitments, or authorize consequential actions solely on an output.</div>
+        <h3>Models and limitations</h3>
+        <p>The Simulation Engine uses stochastic Monte Carlo modeling over a 60-day horizon with user-supplied and industry-average inputs. Results vary with data quality, model design and real-world conditions. AI narrative analysis and AI Decision Intelligence recommendations are generated by Anthropic's Claude model based on simulation outputs and, where enabled, live business data. Digital Twins are representations of business conditions and may be incomplete or stale; they are not the business itself.</p>
+        <p>AI can generate inaccurate, fabricated, biased or outdated material. Data Acquisition and integrations do not establish that external information is accurate, licensed or current. KPI calculations and recommendations require validation against your own source records.</p>
+        <h3>Human review</h3>
+        <p>Verify material facts, assumptions, calculations, permissions and consequences before relying on outputs or approving actions. INFINICUS does not replace qualified legal, tax, accounting or investment advice, independent market research, or due diligence. Consult appropriate professionals for consequential decisions.</p>
+        <h3>No Warranty</h3>
+        <p>The Service is provided "as is" without warranty of accuracy, completeness, or fitness for a particular purpose. Simulation results will differ from real-world outcomes.</p>
       </div>
-    </div>
+    </section>
 
-    <!-- 6. INTELLECTUAL PROPERTY -->
-    <div class="legal-section" id="ip">
+    <!-- 06. ACCEPTABLE USE POLICY -->
+    <section class="legal-section" id="aup" aria-labelledby="aup-title">
       <div class="section-tag">06</div>
-      <div class="section-title">Intellectual Property Policy</div>
+      <h2 class="section-title" id="aup-title">Acceptable Use Policy</h2>
       <div class="section-body">
-        <h3>Our Intellectual Property</h3>
-        <p>The following are the exclusive intellectual property of <span class="placeholder">[your entity / INFINICUS]</span>:</p>
+        <p>You must not use INFINICUS to:</p>
         <ul>
-          <li>The INFINICUS ENGINE brand name, logo, and visual identity.</li>
-          <li>The simulation engine source code, scoring algorithms, verdict logic, and Monte Carlo implementation.</li>
-          <li>All UI design, copy, and user experience elements.</li>
-          <li>Industry profiles, economic parameters, and event pool data.</li>
-          <li>The INFINICUS website, landing page, and all associated content.</li>
+          <li>Commit fraud, money laundering, infringement, or other unlawful activity, or deceive others by presenting generated results as audited facts or guaranteed forecasts.</li>
+          <li>Access data, accounts, POS systems or external sources without authorization; collect personal information without a lawful basis; or bypass access controls.</li>
+          <li>Introduce malicious code, interfere with service availability, evade published rate limits, or exploit other users' information.</li>
+          <li>Bypass Approved Action controls, impersonate an authorized decision maker, or trigger external actions beyond your granted permissions.</li>
+          <li>Scrape or bulk-request the Service contrary to published limits. Authorized integrations and ordinary permitted automation are not prohibited.</li>
+          <li>Copy, reproduce or resell the INFINICUS software, or evade license restrictions, except where applicable law expressly permits it.</li>
         </ul>
-
-        <h3>Your Content</h3>
-        <p>Business ideas and descriptions you enter into the simulation remain your intellectual property. We do not claim ownership of your inputs. However, by submitting inputs to the AI analysis endpoint, you grant us a limited licence to process that data via Anthropic's API for the purpose of generating your report.</p>
-
-        <h3>Permitted Use</h3>
-        <p>You may share your simulation results (screenshots, share links, PDF exports) for personal, educational, or informational purposes, provided you include the INFINICUS ENGINE attribution and do not misrepresent the results as verified financial data.</p>
-
-        <h3>Prohibited Use</h3>
-        <ul>
-          <li>You may not copy, reproduce, or distribute the simulation engine or its code without a commercial licence.</li>
-          <li>You may not create derivative works based on INFINICUS without written permission.</li>
-          <li>You may not use the INFINICUS name or logo to imply endorsement of your products or services.</li>
-        </ul>
+        <p>Rate limiting is enforced on the API (confirmed registered in the backend). The exact published quota must be confirmed and stated here before this edition is final — the previous flat "10 requests per hour" figure is not carried forward without verification. Enforcement is proportionate to the violation and urgency, subject to law and contract.</p>
       </div>
-    </div>
+    </section>
 
-    <!-- 7. REFUND POLICY -->
-    <div class="legal-section" id="refund">
+    <!-- 07. INTELLECTUAL PROPERTY -->
+    <section class="legal-section" id="ip" aria-labelledby="ip-title">
       <div class="section-tag">07</div>
-      <div class="section-title">Refund Policy</div>
+      <h2 class="section-title" id="ip-title">Intellectual Property Policy</h2>
       <div class="section-body">
-        <div class="info-box">✓ INFINICUS ENGINE is currently free to use during Early Access. No payment is required. This section applies when paid plans are enabled.</div>
-
-        <h3>Free Tier</h3>
-        <p>The free tier requires no payment and is available without charge. No refund is applicable.</p>
-
-        <h3>Paid Plans (when enabled)</h3>
-        <ul>
-          <li><strong>7-day refund window:</strong> If you are not satisfied with a paid plan, contact us within 7 days of purchase for a full refund.</li>
-          <li><strong>After 7 days:</strong> No refunds will be issued for the current billing period, but you may cancel to prevent future charges.</li>
-          <li><strong>Annual plans:</strong> Refunds for annual subscriptions will be prorated to the unused months if requested within 30 days of purchase.</li>
-          <li><strong>Exceptions:</strong> Refunds will not be issued if your account was terminated for violating our Acceptable Use Policy.</li>
-        </ul>
-
-        <h3>How to Request</h3>
-        <p>Email <span class="placeholder">[support@yourdomain.com]</span> with your account email and reason for refund. We will process within 5 business days.</p>
+        <h3>Platform and third-party rights</h3>
+        <p>The INFINICUS brand, software, simulation algorithms, UI design and documentation belong to the verified operator in <a href="#status">Entity Status</a>. Planned formation of INFINICUS LLC does not itself transfer existing intellectual property into the LLC — any ownership statement requires verified assignments or licenses. Third-party and open-source rights remain with their owners under their applicable licenses.</p>
+        <h3>Your data and content</h3>
+        <p>You retain rights you hold in submitted business data, prompts, records and other content. You must have permission to provide and process that content. Subject to the final agreement and DPA, we receive only the permissions needed to host, process, transmit and display your content to deliver the Service. That permission does not independently authorize model training or advertising use.</p>
+        <h3>Outputs and permitted use</h3>
+        <p>You may use and share outputs generated for your authorized business purposes, subject to third-party rights, confidentiality and privacy obligations. Do not misrepresent outputs as verified facts or imply INFINICUS endorsement. AI outputs may be non-unique and may not qualify for exclusive copyright protection; no exclusive-ownership or non-infringement guarantee is given.</p>
       </div>
-    </div>
+    </section>
 
-    <!-- 8. CONTACT & DMCA -->
-    <div class="legal-section" id="dmca">
+    <!-- 08. BILLING & REFUNDS -->
+    <section class="legal-section" id="refund" aria-labelledby="refund-title">
       <div class="section-tag">08</div>
-      <div class="section-title">Contact & DMCA / Copyright</div>
+      <h2 class="section-title" id="refund-title">Billing &amp; Refunds</h2>
       <div class="section-body">
-        <h3>General Contact</h3>
-        <ul>
-          <li>General enquiries: <span class="placeholder">[hello@yourdomain.com]</span></li>
-          <li>Privacy & data requests: <span class="placeholder">[privacy@yourdomain.com]</span></li>
-          <li>Support: <span class="placeholder">[support@yourdomain.com]</span></li>
-          <li>Business / partnerships: <span class="placeholder">[business@yourdomain.com]</span></li>
-        </ul>
-
-        <h3>Registered Address</h3>
-        <p><span class="placeholder">[Your Company Name]</span><br>
-        <span class="placeholder">[Street Address]</span><br>
-        <span class="placeholder">[City, Country]</span></p>
-
-        <h3>DMCA / Copyright Infringement</h3>
-        <p>If you believe content on INFINICUS ENGINE infringes your copyright, send a written notice to <span class="placeholder">[dmca@yourdomain.com]</span> including:</p>
-        <ul>
-          <li>Your name and contact information.</li>
-          <li>Identification of the copyrighted work you claim has been infringed.</li>
-          <li>Identification of the material on our Service that you claim is infringing, with sufficient detail to locate it.</li>
-          <li>A statement that you have a good faith belief the use is not authorised by the copyright owner.</li>
-          <li>A statement that the information in your notice is accurate and, under penalty of perjury, that you are the copyright owner or authorised to act on their behalf.</li>
-          <li>Your physical or electronic signature.</li>
-        </ul>
-        <p>We will review and respond to valid DMCA notices within 10 business days.</p>
-
-        <h3>Counter-Notice</h3>
-        <p>If you believe content was removed in error, you may submit a counter-notice to the same address with your contact information, identification of the removed material, and a statement that you consent to the jurisdiction of the courts in your district.</p>
+        <div class="info-box">INFINICUS currently has no payment processor integrated and charges nothing. This section applies only once a paid plan is offered and accepted — it does not announce pricing or paid-plan availability.</div>
+        <p>Before any purchase, the applicable offer must disclose the seller, price, currency, taxes, billing interval, usage charges, trial-conversion terms, renewal terms and cancellation method. Recurring charges require whatever authorization applicable law requires.</p>
+        <p>Cancellation would stop future renewal per the disclosed plan terms. Refund eligibility, proration and credits would follow the accepted offer and applicable law — this edition does not promise a fixed refund window, since no paid plan or payment processor currently exists to define one against. Previously accepted refund terms (none currently exist) cannot be removed retroactively by this revision.</p>
+        <p>Billing and refund requests will require a verified support channel, pending in <a href="#dmca">Contact</a>. Do not send full payment-card information through support messages. Paid plans must not launch under this edition until the seller, commercial terms and support process are confirmed.</p>
       </div>
-    </div>
+    </section>
+
+    <!-- 09. CONTACT & DMCA -->
+    <section class="legal-section" id="dmca" aria-labelledby="dmca-title">
+      <div class="section-tag">09</div>
+      <h2 class="section-title" id="dmca-title">Contact &amp; DMCA</h2>
+      <div class="section-body">
+        <h3>Public contact details — not yet verified</h3>
+        <ul>
+          <li><strong>Planned entity:</strong> INFINICUS LLC, Wyoming, United States; formation unverified.</li>
+          <li><strong>Current operator / privacy controller:</strong> identity awaiting confirmation.</li>
+          <li><strong>General, privacy, support, billing and security contact:</strong> a verified public channel is awaiting confirmation.</li>
+          <li><strong>Mailing address:</strong> awaiting confirmation. A registered-agent address is not automatically a customer-support or business-operating address.</li>
+          <li><strong>DMCA designated agent:</strong> name, mailing address, telephone and email awaiting verification and any required Copyright Office registration. A Wyoming registered agent is not automatically the DMCA agent.</li>
+        </ul>
+        <p>No mailbox or address has been fabricated. A working public contact channel is required before this page is published as an effective notice or used to collect data.</p>
+        <h3>Copyright complaints</h3>
+        <p>Once the designated channel is verified, a notice should identify the copyrighted work and allegedly infringing material with enough information to locate it; provide the sender's contact details and signature; state a good-faith belief that the use is not authorized by the owner, its agent or law; and state, under penalty of perjury, that the notice is accurate and the sender is authorized to act for the owner.</p>
+        <h3>Counter-notifications</h3>
+        <p>A counter-notification should include a signature, identification of the removed material and its previous location, a statement under penalty of perjury that removal resulted from mistake or misidentification, your name, address and phone number, consent to jurisdiction, and acceptance of service from the original notifier.</p>
+        <p>See the <a href="https://www.copyright.gov/512/index.html" target="_blank">U.S. Copyright Office's Section 512 guidance</a> and <a href="https://www.copyright.gov/dmca-directory/" target="_blank">designated agent directory</a>.</p>
+      </div>
+    </section>
+
+    <!-- 10. DATA PROCESSING ADDENDUM -->
+    <section class="legal-section" id="dpa" aria-labelledby="dpa-title">
+      <div class="section-tag">10</div>
+      <h2 class="section-title" id="dpa-title">Data Processing Addendum</h2>
+      <div class="section-body">
+        <p>A DPA is not attached or represented as executed. Before processing personal data on a business customer's behalf where required, the parties must establish the relevant processing terms and roles.</p>
+        <p>The DPA should define processing subject matter, duration, nature and purpose, data types and people affected, documented instructions, confidentiality, security measures, subprocessors and change procedures, rights-request assistance, incident handling, deletion/return, audit information, and international-transfer safeguards. No standard contractual clauses, executed DPA, or compliance certification is implied by this page.</p>
+        <p>The DPA request channel will be provided through <a href="#dmca">Contact</a> once verified. The list in <a href="#subprocessors">Providers &amp; Subprocessors</a> is informational and is not itself a DPA.</p>
+      </div>
+    </section>
+
+    <!-- 11. PROVIDERS & SUBPROCESSORS -->
+    <section class="legal-section" id="subprocessors" aria-labelledby="subprocessors-title">
+      <div class="section-tag">11</div>
+      <h2 class="section-title" id="subprocessors-title">Providers &amp; Subprocessors</h2>
+      <div class="section-body">
+        <p>These providers are confirmed as currently integrated with the live platform. Whether each one is a "subprocessor" for a given business customer still depends on the processing activity and the DPA ultimately executed.</p>
+        <ul>
+          <li><strong>Supabase</strong> — confirmed. Authentication and database provider for account sign-up, sign-in and password reset. See <a href="https://supabase.com/privacy" target="_blank">Supabase's privacy policy</a>.</li>
+          <li><strong>Anthropic</strong> — confirmed. AI analysis provider for the API. Data sent includes business descriptions, simulation metrics, and — for AI Decision Intelligence — live business-platform data you choose to analyze. See <a href="https://www.anthropic.com/privacy" target="_blank">Anthropic's privacy policy</a>.</li>
+          <li><strong>Cloudflare</strong> — confirmed. Edge delivery / CDN in front of the application. May log IP addresses and request metadata. See <a href="https://www.cloudflare.com/privacypolicy/" target="_blank">Cloudflare's privacy policy</a>.</li>
+          <li><strong>Hetzner</strong> — confirmed. Hosts the origin API server and database (separate from Cloudflare's edge role). Exact region and data-residency implications have not been verified for this edition.</li>
+          <li><strong>Sentry</strong> — confirmed, loaded on every page including this one. Error monitoring and performance tracing; diagnostics can include error messages, stack traces, URLs, device details and contextual event data. Filtering/redaction, IP handling, retention and region require confirmation before launch. No session replay is currently configured.</li>
+          <li><strong>Google</strong> — confirmed. Google Fonts (typography) is loaded unconditionally; the Google Ads/Analytics consent-mode tag is loaded on every page but only activates after you accept the cookie banner.</li>
+          <li><strong>POS/external integrations and payment services</strong> — provider identities, permissions and controller/processor roles depend on the connections you enable; no unverified provider is named here.</li>
+        </ul>
+        <p>Before launch, add provider legal entity, relevant data-processing locations, and the applicable change-notification process for each confirmed provider above.</p>
+      </div>
+    </section>
+
+    <!-- 12. SECURITY -->
+    <section class="legal-section" id="security" aria-labelledby="security-title">
+      <div class="section-tag">12</div>
+      <h2 class="section-title" id="security-title">Security</h2>
+      <div class="section-body">
+        <p>Do not send passwords, API secrets or full card details through prompts or ordinary support messages. Manage your account and integration access carefully, and review Approved Action requests before authorizing them.</p>
+        <p>No certification, specific encryption standard, independent security audit, penetration test, recovery-time objective, or breach-notification deadline is claimed without supporting evidence. Before customer onboarding, this section must document access controls, tenant separation, credential handling, transport/storage protection, logging, backups, restoration, vulnerability management and incident response appropriate to the deployed service — see the <code>known-limitations</code> build documentation for the current, honest state of each.</p>
+        <p>Report suspected security issues through the verified security channel once published in <a href="#dmca">Contact</a>. No reward program or testing authorization is created by this notice.</p>
+      </div>
+    </section>
+
+    <!-- 13. PUBLICATION REQUIREMENTS -->
+    <section class="legal-section" id="readiness" aria-labelledby="readiness-title">
+      <div class="section-tag">13</div>
+      <h2 class="section-title" id="readiness-title">Publication Requirements</h2>
+      <div class="section-body">
+        <div class="highlight-box">The content is ready for legal review. This page is not ready to serve as the final, effective customer notice until the following gaps are resolved.</div>
+        <ul>
+          <li>Verify LLC formation, the actual contracting entity/controller, any pre-formation operator, public mailing address, effective date, and IP ownership or licenses.</li>
+          <li>Publish working general, privacy, billing, security and copyright contact channels; confirm a DMCA agent designation.</li>
+          <li>Confirm Hetzner's and Supabase's hosting regions and any cross-border data-transfer safeguards needed.</li>
+          <li>Confirm the current published API rate-limit figure for the Acceptable Use Policy.</li>
+          <li>Finalize privacy-rights handling, any jurisdiction-specific disclosures (e.g. GDPR if you have EU users, CCPA if you have California users), the applicable DPA, and security commitments.</li>
+          <li>Decide whether to proceed with Wyoming as the governing-law and entity jurisdiction, or a different one — this edition treats Wyoming as a proposal, not a confirmed decision.</li>
+          <li>Finalize paid-plan terms, cancellation, refunds, data export and termination arrangements before offering any paid plan.</li>
+          <li>Remove the draft marker and publish the effective edition only after legal sign-off.</li>
+        </ul>
+        <p>This edition is a publication candidate, not a certification of legal compliance. Official DMCA references are linked in the Contact &amp; DMCA section.</p>
+      </div>
+    </section>
 
   </main>
 </div>
 
 <footer>
-  <span>© 2026 INFINICUS ENGINE v3 · All rights reserved</span>
+  <span>© 2026 INFINICUS · Legal Center · Publication candidate</span>
   <span>
     <a href="#privacy">Privacy</a> ·
     <a href="#terms">Terms</a> ·
-    <a href="#ai-disclaimer">AI Disclaimer</a> ·
+    <a href="#dmca">Contact</a> ·
     <a href="./index.html">← Back to Engine</a>
   </span>
 </footer>

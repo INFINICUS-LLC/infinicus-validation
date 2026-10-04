@@ -2,7 +2,7 @@
   "name": "@infinicus/layer-ai-decision-intelligence",
   "version": "0.0.1",
   "private": true,
-  "description": "AI Decision Intelligence Layer \u2014 decision scoring and ranking",
+  "description": "AI Decision Intelligence Layer — decision scoring and ranking",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,7 +15,7 @@
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "vitest run",
+    "test": "node ../../scripts/run-block-tests.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {

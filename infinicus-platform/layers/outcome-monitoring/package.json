@@ -2,7 +2,7 @@
   "name": "@infinicus/layer-outcome-monitoring",
   "version": "0.0.1",
   "private": true,
-  "description": "Outcome Monitoring Layer \u2014 real-time outcome tracking",
+  "description": "Outcome Monitoring Layer — real-time outcome tracking",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,7 +15,7 @@
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "vitest run",
+    "test": "node ../../scripts/run-block-tests.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {
