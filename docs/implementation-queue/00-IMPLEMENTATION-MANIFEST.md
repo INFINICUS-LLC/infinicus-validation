@@ -37,6 +37,8 @@ All builds in strict execution order. Execute one at a time.
 | BUILD-30 | LAUNCH | Launch readiness | completed |
 | BUILD-31 | DATA-ACQUISITION-RUNTIME | Data Acquisition Runtime Foundation | completed |
 
+| BUILD-32 | BUSINESS-OPERATIONS-RUNTIME | Business Operations Runtime | completed |
+
 ## Superseded Builds
 
 | ID | Layer | Description | Status |
@@ -52,25 +54,21 @@ never execute it."* The required build route is
 
 ## Current Ready Build
 
-`BUILD-32` (BUSINESS-OPERATIONS-RUNTIME — Business Operations Runtime).
-
-BUILD-31 is completed. BUILD-32 is the first build in the post-BUILD-31
-architecture-expansion route and is governed by the locked eight-domain
-architecture. It converts the existing Business Operations persistence into
-a production OPERATIONS runtime while preserving COMMERCE and FINANCE
-boundaries.
+None. BUILD-32 is completed; see its completion report at
+`.claude/state/reports/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-completion.md`.
+No later build is ready for implementation.
 
 ## Pending Builds
 
-No build after BUILD-32 is authorized yet. BUILD-33+ remain proposed roadmap
-items only and require separate frozen specifications after BUILD-32 completes.
+BUILD-33 remains specification preparation only. Later implementation requires
+a separately frozen specification and explicit queue readiness.
 
 ## BUILD-32 Specification: Business Operations Runtime
 
 **Authoritative specification:**
 [BUILD-32-BUSINESS-OPERATIONS-RUNTIME-SPECIFICATION.md](./BUILD-32-BUSINESS-OPERATIONS-RUNTIME-SPECIFICATION.md)
 
-Status: ready.
+Status: completed (2026-10-04).
 
 Dependency: BUILD-31 completed.
 
