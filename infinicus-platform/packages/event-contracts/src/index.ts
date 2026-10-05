@@ -2,6 +2,7 @@ export type {
   BusinessDomain,
   BusinessEventSensitivity,
   BusinessEventActorType,
+  EvidenceClass,
   BusinessEventActor,
   BusinessEventProvenance,
   BusinessEventEnvelope,
