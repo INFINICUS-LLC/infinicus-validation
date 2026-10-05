@@ -462,3 +462,20 @@ export type {
   PlatformIncident, PlatformIncidentSeverity, PlatformIncidentStatus,
   PlatformIncidentUpdate, DeclarePlatformIncidentInput,
 } from './repositories/incident/index.js';
+
+
+// ── BUILD-33 canonical publication + replay governance ─────────────────────
+export {
+  CanonicalEventPublisher,
+  LegacyOutboxCompatibilityRegistry,
+  outboxRecordToCanonicalEvent,
+  assertReplayAuthorized,
+} from './eventing/index.js';
+export type {
+  CanonicalPublishResult,
+  LegacyOutboxRecord,
+  LegacyOutboxCompatibilityProfile,
+  ReplayMode,
+  ReplayAuthorization,
+  ReplayCandidate,
+} from './eventing/index.js';
