@@ -31,7 +31,8 @@ CREATE TABLE events.business_event_ledger (
 
   payload           jsonb       NOT NULL DEFAULT '{}',
   metadata          jsonb       NOT NULL DEFAULT '{}',
-  provenance        jsonb,
+  evidence_class    text        NOT NULL,
+  provenance        jsonb       NOT NULL,
 
   schema_name       text        NOT NULL,
   schema_version    text        NOT NULL,
@@ -61,6 +62,19 @@ CREATE TABLE events.business_event_ledger (
   CONSTRAINT business_event_sensitivity CHECK (
     sensitivity IN ('public','internal','confidential','restricted','highly_restricted')
   ),
+  CONSTRAINT business_event_evidence_class CHECK (
+    evidence_class IN (
+      'ACTUAL',
+      'ASSUMPTION_BASED',
+      'BENCHMARK_BASED',
+      'ESTIMATED',
+      'FORECAST',
+      'SIMULATION'
+    )
+  ),
+  CONSTRAINT business_event_provenance_class_match CHECK (
+    provenance->>'evidenceClass' = evidence_class
+  ),
   CONSTRAINT business_event_actor_pair CHECK (
     (actor_type IS NULL AND actor_id IS NULL) OR actor_type IS NOT NULL
   ),
@@ -83,6 +97,11 @@ CREATE INDEX business_event_ledger_aggregate_idx
 CREATE INDEX business_event_ledger_type_version_idx
   ON events.business_event_ledger (
     tenant_id, workspace_id, event_type, event_version, occurred_at DESC
+  );
+
+CREATE INDEX business_event_ledger_evidence_class_idx
+  ON events.business_event_ledger (
+    tenant_id, workspace_id, evidence_class, occurred_at DESC
   );
 
 CREATE UNIQUE INDEX business_event_ledger_idempotency_idx
