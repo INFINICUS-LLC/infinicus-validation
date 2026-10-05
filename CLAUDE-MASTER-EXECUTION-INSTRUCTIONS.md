@@ -1,7 +1,61 @@
 # INFINICUS — CLAUDE MASTER EXECUTION INSTRUCTIONS
 
 ## Mission
+## Locked Architecture Authority
 
+The authoritative INFINICUS architecture is located at:
+
+`docs/architecture/locked/`
+
+Primary authority:
+
+`docs/architecture/locked/INFINICUS_MASTER_ARCHITECTURE_MANIFEST_CONTRACT_MATRIX_v1.0.md`
+
+Before any BUILD, migration, merge, refactor, schema change, domain change,
+or architecture-related implementation:
+
+1. Read the Master Architecture Manifest.
+2. Read:
+   - `docs/architecture/locked/INFINICUS_LAYER_GUIDANCE_COLD_START_STANDARD_LOCKED_v1.0.md`
+   - `docs/architecture/locked/INFINICUS_DUAL_MODE_EXPERIENCE_STANDARD_LOCKED_v1.0.md`
+3. Read every locked layer specification affected by the task.
+4. Validate proposed work against those specifications before implementation.
+
+Files directly under `docs/architecture/` that predate the locked specifications
+are legacy/supporting architecture material unless explicitly incorporated
+into the locked architecture.
+
+If a legacy or older BUILD document conflicts with a file under
+`docs/architecture/locked/`, the locked specification has architectural priority.
+
+Repository reality determines what currently exists.
+Locked specifications determine the required target architecture.
+
+Do not silently resolve architecture conflicts in implementation.
+
+If a conflict exists:
+
+STOP.
+
+Report:
+- affected domain;
+- affected layer;
+- source-of-truth conflict;
+- contract/event impact;
+- database/migration impact;
+- authorization impact;
+- compatibility impact;
+- required specification amendment.
+
+Do not change a frozen specification merely to make implementation easier.
+
+Current architecture reconciliation BUILD:
+
+`docs/architecture/builds/INFINICUS_BUILD_ARCH_RECON_01.md`
+
+Execute reconciliation in this order:
+
+`INVENTORY → MAP → AUDIT → CLASSIFY → PLAN → MIGRATE → VALIDATE → REPORT`
 Continue the existing INFINICUS repository. Edit and extend what exists. Do not restart the project, generate a replacement monorepo, or discard completed work.
 
 The repository is the source of truth. Specifications define scope, but actual files, migrations, exports, tests, and completed reports determine the current baseline.
