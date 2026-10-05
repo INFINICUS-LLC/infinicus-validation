@@ -52,18 +52,29 @@ never execute it."* The required build route is
 `BUILD-10 → BUILD-12 → BUILD-13 → … → BUILD-30`. Confirmed by user decision
 2026-07-22.
 
-## Current Ready Build
+## Current Build
 
 **BUILD-33 — Cross-Domain Business Event Architecture**
 
 Authoritative frozen specification:
 [BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md](./BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md)
 
-SHA-256: `c0eafc51292374a35a085ef3db6bc2170ae548d18d47ca5749b8e263e86ce25f`
+Specification version: **1.1**
 
-Status: **ready**. Dependency BUILD-32 is completed and merged. Migration
-baseline is 0001–0170; 0171 is the first permitted BUILD-33 migration if
-required. Implementation has not started.
+SHA-256: `5c3eafc06865af79f2395f4e58220342ae4deb91628bcb06ffded7acb3274f54`
+
+Architecture amendment:
+`docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md`
+
+Status: **in_progress — architecture gate paused**.
+
+Dependency BUILD-32 is completed and merged. The baseline before BUILD-33 remains
+0001–0170. Migration 0171 is provisional pending the v1.1 provenance changes.
+Current migration 0172 is under **architecture compatibility hold** and is not
+merge-ready until global/tenant/workspace event-transport semantics are
+reconciled.
+
+PR #22 remains draft. No BUILD-34 implementation is authorized.
 
 ## Pending Builds
 
