@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
+const q=JSON.parse(fs.readFileSync(path.join(root,'.claude/state/implementation-status.json')));
+const b=q.builds.find(x=>x.id==='BUILD-33');
+if(!b || !['ready','in_progress','completed'].includes(b.status)) throw Error('BUILD-33 is not authorized');
+if(q.builds.find(x=>x.id==='BUILD-32')?.status!=='completed') throw Error('BUILD-32 incomplete');
+if(b.status!=='completed' && q.currentReadyBuild!=='BUILD-33') throw Error('Queue mismatch');
+const bytes=fs.readFileSync(path.join(root,b.specification));
+const digest=crypto.createHash('sha256').update(bytes.toString().replace(/\r\n/g,'\n')).digest('hex');
+if(digest!==b.specificationSha256) throw Error('Frozen specification checksum mismatch');
+console.log('BUILD-33 predecessor, authorization, queue, and frozen checksum: PASS');

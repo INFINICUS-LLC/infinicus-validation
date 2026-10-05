@@ -54,14 +54,13 @@ never execute it."* The required build route is
 
 ## Current Ready Build
 
-None. BUILD-32 is completed; see its completion report at
+BUILD-33 (Business Event Architecture) is approved and ready. BUILD-32 is completed; see its completion report at
 `.claude/state/reports/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-completion.md`.
-No later build is ready for implementation.
+Specification: [BUILD-33-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md](./BUILD-33-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md), frozen 2026-10-05.
 
 ## Pending Builds
 
-BUILD-33 remains specification preparation only. Later implementation requires
-a separately frozen specification and explicit queue readiness.
+BUILD-34 and later are not authorized. Execute BUILD-33 only, then stop.
 
 ## BUILD-32 Specification: Business Operations Runtime
 
