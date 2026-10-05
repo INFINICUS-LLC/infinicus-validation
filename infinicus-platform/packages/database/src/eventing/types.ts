@@ -12,7 +12,7 @@ export type OutboxStatus = 'pending' | 'processing' | 'published' | 'failed' | '
 export type InboxStatus = 'received' | 'processing' | 'processed' | 'failed';
 export type SubscriptionStatus = 'active' | 'paused' | 'disabled' | 'failed';
 export type OrderingMode = 'none' | 'aggregate' | 'business' | 'strict';
-export type DeliveryAttemptStatus = 'started' | 'succeeded' | 'failed' | 'timed_out' | 'cancelled';
+export type DeliveryAttemptStatus = 'succeeded' | 'failed' | 'timed_out' | 'cancelled';
 
 export interface OutboxEventInput {
   event: BusinessEventEnvelope;
@@ -51,11 +51,18 @@ export interface CreateEventSubscriptionInput {
   retryPolicy?: Record<string, unknown>;
 }
 
-export interface StartDeliveryAttemptInput {
+export interface RecordDeliveryAttemptInput {
   outboxEventId: string;
   attemptNumber: number;
+  status: DeliveryAttemptStatus;
+  attemptedAt: Date;
+  completedAt: Date;
+  latencyMs: number;
   subscriptionId?: string | null;
   consumerName?: string | null;
   workerId?: string | null;
+  responseCode?: number | null;
+  responseBody?: string | null;
+  failure?: EventFailure | null;
   metadata?: Record<string, unknown>;
 }
