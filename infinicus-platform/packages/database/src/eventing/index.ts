@@ -37,7 +37,7 @@ export type {
   InboxProcessingInput,
   InboxProcessingResult,
   CreateEventSubscriptionInput,
-  StartDeliveryAttemptInput,
+  RecordDeliveryAttemptInput,
 } from './types.js';
 export type { EventTransactionContext } from './EventTransaction.js';
 
