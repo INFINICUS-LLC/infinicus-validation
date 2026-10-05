@@ -42,7 +42,7 @@ export type {
   InboxProcessingInput,
   InboxProcessingResult,
   CreateEventSubscriptionInput,
-  StartDeliveryAttemptInput,
+  RecordDeliveryAttemptInput,
   EventTransactionContext,
 } from './eventing/index.js';
 
