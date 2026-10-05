@@ -78,5 +78,16 @@ describe('BUILD-33 v1.1 migration architecture guardrails', () => {
       expect(scope).not.toMatch(/DELETE\s+FROM\s+events\./i);
       expect(scope).not.toMatch(/TRUNCATE\s+events\./i);
     });
+
+    it('enforces event_delivery_attempts as append-only history', () => {
+      expect(scope).toContain('forbid_delivery_attempt_mutation');
+      expect(scope).toContain('BEFORE UPDATE OR DELETE ON events.event_delivery_attempts');
+      expect(scope).toContain('events.event_delivery_attempts is append-only');
+    });
+
+    it('preserves legacy started status vocabulary without requiring BUILD-33 to write it', () => {
+      expect(scope).toContain("status IN ('started','succeeded','failed','timed_out','cancelled')");
+      expect(scope).toContain('repository writes one terminal row per completed attempt');
+    });
   });
 });
