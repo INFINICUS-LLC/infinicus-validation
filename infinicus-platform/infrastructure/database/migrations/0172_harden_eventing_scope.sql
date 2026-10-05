@@ -120,12 +120,12 @@ ALTER TABLE events.event_delivery_attempts
 CREATE OR REPLACE FUNCTION events.forbid_delivery_attempt_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-AS $
+AS '
 BEGIN
-  RAISE EXCEPTION 'events.event_delivery_attempts is append-only: % is not permitted', TG_OP
-    USING ERRCODE = 'raise_exception';
+  RAISE EXCEPTION ''events.event_delivery_attempts is append-only: % is not permitted'', TG_OP
+    USING ERRCODE = ''raise_exception'';
 END;
-$;
+';
 
 DROP TRIGGER IF EXISTS forbid_delivery_attempt_mutation
   ON events.event_delivery_attempts;
