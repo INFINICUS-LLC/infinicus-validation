@@ -59,6 +59,15 @@ Execute reconciliation in this order:
 Continue the existing INFINICUS repository. Edit and extend what exists. Do not restart the project, generate a replacement monorepo, or discard completed work.
 
 The repository is the source of truth. Specifications define scope, but actual files, migrations, exports, tests, and completed reports determine the current baseline.
+## Current Priority Build
+
+Before resuming the historical BUILD queue, execute:
+
+`docs/architecture/builds/INFINICUS_BUILD_ARCH_RECON_01.md`
+
+The architecture reconciliation BUILD temporarily has priority over the legacy BUILD route.
+
+Do not continue the historical BUILD queue until reconciliation is completed or explicitly released.
 
 ## Required build route
 
