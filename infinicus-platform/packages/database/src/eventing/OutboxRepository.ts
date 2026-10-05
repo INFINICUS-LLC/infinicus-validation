@@ -9,6 +9,20 @@ export class OutboxRepository {
       throw new Error('EVENTING_SCOPE_MISMATCH');
     }
     return withTenantTransaction(ctx, async (client) => {
+      const headers = {
+        ...(input.headers ?? {}),
+        businessEvent: {
+          sourceDomain: e.sourceDomain,
+          sourceService: e.sourceService,
+          metadata: e.metadata,
+          provenance: e.provenance,
+          schemaName: e.schemaName,
+          schemaVersion: e.schemaVersion,
+          sensitivity: e.sensitivity,
+          actor: e.actor,
+          idempotencyKey: e.idempotencyKey,
+        },
+      };
       const result = await client.query<{ id: string }>(
         `INSERT INTO events.outbox_events
           (id,event_type,event_version,tenant_id,workspace_id,business_id,correlation_id,causation_id,
@@ -18,7 +32,7 @@ export class OutboxRepository {
         [
           e.eventId,e.eventType,e.eventVersion,e.tenantId,e.workspaceId,e.businessId,e.correlationId,
           e.causationId,e.aggregateType,e.aggregateId,JSON.stringify(e.payload),
-          JSON.stringify(input.headers ?? {}),input.availableAt ?? new Date(),e.occurredAt,
+          JSON.stringify(headers),input.availableAt ?? new Date(),e.occurredAt,
         ],
       );
       return result.rows[0].id;
