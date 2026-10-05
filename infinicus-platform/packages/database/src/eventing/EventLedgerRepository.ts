@@ -35,7 +35,10 @@ function rowToEvent(row: Record<string, unknown>): StoredBusinessEvent {
     idempotencyKey: row.idempotency_key as string | null,
     payload: row.payload,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
-    provenance: row.provenance as StoredBusinessEvent['provenance'],
+    provenance: {
+      ...(row.provenance as StoredBusinessEvent['provenance']),
+      evidenceClass: row.evidence_class as StoredBusinessEvent['provenance']['evidenceClass'],
+    },
     schemaName: row.schema_name as string,
     schemaVersion: row.schema_version as string,
     sensitivity: row.sensitivity as StoredBusinessEvent['sensitivity'],
@@ -49,7 +52,7 @@ const SELECT_COLUMNS = `
   aggregate_type, aggregate_id,
   correlation_id, causation_id,
   actor_type, actor_id, idempotency_key,
-  payload, metadata, provenance,
+  payload, metadata, evidence_class, provenance,
   schema_name, schema_version, sensitivity,
   occurred_at, recorded_at
 `;
@@ -84,7 +87,8 @@ function sameLogicalEvent(existing: StoredBusinessEvent, incoming: BusinessEvent
     && existing.eventVersion === incoming.eventVersion
     && existing.aggregateType === incoming.aggregateType
     && existing.aggregateId === incoming.aggregateId
-    && existing.correlationId === incoming.correlationId;
+    && existing.correlationId === incoming.correlationId
+    && existing.provenance.evidenceClass === incoming.provenance.evidenceClass;
 }
 
 export class EventLedgerRepository {
@@ -114,12 +118,12 @@ export class EventLedgerRepository {
              aggregate_type, aggregate_id,
              correlation_id, causation_id,
              actor_type, actor_id, idempotency_key,
-             payload, metadata, provenance,
+             payload, metadata, evidence_class, provenance,
              schema_name, schema_version, sensitivity,
              occurred_at, recorded_at
            ) VALUES (
              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
-             $16::jsonb,$17::jsonb,$18::jsonb,$19,$20,$21,$22,$23
+             $16::jsonb,$17::jsonb,$18,$19::jsonb,$20,$21,$22,$23,$24
            )
            RETURNING ${SELECT_COLUMNS}`,
           [
@@ -140,7 +144,8 @@ export class EventLedgerRepository {
             event.idempotencyKey,
             JSON.stringify(event.payload),
             JSON.stringify(event.metadata),
-            event.provenance === null ? null : JSON.stringify(event.provenance),
+            event.provenance.evidenceClass,
+            JSON.stringify(event.provenance),
             event.schemaName,
             event.schemaVersion,
             event.sensitivity,
