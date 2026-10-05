@@ -25,7 +25,11 @@ const baseEvent = (): BusinessEventEnvelope<Record<string, unknown>> => ({
   idempotencyKey: 'movement:44444444-4444-4444-8444-444444444444',
   payload: { movementType: 'receipt', quantity: 5 },
   metadata: {},
-  provenance: null,
+  provenance: {
+    evidenceClass: 'ACTUAL',
+    sourceSystem: 'business-operations-runtime',
+    sourceRecordId: '44444444-4444-4444-8444-444444444444',
+  },
   schemaName: 'operations.inventory.movement_recorded',
   schemaVersion: '1.0',
   sensitivity: 'internal',
@@ -54,6 +58,40 @@ describe('BusinessEventEnvelope validation', () => {
     const result = validateBusinessEventEnvelope(event);
     expect(result.valid).toBe(false);
     expect(result.reasons.some((reason) => reason.startsWith('credential_like_key_at_'))).toBe(true);
+  });
+
+  it('requires provenance on canonical events', () => {
+    const event = { ...baseEvent(), provenance: undefined } as unknown;
+    const result = validateBusinessEventEnvelope(event);
+    expect(result.valid).toBe(false);
+    expect(result.reasons).toContain('provenance_required');
+  });
+
+  it('rejects an unknown evidence class', () => {
+    const event = {
+      ...baseEvent(),
+      provenance: { ...baseEvent().provenance, evidenceClass: 'UNKNOWN' },
+    } as unknown;
+    const result = validateBusinessEventEnvelope(event);
+    expect(result.valid).toBe(false);
+    expect(result.reasons).toContain('evidence_class_invalid');
+  });
+
+  it.each([
+    'ACTUAL',
+    'ASSUMPTION_BASED',
+    'BENCHMARK_BASED',
+    'ESTIMATED',
+    'FORECAST',
+    'SIMULATION',
+  ] as const)('accepts evidence class %s without coercing it to ACTUAL', (evidenceClass) => {
+    const event = {
+      ...baseEvent(),
+      provenance: { ...baseEvent().provenance, evidenceClass },
+    };
+    const result = validateBusinessEventEnvelope(event);
+    expect(result).toEqual({ valid: true, reasons: [] });
+    expect(event.provenance.evidenceClass).toBe(evidenceClass);
   });
 });
 
