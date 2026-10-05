@@ -17,13 +17,34 @@ export { runMigrations } from './migrate.js';
 // ── Cross-domain eventing repositories (BUILD-33) ───────────────────────────
 export {
   EventLedgerRepository,
+  OutboxRepository,
+  InboxRepository,
+  DeadLetterRepository,
+  EventSubscriptionRepository,
+  EventDeliveryAttemptRepository,
+  withEventTransaction,
   EventingError,
   EventLedgerValidationError,
   EventLedgerScopeError,
   EventLedgerConflictError,
   EventLedgerNotFoundError,
 } from './eventing/index.js';
-export type { StoredBusinessEvent } from './eventing/index.js';
+export type {
+  StoredBusinessEvent,
+  EventFailure,
+  OutboxStatus,
+  InboxStatus,
+  SubscriptionStatus,
+  OrderingMode,
+  DeliveryAttemptStatus,
+  OutboxEventInput,
+  ClaimBatchOptions,
+  InboxProcessingInput,
+  InboxProcessingResult,
+  CreateEventSubscriptionInput,
+  StartDeliveryAttemptInput,
+  EventTransactionContext,
+} from './eventing/index.js';
 
 // ── Data Acquisition repositories ─────────────────────────────────────────────
 export {
