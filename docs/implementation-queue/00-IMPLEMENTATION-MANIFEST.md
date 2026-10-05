@@ -66,15 +66,12 @@ SHA-256: `5c3eafc06865af79f2395f4e58220342ae4deb91628bcb06ffded7acb3274f54`
 Architecture amendment:
 `docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md`
 
-Status: **in_progress — architecture gate paused**.
+Status: **in_progress — architecture gate open after live PostgreSQL/RLS validation**.
 
 Dependency BUILD-32 is completed and merged. The baseline before BUILD-33 remains
-0001–0170. Migration 0171 is provisional pending the v1.1 provenance changes.
-Current migration 0172 is under **architecture compatibility hold** and is not
-merge-ready until global/tenant/workspace event-transport semantics are
-reconciled.
+0001–0170. Migration 0171 and redesigned migration 0172 have passed the BUILD-33 v1.1 architecture gate. Live validation evidence is recorded in `docs/architecture/BUILD-33-ARCHITECTURE-GATE-VALIDATION.md`.
 
-PR #22 remains draft. No BUILD-34 implementation is authorized.
+PR #22 remains draft. BUILD-33 is not complete yet. No BUILD-34 implementation is authorized.
 
 ## Pending Builds
 
