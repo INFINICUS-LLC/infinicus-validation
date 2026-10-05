@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "lastUpdated": "2026-10-05T01:40:00Z",
+  "lastUpdated": "2026-10-05T02:39:22Z",
   "platform": "INFINICUS ENGINE v3",
   "builds": [
     {
@@ -420,24 +420,27 @@
       "dependency": "BUILD-32",
       "specification": "docs/implementation-queue/BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md",
       "specificationSha256": "5c3eafc06865af79f2395f4e58220342ae4deb91628bcb06ffded7acb3274f54",
-      "notes": "BUILD-33 v1.1 architecture corrections are now implemented but not yet validated. Canonical provenance requires ACTUAL/ASSUMPTION_BASED/BENCHMARK_BASED/ESTIMATED/FORECAST/SIMULATION. Migration 0171 persists and cross-checks evidence_class. Migration 0172 now derives TENANT_WORKSPACE/TENANT_GLOBAL/PLATFORM_GLOBAL scope without rewriting historical rows; normal app RLS sees tenant/workspace and tenant-global rows, while PLATFORM_GLOBAL remains privileged relay/system only. Architecture gate remains paused until CI plus live PostgreSQL/RLS compatibility tests pass. BUILD-34 remains blocked.",
+      "notes": "BUILD-33 v1.1 architecture gate reopened after green CI and live PostgreSQL/RLS validation. Evidence classification and migrations 0171/0172 are validated against the Master Architecture Guardrail. BUILD-33 remains in_progress; remaining BUILD-33 implementation/acceptance work must still complete before merge. BUILD-34 remains blocked.",
       "readyAt": "2026-10-04T17:39:00Z",
       "testsPass": false,
       "startedAt": "2026-10-04T18:39:00Z",
       "specificationVersion": "1.1",
-      "architectureGate": "paused_validation_pending",
+      "architectureGate": "open",
       "architectureGuardrail": "INFINICUS Master Architecture Guardrail v1.0",
       "architectureAmendment": "docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md",
       "architectureCorrections": {
-        "evidenceClassification": "implemented_pending_validation",
-        "migration0171": "amended_pending_validation",
-        "migration0172": "redesigned_pending_validation",
+        "evidenceClassification": "validated",
+        "migration0171": "validated",
+        "migration0172": "validated",
         "globalScopeModel": [
           "TENANT_WORKSPACE",
           "TENANT_GLOBAL",
           "PLATFORM_GLOBAL"
         ]
-      }
+      },
+      "architectureGateValidatedAt": "2026-10-05T02:39:22Z",
+      "architectureGateValidatedCommit": "2185a3739450f64591e6b299e335f57c22a283d1",
+      "architectureGateEvidence": "docs/architecture/BUILD-33-ARCHITECTURE-GATE-VALIDATION.md"
     }
   ],
   "currentReadyBuild": "BUILD-33"
