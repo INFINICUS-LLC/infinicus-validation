@@ -17,12 +17,21 @@ export type BusinessEventSensitivity =
 
 export type BusinessEventActorType = 'user' | 'service' | 'system' | 'external';
 
+export type EvidenceClass =
+  | 'ACTUAL'
+  | 'ASSUMPTION_BASED'
+  | 'BENCHMARK_BASED'
+  | 'ESTIMATED'
+  | 'FORECAST'
+  | 'SIMULATION';
+
 export interface BusinessEventActor {
   actorType: BusinessEventActorType;
   actorId: string | null;
 }
 
 export interface BusinessEventProvenance {
+  evidenceClass: EvidenceClass;
   sourceSystem?: string;
   sourceRecordId?: string | null;
   sourceReference?: string | null;
@@ -48,7 +57,7 @@ export interface BusinessEventEnvelope<TPayload = unknown> {
   idempotencyKey: string | null;
   payload: TPayload;
   metadata: Record<string, unknown>;
-  provenance: BusinessEventProvenance | null;
+  provenance: BusinessEventProvenance;
   schemaName: string;
   schemaVersion: string;
   sensitivity: BusinessEventSensitivity;
@@ -76,6 +85,15 @@ const SENSITIVITY = new Set<BusinessEventSensitivity>([
   'confidential',
   'restricted',
   'highly_restricted',
+]);
+
+const EVIDENCE_CLASSES = new Set<EvidenceClass>([
+  'ACTUAL',
+  'ASSUMPTION_BASED',
+  'BENCHMARK_BASED',
+  'ESTIMATED',
+  'FORECAST',
+  'SIMULATION',
 ]);
 
 const EVENT_NAME = /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/;
@@ -121,8 +139,10 @@ export function validateBusinessEventEnvelope(value: unknown): BusinessEventVali
   if (e.causationId !== null && !nonEmpty(e.causationId)) reasons.push('causation_id_invalid');
   if (e.idempotencyKey !== null && !nonEmpty(e.idempotencyKey)) reasons.push('idempotency_key_invalid');
   if (!e.metadata || typeof e.metadata !== 'object' || Array.isArray(e.metadata)) reasons.push('metadata_object_required');
-  if (e.provenance !== null && (typeof e.provenance !== 'object' || Array.isArray(e.provenance))) {
-    reasons.push('provenance_invalid');
+  if (!e.provenance || typeof e.provenance !== 'object' || Array.isArray(e.provenance)) {
+    reasons.push('provenance_required');
+  } else if (!EVIDENCE_CLASSES.has(e.provenance.evidenceClass as EvidenceClass)) {
+    reasons.push('evidence_class_invalid');
   }
   if (e.actor !== null) {
     if (!e.actor || typeof e.actor !== 'object') reasons.push('actor_invalid');
