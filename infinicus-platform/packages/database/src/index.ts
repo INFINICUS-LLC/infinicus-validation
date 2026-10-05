@@ -34,7 +34,7 @@ export type {
   EventFailure,
   OutboxStatus,
   InboxStatus,
-  SubscriptionStatus,
+  SubscriptionStatus as EventSubscriptionStatus,
   OrderingMode,
   DeliveryAttemptStatus,
   OutboxEventInput,
