@@ -8,7 +8,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { createPool, closePool, getPool } from '../src/client.js';
-import { EventLedgerRepository, EventSubscriptionRepository } from '../src/eventing/index.js';
+import {
+  EventDeliveryAttemptRepository,
+  EventLedgerRepository,
+  EventSubscriptionRepository,
+  OutboxRepository,
+} from '../src/eventing/index.js';
 import type { BusinessEventEnvelope, EvidenceClass } from '@infinicus/event-contracts';
 
 const run = Boolean(process.env.DATABASE_URL && process.env.ADMIN_DATABASE_URL);
@@ -103,6 +108,8 @@ describe.runIf(run)('BUILD-33 v1.1 — live PostgreSQL/RLS architecture', () => 
 
   const ledger = new EventLedgerRepository();
   const subscriptions = new EventSubscriptionRepository();
+  const outbox = new OutboxRepository();
+  const attempts = new EventDeliveryAttemptRepository();
 
   it.each([
     'ACTUAL',
@@ -219,6 +226,80 @@ describe.runIf(run)('BUILD-33 v1.1 — live PostgreSQL/RLS architecture', () => 
 
     const appView = await subscriptions.listMatching(ctx1, 'operations.inventory.movement_recorded', '1.0');
     expect(appView.some((row) => row.subscriber_name === subscriberName)).toBe(false);
+  });
+
+  it('records one immutable terminal row per delivery attempt', async () => {
+    const event = eventFor('ACTUAL');
+    await outbox.enqueue(ctx1, { event });
+
+    const attemptedAt = new Date();
+    const completedAt = new Date(attemptedAt.getTime() + 25);
+    const attemptId = await attempts.record(ctx1, {
+      outboxEventId: event.eventId,
+      attemptNumber: 1,
+      status: 'succeeded',
+      attemptedAt,
+      completedAt,
+      latencyMs: 25,
+      consumerName: 'build33-live-consumer',
+      workerId: 'worker-1',
+      responseCode: 200,
+      responseBody: 'ok',
+      metadata: { transport: 'internal' },
+    });
+
+    const rows = await attempts.listForOutbox(ctx1, event.eventId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(attemptId);
+    expect(rows[0].status).toBe('succeeded');
+    expect(rows[0].attempt_number).toBe(1);
+
+    const otherWorkspace = await attempts.listForOutbox(ctx1b, event.eventId);
+    expect(otherWorkspace).toHaveLength(0);
+
+    await expect(
+      adminPool.query(
+        `UPDATE events.event_delivery_attempts
+            SET status='failed'
+          WHERE id=$1`,
+        [attemptId],
+      ),
+    ).rejects.toThrow(/append-only/i);
+
+    await expect(
+      adminPool.query(
+        'DELETE FROM events.event_delivery_attempts WHERE id=$1',
+        [attemptId],
+      ),
+    ).rejects.toThrow(/append-only/i);
+  });
+
+  it('rejects duplicate attempt numbers instead of overwriting history', async () => {
+    const event = eventFor('ACTUAL');
+    await outbox.enqueue(ctx1, { event });
+    const attemptedAt = new Date();
+    const completedAt = new Date(attemptedAt.getTime() + 10);
+
+    const input = {
+      outboxEventId: event.eventId,
+      attemptNumber: 1,
+      status: 'failed' as const,
+      attemptedAt,
+      completedAt,
+      latencyMs: 10,
+      consumerName: 'build33-live-consumer',
+      failure: {
+        code: 'TEST_FAILURE',
+        message: 'controlled test failure',
+        retryable: true,
+        occurredAt: completedAt.toISOString(),
+      },
+    };
+
+    await attempts.record(ctx1, input);
+    await expect(attempts.record(ctx1, input)).rejects.toMatchObject({
+      code: '23505',
+    });
   });
 
   it('fails closed with missing or empty tenant/workspace context without UUID-cast crashes', async () => {
