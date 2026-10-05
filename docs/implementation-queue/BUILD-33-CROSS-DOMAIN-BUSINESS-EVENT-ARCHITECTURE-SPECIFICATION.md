@@ -1,17 +1,38 @@
 # BUILD-33 — Cross-Domain Business Event Architecture Specification
 
-**Build ID:** BUILD-33
-**Domain:** DATA → Event Ledger
-**Status:** FROZEN
-**Dependency:** BUILD-32 — COMPLETED AND MERGED
-**Migration baseline:** 0001–0170
-**First permitted migration:** 0171, only if required
-**Implementation state:** NOT STARTED
+**Specification version:** 1.1  
+**Build ID:** BUILD-33  
+**Domain owner:** DATA → Event Infrastructure / Event Ledger  
+**Status:** FROZEN — AMENDED BY ARCHITECTURE GUARDRAIL RECONCILIATION  
+**Dependency:** BUILD-32 — COMPLETED AND MERGED  
+**Migration baseline before BUILD-33:** 0001–0170  
+**First permitted BUILD-33 migration:** 0171  
+**Implementation state:** IN_PROGRESS — PAUSED AT ARCHITECTURE GATE  
+**Governing architecture:** INFINICUS Master Architecture Guardrail v1.0  
+**Amendment record:** docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md
 
-## 1. Objective
+## 0. Version history
 
-BUILD-33 establishes one canonical, tenant-aware, versioned and replay-safe
-Business Event Architecture across the locked INFINICUS domains:
+### v1.0
+
+Original frozen BUILD-33 specification defining the canonical cross-domain
+Business Event Architecture.
+
+### v1.1
+
+Architecture-preserving amendment. Adds mandatory dual-architecture validation,
+Cold-Start evidence classification, explicit source-of-truth restrictions,
+approval/action replay constraints, and a compatibility hold on migration 0172.
+
+No domain/layer ownership is reassigned.
+
+---
+
+## 1. Architectural position
+
+BUILD-33 must preserve two coexisting architectures.
+
+### Platform domains
 
 ```text
 EXPERIENCE
@@ -24,10 +45,48 @@ INTELLIGENCE
 CONTROL LOOP
 ```
 
-Domain state remains authoritative in its owning domain. DATA → Event Ledger
-owns canonical event recording, lineage, replay semantics and governance.
+DATA owns event infrastructure, contracts, schema registry, provenance, lineage
+and canonical event history.
 
-## 2. Existing infrastructure to reuse
+### Nine-layer decision lifecycle
+
+```text
+Data Acquisition
+↓
+Business Operations
+↓
+Business Intelligence
+↓
+Business Digital Twin
+↓
+Simulation
+↓
+AI Decision Intelligence
+↓
+Approved Business Action
+↓
+Outcome Monitoring
+↓
+Continuous Learning
+↺
+```
+
+BUILD-33 supports all nine layers but replaces none of them.
+
+---
+
+## 2. Objective
+
+Establish one canonical, tenant-aware, versioned, replay-safe and
+provenance-preserving Business Event Architecture.
+
+Domain/layer state remains authoritative in its owning boundary.
+
+The Event Ledger owns immutable event evidence and lineage only.
+
+---
+
+## 3. Existing infrastructure to reuse
 
 BUILD-33 must build on, not replace:
 
@@ -45,10 +104,11 @@ existing DA/BO/BI/DT/SIM/ADI/ABA/OM/CL outbox emitters
 
 The outbox is delivery state. It is not the immutable canonical ledger.
 
-## 3. Canonical Business Event envelope
+---
 
-Extend `@infinicus/event-contracts` with an additive canonical envelope that
-does not break the legacy shared `PlatformEvent` type.
+## 4. Canonical Business Event envelope
+
+Extend `@infinicus/event-contracts` additively.
 
 Required fields:
 
@@ -71,36 +131,69 @@ actor nullable
 idempotencyKey nullable
 payload
 metadata
-provenance nullable
+provenance
 schemaName
 schemaVersion
 sensitivity
 ```
 
-Canonical source domains are:
+`provenance` is mandatory for canonical events and must contain:
 
 ```text
-experience
-business_administration
-commerce
-operations
-finance
-data
-intelligence
-control_loop
+evidenceClass =
+  ACTUAL
+  ASSUMPTION_BASED
+  BENCHMARK_BASED
+  ESTIMATED
+  FORECAST
+  SIMULATION
 ```
 
-## 4. Event identity and immutability
+plus optional stable source references.
+
+Legacy events may enter through an explicit compatibility adapter that assigns a
+documented evidence class. The ledger must never silently default non-observed
+evidence to ACTUAL.
+
+---
+
+## 5. Source-of-truth rule
+
+The Event Ledger must never become the authoritative business-state database.
+
+Examples:
+
+```text
+Commerce owns orders/sales/customers/payments.
+Operations owns inventory/procurement/suppliers/workforce/assets.
+Finance owns ledger/cash/payables/receivables/budgets.
+Business Administration owns profile/roles/permissions/policies/authority.
+BI owns analytical evidence.
+Digital Twin owns modeled current state.
+Simulation owns possible future outcomes.
+ADI owns recommendations.
+ABA owns formal authorization.
+Outcome Monitoring owns verified post-action results.
+Continuous Learning owns learning artifacts.
+```
+
+DATA records and governs event evidence about these facts; it does not acquire
+ownership of the underlying state.
+
+---
+
+## 6. Event identity and immutability
 
 Every canonical event has one globally unique immutable event ID.
 
 Canonical ledger records are append-only. Corrections, reversals and
-superseding facts must be represented as new events, never UPDATE/DELETE of
-historical facts.
+superseding facts are new events.
 
-## 5. Naming convention
+Delivery status must remain outside immutable event history.
 
-Canonical events use:
+---
+
+## 7. Canonical naming
 
 ```text
 <domain>.<aggregate>.<event>
@@ -118,11 +211,13 @@ intelligence.forecast.generated
 control_loop.action.approved
 ```
 
-Legacy names remain aliases during migration.
+Legacy aliases remain explicitly mapped.
 
-## 6. Compatibility mappings
+---
 
-The contract registry must include explicit aliases, including at least:
+## 8. Compatibility mappings
+
+At minimum:
 
 ```text
 da.data.published
@@ -141,12 +236,14 @@ bo.invoice.issued
   → finance.invoice.issued
 ```
 
-Ambiguous legacy events such as `bo.payment.received` must remain unmapped
-until semantic ownership is explicitly resolved.
+Ambiguous events such as `bo.payment.received` remain unmapped until ownership
+is resolved.
 
-## 7. Contract registry
+---
 
-Extend `@infinicus/event-contracts` with a runtime registry containing:
+## 9. Contract registry
+
+The runtime registry records:
 
 ```text
 eventType
@@ -164,30 +261,37 @@ compatibilityAliases
 validator
 ```
 
-Unknown or unsupported event versions must fail validation.
+Unknown/unsupported versions fail validation.
 
-## 8. Canonical Event Ledger
+Registry metadata must not transfer source-of-truth ownership.
 
-Reconciliation confirmed that no immutable cross-domain ledger exists.
+---
 
-BUILD-33 is authorized to introduce:
+## 10. Canonical Event Ledger
+
+BUILD-33 may introduce:
 
 ```text
 events.business_event_ledger
 ```
 
-The ledger must contain the canonical envelope fields, be append-only, and
-enforce tenant + workspace RLS.
+It must:
 
-It must not contain mutable consumer-delivery state.
+- persist the canonical envelope;
+- persist evidence classification;
+- preserve provenance;
+- be append-only;
+- enforce fail-closed tenant/workspace RLS;
+- prevent application-role mutation;
+- remain non-authoritative for domain state.
 
-## 9. Outbox relationship
+---
 
-Required architecture:
+## 11. Outbox relationship
 
 ```text
 authoritative domain transaction
-        ├── domain state
+        ├── authoritative domain state
         └── events.outbox_events
                  ↓
         canonical validation/publication
@@ -197,9 +301,11 @@ authoritative domain transaction
         governed consumers
 ```
 
-Do not convert `events.outbox_events` into the ledger.
+The Event Ledger cannot replace the authoritative domain transaction store.
 
-## 10. Eventing repositories
+---
+
+## 12. Eventing repositories
 
 Implement under:
 
@@ -207,7 +313,7 @@ Implement under:
 infinicus-platform/packages/database/src/eventing/
 ```
 
-Required responsibilities:
+Responsibilities:
 
 ```text
 EventLedgerRepository
@@ -221,107 +327,183 @@ eventing-types
 eventing-errors
 ```
 
-No duplicate event persistence package is authorized unless preflight proves
-these responsibilities cannot fit the established packages.
+These repositories access event infrastructure only. They are not generic
+cross-domain table access services.
 
-## 11. Idempotency and delivery
+---
 
-Delivery semantics:
+## 13. Delivery and idempotency
 
 ```text
 at-least-once delivery
 +
-idempotent consumers
+idempotent consumer effects
 ```
 
 Inbox uniqueness remains `(event_id, consumer_name)`.
 
-Canonical publication must support a stable producer idempotency key and must
-not create duplicate logical facts during retries.
+Stable producer idempotency keys are required where producer semantics support
+them.
 
-## 12. Correlation, causation and ordering
+---
 
-Preserve correlation ID through the whole workflow.
+## 14. Correlation, causation and traceability
 
-Set causation ID to the immediate triggering event.
+Preserve correlation through the business workflow.
 
-Never reuse event IDs for derived events.
+Set causation to the immediate triggering event.
 
-Do not promise global ordering. Aggregate-scoped ordering is the default where
-ordering matters.
+Never reuse an event ID for a derived event.
 
-## 13. Tenant/workspace security
-
-Canonical event operations must:
-- require tenant and workspace context;
-- use tenant-scoped transactions;
-- enforce tenant + workspace RLS;
-- block cross-tenant reads/writes;
-- block same-tenant cross-workspace access;
-- fail closed without context;
-- prevent application-role RLS bypass.
-
-Privileged relay claiming may use a system role only for delivery mechanics;
-domain processing must re-enter tenant/workspace context.
-
-## 14. Sensitive data
-
-Event payloads must never contain passwords, API keys, access/refresh tokens,
-database credentials, private keys, raw card data, session secrets or binary
-documents.
-
-Use stable references instead.
-
-## 15. Replay, retry and dead-letter
-
-Reuse the existing dead-letter and delivery-attempt infrastructure.
-
-Replay must preserve the original event and correlation lineage, create new
-replay/delivery evidence, validate current contract support, require explicit
-authorization and never automatically repeat irreversible external effects.
-
-Permanent failures must not retry indefinitely. No failed event may be silently
-discarded.
-
-## 16. Observability
-
-Reuse existing observability infrastructure.
-
-Required operational signals include outbox backlog, oldest pending age, ledger
-append latency, event throughput, publish success/failure, consumer lag, retry
-count, dead-letter count, duplicate suppression, schema validation failure and
-replay outcome.
-
-## 17. Handoff contracts
-
-Existing handoff contracts remain authoritative semantic interfaces.
+Where applicable preserve references through:
 
 ```text
-handoff contract = governed layer payload transfer
-business event   = immutable fact that something happened
+source data
+→ operational event
+→ BI evidence
+→ Twin snapshot
+→ Simulation run
+→ Decision
+→ Approval
+→ Execution
+→ Outcome
+→ Learning
 ```
 
-BUILD-33 does not replace DAL→BO, BO→BI or later handoff contracts.
+---
+
+## 15. Cold-Start rule
+
+BUILD-33 must preserve zero-data operation.
+
+Assumption/benchmark/estimate/forecast/simulation-derived events remain clearly
+classified and must never be represented as ACTUAL simply because they are
+persisted in the ledger.
+
+Downstream consumers must be able to inspect the evidence class.
+
+---
+
+## 16. Approval/action boundary
+
+The valid decision/execution flow remains:
+
+```text
+Simulation
+↓
+AI Decision Intelligence
+↓
+Approved Business Action
+↓
+owning execution domain / Business Operations
+↓
+Real-world execution
+```
+
+Event publication/replay must never bypass ABA authorization.
+
+Outcome Monitoring may emit evidence/alerts but must not directly mutate
+Operations/Commerce/Finance through event replay.
+
+---
+
+## 17. Tenant/workspace/global scope
+
+Canonical tenant-owned event rows require tenant/workspace context.
+
+Historical event infrastructure may also contain tenant-global or
+platform-global control-plane records.
+
+Therefore BUILD-33 must distinguish:
+
+```text
+TENANT_WORKSPACE
+TENANT_GLOBAL
+PLATFORM_GLOBAL
+```
+
+before changing policies on historical event transport tables.
+
+Strict tenant/workspace RLS must not silently hide legitimate global
+subscriptions or historical delivery records.
+
+---
 
 ## 18. Migration policy
 
-Migrations 0001–0170 are frozen.
+Migrations 0001–0170 remain immutable.
 
-If BUILD-33 requires persistence changes, the first migration is `0171`,
-followed sequentially.
+### 0171
 
-No historical migration may be rewritten or renumbered.
+The canonical Event Ledger migration is permitted, subject to v1.1 provenance
+and Cold-Start requirements before BUILD-33 completion.
 
-## 19. Required tests
+### 0172
+
+The current draft `0172_harden_eventing_scope.sql` is under
+**ARCHITECTURE COMPATIBILITY HOLD** and is not merge-ready.
+
+It must be redesigned to preserve global/legacy event-transport semantics while
+enforcing tenant/workspace isolation for tenant-owned data.
+
+No later BUILD-33 migration may depend on the current 0172 behavior until that
+redesign is accepted.
+
+---
+
+## 19. Replay, retry and dead-letter
+
+Reuse existing infrastructure where compatible.
+
+Replay must:
+
+- preserve original event/evidence classification;
+- preserve correlation lineage;
+- create new replay/delivery evidence;
+- require explicit authorization;
+- never automatically re-run irreversible business actions;
+- never bypass Approved Business Action.
+
+Failed events must never disappear silently.
+
+---
+
+## 20. Sensitive data
+
+Do not put passwords, API keys, access/refresh tokens, database credentials,
+private keys, raw card data, session secrets or binary documents in canonical
+event payloads.
+
+Use stable references.
+
+---
+
+## 21. Guided Mode compatibility
+
+BUILD-33 has no direct UX deliverable, but events must retain enough metadata for
+Experience-layer guidance to explain:
+
+- what happened;
+- evidence class;
+- source/provenance;
+- causal chain;
+- linked decision/action/outcome where applicable.
+
+---
+
+## 22. Required tests
 
 At minimum:
 
 ```text
 canonical envelope validation
-contract registry/version handling
+mandatory evidence classification
+non-ACTUAL provenance preservation
+registry duplicate/version handling
 legacy alias mapping
 tenant isolation
 workspace isolation
+global-scope compatibility
 missing-context denial
 ledger immutability
 idempotent canonical publication
@@ -331,17 +513,20 @@ causation propagation
 inbox duplicate suppression
 consumer retry
 dead-letter persistence
-replay safety
+replay authorization
+ABA bypass prevention
 secret rejection
-aggregate ordering where required
 transaction rollback atomicity
+historical/global subscription compatibility
 ```
 
-Persistence and RLS behavior require live PostgreSQL tests.
+Persistence/RLS behavior requires live PostgreSQL tests.
 
-## 20. Validation gates
+---
 
-Before BUILD-33 can complete:
+## 23. Validation gates
+
+Before completion:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -350,24 +535,28 @@ pnpm lint
 pnpm typecheck
 pnpm build
 pnpm test
-live PostgreSQL eventing integration tests
+live PostgreSQL eventing/RLS tests
 dependency/security checks
 migration gate
 container smoke/DAST where affected
 ```
 
-Required database tests must not silently skip in CI.
+Required database tests may not silently skip.
 
-## 21. Explicit exclusions
+---
+
+## 24. Explicit exclusions
 
 BUILD-33 does not implement:
 
 ```text
 BUILD-34 Financial Transaction Engine
-full accounting ledger
+accounting ledger
 POS redesign
 Business Administration redesign
 BI/DT/SIM/ADI redesign
+Outcome Monitoring execution logic
+Continuous Learning redesign
 Kafka
 RabbitMQ
 external broker migration
@@ -377,46 +566,73 @@ UI redesign
 production deployment
 ```
 
-## 22. Stop conditions
+---
 
-Stop implementation if:
-- the migration baseline no longer matches 0001–0170 before first change;
-- an equivalent immutable ledger appears;
-- required producer/consumer ownership is ambiguous;
-- tenant/workspace isolation cannot be proven;
+## 25. Stop conditions
+
+Stop if:
+
+- domain ownership would change;
+- layer ownership would change;
+- a source of truth would be duplicated;
+- Cold-Start provenance would be lost;
+- replay could bypass ABA;
+- global event-control semantics would be broken;
 - compatibility requires destructive migration;
-- domain ownership would be changed;
-- required validation cannot be executed.
+- tenant/workspace isolation cannot be proven;
+- required validation cannot execute.
 
-## 23. Completion evidence
+---
 
-The completion report must record the exact migration baseline, modified files,
-canonical contracts, compatibility mappings, producer/consumer inventory,
-validation commands/results, tenant/RLS evidence, idempotency evidence,
-replay-safety evidence, security review and known limitations.
+## 26. Completion evidence
 
-## 24. Success criteria
+The completion report must record:
 
-BUILD-33 is complete only when:
-- one canonical Business Event envelope exists;
-- the contract registry is operational;
-- the immutable cross-domain Event Ledger exists;
-- tenant/workspace context is mandatory;
+- v1.1 architecture compliance;
+- exact migration baseline before/after;
+- final 0171/0172 disposition;
+- evidence-class contract;
+- producer/consumer inventory;
+- source-of-truth review;
+- contract compatibility;
+- tenant/workspace/global-scope evidence;
+- idempotency evidence;
+- replay/ABA safety evidence;
+- Cold-Start provenance evidence;
+- test commands/counts;
+- security review;
+- rollback procedure;
+- known limitations.
+
+---
+
+## 27. Success criteria
+
+BUILD-33 completes only when:
+
+- canonical envelope exists;
+- evidence classification is mandatory and preserved;
+- contract registry is operational;
+- immutable Event Ledger exists;
+- source-of-truth ownership remains unchanged;
+- tenant/workspace/global scope is correct;
 - event records are immutable;
-- versioning and idempotency are enforced;
+- versioning/idempotency are enforced;
 - correlation/causation are preserved;
-- the existing outbox is preserved;
-- required legacy aliases are mapped;
-- handoff contracts remain intact;
-- replay/dead-letter behavior is controlled;
-- observability is integrated;
+- existing outbox/handoff contracts remain intact;
+- legacy aliases remain controlled;
+- replay cannot bypass ABA;
+- Cold Start remains valid;
 - required tests pass;
-- the completion report exists;
-- no BUILD-34 implementation is included.
+- completion report exists;
+- BUILD-34 is untouched.
 
-## 25. Queue rule
+---
 
-This frozen specification authorizes BUILD-33 to be marked **ready** only.
+## 28. Queue rule
 
-Implementation begins only after an explicit transition to `in_progress`.
-No BUILD-33 runtime implementation is part of the specification-freeze commit.
+BUILD-33 remains `in_progress` but implementation is paused at the architecture
+gate until the v1.1-required provenance and 0172 compatibility corrections are
+implemented.
+
+PR #22 remains draft and must not merge until the v1.1 completion gate is green.
