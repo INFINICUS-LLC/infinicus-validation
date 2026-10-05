@@ -1,3 +1,20 @@
+export { CanonicalEventPublisher } from './CanonicalEventPublisher.js';
+export type { CanonicalPublishResult } from './CanonicalEventPublisher.js';
+export {
+  LegacyOutboxCompatibilityRegistry,
+  outboxRecordToCanonicalEvent,
+} from './LegacyOutboxCompatibility.js';
+export type {
+  LegacyOutboxRecord,
+  LegacyOutboxCompatibilityProfile,
+} from './LegacyOutboxCompatibility.js';
+export { assertReplayAuthorized } from './ReplayAuthorization.js';
+export type {
+  ReplayMode,
+  ReplayAuthorization,
+  ReplayCandidate,
+} from './ReplayAuthorization.js';
+
 export { EventLedgerRepository } from './EventLedgerRepository.js';
 export type { StoredBusinessEvent } from './EventLedgerRepository.js';
 
