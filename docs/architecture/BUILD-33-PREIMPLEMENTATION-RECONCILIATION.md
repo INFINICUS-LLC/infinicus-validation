@@ -63,3 +63,29 @@ sequentially. Migrations 0001–0170 remain immutable.
 - [x] destructive migration excluded
 
 The BUILD-33 specification may be frozen. Implementation remains unstarted.
+
+
+---
+
+## Post-freeze architecture amendment
+
+The original pre-implementation reconciliation was completed before the
+mandatory INFINICUS Master Architecture Guardrail v1.0 was issued.
+
+BUILD-33 is therefore additionally governed by:
+
+`docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md`
+
+and by the amended BUILD-33 specification v1.1.
+
+The amendment preserves the original domain/layer boundary but adds:
+
+- explicit validation against both the eight platform domains and nine-layer
+  decision lifecycle;
+- mandatory Cold-Start evidence classification;
+- explicit Event Ledger non-authoritative source-of-truth rules;
+- replay/approval constraints preserving Approved Business Action;
+- an architecture compatibility hold on the current 0172 migration.
+
+This appendix does not alter the historical finding that 0001–0170 were the
+verified pre-BUILD-33 migration baseline.
