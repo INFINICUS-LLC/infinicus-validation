@@ -2,11 +2,21 @@ import type { TenantContext } from '../client.js';
 import { withTenantTransaction } from '../client.js';
 import type { RecordDeliveryAttemptInput } from './types.js';
 
+const TERMINAL_DELIVERY_STATUSES = new Set([
+  'succeeded',
+  'failed',
+  'timed_out',
+  'cancelled',
+]);
+
 export class EventDeliveryAttemptRepository {
   async record(
     ctx: TenantContext,
     input: RecordDeliveryAttemptInput,
   ): Promise<string> {
+    if (!TERMINAL_DELIVERY_STATUSES.has(input.status)) {
+      throw new Error('DELIVERY_ATTEMPT_TERMINAL_STATUS_REQUIRED');
+    }
     if (input.completedAt.getTime() < input.attemptedAt.getTime()) {
       throw new Error('DELIVERY_ATTEMPT_COMPLETED_BEFORE_STARTED');
     }
