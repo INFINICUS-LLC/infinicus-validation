@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "lastUpdated": "2026-10-05T01:16:00Z",
+  "lastUpdated": "2026-10-05T01:40:00Z",
   "platform": "INFINICUS ENGINE v3",
   "builds": [
     {
@@ -420,14 +420,24 @@
       "dependency": "BUILD-32",
       "specification": "docs/implementation-queue/BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md",
       "specificationSha256": "5c3eafc06865af79f2395f4e58220342ae4deb91628bcb06ffded7acb3274f54",
-      "notes": "BUILD-33 v1.1 is frozen after reconciliation against the mandatory dual architecture (8 platform domains + 9-layer decision lifecycle). Implementation is paused at the architecture gate. Cold-Start evidence classification is now mandatory. Migration 0171 remains provisional pending provenance persistence/tests. Current migration 0172 is under architecture compatibility hold because strict tenant/workspace RLS could hide legacy/global event subscriptions or historical transport rows. BUILD-34 remains blocked.",
+      "notes": "BUILD-33 v1.1 architecture corrections are now implemented but not yet validated. Canonical provenance requires ACTUAL/ASSUMPTION_BASED/BENCHMARK_BASED/ESTIMATED/FORECAST/SIMULATION. Migration 0171 persists and cross-checks evidence_class. Migration 0172 now derives TENANT_WORKSPACE/TENANT_GLOBAL/PLATFORM_GLOBAL scope without rewriting historical rows; normal app RLS sees tenant/workspace and tenant-global rows, while PLATFORM_GLOBAL remains privileged relay/system only. Architecture gate remains paused until CI plus live PostgreSQL/RLS compatibility tests pass. BUILD-34 remains blocked.",
       "readyAt": "2026-10-04T17:39:00Z",
       "testsPass": false,
       "startedAt": "2026-10-04T18:39:00Z",
       "specificationVersion": "1.1",
-      "architectureGate": "paused",
+      "architectureGate": "paused_validation_pending",
       "architectureGuardrail": "INFINICUS Master Architecture Guardrail v1.0",
-      "architectureAmendment": "docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md"
+      "architectureAmendment": "docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md",
+      "architectureCorrections": {
+        "evidenceClassification": "implemented_pending_validation",
+        "migration0171": "amended_pending_validation",
+        "migration0172": "redesigned_pending_validation",
+        "globalScopeModel": [
+          "TENANT_WORKSPACE",
+          "TENANT_GLOBAL",
+          "PLATFORM_GLOBAL"
+        ]
+      }
     }
   ],
   "currentReadyBuild": "BUILD-33"
