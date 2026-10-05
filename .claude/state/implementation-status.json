@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "lastUpdated": "2026-10-04T18:39:00Z",
+  "lastUpdated": "2026-10-05T01:16:00Z",
   "platform": "INFINICUS ENGINE v3",
   "builds": [
     {
@@ -419,11 +419,15 @@
       "status": "in_progress",
       "dependency": "BUILD-32",
       "specification": "docs/implementation-queue/BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md",
-      "specificationSha256": "c0eafc51292374a35a085ef3db6bc2170ae548d18d47ca5749b8e263e86ce25f",
-      "notes": "Frozen after BUILD-32 completion and merge. Reuses the existing events schema/outbox infrastructure, extends @infinicus/event-contracts, authorizes an additive immutable events.business_event_ledger and database eventing repositories, preserves handoff contracts and legacy producers, and reserves migration 0171 as the first permitted BUILD-33 migration if required. Implementation has not started. Implementation started from frozen specification; BUILD-34 remains blocked.",
+      "specificationSha256": "5c3eafc06865af79f2395f4e58220342ae4deb91628bcb06ffded7acb3274f54",
+      "notes": "BUILD-33 v1.1 is frozen after reconciliation against the mandatory dual architecture (8 platform domains + 9-layer decision lifecycle). Implementation is paused at the architecture gate. Cold-Start evidence classification is now mandatory. Migration 0171 remains provisional pending provenance persistence/tests. Current migration 0172 is under architecture compatibility hold because strict tenant/workspace RLS could hide legacy/global event subscriptions or historical transport rows. BUILD-34 remains blocked.",
       "readyAt": "2026-10-04T17:39:00Z",
       "testsPass": false,
-      "startedAt": "2026-10-04T18:39:00Z"
+      "startedAt": "2026-10-04T18:39:00Z",
+      "specificationVersion": "1.1",
+      "architectureGate": "paused",
+      "architectureGuardrail": "INFINICUS Master Architecture Guardrail v1.0",
+      "architectureAmendment": "docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md"
     }
   ],
   "currentReadyBuild": "BUILD-33"
