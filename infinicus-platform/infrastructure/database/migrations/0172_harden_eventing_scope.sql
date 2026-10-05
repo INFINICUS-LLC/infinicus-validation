@@ -108,9 +108,31 @@ ALTER TABLE events.event_subscriptions
   ADD CONSTRAINT event_subscriptions_timeout_check
     CHECK (timeout_seconds > 0 AND timeout_seconds <= 3600);
 
+-- Historical schema/docs allowed the status vocabulary below, including
+-- "started". BUILD-33 preserves those rows for compatibility, but its
+-- repository writes one terminal row per completed attempt and never mutates it.
 ALTER TABLE events.event_delivery_attempts
   ADD CONSTRAINT event_delivery_attempts_status_check
     CHECK (status IN ('started','succeeded','failed','timed_out','cancelled'));
+
+-- The Stage-2A contract called this table append-only but did not install a
+-- database mutation guard. BUILD-33 closes that enforcement gap additively.
+CREATE OR REPLACE FUNCTION events.forbid_delivery_attempt_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $
+BEGIN
+  RAISE EXCEPTION 'events.event_delivery_attempts is append-only: % is not permitted', TG_OP
+    USING ERRCODE = 'raise_exception';
+END;
+$;
+
+DROP TRIGGER IF EXISTS forbid_delivery_attempt_mutation
+  ON events.event_delivery_attempts;
+
+CREATE TRIGGER forbid_delivery_attempt_mutation
+  BEFORE UPDATE OR DELETE ON events.event_delivery_attempts
+  FOR EACH ROW EXECUTE FUNCTION events.forbid_delivery_attempt_mutation();
 
 -- ── Scope-aware indexes ──────────────────────────────────────────────────────
 
