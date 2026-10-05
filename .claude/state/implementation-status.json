@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "lastUpdated": "2026-10-05T02:39:22Z",
+  "lastUpdated": "2026-10-05T03:46:00Z",
   "platform": "INFINICUS ENGINE v3",
   "builds": [
     {
@@ -420,7 +420,7 @@
       "dependency": "BUILD-32",
       "specification": "docs/implementation-queue/BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md",
       "specificationSha256": "5c3eafc06865af79f2395f4e58220342ae4deb91628bcb06ffded7acb3274f54",
-      "notes": "BUILD-33 v1.1 architecture gate reopened after green CI and live PostgreSQL/RLS validation. Evidence classification and migrations 0171/0172 are validated against the Master Architecture Guardrail. BUILD-33 remains in_progress; remaining BUILD-33 implementation/acceptance work must still complete before merge. BUILD-34 remains blocked.",
+      "notes": "BUILD-33 v1.1 remains in progress under the Master Architecture Guardrail. The event_delivery_attempts conflict has been corrected: BUILD-33 now records one immutable terminal row per delivery attempt, keeps mutable delivery state in outbox_events, and migration 0172 enforces UPDATE/DELETE rejection while preserving historical started status compatibility. Validation is pending. BUILD-34 remains blocked.",
       "readyAt": "2026-10-04T17:39:00Z",
       "testsPass": false,
       "startedAt": "2026-10-04T18:39:00Z",
@@ -436,7 +436,8 @@
           "TENANT_WORKSPACE",
           "TENANT_GLOBAL",
           "PLATFORM_GLOBAL"
-        ]
+        ],
+        "deliveryAttemptAppendOnly": "implemented_pending_validation"
       },
       "architectureGateValidatedAt": "2026-10-05T02:39:22Z",
       "architectureGateValidatedCommit": "2185a3739450f64591e6b299e335f57c22a283d1",
