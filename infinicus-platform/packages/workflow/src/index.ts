@@ -4,6 +4,7 @@
 // introduces no new persistence of its own.
 
 export { DecisionWorkflowService, ApproverAuthorityNotEstablishedError, ApprovalPolicyDeniedError, ApprovalBlockedError, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
+export type { ReviewApprovalStatus } from './DecisionWorkflowService.js';
 export type {
   WorkflowView, DecisionHistory,
   CreateReviewInput, SubmitApprovalInput, GrantApproverAuthorityInput, RevokeApproverAuthorityInput, ApproverAuthorityRecord, RecordOutcomeInput,

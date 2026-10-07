@@ -14,7 +14,7 @@ import {
   SimulationRunRepository, SimulationResultRepository,
   DecisionCaseRepository, DecisionRecommendationRepository,
   ActionReviewRepository, ApproverAuthorityRepository, ApprovalDecisionRepository, ABAAuditRepository,
-  type ActionReviewVersion,
+  type ActionReviewVersion, ActionReviewNotFoundError,
   OwnershipEvidenceRepository, provenOwnersOf, OWNER_APPROVER_ASSIGNMENT_CODE, normalizeRevocationReason,
   ApproverAuthorityNotFoundError, ApproverAuthorityStateConflictError,
   MonitoredActionRepository, OutcomeObservationRepository,
@@ -66,6 +66,17 @@ export class ApprovalBlockedError extends Error {
     super(`approval blocked (${codes.join(', ')}): ${reasons.join('; ')}; recovery: RECALCULATE DECISION`);
     this.name = 'ApprovalBlockedError';
   }
+}
+
+/** Read-only approval status of a review package; `expired` is derived from persisted valid_until and the database clock. */
+export interface ReviewApprovalStatus {
+  reviewPackageId: string;
+  reviewVersionId: string | null;
+  packageStatus: string;
+  validUntil: Date | null;
+  expired: boolean;
+  /** Database time the status was judged at. */
+  evaluatedAt: Date;
 }
 
 interface ApprovalTrace {
@@ -389,6 +400,34 @@ export class DecisionWorkflowService {
     }
   }
 
+  /**
+   * Best-effort expiry audit (P0-4 Block 2). Returns whether the repository found the version expired on the database
+   * clock; a failed audit write is logged and never changes the caller's outcome.
+   */
+  private async noteExpiry(ctx: TenantContext, businessId: string, reviewVersionId: string, path: 'approval_attempt' | 'status_read', correlationId: string | null): Promise<void> {
+    try {
+      await this.approvalAudit.recordExpiryDetected(ctx, businessId, reviewVersionId, { path, actorUserId: ctx.userId, correlationId });
+    } catch (auditError) {
+      // eslint-disable-next-line no-console
+      console.error('[approval-audit] failed to record expiry; the expired state still stands', { businessId, reviewVersionId, auditError });
+    }
+  }
+
+  /**
+   * Passive status read for a review package (P0-4 Block 2). Expiry is derived from the persisted valid_until and the
+   * database clock; the first detection leaves one `approval.expired` audit event. Nothing is rewritten and no state is
+   * transitioned: an audit failure cannot change the returned status.
+   */
+  async getReviewApprovalStatus(ctx: TenantContext, businessId: string, reviewPackageId: string, requestContext?: { correlationId?: string }): Promise<ReviewApprovalStatus> {
+    const pkg = await this.reviews.getById(ctx, reviewPackageId);
+    if (pkg.businessId !== businessId) throw new ActionReviewNotFoundError('ActionReviewPackage', reviewPackageId);
+    const { version, now } = await this.reviews.getLatestVersionWithClock(ctx, reviewPackageId);
+    const validUntil = version?.validUntil ?? null;
+    const expired = validUntil !== null && validUntil.getTime() <= now.getTime();
+    if (expired && version) await this.noteExpiry(ctx, businessId, version.id, 'status_read', requestContext?.correlationId ?? null);
+    return { reviewPackageId, reviewVersionId: version?.id ?? null, packageStatus: pkg.status, validUntil, expired, evaluatedAt: now };
+  }
+
   private async decideApproval(ctx: TenantContext, businessId: string, input: SubmitApprovalInput, trace: ApprovalTrace): Promise<ApprovalDecision> {
     if (input.approverUserId !== undefined && input.approverUserId !== ctx.userId) {
       throw new ApproverAuthorityNotEstablishedError('the approver must be the authenticated principal');
@@ -404,6 +443,11 @@ export class DecisionWorkflowService {
     // caller supplies can set risk or validity. Missing facts are unclassified/unknown and fail closed.
     const { version: reviewVersion, now } = await this.reviews.getLatestVersionWithClock(ctx, input.reviewPackageId);
     trace.reviewVersion = reviewVersion;
+    // Expiry is a derived fact (valid_until <= database now). Observing it leaves one idempotent audit event; it never
+    // changes the review and never decides the outcome below (the gate still refuses, reject still works).
+    if (reviewVersion?.validUntil && reviewVersion.validUntil.getTime() <= now.getTime()) {
+      await this.noteExpiry(ctx, businessId, reviewVersion.id, 'approval_attempt', input.requestContext?.correlationId ?? null);
+    }
     const roleCode = await this.approverAuthority.getCurrentRoleCode(ctx, assignment.id);
     trace.assignment = { id: assignment.id, code: assignment.assignmentCode, roleCode };
     const verdict = evaluateApproval({
