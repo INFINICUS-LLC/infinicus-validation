@@ -2,7 +2,10 @@
 
 **Status:** RECORD ONLY. Nothing here was investigated further or changed. Each item says what was seen, what is known, what is not, and the trigger for investigating it. Evidence is from GitHub Actions on `INFINICUS-LLC/infinicus-validation`, 2026-10-07.
 
-## 1. migration-gate idempotency test failed once (not reproduced)
+## 1. migration-gate idempotency test failed (ROOT CAUSE FOUND, fixed)
+
+**Update (second occurrence, PR #22 run `37670058766`, job `112959214064`):** the failure repeated, so it was investigated. Root cause: `migration-gate.sh` printed its last line with `console.log(...)` and then called `process.exit(0)` immediately. When stdout is a pipe (as in `execFile` from the test), Node can lose buffered output at `process.exit`, so the tail of stdout, including `Migration gate passed.`, is sometimes missing although the exit code is 0. Reproduced locally by running the gate through `execFile` 60 times under CPU load: 13/60 runs lost the line; with the fix 0/60. Fix: write the final line with a flush callback (`process.stdout.write(..., () => process.exit(0))`). Exit codes and messages are unchanged. The original observation follows.
+
 
 | Field | Value |
 |---|---|
