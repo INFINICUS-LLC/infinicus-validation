@@ -4,6 +4,15 @@
   function createRegistry(name) {
     const items = new Map();
 
+    // Values may hold functions (service APIs) that structuredClone
+    // rejects, so only the plain-data metadata is cloned.
+    function snapshot(record) {
+      return {
+        ...record,
+        metadata: structuredClone(record.metadata)
+      };
+    }
+
     function register(id, value, metadata = {}) {
       const key = String(id || "").trim();
 
@@ -31,7 +40,7 @@
       items.set(key, record);
 
       return global.INFINICUS.DT.result.success(
-        structuredClone(record)
+        snapshot(record)
       );
     }
 
@@ -39,7 +48,7 @@
       const record = items.get(String(id || ""));
 
       return record
-        ? global.INFINICUS.DT.result.success(structuredClone(record))
+        ? global.INFINICUS.DT.result.success(snapshot(record))
         : global.INFINICUS.DT.result.failure(
             "REGISTRY_ITEM_NOT_FOUND",
             `${name} registry item was not found.`,
@@ -53,7 +62,7 @@
 
     function list() {
       return global.INFINICUS.DT.result.success(
-        [...items.values()].map(structuredClone)
+        [...items.values()].map(snapshot)
       );
     }
 
@@ -72,7 +81,7 @@
       items.delete(key);
 
       return global.INFINICUS.DT.result.success(
-        structuredClone(record)
+        snapshot(record)
       );
     }
 

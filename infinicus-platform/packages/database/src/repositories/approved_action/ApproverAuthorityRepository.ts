@@ -130,6 +130,23 @@ export class ApproverAuthorityRepository {
     });
   }
 
+  /**
+   * Looks up an ALREADY-ESTABLISHED, active approval authority for a user.
+   * Read-only by design: approval authority must be issued beforehand by an
+   * authoritative source (see DecisionWorkflowService.grantApproverAuthority)
+   * and is only ever checked, never created, at decision time.
+   */
+  async findActiveForUser(ctx: TenantContext, businessId: string, userId: string, assignmentCode: string): Promise<ApproverAssignment | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT * FROM approved_business_action.approver_assignments
+          WHERE business_id = $1 AND user_id = $2 AND assignment_code = $3 AND status = 'active'`,
+        [businessId, userId, assignmentCode]
+      );
+      return result.rows.length === 0 ? null : rowToAssignment(result.rows[0]);
+    });
+  }
+
   async getById(ctx: TenantContext, id: string): Promise<ApproverAssignment> {
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>('SELECT * FROM approved_business_action.approver_assignments WHERE id = $1', [id]);

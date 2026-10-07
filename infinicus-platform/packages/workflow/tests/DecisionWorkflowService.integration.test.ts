@@ -310,8 +310,10 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
     it('submits an approve decision and it is reflected in the workflow view', async () => {
       const intakePackageId = await createAbaIntake(ctx1, BIZ1);
       const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-a'), summary: 'Approve me' });
+      const assignmentCode = uniqueCode('wf-assign');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
       const decision = await service.submitApprovalDecision(ctx1, BIZ1, {
-        reviewPackageId: review.id, approverUserId: UID, assignmentCode: uniqueCode('wf-assign'),
+        reviewPackageId: review.id, approverUserId: UID, assignmentCode,
         decisionCode: uniqueCode('wf-dec'), summary: 'Approving', outcome: 'approve',
       });
       expect(decision.status).toBe('approved');
@@ -323,11 +325,46 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
     it('submits a reject decision', async () => {
       const intakePackageId = await createAbaIntake(ctx1, BIZ1);
       const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-r'), summary: 'Reject me' });
+      const assignmentCode = uniqueCode('wf-assign-r');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
       const decision = await service.submitApprovalDecision(ctx1, BIZ1, {
-        reviewPackageId: review.id, approverUserId: UID, assignmentCode: uniqueCode('wf-assign-r'),
+        reviewPackageId: review.id, approverUserId: UID, assignmentCode,
         decisionCode: uniqueCode('wf-dec-r'), summary: 'Rejecting', outcome: 'reject',
       });
       expect(decision.status).toBe('rejected');
+    });
+    it('refuses a decision when no approver authority was established beforehand, and creates none (V-01)', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-n'), summary: 'No authority' });
+      const assignmentCode = uniqueCode('wf-assign-n');
+      await expect(service.submitApprovalDecision(ctx1, BIZ1, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('wf-dec-n'), summary: 'Should fail', outcome: 'approve',
+      })).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
+      const { rows } = await adminPool!.query(
+        `SELECT count(*)::int AS n FROM approved_business_action.approver_assignments WHERE business_id = $1 AND assignment_code = $2`, [BIZ1, assignmentCode]);
+      expect(rows[0].n).toBe(0);
+    });
+
+    it('refuses a decision naming a different approver than the authenticated principal', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-o'), summary: 'Other approver' });
+      const assignmentCode = uniqueCode('wf-assign-o');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
+      await expect(service.submitApprovalDecision(ctx1, BIZ1, {
+        reviewPackageId: review.id, approverUserId: '66666666-7070-0000-0000-0000000000aa', assignmentCode,
+        decisionCode: uniqueCode('wf-dec-o'), summary: 'Should fail', outcome: 'approve',
+      })).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
+    });
+
+    it('refuses a decision under a revoked assignment', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-v'), summary: 'Revoked' });
+      const assignmentCode = uniqueCode('wf-assign-v');
+      const granted = await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
+      await new ApproverAuthorityRepository().transitionStatus(ctx1, granted.id, 'revoked');
+      await expect(service.submitApprovalDecision(ctx1, BIZ1, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('wf-dec-v'), summary: 'Should fail', outcome: 'approve',
+      })).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
     });
   });
 
