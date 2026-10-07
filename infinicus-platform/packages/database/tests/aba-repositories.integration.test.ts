@@ -419,6 +419,42 @@ describe.runIf(run)('Stage 2H Approved Business Action — live PostgreSQL', () 
       const version = await reviewRepo.createVersion(ctx1, review.id, BIZ1, 'v1');
       await expect(adminPool!.query(`UPDATE approved_business_action.action_review_package_versions SET summary = 'changed' WHERE id = $1`, [version.id])).rejects.toThrow(/append-only/);
     });
+
+    it('review versions carry no risk/validity snapshot unless one is supplied — NULL means unclassified/unknown (P0-3)', async () => {
+      const { reviewRepo, review } = await createReviewPackage(ctx1, BIZ1);
+      await reviewRepo.createVersion(ctx1, review.id, BIZ1, 'v1');
+      const latest = await reviewRepo.getLatestVersion(ctx1, review.id);
+      expect(latest).toMatchObject({ riskClass: null, isTimeSensitive: null, validUntil: null, twinSnapshotId: null, sourceRecommendationVersionId: null });
+    });
+
+    it('snapshots the published ADI facts with lineage, and the snapshot is append-only (P0-3)', async () => {
+      const { reviewRepo, review } = await createReviewPackage(ctx1, BIZ1);
+      const rec = await adminPool!.query(`SELECT id FROM ai_decision_intelligence.decision_recommendation_versions WHERE business_id = $1 LIMIT 1`, [BIZ1]);
+      const validUntil = new Date(Date.now() + 3600 * 1000);
+      const twin = '55555555-5656-0000-0000-000000000001';
+      const version = await reviewRepo.createVersion(ctx1, review.id, BIZ1, 'v1', {
+        sourceRecommendationVersionId: rec.rows[0].id, riskClass: 'high', isTimeSensitive: true, validUntil, twinSnapshotId: twin,
+      });
+      const latest = await reviewRepo.getLatestVersion(ctx1, review.id);
+      expect(latest).toMatchObject({ id: version.id, sourceRecommendationVersionId: rec.rows[0].id, riskClass: 'high', isTimeSensitive: true, twinSnapshotId: twin });
+      expect(latest?.validUntil?.getTime()).toBe(validUntil.getTime());
+      await expect(adminPool!.query(`UPDATE approved_business_action.action_review_package_versions SET risk_class = 'low' WHERE id = $1`, [version.id])).rejects.toThrow(/append-only/);
+    });
+
+    it('rejects an unknown risk class in the application and in the database; a dangling ADI lineage reference is refused (P0-3)', async () => {
+      const { reviewRepo, review } = await createReviewPackage(ctx1, BIZ1);
+      await expect(reviewRepo.createVersion(ctx1, review.id, BIZ1, 'v1', { riskClass: 'extreme' as never })).rejects.toBeInstanceOf(ValidationError);
+      await expect(adminPool!.query(
+        `INSERT INTO approved_business_action.action_review_package_versions (review_package_id, tenant_id, workspace_id, business_id, version_number, summary, risk_class)
+         VALUES ($1,$2,$3,$4,99,'x','extreme')`, [review.id, T1, WS1, BIZ1])).rejects.toThrow(/risk_class_check/);
+      await expect(reviewRepo.createVersion(ctx1, review.id, BIZ1, 'v1', { sourceRecommendationVersionId: '00000000-0000-0000-0000-000000000000' })).rejects.toThrow(/foreign key/i);
+    });
+
+    it('a snapshot is tenant-isolated: another tenant cannot read it (P0-3)', async () => {
+      const { reviewRepo, review } = await createReviewPackage(ctx1, BIZ1);
+      await reviewRepo.createVersion(ctx1, review.id, BIZ1, 'v1', { riskClass: 'critical' });
+      expect(await new ActionReviewRepository().getLatestVersion(ctx2, review.id)).toBeNull();
+    });
   });
 
   // ── 4. ApprovalPolicyRepository ───────────────────────────────────────────

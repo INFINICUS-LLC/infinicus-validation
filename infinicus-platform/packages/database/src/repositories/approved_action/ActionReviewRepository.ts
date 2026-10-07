@@ -14,6 +14,24 @@ export interface ActionReviewPackage {
   latestVersion: number;
 }
 
+/** Snapshot of the published ADI risk/validity facts, copied at review-version creation (P0-3). ABA never authors these. */
+export interface ReviewVersionSnapshot {
+  sourceRecommendationVersionId: string | null;
+  riskClass: 'low' | 'medium' | 'high' | 'critical' | null;
+  isTimeSensitive: boolean | null;
+  validUntil: Date | null;
+  twinSnapshotId: string | null;
+}
+
+export interface ActionReviewVersion extends ReviewVersionSnapshot {
+  id: string;
+  reviewPackageId: string;
+  versionNumber: number;
+  summary: string;
+}
+
+const RISK_CLASS_VALUES = new Set(['low', 'medium', 'high', 'critical']);
+
 const VALID_STATUSES = ['draft', 'in_review', 'completed', 'cancelled'];
 const EVIDENCE_TYPES = new Set(['adi_recommendation', 'simulation_result', 'business_intelligence_finding', 'external', 'other']);
 
@@ -42,19 +60,57 @@ export class ActionReviewRepository {
     });
   }
 
-  async createVersion(ctx: TenantContext, reviewPackageId: string, businessId: string, summary: string): Promise<{ id: string; versionNumber: number }> {
+  async createVersion(
+    ctx: TenantContext, reviewPackageId: string, businessId: string, summary: string, snapshot?: Partial<ReviewVersionSnapshot>
+  ): Promise<{ id: string; versionNumber: number }> {
+    const facts: ReviewVersionSnapshot = {
+      sourceRecommendationVersionId: snapshot?.sourceRecommendationVersionId ?? null,
+      riskClass: snapshot?.riskClass ?? null,
+      isTimeSensitive: snapshot?.isTimeSensitive ?? null,
+      validUntil: snapshot?.validUntil ?? null,
+      twinSnapshotId: snapshot?.twinSnapshotId ?? null,
+    };
+    if (facts.riskClass !== null && !RISK_CLASS_VALUES.has(facts.riskClass)) {
+      throw new ValidationError('ActionReviewPackageVersion', [`unknown risk_class: ${String(facts.riskClass)}`]);
+    }
     return withTenantTransaction(ctx, async (client) => {
       const r = await client.query<Record<string, unknown>>('SELECT * FROM approved_business_action.action_review_packages WHERE id = $1', [reviewPackageId]);
       if (r.rows.length === 0) throw new ActionReviewNotFoundError('ActionReviewPackage', reviewPackageId);
       const nextVersion = (r.rows[0].latest_version as number) + 1;
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO approved_business_action.action_review_package_versions
-           (review_package_id, tenant_id, workspace_id, business_id, version_number, summary, correlation_id)
-         VALUES ($1,$2,$3,$4,$5,$6,gen_random_uuid()) RETURNING id, version_number`,
-        [reviewPackageId, ctx.tenantId, ctx.workspaceId, businessId, nextVersion, summary]
+           (review_package_id, tenant_id, workspace_id, business_id, version_number, summary, correlation_id,
+            source_recommendation_version_id, risk_class, is_time_sensitive, valid_until, twin_snapshot_id)
+         VALUES ($1,$2,$3,$4,$5,$6,gen_random_uuid(),$7,$8,$9,$10,$11) RETURNING id, version_number`,
+        [reviewPackageId, ctx.tenantId, ctx.workspaceId, businessId, nextVersion, summary,
+         facts.sourceRecommendationVersionId, facts.riskClass, facts.isTimeSensitive, facts.validUntil, facts.twinSnapshotId]
       );
       await client.query('UPDATE approved_business_action.action_review_packages SET latest_version = $2 WHERE id = $1', [reviewPackageId, nextVersion]);
       return { id: result.rows[0].id as string, versionNumber: result.rows[0].version_number as number };
+    });
+  }
+
+  /** The latest version of a review package with its risk/validity snapshot, or null if it has no version. */
+  async getLatestVersion(ctx: TenantContext, reviewPackageId: string): Promise<ActionReviewVersion | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT * FROM approved_business_action.action_review_package_versions
+          WHERE review_package_id = $1 ORDER BY version_number DESC LIMIT 1`,
+        [reviewPackageId]
+      );
+      if (result.rows.length === 0) return null;
+      const row = result.rows[0];
+      return {
+        id: row.id as string,
+        reviewPackageId: row.review_package_id as string,
+        versionNumber: row.version_number as number,
+        summary: row.summary as string,
+        sourceRecommendationVersionId: (row.source_recommendation_version_id as string | null) ?? null,
+        riskClass: (row.risk_class as ReviewVersionSnapshot['riskClass']) ?? null,
+        isTimeSensitive: (row.is_time_sensitive as boolean | null) ?? null,
+        validUntil: (row.valid_until as Date | null) ?? null,
+        twinSnapshotId: (row.twin_snapshot_id as string | null) ?? null,
+      };
     });
   }
 

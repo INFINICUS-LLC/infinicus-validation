@@ -5,6 +5,7 @@ import {
   DecisionRecommendationNotFoundError,
   DecisionRecommendationStateConflictError,
   DecisionRecommendationImmutableError,
+  DecisionRecommendationValidationError,
 } from './errors.js';
 
 export interface DecisionRecommendation {
@@ -19,7 +20,26 @@ export interface DecisionRecommendation {
   latestVersion: number;
 }
 
-export interface DecisionRecommendationVersion {
+/**
+ * Risk class vocabulary (implementation vocabulary; owner ruling Q2). Documented in
+ * docs/architecture/reconciliation/P0-3_RISK_CLASS_VALID_UNTIL_RECONCILIATION.md, not frozen in a locked spec.
+ */
+export const RISK_CLASSES = ['low', 'medium', 'high', 'critical'] as const;
+export type RiskClass = (typeof RISK_CLASSES)[number];
+
+/**
+ * Risk and temporal-validity facts of a recommendation (P0-3). All optional and nullable:
+ * null means unclassified/unknown (legacy) and is NEVER read as low risk or as "not time-sensitive".
+ */
+export interface RecommendationRiskValidity {
+  riskClass: RiskClass | null;
+  isTimeSensitive: boolean | null;
+  validUntil: Date | null;
+  /** Soft UUID reference to a Digital Twin snapshot (no foreign key by design). */
+  twinSnapshotId: string | null;
+}
+
+export interface DecisionRecommendationVersion extends RecommendationRiskValidity {
   id: string;
   recommendationId: string;
   versionNumber: number;
@@ -27,6 +47,24 @@ export interface DecisionRecommendationVersion {
   status: string;
   correlationId: string;
   createdAt: Date;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Validates authoring input; returns the normalised persisted shape. Throws on anything inconsistent. */
+export function normalizeRiskValidity(input: Partial<RecommendationRiskValidity> = {}): RecommendationRiskValidity {
+  const errors: string[] = [];
+  const riskClass = input.riskClass ?? null;
+  if (riskClass !== null && !(RISK_CLASSES as readonly string[]).includes(riskClass)) errors.push(`unknown risk_class: ${String(riskClass)}`);
+  const isTimeSensitive = input.isTimeSensitive ?? null;
+  if (isTimeSensitive !== null && typeof isTimeSensitive !== 'boolean') errors.push('is_time_sensitive must be a boolean or null');
+  const validUntil = input.validUntil ?? null;
+  if (validUntil !== null && !(validUntil instanceof Date && Number.isFinite(validUntil.getTime()))) errors.push('valid_until must be a valid Date or null');
+  if (isTimeSensitive === true && validUntil === null) errors.push('a time-sensitive recommendation must carry valid_until');
+  const twinSnapshotId = input.twinSnapshotId ?? null;
+  if (twinSnapshotId !== null && !(typeof twinSnapshotId === 'string' && UUID_PATTERN.test(twinSnapshotId))) errors.push('twin_snapshot_id must be a UUID or null');
+  if (errors.length > 0) throw new DecisionRecommendationValidationError(errors);
+  return { riskClass: riskClass as RiskClass | null, isTimeSensitive, validUntil, twinSnapshotId };
 }
 
 function rowToRecommendation(row: Record<string, unknown>): DecisionRecommendation {
@@ -67,11 +105,16 @@ function rowToVersion(row: Record<string, unknown>): DecisionRecommendationVersi
     status: row.status as string,
     correlationId: row.correlation_id as string,
     createdAt: row.created_at as Date,
+    riskClass: (row.risk_class as RiskClass | null) ?? null,
+    isTimeSensitive: (row.is_time_sensitive as boolean | null) ?? null,
+    validUntil: (row.valid_until as Date | null) ?? null,
+    twinSnapshotId: (row.twin_snapshot_id as string | null) ?? null,
   };
 }
 
 export class DecisionRecommendationRepository {
-  async createRecommendation(ctx: TenantContext, businessId: string, caseId: string, recommendationCode: string, summary: string, chosenAlternativeId?: string): Promise<{ recommendation: DecisionRecommendation; version: DecisionRecommendationVersion }> {
+  async createRecommendation(ctx: TenantContext, businessId: string, caseId: string, recommendationCode: string, summary: string, chosenAlternativeId?: string, riskValidity?: Partial<RecommendationRiskValidity>): Promise<{ recommendation: DecisionRecommendation; version: DecisionRecommendationVersion }> {
+    const facts = normalizeRiskValidity(riskValidity);
     return withTenantTransaction(ctx, async (client) => {
       const recRow = await client.query<Record<string, unknown>>(
         `INSERT INTO ai_decision_intelligence.decision_recommendations (tenant_id, workspace_id, business_id, case_id, chosen_alternative_id, recommendation_code, latest_version)
@@ -80,9 +123,12 @@ export class DecisionRecommendationRepository {
       );
       const correlationId = randomUUID();
       const versionResult = await client.query<Record<string, unknown>>(
-        `INSERT INTO ai_decision_intelligence.decision_recommendation_versions (recommendation_id, tenant_id, workspace_id, business_id, version_number, summary, correlation_id)
-         VALUES ($1,$2,$3,$4,1,$5,$6) RETURNING *`,
-        [recRow.rows[0].id, ctx.tenantId, ctx.workspaceId, businessId, summary, correlationId]
+        `INSERT INTO ai_decision_intelligence.decision_recommendation_versions
+           (recommendation_id, tenant_id, workspace_id, business_id, version_number, summary, correlation_id,
+            risk_class, is_time_sensitive, valid_until, twin_snapshot_id)
+         VALUES ($1,$2,$3,$4,1,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [recRow.rows[0].id, ctx.tenantId, ctx.workspaceId, businessId, summary, correlationId,
+         facts.riskClass, facts.isTimeSensitive, facts.validUntil, facts.twinSnapshotId]
       );
       return { recommendation: rowToRecommendation(recRow.rows[0]), version: rowToVersion(versionResult.rows[0]) };
     });

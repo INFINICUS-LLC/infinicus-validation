@@ -247,7 +247,7 @@ export {
   ReasoningRunRepository,
   DecisionEvidenceRepository,
   DecisionAlternativeRepository,
-  DecisionRecommendationRepository,
+  DecisionRecommendationRepository, RISK_CLASSES, normalizeRiskValidity,
   DecisionConfidenceRepository,
   DecisionPolicyRepository,
   DecisionMonitoringRequirementRepository,
@@ -261,7 +261,7 @@ export type {
   ReasoningRequest, ReasoningRun,
   DecisionEvidence,
   DecisionAlternative,
-  DecisionRecommendation, DecisionRecommendationVersion, RecommendationRationale,
+  DecisionRecommendation, DecisionRecommendationVersion, RecommendationRationale, RecommendationRiskValidity, RiskClass,
   DecisionConfidenceScore,
   DecisionPolicy,
   DecisionMonitoringRequirement, DecisionReviewSchedule,
@@ -287,7 +287,7 @@ export {
 } from './repositories/approved_action/index.js';
 export type {
   ABAIntakePackage, ReceiveABAPackageInput,
-  ActionReviewPackage,
+  ActionReviewPackage, ActionReviewVersion, ReviewVersionSnapshot,
   ApprovalPolicy,
   ApproverAssignment, ApprovalDelegation,
   ApprovalDecision, ApprovalDecisionVersion,

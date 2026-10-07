@@ -34,6 +34,7 @@ import {
   DecisionAlternativeNotFoundError,
   DecisionRecommendationStateConflictError,
   DecisionRecommendationImmutableError,
+  DecisionRecommendationValidationError,
   DecisionPolicyNotFoundError,
   ADIComponentRegistryNotFoundError,
 } from '../src/repositories/adi/index.js';
@@ -683,6 +684,81 @@ describe.runIf(run)('Stage 2G AI Decision Intelligence — live PostgreSQL', () 
       const alt = await repo.createAlternative(ctx1, BIZ1, case_.id, uniqueCode('alt-immut'));
       const version = await repo.createVersion(ctx1, alt.id, BIZ1, 'x');
       await expect(adminPool!.query(`UPDATE ai_decision_intelligence.decision_alternative_versions SET description = 'changed' WHERE id = $1`, [version.id])).rejects.toThrow(/append-only/);
+    });
+  });
+
+  // ── 8b. P0-3: risk and temporal-validity facts authored by ADI ──────────────
+  describe('recommendation risk_class / is_time_sensitive / valid_until / twin_snapshot_id (P0-3)', () => {
+    const SNAP = '44444444-5656-0000-0000-000000000001';
+    const future = () => new Date(Date.now() + 7 * 24 * 3600 * 1000);
+
+    async function createWithFacts(facts?: Parameters<DecisionRecommendationRepository['createRecommendation']>[6]) {
+      const { case: case_ } = await createQuestionAndCase(ctx1, BIZ1);
+      const repo = new DecisionRecommendationRepository();
+      return repo.createRecommendation(ctx1, BIZ1, case_.id, uniqueCode('rec'), 'Facts under test', undefined, facts);
+    }
+
+    it('defaults every fact to NULL (unclassified / unknown) — never to low risk or to not-time-sensitive', async () => {
+      const { version } = await createWithFacts();
+      expect(version.riskClass).toBeNull();
+      expect(version.isTimeSensitive).toBeNull();
+      expect(version.validUntil).toBeNull();
+      expect(version.twinSnapshotId).toBeNull();
+    });
+
+    it('persists and reads back the four facts', async () => {
+      const validUntil = future();
+      const { version } = await createWithFacts({ riskClass: 'high', isTimeSensitive: true, validUntil, twinSnapshotId: SNAP });
+      expect(version.riskClass).toBe('high');
+      expect(version.isTimeSensitive).toBe(true);
+      expect(version.validUntil?.getTime()).toBe(validUntil.getTime());
+      expect(version.twinSnapshotId).toBe(SNAP);
+    });
+
+    it('stores an explicit not-time-sensitive recommendation without valid_until', async () => {
+      const { version } = await createWithFacts({ riskClass: 'low', isTimeSensitive: false });
+      expect(version.isTimeSensitive).toBe(false);
+      expect(version.validUntil).toBeNull();
+    });
+
+    it('rejects unknown risk classes, a time-sensitive recommendation without valid_until, and malformed references', async () => {
+      await expect(createWithFacts({ riskClass: 'extreme' as never })).rejects.toBeInstanceOf(DecisionRecommendationValidationError);
+      await expect(createWithFacts({ isTimeSensitive: true })).rejects.toBeInstanceOf(DecisionRecommendationValidationError);
+      await expect(createWithFacts({ twinSnapshotId: 'not-a-uuid' })).rejects.toBeInstanceOf(DecisionRecommendationValidationError);
+      await expect(createWithFacts({ validUntil: new Date('invalid') })).rejects.toBeInstanceOf(DecisionRecommendationValidationError);
+    });
+
+    it('the database also refuses a time-sensitive version without valid_until and an unknown risk class', async () => {
+      const { version } = await createWithFacts();
+      await expect(adminPool!.query(`UPDATE ai_decision_intelligence.decision_recommendation_versions SET is_time_sensitive = true WHERE id = $1`, [version.id])).rejects.toThrow(/time_sensitive_validity_check/);
+      await expect(adminPool!.query(`UPDATE ai_decision_intelligence.decision_recommendation_versions SET risk_class = 'extreme' WHERE id = $1`, [version.id])).rejects.toThrow(/risk_class_check/);
+    });
+
+    it('risk_class can be raised before publication but never lowered or cleared', async () => {
+      const { version } = await createWithFacts({ riskClass: 'medium' });
+      await adminPool!.query(`UPDATE ai_decision_intelligence.decision_recommendation_versions SET risk_class = 'critical' WHERE id = $1`, [version.id]);
+      await expect(adminPool!.query(`UPDATE ai_decision_intelligence.decision_recommendation_versions SET risk_class = 'low' WHERE id = $1`, [version.id])).rejects.toThrow(/raised but not lowered/);
+      await expect(adminPool!.query(`UPDATE ai_decision_intelligence.decision_recommendation_versions SET risk_class = NULL WHERE id = $1`, [version.id])).rejects.toThrow(/raised but not lowered/);
+      const row = await adminPool!.query(`SELECT risk_class FROM ai_decision_intelligence.decision_recommendation_versions WHERE id = $1`, [version.id]);
+      expect(row.rows[0].risk_class).toBe('critical');
+    });
+
+    it('a classified recommendation can be given a class once but an unclassified one stays unclassified unless set', async () => {
+      const { version } = await createWithFacts();
+      await adminPool!.query(`UPDATE ai_decision_intelligence.decision_recommendation_versions SET risk_class = 'high' WHERE id = $1`, [version.id]);
+      const row = await adminPool!.query(`SELECT risk_class FROM ai_decision_intelligence.decision_recommendation_versions WHERE id = $1`, [version.id]);
+      expect(row.rows[0].risk_class).toBe('high');
+    });
+
+    it('the four facts of a published version are immutable', async () => {
+      const { case: case_ } = await createQuestionAndCase(ctx1, BIZ1);
+      const repo = new DecisionRecommendationRepository();
+      const { recommendation, version } = await repo.createRecommendation(ctx1, BIZ1, case_.id, uniqueCode('rec'), 'Publish me', undefined, { riskClass: 'medium', isTimeSensitive: true, validUntil: future(), twinSnapshotId: SNAP });
+      await repo.validateRecommendation(ctx1, recommendation.id, version.id);
+      await repo.publishRecommendation(ctx1, recommendation.id, version.id);
+      for (const assignment of [`risk_class = 'critical'`, `is_time_sensitive = false`, `valid_until = now() + interval '30 days'`, `twin_snapshot_id = gen_random_uuid()`]) {
+        await expect(adminPool!.query(`UPDATE ai_decision_intelligence.decision_recommendation_versions SET ${assignment} WHERE id = $1`, [version.id])).rejects.toThrow(/immutable/);
+      }
     });
   });
 

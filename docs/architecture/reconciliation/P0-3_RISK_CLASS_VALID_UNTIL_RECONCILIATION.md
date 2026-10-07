@@ -61,3 +61,23 @@ No locked-spec conflict was found in §§4, 7, 8, 11, 12: the proposal places ea
 2. Authoring path in ADI + snapshot copy in ABA review creation.
 3. Enforcement in `submitApprovalDecision` (expired/stale/risk) + tests (expired blocked, stale blocked, reject allowed, valid approved, unclassified high, API cannot set risk).
 4. Docs and handoff; P0-4 (audit of approve/deny/expire) follows.
+
+
+---
+
+## 7. Owner rulings (2026-10-07) and Block 1 status
+
+Rulings applied: Q1 ADI authors `risk_class` (human may raise before publication, never lower informally; ABA snapshots, never recalculates); Q2 `low|medium|high|critical` is an implementation vocabulary, unknown/missing stays fail-closed (P0-2); Q3 strict staleness (a newer **published** Twin snapshot for the same business; drafts do not count; approve and approve-with-modifications blocked, reject allowed, recovery = RECALCULATE DECISION; no thresholds); Q4 no override, `approval_exceptions` not activated; Q5 explicit `is_time_sensitive` fact (risk does not imply it), `valid_until` required when time-sensitive and enforced whenever present, unknown never silently false; Q6 soft UUID `twin_snapshot_id`, no ABA->BDT foreign key; Q7 BUILD-33 (#22) first.
+
+**Migration allocation (rule: inspect, then record).** PR #22 merged (`22356dd`), so 0172 and 0173 are on `main`; open migration-bearing PRs: none. This build allocates **0174** (ADI) and **0175** (ABA). Frozen predecessor range 0001-0173 untouched.
+
+### Block 1 (this change): persistence only
+- `0174_add_adi_recommendation_risk_validity.sql`: adds `risk_class`, `is_time_sensitive`, `valid_until`, `twin_snapshot_id` (all nullable) to `ai_decision_intelligence.decision_recommendation_versions`; CHECKs for the class vocabulary and for `is_time_sensitive IS NOT TRUE OR valid_until IS NOT NULL`; trigger making the four facts immutable once published and `risk_class` raise-only (never lowered or cleared).
+- `0175_add_aba_review_version_snapshot.sql`: adds `source_recommendation_version_id` (FK to the ADI version, RESTRICT), `risk_class`, `is_time_sensitive`, `valid_until`, `twin_snapshot_id` to `approved_business_action.action_review_package_versions` (append-only table, so the snapshot cannot change). No time-sensitivity CHECK on purpose: ABA must record what it received and block at approval.
+- Repositories: ADI `createRecommendation(..., riskValidity?)` with `normalizeRiskValidity` validation and the four fields on the version model; ABA `createVersion(..., snapshot?)` and `getLatestVersion`. Nothing derives or enforces yet.
+- Tests: ADI (8) and ABA (4) live-PostgreSQL cases covering defaults (NULL, never low or false), round trip, validation, DB checks, raise-only, published immutability, append-only snapshot, lineage FK, tenant isolation. Mutation-proven: dropping the integrity trigger fails 2, dropping the time-sensitive CHECK fails 3.
+
+Legacy rows keep NULLs (unclassified / unknown); no value is fabricated. Consumers (Block 3) treat NULL risk as high and NULL time-sensitivity as unknown, not false.
+
+### Remaining blocks
+2 ADI authoring (derive risk_class from persisted risk profiles and policy, explicit is_time_sensitive, valid_until derivation, twin reference, ABA snapshot copy at review creation); 3 server-side approval enforcement (stale / expired / unclassified / time-sensitive-missing-validity, reject allowed, caller cannot inject trusted state; replaces the trusted-caller `riskClass` parameter from P0-2); 4 docs and handoff, then P0-4.
