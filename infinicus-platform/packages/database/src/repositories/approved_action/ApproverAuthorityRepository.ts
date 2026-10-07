@@ -259,6 +259,18 @@ export class ApproverAuthorityRepository {
     });
   }
 
+  /** Role code of the assignment's latest version, or null if it has none. */
+  async getCurrentRoleCode(ctx: TenantContext, assignmentId: string): Promise<string | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT role_code FROM approved_business_action.approver_assignment_versions
+          WHERE assignment_id = $1 ORDER BY version_number DESC LIMIT 1`,
+        [assignmentId]
+      );
+      return result.rows.length === 0 ? null : (result.rows[0].role_code as string);
+    });
+  }
+
   async getById(ctx: TenantContext, id: string): Promise<ApproverAssignment> {
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>('SELECT * FROM approved_business_action.approver_assignments WHERE id = $1', [id]);

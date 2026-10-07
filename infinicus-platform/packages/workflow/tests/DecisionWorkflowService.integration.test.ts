@@ -314,7 +314,7 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
       const decision = await service.submitApprovalDecision(ctx1, BIZ1, {
         reviewPackageId: review.id, approverUserId: UID, assignmentCode,
-        decisionCode: uniqueCode('wf-dec'), summary: 'Approving', outcome: 'approve',
+        decisionCode: uniqueCode('wf-dec'), summary: 'Approving', outcome: 'approve', riskClass: 'low',
       });
       expect(decision.status).toBe('approved');
 
@@ -373,7 +373,7 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       const intakePackageId = await createAbaIntake(ctx, businessId);
       const review = await service.createReview(ctx, businessId, { intakePackageId, reviewCode: uniqueCode('rv'), summary: 'Authority check' });
       return service.submitApprovalDecision(ctx, businessId, {
-        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('dc'), summary: 'Deciding', outcome: 'approve',
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('dc'), summary: 'Deciding', outcome: 'approve', riskClass: 'low',
       });
     }
 
@@ -447,6 +447,64 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       // A manual administrator grant under the same code (other business) is an explicit decision and is not re-derived from ownership.
       await service.grantApproverAuthority(ctx2, BIZ2, { approverUserId: UID, assignmentCode: 'business-owner-approver' });
       await expect(decide(ctx2, BIZ2, 'business-owner-approver')).resolves.toMatchObject({ status: 'approved' });
+    });
+  });
+
+  describe('action-risk approval policy (P0-2)', () => {
+    async function approveAs(
+      roleCode: 'cashier' | 'manager' | 'approver' | 'business-owner',
+      riskClass: 'low' | 'medium' | 'high' | 'critical' | undefined,
+      outcome: 'approve' | 'approve_with_modifications' | 'reject' = 'approve'
+    ) {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('rk'), summary: 'Risk policy' });
+      const assignmentCode = uniqueCode('wf-risk');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode, roleCode });
+      return service.submitApprovalDecision(ctx1, BIZ1, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('rkd'), summary: 'Deciding', outcome, riskClass,
+      });
+    }
+
+    it('low risk: a cashier may approve', async () => {
+      await expect(approveAs('cashier', 'low')).resolves.toMatchObject({ status: 'approved' });
+    });
+
+    it('medium risk: a cashier is denied, a manager may approve', async () => {
+      await expect(approveAs('cashier', 'medium')).rejects.toMatchObject({ name: 'ApprovalPolicyDeniedError' });
+      await expect(approveAs('manager', 'medium')).resolves.toMatchObject({ status: 'approved' });
+    });
+
+    it('high and critical risk: a manager is denied, the business owner may approve', async () => {
+      for (const risk of ['high', 'critical'] as const) {
+        await expect(approveAs('manager', risk)).rejects.toMatchObject({ name: 'ApprovalPolicyDeniedError' });
+        await expect(approveAs('business-owner', risk)).resolves.toMatchObject({ status: 'approved' });
+      }
+    });
+
+    it('approve_with_modifications is gated like approve', async () => {
+      await expect(approveAs('manager', 'high', 'approve_with_modifications')).rejects.toMatchObject({ name: 'ApprovalPolicyDeniedError' });
+    });
+
+    it('an unclassified action is treated as high risk: a manager is denied, the owner may approve', async () => {
+      await expect(approveAs('manager', undefined)).rejects.toMatchObject({ name: 'ApprovalPolicyDeniedError' });
+      await expect(approveAs('business-owner', undefined)).resolves.toMatchObject({ status: 'approved' });
+    });
+
+    it('any approver may reject even critical risk', async () => {
+      await expect(approveAs('cashier', 'critical', 'reject')).resolves.toMatchObject({ status: 'rejected' });
+    });
+
+    it('a denied approval records no decision', async () => {
+      const before = await adminPool!.query(`SELECT count(*)::int AS n FROM approved_business_action.approval_decisions WHERE business_id = $1`, [BIZ1]);
+      await expect(approveAs('cashier', 'critical')).rejects.toMatchObject({ name: 'ApprovalPolicyDeniedError' });
+      const after = await adminPool!.query(`SELECT count(*)::int AS n FROM approved_business_action.approval_decisions WHERE business_id = $1`, [BIZ1]);
+      expect(after.rows[0].n).toBe(before.rows[0].n);
+    });
+
+    it('rejects an unknown role at grant time', async () => {
+      await expect(service.grantApproverAuthority(ctx1, BIZ1, {
+        approverUserId: UID, assignmentCode: uniqueCode('wf-badrole'), roleCode: 'superuser' as never,
+      })).rejects.toMatchObject({ name: 'ApprovalPolicyDeniedError' });
     });
   });
 
