@@ -18,6 +18,11 @@ export interface ApprovalDecision {
   latestVersion: number;
 }
 
+export interface DecisionAudit {
+  eventType: string;
+  detail: Record<string, unknown>;
+}
+
 export interface ApprovalDecisionVersion {
   id: string;
   decisionId: string;
@@ -92,7 +97,8 @@ export class ApprovalDecisionRepository {
     });
   }
 
-  private async decide(ctx: TenantContext, decisionId: string, decisionVersionId: string, toStatus: string): Promise<ApprovalDecision> {
+  /** An audit event written atomically with the decision: if it cannot be written, the decision is not finalised. */
+  private async decide(ctx: TenantContext, decisionId: string, decisionVersionId: string, toStatus: string, audit?: DecisionAudit): Promise<ApprovalDecision> {
     return withTenantTransaction(ctx, async (client) => {
       const current = await client.query<Record<string, unknown>>('SELECT * FROM approved_business_action.approval_decisions WHERE id = $1', [decisionId]);
       if (current.rows.length === 0) throw new ApprovalDecisionNotFoundError('ApprovalDecision', decisionId);
@@ -104,21 +110,28 @@ export class ApprovalDecisionRepository {
         [decisionId, toStatus]
       );
       await client.query(`UPDATE approved_business_action.approval_decision_versions SET status = $2 WHERE id = $1`, [decisionVersionId, toStatus]);
+      if (audit) {
+        await client.query(
+          `INSERT INTO approved_business_action.approval_audit_events (tenant_id, workspace_id, business_id, decision_id, event_type, detail)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [ctx.tenantId, ctx.workspaceId, result.rows[0].business_id, decisionId, audit.eventType, JSON.stringify(audit.detail)]
+        );
+      }
       return rowToDecision(result.rows[0]);
     });
   }
 
   /** Approval is distinct from execution — this only records the decision. No external business action is executed here. */
-  async approve(ctx: TenantContext, decisionId: string, decisionVersionId: string): Promise<ApprovalDecision> {
-    return this.decide(ctx, decisionId, decisionVersionId, 'approved');
+  async approve(ctx: TenantContext, decisionId: string, decisionVersionId: string, audit?: DecisionAudit): Promise<ApprovalDecision> {
+    return this.decide(ctx, decisionId, decisionVersionId, 'approved', audit);
   }
 
-  async approveWithModifications(ctx: TenantContext, decisionId: string, decisionVersionId: string): Promise<ApprovalDecision> {
-    return this.decide(ctx, decisionId, decisionVersionId, 'approved_with_modifications');
+  async approveWithModifications(ctx: TenantContext, decisionId: string, decisionVersionId: string, audit?: DecisionAudit): Promise<ApprovalDecision> {
+    return this.decide(ctx, decisionId, decisionVersionId, 'approved_with_modifications', audit);
   }
 
-  async reject(ctx: TenantContext, decisionId: string, decisionVersionId: string): Promise<ApprovalDecision> {
-    return this.decide(ctx, decisionId, decisionVersionId, 'rejected');
+  async reject(ctx: TenantContext, decisionId: string, decisionVersionId: string, audit?: DecisionAudit): Promise<ApprovalDecision> {
+    return this.decide(ctx, decisionId, decisionVersionId, 'rejected', audit);
   }
 
   /** Only legal before a decision is made — decided decisions are immutable (enforced by the database trigger). */
