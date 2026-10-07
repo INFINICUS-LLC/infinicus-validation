@@ -5,6 +5,11 @@
 **Baseline:** branch `ccr-e53f2c76-7h2tzq` (after Fix 1–3), 189/189 root tests and 7/7 browser bundles passing.
 **Method / limits:** file-tree walk, `grep` over source and SQL migrations, and reading of route files. Counts of tables, policies and functions come from `CREATE ...` statements in `infinicus-platform/infrastructure/database/migrations/0001–0170` and are **approximate** (later `ALTER`s and conditional DDL are not resolved). Not run: a live Postgres, the `infinicus-platform` pnpm test suite. Nothing here is a violation finding; items under "Observations" are leads for Phases 3–6.
 
+
+> **ERRATA (added in Phase 3, see `SOURCE_OF_TRUTH_AUDIT.md` §0):**
+> 1. §1 and O-1 said Stack B is "not wired to Stack A" with "no shared data path". **Incorrect.** The live SPA already calls the production Stack B API; the legacy `/api/business/*` D1 endpoints are no longer called by any HTML page. The persistence picture is four systems (Postgres, Supabase, Cloudflare KV/D1, browser storage), not two stacks.
+> 2. O-4 / §4 / §5.1: the claim that `data-acquisition-runtime` writes `tenancy` and `platform` tables is **retracted** (it came from test fixtures). The `business-operations-runtime → data_acquisition.publication_deliveries` write is confirmed.
+
 ---
 
 ## 0. Pre-build declaration (spec §5, filled from inventory)

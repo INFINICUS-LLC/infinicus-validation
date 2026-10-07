@@ -6,6 +6,9 @@
 **Stack naming:** **A** = static site + Cloudflare Functions (repo root); **B** = `infinicus-platform/` monorepo (Postgres).
 **Limits:** mapping is by block name, entry points and SQL touched; block internals were not read. Confidence H/M/L as in D1.
 
+
+> **ERRATA (added in Phase 3):** T-10 and §1 describe Stack A and Stack B as parallel implementations of the whole flow. In fact the live SPA already uses Stack B for onboarding, simulations, operations, twin and decisions, and still uses Stack A for `simulate`, waitlist, feedback, email, `parse-idea`, and legacy KV `change-password`; authentication and simulation history also run through **Supabase**, which this document did not list. See `SOURCE_OF_TRUTH_AUDIT.md` §0–§1. Authorised classification rules (A1–A3, 2026-10-07): Stack B is the target for all 9 layers; BO block→domain split is classification only; BO-23/24 verified as contract infrastructure; BO-21 deferred to Phase 9; idempotency is a cross-cutting invariant owned with DATA contracts.
+
 ---
 
 ## 1. Key structural facts that shape the mapping
