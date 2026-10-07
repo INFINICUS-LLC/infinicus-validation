@@ -8,7 +8,7 @@ import {
 } from '@infinicus/database';
 import { AnthropicClient } from '@infinicus/llm-client';
 import { TwinComputationService, type TwinSnapshotResult } from './TwinComputationService.js';
-import { DecisionWorkflowService } from './DecisionWorkflowService.js';
+import { DecisionWorkflowService, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
 
 const TARGET_LAYER_ABA = 'approved_business_action';
 const TARGET_LAYER_OM = 'outcome_monitoring';
@@ -251,7 +251,7 @@ export class BusinessDecisionRecommendationService {
       intakePackageId: intakePackage.id, reviewCode: `bizdec-review-${stamp}`, summary: 'Business decision review',
     });
     const decision = await this.workflow.submitApprovalDecision(ctx, businessId, {
-      reviewPackageId: review.id, approverUserId: ctx.userId, assignmentCode: `bizdec-approver-${stamp}`,
+      reviewPackageId: review.id, assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE,
       decisionCode: `bizdec-decision-${stamp}`, summary: chosen ? 'Approved by business owner' : 'Declined by business owner',
       outcome: chosen ? 'approve' : 'reject',
     });

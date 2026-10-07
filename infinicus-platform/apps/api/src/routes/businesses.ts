@@ -5,6 +5,7 @@ import {
   businessListResponseSchema, businessIdParamsSchema, workflowViewResponseSchema,
   createBusinessBodySchema, createBusinessResponseSchema,
   createDecisionBodySchema, decisionResponseSchema,
+  grantApproverAuthorityBodySchema, grantApproverAuthorityResponseSchema,
   recordOutcomeBodySchema, outcomeResponseSchema,
   startSimulationBodySchema, startSimulationResponseSchema,
   simulationRunParamsSchema, simulationRunStatusResponseSchema,
@@ -108,6 +109,24 @@ export default async function businessRoutes(app: FastifyInstance) {
     const { runId } = request.params;
     const status = await simulations.getRunStatus(request.ctx!, runId);
     return reply.status(200).send(status);
+  });
+
+  server.post('/v1/businesses/:businessId/approver-assignments', {
+    schema: {
+      tags: ['businesses'],
+      summary: 'Establish approval authority for a user (requires aba:admin; separate from deciding; idempotent)',
+      params: businessIdParamsSchema,
+      body: grantApproverAuthorityBodySchema,
+      response: { 201: grantApproverAuthorityResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 409: errorResponseSchema },
+    },
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('aba:admin'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+  }, async (request, reply) => {
+    const { businessId } = request.params;
+    const assignment = await workflow.grantApproverAuthority(request.ctx!, businessId, {
+      approverUserId: request.body.approverUserId,
+      assignmentCode: request.body.assignmentCode,
+    });
+    return reply.status(201).send({ id: assignment.id, status: assignment.status, assignmentCode: assignment.assignmentCode });
   });
 
   server.post('/v1/businesses/:businessId/decisions', {

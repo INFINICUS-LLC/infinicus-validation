@@ -1,7 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { DecisionWorkflowService } from '@infinicus/workflow';
+import { DecisionWorkflowService, DEFAULT_APPROVER_ASSIGNMENT_CODE } from '@infinicus/workflow';
 import { ensurePool } from '../../../../lib/db';
 import { contextFromSearchParams, ctxQuery } from '../../../../lib/context';
 
@@ -32,8 +32,7 @@ export async function submitApprovalDecisionAction(formData: FormData): Promise<
   });
   await service.submitApprovalDecision(ctx, businessId, {
     reviewPackageId: review.id,
-    approverUserId: ctx.userId,
-    assignmentCode: `assign-${Date.now()}`,
+    assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE,
     decisionCode: `dec-${Date.now()}`,
     summary: String(formData.get('summary') ?? ''),
     outcome,
