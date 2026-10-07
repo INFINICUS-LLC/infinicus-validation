@@ -76,3 +76,23 @@ Migrations are additive and immutable; there are no down-migrations. Operational
 
 ## 12. Next eligible build
 BUILD-34 remains **not authorised** by this report. Eligibility is the owner's decision after review.
+
+---
+
+## Amendment 1 — final merge and CI evidence (appended 2026-10-07, completion evidence only)
+
+This amendment adds evidence recorded after the report above was drafted. It does not alter the BUILD-33 architecture, design or any earlier statement; section 11's "CI on the PR head" item is resolved here.
+
+| Item | Evidence |
+|---|---|
+| Merge | PR #22 merged by the owner at 2026-10-07T19:09:27Z as squash commit `22356ddbdeacb57539d926bb066d18afa3501856` on `main`. |
+| Migrations | `0172_create_business_event_ledger.sql` and `0173_harden_eventing_scope.sql` are on `main`; `0001`-`0171` unchanged. Next free numbers at that point: `0174`, `0175`. |
+| Refreshed main | Before the merge `main` had been merged into the PR branch three times (post-#31, post-#35, post-#37). The merged PR head was `1ca72bf2` (includes the migration-gate stdout fix #37). |
+| Full CI on the PR head | "INFINICUS Platform CI" run `37671589657` (pull_request, head `1ca72bf2`, 2026-10-07T19:03:31Z-19:08:48Z): conclusion `success`. The two earlier failures on this PR (`owner-authority` dry-run count race; `migration-gate` stdout truncation) are not BUILD-33 defects and were fixed on `main` by #35 and #37. |
+| Full CI on the merge commit | Run `37672346008` (push, `main`, `22356dd`, 2026-10-07T19:09:30Z-19:14:55Z): `validate` success (install, lint, typecheck, build, browser-secret check, dependency scan, role creation, **migration gate**, grants, test) and `build-and-smoke-test-image` success. |
+| Migration guard | The CI "Apply migrations (migration gate)" step passed on the merge commit (applies 0001-0173 on an empty database). The file-existence/contiguity guard (`platform/tests/01-file-existence.test.mjs`) was run locally (12/12), not in CI. |
+| Event-contract validation | The BUILD-33 database tests (static migration architecture tests, live RLS/provenance/append-only/scope tests, publication/replay and delivery-attempt tests) run inside `@infinicus/database` in CI and passed. The `@infinicus/event-contracts` package's own 15 unit tests passed locally; that package is **not** in the CI test filter, so CI did not run them. |
+| Image / smoke / DAST | `build-and-smoke-test-image` succeeded on the merge commit, with "Smoke test" and "DAST scan" steps reporting success. Both steps completed within the same second, so their depth was not independently verified here. |
+| Final validation time | CI on the merge commit completed 2026-10-07T19:14:55Z. |
+
+Remaining known limitations are unchanged from section 11 (no application producers or consumers wired yet; advisories A-1 to A-3; rollback not rehearsed; no independent security audit). BUILD-34 is not authorised by this amendment.
