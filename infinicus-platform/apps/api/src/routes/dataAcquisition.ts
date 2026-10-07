@@ -196,7 +196,14 @@ export default async function dataAcquisitionRoutes(app: FastifyInstance) {
       params: connectorIdParamsSchema,
       response: { 201: webhookTokenResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema, 400: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('da:admin'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+    // Deliberately NO requireIdempotencyKey: the idempotency layer persists
+    // every completed response body in api.idempotency_keys and replays it on
+    // a retry. This response carries the raw bearer token, which must exist
+    // only in the single response to the caller (only its SHA-256 hash is
+    // stored, see docs/webhook-token-lifecycle.md). Regeneration is naturally
+    // "last call wins": a client that lost the response simply calls again,
+    // and the previous token is invalidated.
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('da:admin'), app.requireActiveSubscription()],
   }, async (request, reply) => {
     const { businessId, sourceId, connectorId } = request.params;
     await businesses.getById(request.ctx!, businessId);

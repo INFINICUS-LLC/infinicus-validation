@@ -297,6 +297,33 @@ describe.runIf(run)('BUILD-31 Data Acquisition runtime API — live PostgreSQL',
       return { source, connector, ...tokenRes.json() as { token: string; webhookUrl: string } };
     }
 
+    it('never persists the raw webhook token, even when the client sends an Idempotency-Key', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithRole(userId, 'owner');
+      const bizId = await createBusiness(ctx);
+      const { source, connector, token: rawToken } = await createActiveWebhookConnector(ctx, bizId, token);
+      const [, secret] = rawToken.split('.');
+      expect(secret).toMatch(/^[0-9a-f]{64}$/);
+
+      // createActiveWebhookConnector already sent an Idempotency-Key header
+      // with the generate call; send a second one on a regeneration too.
+      const regen = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/data-sources/${source.id}/connectors/${connector.id}/webhook-token`,
+        headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+      });
+      expect(regen.statusCode).toBe(201);
+      const newSecret = (regen.json() as { token: string }).token.split('.')[1];
+      expect(newSecret).not.toBe(secret);
+
+      for (const s of [secret, newSecret]) {
+        const leaked = await adminPool!.query(
+          `SELECT count(*)::int AS n FROM api.idempotency_keys WHERE response_body::text LIKE $1`,
+          [`%${s}%`]
+        );
+        expect(leaked.rows[0].n).toBe(0);
+      }
+    });
+
     it('generates a one-time webhook token and rejects generating one for a non-webhook connector', async () => {
       const { userId, token } = await registerActiveUser();
       const ctx = await createTenantWithRole(userId, 'owner');
