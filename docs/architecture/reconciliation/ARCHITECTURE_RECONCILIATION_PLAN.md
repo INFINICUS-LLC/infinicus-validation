@@ -101,6 +101,8 @@ Each item is one reviewable change set. Nothing starts without approval of that 
 | P0-5 | **Implement and validate `AuthorizedActionPackage`** (versioned contract, validator, immutable recommendation/action reference, BO re-check before execution per ABA §16). | Contract tests; no direct ADI/ABA→BO call exists. |
 | P0-6 | **Only then** allow ABA→BO execution wiring, behind a feature flag defaulting off. | Explicit approval to enable. |
 
+**Implementation status (2026-10-07):** P0-1 merged (`P0-1_APPROVAL_AUTHORITY.md`); P0-2 merged (`P0-2_ACTION_RISK_POLICY.md`); P0-3 merged in Blocks 1, 2, 2b, 3 with Block 4 handoff (`P0-3_HANDOFF.md`); P0-V06 merged (platform and root). Next: controlled live-migration review (0170-0175, not applied), P0-4, P0-5, then P0-6 last and flagged off.
+
 **Guard now (small, independent, proposed):** a test that fails if any BO code path consumes `ApprovedAction` as execution authority. It keeps today's isolation from regressing before P0-6. *Needs approval.*
 
 **P0-V06 — CL fail closed** (parallel to P0-1..4, independent of them): remove `?? 0.7` defaults in the 18 CL engines and the `Boolean(undefined)` review default; absent confidence/evidence class/review state ⇒ `insufficient_evidence`. CL stays disabled for production outcomes until verified evidence contracts (C-03), review requirements and confidence rules are enforced.
