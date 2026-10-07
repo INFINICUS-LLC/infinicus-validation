@@ -181,6 +181,8 @@ export const outcomeResponseSchema = z.object({
 export const grantApproverAuthorityBodySchema = z.object({
   approverUserId: z.string().uuid(),
   assignmentCode: z.string().min(1).max(255),
+  /** Approver role (authority tier). Omitted = generic `approver` (manager tier). */
+  roleCode: z.enum(['cashier', 'manager', 'approver', 'business-owner']).optional(),
 });
 
 export const grantApproverAuthorityResponseSchema = z.object({
