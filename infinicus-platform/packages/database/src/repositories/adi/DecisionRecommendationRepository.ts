@@ -49,6 +49,17 @@ export interface DecisionRecommendationVersion extends RecommendationRiskValidit
   createdAt: Date;
 }
 
+const RISK_RANK: Readonly<Record<RiskClass, number>> = { low: 1, medium: 2, high: 3, critical: 4 };
+
+/** Highest of the given classes; ignores nulls. Used for the deterministic floor and for MAX(floor, proposal). */
+export function maxRiskClass(...classes: Array<RiskClass | null | undefined>): RiskClass | null {
+  let best: RiskClass | null = null;
+  for (const c of classes) {
+    if (c && (best === null || RISK_RANK[c] > RISK_RANK[best])) best = c;
+  }
+  return best;
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Validates authoring input; returns the normalised persisted shape. Throws on anything inconsistent. */
@@ -116,6 +127,18 @@ export class DecisionRecommendationRepository {
   async createRecommendation(ctx: TenantContext, businessId: string, caseId: string, recommendationCode: string, summary: string, chosenAlternativeId?: string, riskValidity?: Partial<RecommendationRiskValidity>): Promise<{ recommendation: DecisionRecommendation; version: DecisionRecommendationVersion }> {
     const facts = normalizeRiskValidity(riskValidity);
     return withTenantTransaction(ctx, async (client) => {
+      // Deterministic floor: the highest severity already persisted in alternative_risk_profiles for the chosen
+      // alternative (owner ruling). A proposed class (e.g. model output) can never reduce it.
+      if (chosenAlternativeId) {
+        const floor = await client.query<{ severity: RiskClass }>(
+          `SELECT arp.severity
+             FROM ai_decision_intelligence.alternative_risk_profiles arp
+             JOIN ai_decision_intelligence.decision_alternative_versions dav ON dav.id = arp.alternative_version_id
+            WHERE dav.alternative_id = $1`,
+          [chosenAlternativeId]
+        );
+        facts.riskClass = maxRiskClass(facts.riskClass, ...floor.rows.map((r) => r.severity));
+      }
       const recRow = await client.query<Record<string, unknown>>(
         `INSERT INTO ai_decision_intelligence.decision_recommendations (tenant_id, workspace_id, business_id, case_id, chosen_alternative_id, recommendation_code, latest_version)
          VALUES ($1,$2,$3,$4,$5,$6,1) RETURNING *`,
@@ -131,6 +154,32 @@ export class DecisionRecommendationRepository {
          facts.riskClass, facts.isTimeSensitive, facts.validUntil, facts.twinSnapshotId]
       );
       return { recommendation: rowToRecommendation(recRow.rows[0]), version: rowToVersion(versionResult.rows[0]) };
+    });
+  }
+
+  /**
+   * Authorised human upward adjustment of a recommendation version's risk class before publication. Raise-only: the
+   * database refuses lowering or clearing, and refuses any change once the version is published. Authorisation of
+   * the caller is the caller's responsibility; there is no downgrade path here (a future downgrade needs a governed
+   * exception with reason, authority and audit evidence).
+   */
+  async raiseRiskClass(ctx: TenantContext, recommendationVersionId: string, riskClass: RiskClass): Promise<DecisionRecommendationVersion> {
+    if (!(RISK_CLASSES as readonly string[]).includes(riskClass)) throw new DecisionRecommendationValidationError([`unknown risk_class: ${String(riskClass)}`]);
+    return withTenantTransaction(ctx, async (client) => {
+      const current = await client.query<Record<string, unknown>>('SELECT * FROM ai_decision_intelligence.decision_recommendation_versions WHERE id = $1', [recommendationVersionId]);
+      if (current.rows.length === 0) throw new DecisionRecommendationNotFoundError('DecisionRecommendationVersion', recommendationVersionId);
+      try {
+        const result = await client.query<Record<string, unknown>>(
+          'UPDATE ai_decision_intelligence.decision_recommendation_versions SET risk_class = $2 WHERE id = $1 RETURNING *',
+          [recommendationVersionId, riskClass]
+        );
+        return rowToVersion(result.rows[0]);
+      } catch (err) {
+        if (err instanceof Error && /raised but not lowered|immutable/.test(err.message)) {
+          throw new DecisionRecommendationImmutableError('DecisionRecommendationVersion', err.message);
+        }
+        throw err;
+      }
     });
   }
 

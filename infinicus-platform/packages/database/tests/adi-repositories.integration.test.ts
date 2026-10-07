@@ -750,6 +750,58 @@ describe.runIf(run)('Stage 2G AI Decision Intelligence — live PostgreSQL', () 
       expect(row.rows[0].risk_class).toBe('high');
     });
 
+    async function alternativeWithSeverities(caseId: string, severities: string[]) {
+      const altRepo = new DecisionAlternativeRepository();
+      const alt = await altRepo.createAlternative(ctx1, BIZ1, caseId, uniqueCode('alt-floor'));
+      const altVersion = await altRepo.createVersion(ctx1, alt.id, BIZ1, 'floor fixture');
+      for (const severity of severities) await altRepo.addRiskProfile(ctx1, altVersion.id, BIZ1, uniqueCode('risk'), severity, 0.2, 'persisted risk');
+      return alt;
+    }
+
+    it('the deterministic persisted floor cannot be lowered by a proposed (model) class: MAX(floor, proposal)', async () => {
+      const { case: case_ } = await createQuestionAndCase(ctx1, BIZ1);
+      const alt = await alternativeWithSeverities(case_.id, ['medium', 'critical', 'low']);
+      const repo = new DecisionRecommendationRepository();
+      for (const proposal of ['low', 'medium', null] as const) {
+        const { version } = await repo.createRecommendation(ctx1, BIZ1, case_.id, uniqueCode('rec'), 'Floor', alt.id, { riskClass: proposal });
+        expect(version.riskClass).toBe('critical');
+      }
+    });
+
+    it('a proposal above the floor wins; a recommendation without a chosen alternative keeps the proposal as is', async () => {
+      const { case: case_ } = await createQuestionAndCase(ctx1, BIZ1);
+      const alt = await alternativeWithSeverities(case_.id, ['medium']);
+      const repo = new DecisionRecommendationRepository();
+      expect((await repo.createRecommendation(ctx1, BIZ1, case_.id, uniqueCode('rec'), 'Above', alt.id, { riskClass: 'high' })).version.riskClass).toBe('high');
+      expect((await repo.createRecommendation(ctx1, BIZ1, case_.id, uniqueCode('rec'), 'None', undefined, { riskClass: 'low' })).version.riskClass).toBe('low');
+    });
+
+    it('an alternative with no persisted risk profile gives no floor: a null proposal stays unclassified', async () => {
+      const { case: case_ } = await createQuestionAndCase(ctx1, BIZ1);
+      const alt = await alternativeWithSeverities(case_.id, []);
+      const { version } = await new DecisionRecommendationRepository().createRecommendation(ctx1, BIZ1, case_.id, uniqueCode('rec'), 'No floor', alt.id, {});
+      expect(version.riskClass).toBeNull();
+    });
+
+    it('a human can raise the class before publication but never lower or clear it, and not after publication', async () => {
+      const { case: case_ } = await createQuestionAndCase(ctx1, BIZ1);
+      const repo = new DecisionRecommendationRepository();
+      const { recommendation, version } = await repo.createRecommendation(ctx1, BIZ1, case_.id, uniqueCode('rec'), 'Raise me', undefined, { riskClass: 'medium' });
+      expect((await repo.raiseRiskClass(ctx1, version.id, 'high')).riskClass).toBe('high');
+      await expect(repo.raiseRiskClass(ctx1, version.id, 'low')).rejects.toBeInstanceOf(DecisionRecommendationImmutableError);
+      await expect(repo.raiseRiskClass(ctx1, version.id, 'extreme' as never)).rejects.toBeInstanceOf(DecisionRecommendationValidationError);
+      await repo.validateRecommendation(ctx1, recommendation.id, version.id);
+      await repo.publishRecommendation(ctx1, recommendation.id, version.id);
+      await expect(repo.raiseRiskClass(ctx1, version.id, 'critical')).rejects.toBeInstanceOf(DecisionRecommendationImmutableError);
+    });
+
+    it('a human can classify a previously unclassified recommendation upward from "unclassified"', async () => {
+      const { case: case_ } = await createQuestionAndCase(ctx1, BIZ1);
+      const repo = new DecisionRecommendationRepository();
+      const { version } = await repo.createRecommendation(ctx1, BIZ1, case_.id, uniqueCode('rec'), 'Unclassified');
+      expect((await repo.raiseRiskClass(ctx1, version.id, 'medium')).riskClass).toBe('medium');
+    });
+
     it('the four facts of a published version are immutable', async () => {
       const { case: case_ } = await createQuestionAndCase(ctx1, BIZ1);
       const repo = new DecisionRecommendationRepository();

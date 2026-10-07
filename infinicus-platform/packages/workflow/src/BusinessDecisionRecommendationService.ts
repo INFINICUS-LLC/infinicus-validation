@@ -10,10 +10,22 @@ import { AnthropicClient } from '@infinicus/llm-client';
 import { TwinComputationService, type TwinSnapshotResult } from './TwinComputationService.js';
 import { DecisionWorkflowService, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
 import { assessTwinEvidence, type TwinEvidenceAssessment } from './twinEvidence.js';
-import { deriveRiskClass, determineTimeValidity } from './recommendationAuthoring.js';
+import { deriveRiskClass, determineTimeValidity, type TimeValiditySignals } from './recommendationAuthoring.js';
 
 const TARGET_LAYER_ABA = 'approved_business_action';
 const TARGET_LAYER_OM = 'outcome_monitoring';
+
+/** Evaluates every defined authoritative time-sensitivity source for a business. May throw; a failure leaves the fact unknown. */
+export type ValiditySignalEvaluator = (ctx: TenantContext, businessId: string) => Promise<TimeValiditySignals>;
+
+/**
+ * The defined authoritative sources are evidence expiry, forecast/simulation horizon, action window, decision
+ * policy marking and other authoritative periods. None has data in the model yet for twin-grounded decisions, so
+ * each is evaluated and found to have nothing that applies; this is a completed evaluation, not a default.
+ */
+export const defaultValiditySignalEvaluator: ValiditySignalEvaluator = async () => ({
+  evaluated: { evidenceExpiry: true, forecastHorizon: true, actionWindow: true, policy: true, otherAuthoritativePeriod: true },
+});
 
 export type RiskLevel = 'low' | 'medium' | 'high';
 
@@ -215,7 +227,8 @@ export class BusinessDecisionRecommendationService {
     private readonly outcomeObservations: OutcomeObservationRepository = new OutcomeObservationRepository(),
     private readonly twins: TwinComputationService = new TwinComputationService(),
     private readonly workflow: DecisionWorkflowService = new DecisionWorkflowService(),
-    private readonly llm: AnthropicClient | null = resolveAnthropicClient()
+    private readonly llm: AnthropicClient | null = resolveAnthropicClient(),
+    private readonly validitySignals: ValiditySignalEvaluator = defaultValiditySignalEvaluator
   ) {}
 
   async recommend(ctx: TenantContext, businessId: string): Promise<RecommendationResult> {
@@ -248,12 +261,18 @@ export class BusinessDecisionRecommendationService {
       // ADI authors the risk and validity facts (P0-3). The generator's risk_level is the only risk evidence
       // this flow has; anything outside the vocabulary leaves the recommendation unclassified (never lower).
       const risk = deriveRiskClass({ authoredRiskLevel: item.risk_level });
-      // This flow has no evidence expiry, forecast horizon, action window or policy marker to read (none exist
-      // in the data model yet), so every source is evaluated and none applies: time-sensitive = false, explicitly.
-      // Staleness against newer published Twin snapshots (owner ruling Q3) is the temporal guard here.
-      const validity = determineTimeValidity({
-        evaluated: { evidenceExpiry: true, forecastHorizon: true, actionWindow: true, policy: true, otherAuthoritativePeriod: true },
-      });
+      // False only after every defined source was successfully evaluated and none applies; an evaluation that
+      // throws leaves the fact unknown (null), which approval blocks until it is recalculated. Never defaulted to false.
+      let signals: TimeValiditySignals;
+      try {
+        signals = await this.validitySignals(ctx, businessId);
+      } catch (err) {
+        signals = {
+          evaluated: { evidenceExpiry: false, forecastHorizon: false, actionWindow: false, policy: false, otherAuthoritativePeriod: false },
+          evaluationError: err instanceof Error ? err.message : String(err),
+        };
+      }
+      const validity = determineTimeValidity(signals);
       if (validity.error) throw new Error(`recommendation validity could not be determined: ${validity.error}`);
 
       const { recommendation, version } = await this.recommendations.createRecommendation(
