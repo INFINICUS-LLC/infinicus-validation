@@ -90,6 +90,37 @@ export class ActionReviewRepository {
     });
   }
 
+  /**
+   * Resolves the risk/validity facts of the PUBLISHED ADI recommendation version behind an ABA intake package
+   * (intake -> ADI publication package -> insight package version -> recommendation version). ABA only reads what
+   * ADI published; it neither authors nor recalculates these facts. Returns an all-null snapshot (unclassified /
+   * unknown, i.e. fail-closed downstream) when the chain is broken or the recommendation is not published.
+   */
+  async resolvePublishedSnapshot(ctx: TenantContext, intakePackageId: string): Promise<ReviewVersionSnapshot> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT rv.id, rv.risk_class, rv.is_time_sensitive, rv.valid_until, rv.twin_snapshot_id
+           FROM approved_business_action.aba_intake_packages ip
+           JOIN ai_decision_intelligence.adi_publication_packages pp ON pp.id = ip.adi_publication_package_id
+           JOIN ai_decision_intelligence.adi_insight_package_versions iv ON iv.id = pp.adi_insight_package_version_id
+           JOIN ai_decision_intelligence.decision_recommendation_versions rv ON rv.id = iv.recommendation_version_id
+          WHERE ip.id = $1 AND rv.status = 'published' AND rv.business_id = ip.business_id`,
+        [intakePackageId]
+      );
+      if (result.rows.length === 0) {
+        return { sourceRecommendationVersionId: null, riskClass: null, isTimeSensitive: null, validUntil: null, twinSnapshotId: null };
+      }
+      const row = result.rows[0];
+      return {
+        sourceRecommendationVersionId: row.id as string,
+        riskClass: (row.risk_class as ReviewVersionSnapshot['riskClass']) ?? null,
+        isTimeSensitive: (row.is_time_sensitive as boolean | null) ?? null,
+        validUntil: (row.valid_until as Date | null) ?? null,
+        twinSnapshotId: (row.twin_snapshot_id as string | null) ?? null,
+      };
+    });
+  }
+
   /** The latest version of a review package with its risk/validity snapshot, or null if it has no version. */
   async getLatestVersion(ctx: TenantContext, reviewPackageId: string): Promise<ActionReviewVersion | null> {
     return withTenantTransaction(ctx, async (client) => {

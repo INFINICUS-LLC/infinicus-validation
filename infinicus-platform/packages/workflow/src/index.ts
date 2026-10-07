@@ -32,3 +32,5 @@ export {
 export type {
   RiskClass, ApproverRole, ApprovalOutcome, ApprovalRiskPolicy, ApprovalRequirement, ApprovalPolicyVerdict,
 } from './approvalRiskPolicy.js';
+export { deriveRiskClass, determineTimeValidity, RISK_ORDER } from './recommendationAuthoring.js';
+export type { DerivedRisk, RiskInputs, TimeValidity, TimeValiditySignals, AuthoredRiskClass } from './recommendationAuthoring.js';

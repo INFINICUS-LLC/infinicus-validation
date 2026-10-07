@@ -62,7 +62,7 @@ export class TwinComputationService {
     ctx: TenantContext,
     businessId: string,
     opts: { forceRefresh?: boolean } = {}
-  ): Promise<{ twin: TwinSnapshotResult; cached: boolean }> {
+  ): Promise<{ twin: TwinSnapshotResult; cached: boolean; snapshotId: string }> {
     const instance = await this.ensureInstance(ctx, businessId);
 
     if (!opts.forceRefresh) {
@@ -71,11 +71,12 @@ export class TwinComputationService {
       if (latest && Date.now() - latest.effectiveAt.getTime() < TWIN_TTL_MS) {
         const values = await this.snapshots.getValuesForPublishedSnapshot(ctx, latest.id);
         const stored = values.find((v) => v.variableCode === TWIN_METRIC_CODE);
-        if (stored) return { twin: stored.valueJson as TwinSnapshotResult, cached: true };
+        if (stored) return { twin: stored.valueJson as TwinSnapshotResult, cached: true, snapshotId: latest.id };
       }
     }
 
-    return { twin: await this.computeAndPublish(ctx, businessId, instance.id), cached: false };
+    const computed = await this.computeAndPublish(ctx, businessId, instance.id);
+    return { twin: computed.twin, cached: false, snapshotId: computed.snapshotId };
   }
 
   private async ensureInstance(ctx: TenantContext, businessId: string) {
@@ -94,7 +95,7 @@ export class TwinComputationService {
     return this.instances.transitionStatus(ctx, instance.id, 'active', 'initial provisioning');
   }
 
-  private async computeAndPublish(ctx: TenantContext, businessId: string, instanceId: string): Promise<TwinSnapshotResult> {
+  private async computeAndPublish(ctx: TenantContext, businessId: string, instanceId: string): Promise<{ twin: TwinSnapshotResult; snapshotId: string }> {
     const now = new Date();
     const from = new Date(now.getTime() - WINDOW_MS);
 
@@ -142,6 +143,6 @@ export class TwinComputationService {
     await this.snapshots.validateSnapshot(ctx, snapshot.id, version.id);
     await this.snapshots.publishSnapshot(ctx, snapshot.id, version.id);
 
-    return twin;
+    return { twin, snapshotId: snapshot.id };
   }
 }

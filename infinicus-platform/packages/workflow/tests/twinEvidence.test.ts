@@ -104,7 +104,7 @@ describe('BusinessDecisionRecommendationService.recommend — empty business', (
   it('returns no decisions and an explicit insufficient-evidence state, without calling the LLM or creating any record', async () => {
     let llmCalls = 0;
     const llm = { complete: async () => { llmCalls += 1; return '{"decisions":[{"decision":"x","rationale":"y","expected_outcome":"z","risk_level":"low"}]}'; } };
-    const twins = { getOrComputeTwin: async () => ({ twin: emptyTwin(), cached: false }) };
+    const twins = { getOrComputeTwin: async () => ({ twin: emptyTwin(), cached: false, snapshotId: "00000000-0000-0000-0000-000000000000" }) };
     // Repositories are never touched on the insufficient path, so the defaults are never used.
     const service = new BusinessDecisionRecommendationService(
       undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
