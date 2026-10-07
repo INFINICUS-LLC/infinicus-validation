@@ -27,6 +27,7 @@ import { PublicationService } from './publication/PublicationService.js';
 import { NotFoundError, ValidationError, CollectionLimitExceededError, WebhookAuthenticationError } from './errors.js';
 import type { ManualIntakeRequest, ManualIntakeResult } from './types.js';
 import type { WebhookDeliveryRequest, WebhookIntakeResult } from './webhook/types.js';
+import { sanitizeWebhookHeaders } from './webhook/headerPolicy.js';
 
 const sources = new DataSourceRepository();
 const connectors = new ConnectorRepository();
@@ -581,7 +582,8 @@ export class DataAcquisitionService {
       {
         externalEventId: delivery.externalEventId,
         requestId: delivery.requestId,
-        headers: delivery.headers,
+        // Credential-bearing and unneeded headers are dropped before anything is persisted.
+        headers: sanitizeWebhookHeaders(delivery.headers),
         payload: delivery.records,
         payloadHash,
         idempotencyKey,

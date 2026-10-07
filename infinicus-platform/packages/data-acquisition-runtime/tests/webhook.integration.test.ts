@@ -175,6 +175,39 @@ describe.runIf(RUN)('Integration: DataAcquisitionService webhook intake', () => 
     expect(provenance).toHaveLength(2);
   });
 
+  it('persists only allow-listed headers in webhook_receipts and never credential-bearing ones', async () => {
+    const { rawToken } = await newWebhookConnector();
+    const [prefix] = rawToken.split('.');
+    const records = [{ order: 'H1', total: 1 }];
+    const result = await svc.receiveWebhook({
+      tokenPrefix: prefix, rawToken, records, rawBody: JSON.stringify(records),
+      externalEventId: 'evt-header-policy-1',
+      headers: {
+        authorization: 'Bearer should-not-be-stored',
+        cookie: 'session=should-not-be-stored',
+        'proxy-authorization': 'Basic should-not-be-stored',
+        'x-api-key': 'should-not-be-stored',
+        'x-gitlab-token': 'should-not-be-stored',
+        host: 'api.infini-cus.com',
+        'content-type': 'application/json',
+        'x-event-id': 'evt-header-policy-1',
+        'x-hub-signature-256': 'sha256=abc123',
+      },
+    });
+
+    const row = await adminPool!.query<{ headers: Record<string, string> }>(
+      `SELECT headers FROM data_acquisition.webhook_receipts WHERE collection_run_id = $1`,
+      [result.collectionRunId]
+    );
+    expect(row.rows).toHaveLength(1);
+    expect(row.rows[0].headers).toEqual({
+      'content-type': 'application/json',
+      'x-event-id': 'evt-header-policy-1',
+      'x-hub-signature-256': 'sha256=abc123',
+    });
+    expect(JSON.stringify(row.rows[0].headers)).not.toContain('should-not-be-stored');
+  });
+
   it('replays the same outcome for a retried delivery carrying the same externalEventId, without creating a second run', async () => {
     const { rawToken } = await newWebhookConnector();
     const [prefix] = rawToken.split('.');
