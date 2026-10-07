@@ -555,7 +555,7 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
     async function publishedSnapshot(effectiveAt: Date, publish = true, biz: string = BIZ1) {
       const defRepo = new DigitalTwinDefinitionRepository();
       const definition = await defRepo.createDefinition(ctx1, biz, uniqueCode('gdef'), 'Gate Definition');
-      const defVersion = await defRepo.createVersion(ctx1, definition.id, BIZ1, {});
+      const defVersion = await defRepo.createVersion(ctx1, definition.id, biz, {});
       await defRepo.validateVersion(ctx1, defVersion.id);
       await defRepo.activateVersion(ctx1, defVersion.id);
       const instance = await new DigitalTwinInstanceRepository().createInstance(ctx1, biz, definition.id, uniqueCode('ginst'));
