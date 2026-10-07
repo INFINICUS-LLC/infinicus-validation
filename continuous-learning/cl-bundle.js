@@ -3206,7 +3206,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -3294,20 +3294,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.duplicateConflictContradictionEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       duplicateConflictContradictionEngineRecordId:runtime.createId("cl_record"),
@@ -3315,8 +3349,11 @@
       purpose:"Detect duplicate, conflicting, and contradictory learning items.",
       sourceBlock:"CL-06",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -3337,9 +3374,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -3385,7 +3425,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -3473,20 +3513,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.existingKnowledgeComparisonEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       existingKnowledgeComparisonEngineRecordId:runtime.createId("cl_record"),
@@ -3494,8 +3568,11 @@
       purpose:"Compare governed learning against existing enterprise knowledge.",
       sourceBlock:"CL-07",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -3516,9 +3593,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -3564,7 +3644,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -3652,20 +3732,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.assumptionValidationRevisionEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       assumptionValidationRevisionEngineRecordId:runtime.createId("cl_record"),
@@ -3673,8 +3787,11 @@
       purpose:"Validate, confirm, challenge, and revise business assumptions.",
       sourceBlock:"CL-08",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -3695,9 +3812,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -3743,7 +3863,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -3831,20 +3951,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.businessRuleLearningEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       businessRuleLearningEngineRecordId:runtime.createId("cl_record"),
@@ -3852,8 +4006,11 @@
       purpose:"Generate governed business-rule updates from validated learning.",
       sourceBlock:"CL-09",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -3874,9 +4031,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -3922,7 +4082,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -4010,20 +4170,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.decisionPolicyLearningEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       decisionPolicyLearningEngineRecordId:runtime.createId("cl_record"),
@@ -4031,8 +4225,11 @@
       purpose:"Generate decision-policy updates from governed learning.",
       sourceBlock:"CL-10",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -4053,9 +4250,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -4101,7 +4301,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -4189,20 +4389,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.riskModelLearningEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       riskModelLearningEngineRecordId:runtime.createId("cl_record"),
@@ -4210,8 +4444,11 @@
       purpose:"Update risk factors, weights, thresholds, and controls.",
       sourceBlock:"CL-11",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -4232,9 +4469,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -4280,7 +4520,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -4368,20 +4608,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.forecastPredictionCalibrationEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       forecastPredictionCalibrationEngineRecordId:runtime.createId("cl_record"),
@@ -4389,8 +4663,11 @@
       purpose:"Calibrate forecast and prediction models using realized outcomes.",
       sourceBlock:"CL-12",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -4411,9 +4688,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -4459,7 +4739,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -4547,20 +4827,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.simulationModelCalibrationEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       simulationModelCalibrationEngineRecordId:runtime.createId("cl_record"),
@@ -4568,8 +4882,11 @@
       purpose:"Calibrate simulation parameters and distributions.",
       sourceBlock:"CL-13",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -4590,9 +4907,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -4638,7 +4958,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -4726,20 +5046,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.businessDigitalTwinCalibrationEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       businessDigitalTwinCalibrationEngineRecordId:runtime.createId("cl_record"),
@@ -4747,8 +5101,11 @@
       purpose:"Calibrate Business Digital Twin state and behavior models.",
       sourceBlock:"CL-14",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -4769,9 +5126,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -4817,7 +5177,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -4905,20 +5265,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.dataQualityObservationLearningEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       dataQualityObservationLearningEngineRecordId:runtime.createId("cl_record"),
@@ -4926,8 +5320,11 @@
       purpose:"Learn from observation quality, source reliability, and missing-data patterns.",
       sourceBlock:"CL-15",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -4948,9 +5345,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -4996,7 +5396,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -5084,20 +5484,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.operationalProcessImprovementEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       operationalProcessImprovementEngineRecordId:runtime.createId("cl_record"),
@@ -5105,8 +5539,11 @@
       purpose:"Generate controlled operational process improvements.",
       sourceBlock:"CL-16",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -5127,9 +5564,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -5175,7 +5615,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -5263,20 +5703,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.benefitAdverseOutcomeLearningEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       benefitAdverseOutcomeLearningEngineRecordId:runtime.createId("cl_record"),
@@ -5284,8 +5758,11 @@
       purpose:"Learn jointly from realized benefits and adverse outcomes.",
       sourceBlock:"CL-17",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -5306,9 +5783,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -5354,7 +5834,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -5442,20 +5922,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.learningRecommendationGenerationEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       learningRecommendationGenerationEngineRecordId:runtime.createId("cl_record"),
@@ -5463,8 +5977,11 @@
       purpose:"Generate prioritized, evidence-backed learning recommendations.",
       sourceBlock:"CL-18",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -5485,9 +6002,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -5533,7 +6053,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -5621,20 +6141,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.learningGovernanceApprovalEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       learningGovernanceApprovalEngineRecordId:runtime.createId("cl_record"),
@@ -5642,8 +6196,11 @@
       purpose:"Govern, approve, reject, or revise proposed learning changes.",
       sourceBlock:"CL-19",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -5664,9 +6221,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -5712,7 +6272,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -5800,20 +6360,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.controlledKnowledgeUpdateEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       controlledKnowledgeUpdateEngineRecordId:runtime.createId("cl_record"),
@@ -5821,8 +6415,11 @@
       purpose:"Apply approved learning changes to controlled knowledge stores.",
       sourceBlock:"CL-20",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -5843,9 +6440,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -5891,7 +6491,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -5979,20 +6579,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.modelRulePolicyDeploymentEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       modelRulePolicyDeploymentEngineRecordId:runtime.createId("cl_record"),
@@ -6000,8 +6634,11 @@
       purpose:"Deploy approved model, rule, and policy updates.",
       sourceBlock:"CL-21",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -6022,9 +6659,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -6070,7 +6710,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -6158,20 +6798,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.learningImpactVerificationEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       learningImpactVerificationEngineRecordId:runtime.createId("cl_record"),
@@ -6179,8 +6853,11 @@
       purpose:"Verify whether deployed learning improved future performance.",
       sourceBlock:"CL-22",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -6201,9 +6878,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
@@ -6249,7 +6929,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
@@ -6337,20 +7017,54 @@
     return store.put("policies",built.data);
   }
 
+  /* V-06 fail-closed gate (identical in CL-07..CL-24). Nothing defaults to accepted. */
+  const VERIFIED_EVIDENCE_TYPES=Object.freeze(["observed","calculated","documentary","expert_review","contextual"]);
+  const UNVERIFIED_CLASSES=Object.freeze(["ASSUMPTION_BASED","BENCHMARK_BASED","ESTIMATED","FORECAST","SIMULATION"]);
+  const UNVERIFIED_SOURCES=Object.freeze(["manual_entry"]);
+  function unitScore(value){
+    return typeof value==="number" && Number.isFinite(value) && value>=0 && value<=1 ? value : null;
+  }
+  function nonEmpty(value){
+    if(Array.isArray(value)) return value.length>0;
+    return Boolean(value) && typeof value==="object" && Object.keys(value).length>0;
+  }
+  function evaluateGate(upstream,input,policy){
+    const reasons=[];
+    const confidence=unitScore(upstream.confidence!==undefined?upstream.confidence:input.confidence);
+    const reliability=unitScore(upstream.reliability!==undefined?upstream.reliability:input.reliability);
+    if(confidence===null) reasons.push("confidence_missing_or_invalid");
+    if(reliability===null) reasons.push("reliability_missing_or_invalid");
+    const evidence=upstream.learningEvidence||input.learningEvidence||[];
+    const provenance=upstream.provenance||input.provenance||[];
+    const findings=input.findings||upstream.findings||[];
+    if(!nonEmpty(evidence)&&!nonEmpty(findings)) reasons.push("evidence_missing");
+    if(!nonEmpty(provenance)) reasons.push("provenance_missing");
+    for(const item of (Array.isArray(evidence)?evidence:[])){
+      const type=item&&item.evidenceType;
+      const cls=item&&(item.provenanceClass||item.evidenceClass);
+      const source=item&&(item.sourceSystem==="manual_entry"||item.verificationStatus==="manual_entry"||item.source==="manual_entry");
+      if(!VERIFIED_EVIDENCE_TYPES.includes(type)) reasons.push("evidence_type_unverified:"+String(type));
+      if(cls!==undefined&&UNVERIFIED_CLASSES.includes(cls)) reasons.push("evidence_class_unverified:"+cls);
+      if(source||UNVERIFIED_SOURCES.includes(item&&item.evidenceType)) reasons.push("evidence_manual_entry");
+    }
+    if(!Number.isFinite(policy.data.minimumConfidence)||!Number.isFinite(policy.data.minimumReliability)) reasons.push("policy_thresholds_invalid");
+    const upstreamStatus=upstream.status;
+    if(upstreamStatus!==undefined&&upstreamStatus!=="ready") reasons.push("upstream_not_ready:"+String(upstreamStatus));
+    let status;
+    if(reasons.length>0) status="insufficient_evidence";
+    else if(confidence<policy.data.minimumConfidence||reliability<policy.data.minimumReliability) status="insufficient_evidence";
+    else status=policy.data.requireHumanReview ? "review_required" : "accepted";
+    return {status,confidence,reliability,reasons:Array.from(new Set(reasons)),evidence,provenance};
+  }
+
   async function process(input={}){
     const policyId=input.updatedIntelligencePublicationEnginePolicyId;
     const policy=await store.get("policies",policyId);
     if(!policy.ok) return policy;
 
     const upstream=input.upstreamHandoff||input.payload||{};
-    const confidence=Number(upstream.confidence??input.confidence??0.7);
-    const reliability=Number(upstream.reliability??input.reliability??0.7);
-
-    const status=
-      confidence>=policy.data.minimumConfidence &&
-      reliability>=policy.data.minimumReliability
-        ? (policy.data.requireHumanReview ? "review_required" : "accepted")
-        : "insufficient_evidence";
+    const gate=evaluateGate(upstream,input,policy);
+    const {status,confidence,reliability}=gate;
 
     const record={
       updatedIntelligencePublicationEngineRecordId:runtime.createId("cl_record"),
@@ -6358,8 +7072,11 @@
       purpose:"Publish governed updates to downstream INFINICUS intelligence layers.",
       sourceBlock:"CL-23",
       status,
+      blockedReasons:gate.reasons,
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
       findings:runtime.clone(input.findings||upstream.findings||[]),
       recommendations:runtime.clone(input.recommendations||[]),
       conflicts:runtime.clone(input.conflicts||[]),
@@ -6380,9 +7097,12 @@
       record:runtime.clone(record),
       confidence,
       reliability,
+      learningEvidence:runtime.clone(gate.evidence),
+      provenance:runtime.clone(gate.provenance),
+      blockedReasons:gate.reasons,
       correlationId:record.correlationId,
       lineage:record.lineage.map(runtime.clone),
-      status:status==="accepted"||status==="review_required" ? "ready" : "blocked",
+      status:status==="accepted" ? "ready" : (status==="review_required" ? "pending_review" : "blocked"),
       createdAt:new Date().toISOString()
     };
 
