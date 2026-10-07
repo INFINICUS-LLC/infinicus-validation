@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { TenantContext } from '../../client.js';
 import { withTenantTransaction } from '../../client.js';
-import { NotFoundError } from './errors.js';
+import { ConflictError, NotFoundError } from './errors.js';
 
 export interface PurchaseOrder {
   id: string;
@@ -120,18 +120,88 @@ export class PurchaseOrderRepository {
     approvedBy: string
   ): Promise<PurchaseOrder> {
     return withTenantTransaction(ctx, async (client) => {
+      const employee = await client.query(
+        `SELECT id
+         FROM platform.employees
+         WHERE id = $1
+           AND business_id = (SELECT business_id FROM business_operations.purchase_orders WHERE id = $2)`,
+        [approvedBy, id]
+      );
+      if (employee.rowCount !== 1) {
+        throw new ConflictError('PurchaseOrder', 'approver is not an employee of the purchase-order business');
+      }
+
       const result = await client.query<Record<string, unknown>>(
         `UPDATE business_operations.purchase_orders
          SET po_status = 'approved', approved_by = $2, approved_at = now(), version = version + 1
-         WHERE id = $1
+         WHERE id = $1 AND po_status = 'submitted'
          RETURNING *`,
         [id, approvedBy]
       );
-      if (result.rows.length === 0) throw new NotFoundError('PurchaseOrder', id);
+      if (result.rows.length === 0) {
+        const current = await client.query<{ po_status: string }>(
+          'SELECT po_status FROM business_operations.purchase_orders WHERE id = $1',
+          [id]
+        );
+        if (current.rowCount === 0) throw new NotFoundError('PurchaseOrder', id);
+        throw new ConflictError(
+          'PurchaseOrder',
+          `cannot approve from status ${current.rows[0].po_status}`
+        );
+      }
+
+      const po = rowToPO(result.rows[0]);
+      await client.query(
+        `SELECT business_operations.emit_purchase_order_approved(
+           $1,$2,$3,$4,$5,$6,NULL
+         )`,
+        [
+          ctx.tenantId,
+          ctx.workspaceId,
+          po.id,
+          po.supplierId,
+          po.totalAmount,
+          po.correlationId,
+        ]
+      );
+      return po;
+    });
+  }
+
+  async transitionStatus(
+    ctx: TenantContext,
+    id: string,
+    expectedStatus: string,
+    nextStatus: string
+  ): Promise<PurchaseOrder> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `UPDATE business_operations.purchase_orders
+         SET po_status = $3, version = version + 1
+         WHERE id = $1 AND po_status = $2
+         RETURNING *`,
+        [id, expectedStatus, nextStatus]
+      );
+      if (result.rows.length === 0) {
+        const current = await client.query<{ po_status: string }>(
+          'SELECT po_status FROM business_operations.purchase_orders WHERE id = $1',
+          [id]
+        );
+        if (current.rowCount === 0) throw new NotFoundError('PurchaseOrder', id);
+        throw new ConflictError(
+          'PurchaseOrder',
+          `expected status ${expectedStatus}, found ${current.rows[0].po_status}`
+        );
+      }
       return rowToPO(result.rows[0]);
     });
   }
 
+  /**
+   * Compatibility method for pre-BUILD-32 callers.
+   * New governed runtime code must prefer transitionStatus() so the expected
+   * current state is checked atomically.
+   */
   async updateStatus(ctx: TenantContext, id: string, poStatus: string): Promise<PurchaseOrder> {
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>(

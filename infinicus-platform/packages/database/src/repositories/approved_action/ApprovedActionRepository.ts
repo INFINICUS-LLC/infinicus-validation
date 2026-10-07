@@ -11,6 +11,13 @@ export interface ApprovedAction {
   actionCode: string;
   status: string;
   latestVersion: number;
+  /**
+   * The ai_decision_intelligence.decision_recommendations row this action
+   * traces back to — null for every row created before migration 0170, and
+   * for any caller that doesn't pass one. See 0170's own doc comment for
+   * why this previously didn't exist at all.
+   */
+  sourceRecommendationId: string | null;
 }
 
 const VALID_STATUSES = ['draft', 'active', 'completed', 'cancelled', 'superseded'];
@@ -26,18 +33,38 @@ function rowToAction(row: Record<string, unknown>): ApprovedAction {
     actionCode: row.action_code as string,
     status: row.status as string,
     latestVersion: row.latest_version as number,
+    sourceRecommendationId: row.source_recommendation_id as string | null,
   };
 }
 
 export class ApprovedActionRepository {
-  async createAction(ctx: TenantContext, businessId: string, decisionId: string, actionCode: string): Promise<ApprovedAction> {
+  async createAction(
+    ctx: TenantContext, businessId: string, decisionId: string, actionCode: string,
+    sourceRecommendationId: string | null = null
+  ): Promise<ApprovedAction> {
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>(
-        `INSERT INTO approved_business_action.approved_actions (tenant_id, workspace_id, business_id, decision_id, action_code)
-         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [ctx.tenantId, ctx.workspaceId, businessId, decisionId, actionCode]
+        `INSERT INTO approved_business_action.approved_actions (tenant_id, workspace_id, business_id, decision_id, action_code, source_recommendation_id)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [ctx.tenantId, ctx.workspaceId, businessId, decisionId, actionCode, sourceRecommendationId]
       );
       return rowToAction(result.rows[0]);
+    });
+  }
+
+  /**
+   * Bulk lookup for getHistory(): one IN-list query for a whole page of
+   * recommendations rather than one query per decision. Returns only rows
+   * that have a match — callers index the result by sourceRecommendationId.
+   */
+  async listBySourceRecommendationIds(ctx: TenantContext, recommendationIds: string[]): Promise<ApprovedAction[]> {
+    if (recommendationIds.length === 0) return [];
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT * FROM approved_business_action.approved_actions WHERE source_recommendation_id = ANY($1::uuid[])`,
+        [recommendationIds]
+      );
+      return result.rows.map(rowToAction);
     });
   }
 

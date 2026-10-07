@@ -2,7 +2,7 @@
   "name": "@infinicus/layer-continuous-learning",
   "version": "0.0.1",
   "private": true,
-  "description": "Continuous Learning Layer \u2014 feedback loop and model calibration",
+  "description": "Continuous Learning Layer — feedback loop and model calibration",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,7 +15,7 @@
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "vitest run",
+    "test": "node ../../scripts/run-block-tests.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {

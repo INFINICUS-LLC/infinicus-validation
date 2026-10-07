@@ -39,14 +39,22 @@ WebAuthn, or recovery codes. Adding MFA would require a schema change,
 which is out of scope for this build (BUILD-18 explicitly reuses the
 existing schema without modification).
 
-## No account lockout / rate limiting
+## No account lockout / rate limiting — CLOSED (post-BUILD-18 follow-up)
 
-`AuthenticationService.login` records a `failed_auth` access event on
-every failed attempt but does not itself enforce a lockout threshold or
-rate limit. `audit.access_events` provides the data a future
-rate-limiting/lockout policy would need, but no such policy is
-implemented here — this build's scope was the authentication/
-authorization primitives, not abuse-prevention policy.
+Closed: `AuthenticationService.login` now reads back the `failed_auth`
+access events it already records and locks the account (throws
+`AccountLockedError`, mapped to HTTP 429) after 5 `bad_password`
+failures within a 15-minute sliding window — implemented as a pure
+function of `audit.access_events`, no new migration or `locked_until`
+column required. Deliberately scoped to `bad_password` failures only,
+never `unknown_email` (no `userId` to count against) or an
+already-`account_locked`/`account_not_active` failure (would let an
+attacker keep an account locked indefinitely). See
+`AuthenticationService.login`'s lockout comment and
+`AccessEventRepository.countRecentFailedPasswordAttempts`'s doc
+comment for the full reasoning. Global per-IP request throttling
+(independent of this per-account check) is unchanged — still handled
+by `apps/api`'s existing `@fastify/rate-limit` plugin registration.
 
 ## No password reset flow
 

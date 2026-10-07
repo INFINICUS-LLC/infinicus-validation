@@ -9,7 +9,7 @@ import {
   startSimulationBodySchema, startSimulationResponseSchema,
   simulationRunParamsSchema, simulationRunStatusResponseSchema,
 } from '../schemas/businesses.js';
-import { paginationQuerySchema, paginate, errorResponseSchema } from '../schemas/common.js';
+import { paginationQuerySchema, errorResponseSchema } from '../schemas/common.js';
 
 const workflow = new DecisionWorkflowService();
 const simulations = new SimulationOrchestrationService();
@@ -26,13 +26,15 @@ export default async function businessRoutes(app: FastifyInstance) {
     },
     preHandler: [app.authenticate, app.resolveTenantContext],
   }, async (request, reply) => {
-    const businesses = await workflow.listBusinesses(request.ctx!);
     const { page, pageSize } = request.query;
-    const result = paginate(
-      businesses.map((b) => ({ id: b.id, legalName: b.legalName, businessCode: b.businessCode, status: b.status, industry: b.industry })),
-      page, pageSize
-    );
-    return reply.status(200).send(result);
+    const { items, total } = await workflow.listBusinesses(request.ctx!, {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
+    return reply.status(200).send({
+      items: items.map((b) => ({ id: b.id, legalName: b.legalName, businessCode: b.businessCode, status: b.status, industry: b.industry })),
+      page, pageSize, total,
+    });
   });
 
   server.post('/v1/businesses', {

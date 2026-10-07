@@ -1,0 +1,34 @@
+{
+  "name": "@infinicus/business-operations-runtime",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Production Business Operations runtime for Inventory, Procurement, Suppliers, Workforce and Assets (BUILD-32)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch",
+    "lint": "eslint src/",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@infinicus/database": "workspace:*",
+    "@infinicus/handoff-contracts": "workspace:*",
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0",
+    "@types/pg": "^8.11.6",
+    "@infinicus/data-acquisition-runtime": "workspace:*"
+  }
+}

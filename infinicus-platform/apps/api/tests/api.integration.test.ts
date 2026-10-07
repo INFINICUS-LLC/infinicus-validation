@@ -193,6 +193,7 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
   beforeAll(async () => {
     const appUrl = process.env.DATABASE_URL!;
     const adminUrl = process.env.ADMIN_DATABASE_URL ?? appUrl;
+    console.log('DEBUG adminUrl=', JSON.stringify(adminUrl));
     createPool({ connectionString: appUrl });
     adminPool = new Pool({ connectionString: adminUrl });
 

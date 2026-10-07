@@ -228,7 +228,7 @@ export type {
   ReasoningRequest, ReasoningRun,
   DecisionEvidence,
   DecisionAlternative,
-  DecisionRecommendation, DecisionRecommendationVersion,
+  DecisionRecommendation, DecisionRecommendationVersion, RecommendationRationale,
   DecisionConfidenceScore,
   DecisionPolicy,
   DecisionMonitoringRequirement, DecisionReviewSchedule,
@@ -384,7 +384,7 @@ export {
 export type {
   Tenant, CreateTenantInput,
   Workspace, CreateWorkspaceInput,
-  Business, CreateBusinessInput,
+  Business, CreateBusinessInput, PagedBusinesses,
   Setting, SettingsScope,
   OnboardingProgress, OnboardingStatus, OnboardingStep,
 } from './repositories/onboarding/index.js';

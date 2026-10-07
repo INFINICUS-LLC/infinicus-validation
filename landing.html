@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script src="/theme.js?v=1"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>INFINICUS — Business Operating &amp; Decision-Intelligence Platform</title>
@@ -463,7 +464,7 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
   <div class="nav-right">
     <!-- Logged-out state -->
     <button class="nav-btn-ghost nav-logged-out" onclick="scrollToReg()">Sign In</button>
-    <a class="nav-btn-cta nav-logged-out" href="index.html">Try Engine →</a>
+    <a class="nav-btn-cta nav-logged-out" href="#register" onclick="switchRegTab('signin')">Try Engine →</a>
     <!-- Logged-in state (hidden until JS runs) -->
     <button class="nav-user-chip" id="nav-user-chip" onclick="openAccount()">
       <span>👤</span><span id="nav-user-name">Account</span><span style="font-size:8px;opacity:.6;">▾</span>
@@ -477,7 +478,7 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
   <a class="nav-link" href="#features" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">Features</a>
   <a class="nav-link" href="#pricing" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">Pricing</a>
   <a class="nav-link" href="#faq" style="display:block;padding:.6rem 0;" onclick="closeMobileNav()">FAQ</a>
-  <a class="nav-btn-cta" href="index.html" style="margin-top:.5rem;justify-content:center;display:flex;">Try Engine Free →</a>
+  <a class="nav-btn-cta" href="#register" style="margin-top:.5rem;justify-content:center;display:flex;" onclick="handleTryEngineClick(event)">Try Engine Free →</a>
 </div>
 
 <!-- ══ HERO ══════════════════════════════════════════════════════════════ -->
@@ -760,19 +761,66 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
     <h2 class="reg-h">Run the Engine<br>That Powers the <span class="c">Platform</span></h2>
     <p class="reg-sub">Create a free account and run your first 90-day simulation in under 60 seconds — then see how it connects to the rest of the loop.</p>
     <div class="reg-box" id="reg-box">
-      <div class="reg-field">
-        <label class="reg-label" for="reg-name">YOUR NAME</label>
-        <input class="reg-input" type="text" id="reg-name" placeholder="e.g. Amara" autocomplete="given-name" onkeydown="if(event.key==='Enter')document.getElementById('reg-email').focus()">
+      <div class="reg-tabs" style="display:flex;gap:.4rem;margin-bottom:1.25rem;background:rgba(255,255,255,.03);border:1px solid var(--line-2);border-radius:9px;padding:3px;">
+        <button id="reg-tab-register" class="reg-tab active" onclick="switchRegTab('register')" style="flex:1;padding:.55rem;border:none;border-radius:7px;background:rgba(0,224,96,.12);color:var(--cyan);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;cursor:pointer;">CREATE ACCOUNT</button>
+        <button id="reg-tab-signin" class="reg-tab" onclick="switchRegTab('signin')" style="flex:1;padding:.55rem;border:none;border-radius:7px;background:none;color:var(--muted);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;cursor:pointer;">SIGN IN</button>
       </div>
-      <div class="reg-field">
-        <label class="reg-label" for="reg-email">EMAIL ADDRESS</label>
-        <input class="reg-input" type="email" id="reg-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')joinFree()">
+      <!-- Create-account pane -->
+      <div id="reg-pane-register">
+        <div class="reg-field">
+          <label class="reg-label" for="reg-name">YOUR NAME</label>
+          <input class="reg-input" type="text" id="reg-name" placeholder="e.g. Amara" autocomplete="given-name" onkeydown="if(event.key==='Enter')document.getElementById('reg-email').focus()">
+        </div>
+        <div class="reg-field">
+          <label class="reg-label" for="reg-email">EMAIL ADDRESS</label>
+          <input class="reg-input" type="email" id="reg-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('reg-password').focus()">
+        </div>
+        <div class="reg-field">
+          <label class="reg-label" for="reg-password">PASSWORD (8+ CHARACTERS)</label>
+          <input class="reg-input" type="password" id="reg-password" placeholder="At least 8 characters" autocomplete="new-password" onkeydown="if(event.key==='Enter')joinFree()">
+        </div>
+        <div class="reg-err" id="reg-err"></div>
+        <button class="reg-submit" id="reg-btn" onclick="joinFree()">⚡ Create Free Account & Launch Engine →</button>
+        <div class="reg-ok" id="reg-ok">✓ Account created! Launching engine…<br><a href="index.html" style="color:var(--cyan);display:inline-block;margin-top:.5rem;text-decoration:none;border:1px solid rgba(0,224,96,.3);border-radius:6px;padding:.4rem 1rem;font-size:11px;">Open Engine →</a></div>
+        <div class="reg-already">Already have an account? <a onclick="switchRegTab('signin')">Sign in →</a></div>
+        <div class="reg-already" style="margin-top:.5rem;font-size:10px;opacity:.5;">By creating an account you agree to our <a href="legal.html#terms" style="color:var(--cyan);">Terms of Service</a> and <a href="legal.html#privacy" style="color:var(--cyan);">Privacy Policy</a>.</div>
       </div>
-      <div class="reg-err" id="reg-err"></div>
-      <button class="reg-submit" id="reg-btn" onclick="joinFree()">⚡ Create Free Account & Launch Engine →</button>
-      <div class="reg-ok" id="reg-ok">✓ Account created! Launching engine…<br><a href="index.html" style="color:var(--cyan);display:inline-block;margin-top:.5rem;text-decoration:none;border:1px solid rgba(0,224,96,.3);border-radius:6px;padding:.4rem 1rem;font-size:11px;">Open Engine →</a></div>
-      <div class="reg-already">Already have an account? <a onclick="openAccount()">View your account →</a></div>
-      <div class="reg-already" style="margin-top:.5rem;font-size:10px;opacity:.5;">By creating an account you agree to our <a href="legal.html#terms" style="color:var(--cyan);">Terms of Service</a> and <a href="legal.html#privacy" style="color:var(--cyan);">Privacy Policy</a>.</div>
+      <!-- Sign-in pane -->
+      <div id="reg-pane-signin" style="display:none">
+        <div class="reg-field">
+          <label class="reg-label" for="signin-email">EMAIL ADDRESS</label>
+          <input class="reg-input" type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')document.getElementById('signin-password').focus()">
+        </div>
+        <div class="reg-field">
+          <label class="reg-label" for="signin-password">PASSWORD</label>
+          <input class="reg-input" type="password" id="signin-password" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLoginLanding()">
+          <p style="text-align:right;margin:.4rem 0 0"><a href="#" onclick="event.preventDefault();switchRegTab('forgot')" style="font-family:var(--mono);font-size:10.5px;color:var(--cyan);text-decoration:underline;">Forgot password?</a></p>
+        </div>
+        <div class="reg-err" id="signin-err"></div>
+        <button class="reg-submit" id="signin-btn-submit" onclick="doLoginLanding()">Sign In →</button>
+        <div class="reg-already">New here? <a onclick="switchRegTab('register')">Create an account →</a></div>
+      </div>
+      <!-- Forgot-password pane — handled entirely on this page (no
+           navigation to index.html) because index.html's AUTH GUARD
+           requires a signed-in session to even load, and someone
+           requesting a reset link is by definition not signed in yet.
+           Routing this step through index.html?auth=forgot used to bounce
+           straight back here before the pane ever showed — reported live
+           as "the forgot password button loops like the try engine
+           button" on 2026-10-03. The actual "set new password" step (after
+           clicking the emailed link) still happens on index.html, which is
+           fine: that step signs the user into a real recovery session
+           first, so the guard lets it through. -->
+      <div id="reg-pane-forgot" style="display:none">
+        <p class="reg-sub" style="margin-bottom:1rem;">Enter your account email and we'll send you a reset link.</p>
+        <div class="reg-field">
+          <label class="reg-label" for="forgot-email-landing">EMAIL ADDRESS</label>
+          <input class="reg-input" type="email" id="forgot-email-landing" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')doForgotPasswordLanding()">
+        </div>
+        <div class="reg-err" id="forgot-err-landing"></div>
+        <button class="reg-submit" id="forgot-btn-landing" onclick="doForgotPasswordLanding()">Send Reset Link →</button>
+        <div class="reg-already"><a onclick="switchRegTab('signin')">← Back to sign in</a></div>
+      </div>
     </div>
     <div class="reg-features">
       <div class="reg-feat-item">Free forever tier</div>
@@ -1189,6 +1237,42 @@ footer{position:relative;z-index:1;border-top:1px solid var(--line);padding:3rem
 </div>
 <input type="file" id="photo-input" accept="image/*" style="display:none" onchange="handlePhotoUpload(event)">
 <div id="toast"></div>
+<!-- Supabase JS client — same project as index.html; landing.html's
+     signup form creates real accounts here instead of faking one in
+     localStorage (see joinFree() below). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+const SUPA = window.supabase.createClient(
+  'https://dxheognltijswhtpnndk.supabase.co',
+  'sb_publishable_4qESSqE-_s8Wn7Qtjs5qNg_xGaXphch'
+);
+
+// Supabase's email-confirmation and magic-link redirects land here (Site
+// URL is configured to this page), but this marketing page has no engine
+// UI of its own — only index.html does. So: detect that we just arrived
+// from one of those links (not an ordinary page load with an already-
+// stored session — that must NOT auto-redirect, or visiting this page
+// while logged in would be useless) and hand off to index.html, which has
+// the real onAuthStateChange logic to render the signed-in app state.
+const _authLinkLanding =
+  /access_token=|type=signup|type=recovery|type=magiclink|type=email_change/.test(window.location.hash) ||
+  ['access_token','type','token_hash'].some(k => new URLSearchParams(window.location.search).has(k));
+SUPA.auth.onAuthStateChange(async (event, session) => {
+  if (!_authLinkLanding) return;
+  if (event === 'PASSWORD_RECOVERY') {
+    // landing.html has no "set new password" UI — index.html's does.
+    window.location.replace('index.html?auth=reset');
+    return;
+  }
+  if (session?.user) {
+    if (!session.user.email_confirmed_at) {
+      await SUPA.auth.signOut().catch(()=>{});
+      return;
+    }
+    window.location.replace('index.html');
+  }
+});
+</script>
 <script>
 // ══ STATE ═══════════════════════════════════════════════════════════════════
 let U = null;
@@ -1200,6 +1284,24 @@ document.addEventListener('DOMContentLoaded', () => {
   updateLandingNav();
   if (U) prefillRegLoggedIn();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(()=>{});
+
+  // The cached infinicus_user flag read above is only ever written by
+  // index.html's onAuthStateChange listener — this page never re-verifies
+  // it against the actual Supabase session. If it goes stale (session
+  // expired, signed out elsewhere, locked out, etc.) this page still shows
+  // the logged-in nav state ("▶ Open Engine", an unconditional
+  // href="index.html" with no guard) instead of "Try Engine →". Clicking
+  // it then just bounces straight back here via index.html's own auth
+  // guard, with nothing explaining why — reported live as the "Try
+  // Engine" button "just pops back to landing" on 2026-10-03. Re-verify
+  // once on load and correct the nav if the cache disagrees.
+  SUPA.auth.getSession().then(({ data }) => {
+    const reallySignedIn = !!(data?.session?.user && data.session.user.email_confirmed_at);
+    if (reallySignedIn || !U) return; // cache already agrees (or was already empty)
+    U = null;
+    try { localStorage.removeItem('infinicus_user'); } catch(e) {}
+    updateLandingNav();
+  }).catch(() => {});
 });
 
 // ══ LANDING NAV STATE ════════════════════════════════════════════════════════
@@ -1223,10 +1325,13 @@ function updateLandingNav() {
   }
 }
 
-// ══ REGISTRATION (no backend — localStorage only) ════════════════════════════
-function joinFree() {
-  const name  = (get('reg-name')  || '').trim();
-  const email = (get('reg-email') || '').trim().toLowerCase();
+// ══ REGISTRATION (real Supabase account — password required, email must be
+// verified before the account can be used; see doLogin()/doRegister() in
+// index.html for the matching sign-in path) ═══════════════════════════════
+async function joinFree() {
+  const name     = (get('reg-name')     || '').trim();
+  const email    = (get('reg-email')    || '').trim().toLowerCase();
+  const password =  get('reg-password') || '';
   const btn   = $('reg-btn');
   const errEl = $('reg-err');
   const okEl  = $('reg-ok');
@@ -1238,17 +1343,41 @@ function joinFree() {
     $('reg-email').focus();
     return;
   }
+  if (password.length < 8) {
+    errEl.textContent = 'Password must be at least 8 characters.';
+    errEl.style.display = 'block';
+    $('reg-password').focus();
+    return;
+  }
   btn.disabled = true;
-  btn.textContent = 'Launching…';
+  btn.textContent = 'Creating account…';
 
   // Detect selected plan tier from URL param or default free
   const urlTier = new URLSearchParams(location.search).get('tier') || 'free';
 
-  U = { name: name || email.split('@')[0], email, plan:'free', simCount:0, createdAt:Date.now() };
-  try { localStorage.setItem('infinicus_user', JSON.stringify(U)); } catch(e) {}
-  try { localStorage.setItem('infinicus_tc_accepted', 'true'); } catch(e) {}
+  let data, error;
+  try {
+    ({ data, error } = await SUPA.auth.signUp({
+      email, password,
+      options: { data: { name: name || email.split('@')[0] } },
+    }));
+  } catch (e) {
+    errEl.textContent = 'Network error. Please try again.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '⚡ Create Free Account & Launch Engine →';
+    return;
+  }
+  if (error) {
+    errEl.textContent = error.message || 'Could not create account. Please try again.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '⚡ Create Free Account & Launch Engine →';
+    return;
+  }
 
-  // ── Google Ads conversion event (AW-18295551736) ──
+  // ── Google Ads conversion event (AW-18295551736) — fires on a real
+  // created account, not on the previous fake localStorage write ──
   if (typeof gtag === 'function') {
     gtag('event', 'conversion', {
       send_to: 'AW-18295551736',   // Google Ads account
@@ -1259,15 +1388,28 @@ function joinFree() {
     });
   }
 
-  // ── Waitlist API — fire & forget (don't block redirect) ──
-  fetch('/api/waitlist', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name || '', email, tier: urlTier }),
-  }).catch(() => {});  // silent fail — redirect proceeds regardless
+  // Waitlist signup removed — account creation no longer auto-subscribes
+  // every new user to the marketing waitlist / fires its notification
+  // email. The explicit "Join Waitlist" button for paid plans (index.html)
+  // is unaffected — that's a separate, deliberate action.
 
-  okEl.style.display = 'block';
-  setTimeout(() => { window.location.replace('index.html'); }, 600);
+  const confirmed = data.user?.email_confirmed_at;
+  if (confirmed) {
+    // Supabase auto-confirm is on for this project (rare) — a real session
+    // already exists, so it's safe to continue straight into the engine.
+    okEl.innerHTML = '✓ Account created! Launching engine…<br><a href="index.html" style="color:var(--cyan);display:inline-block;margin-top:.5rem;text-decoration:none;border:1px solid rgba(0,224,96,.3);border-radius:6px;padding:.4rem 1rem;font-size:11px;">Open Engine →</a>';
+    okEl.style.display = 'block';
+    btn.style.display = 'none';
+    setTimeout(() => { window.location.href = 'index.html'; }, 900);
+  } else {
+    // Normal path — do NOT grant access or redirect. The account exists
+    // but is unusable until the verification link is clicked (index.html's
+    // doLogin() rejects sign-in for an unverified address — see there).
+    okEl.innerHTML = '✓ Account created! Check <strong>' + email.replace(/</g,'&lt;') + '</strong> for a verification link, then sign in from the engine.';
+    okEl.style.display = 'block';
+    btn.disabled = true;
+    btn.textContent = 'Check your email to continue →';
+  }
 }
 
 function prefillRegLoggedIn() {
@@ -1279,7 +1421,126 @@ function prefillRegLoggedIn() {
 
 function scrollToReg() {
   if (U) { openAccount(); return; }
+  switchRegTab('signin');
   const el = $('register'); if (el) el.scrollIntoView({behavior:'smooth'});
+}
+
+// Handler for the one "Try Engine" CTA not already gated by the
+// .nav-logged-out CSS class (the mobile nav link, always present in the
+// DOM). Deliberately kept as simple and synchronous as "Connect My
+// Existing Business" above (href="#register" + a plain onclick, no
+// network/async check in the handler) — an earlier version tried to be
+// cleverer here (re-verifying the live Supabase session on every click, or
+// gating on the cached U flag with extra async "correction" passes) and
+// that complexity itself kept causing new bugs (a stale-cache race that
+// let clicks slip through to index.html, reported live as "looping to the
+// sim engine and T&C" on 2026-10-03). Trusting the already-resolved U from
+// page load, the same way every other nav element on this page does, is
+// simpler and has not had that problem.
+function handleTryEngineClick(event) {
+  if (U) {
+    if (event) event.preventDefault();
+    window.location.href = 'index.html';
+    return;
+  }
+  closeMobileNav();
+  switchRegTab('signin');
+}
+
+// ══ SIGN-IN TAB (real account, not the fake flow this page used to have) ══
+function switchRegTab(tab) {
+  const isRegister = tab === 'register';
+  const isForgot   = tab === 'forgot';
+  const regPane    = $('reg-pane-register');
+  const signPane   = $('reg-pane-signin');
+  const forgotPane = $('reg-pane-forgot');
+  if (regPane)    regPane.style.display    = isRegister ? 'block' : 'none';
+  if (signPane)   signPane.style.display   = (!isRegister && !isForgot) ? 'block' : 'none';
+  if (forgotPane) forgotPane.style.display = isForgot ? 'block' : 'none';
+  // The CREATE ACCOUNT / SIGN IN switcher only applies to those two panes —
+  // forgot-password is a linear sub-flow reached by a link, not a tab (same
+  // pattern as index.html's own auth modal).
+  const tabsEl = document.querySelector('#reg-box .reg-tabs');
+  if (tabsEl) tabsEl.style.display = isForgot ? 'none' : 'flex';
+  const regTab  = $('reg-tab-register');
+  const signTab = $('reg-tab-signin');
+  [regTab, signTab].forEach(b => { if (b) { b.style.background = 'none'; b.style.color = 'var(--muted)'; } });
+  if (!isForgot) {
+    const activeTab = isRegister ? regTab : signTab;
+    if (activeTab) { activeTab.style.background = 'rgba(0,224,96,.12)'; activeTab.style.color = 'var(--cyan)'; }
+  }
+  const focusId = isForgot ? 'forgot-email-landing' : (isRegister ? 'reg-name' : 'signin-email');
+  setTimeout(() => $(focusId)?.focus(), 50);
+}
+
+async function doForgotPasswordLanding() {
+  const email = ($('forgot-email-landing')?.value || '').trim();
+  const errEl = $('forgot-err-landing');
+  const btn   = $('forgot-btn-landing');
+  if (!email || !email.includes('@')) {
+    errEl.style.color = ''; errEl.textContent = 'Valid email required.'; errEl.style.display = 'block'; return;
+  }
+  errEl.style.display = 'none';
+  btn.textContent = 'Sending…'; btn.disabled = true;
+  try {
+    // redirectTo points at index.html, not this page — that's where the
+    // PASSWORD_RECOVERY handling and "set new password" pane actually live
+    // (see index.html's onAuthStateChange listener). Must be listed under
+    // this Supabase project's Auth ▸ URL Configuration ▸ Redirect URLs, or
+    // the emailed link will fail to return the user there.
+    const { error } = await SUPA.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/index.html'
+    });
+    // Same message regardless of whether the address has an account — a
+    // differing message here would let this form enumerate registered emails.
+    if (error && (!error.status || error.status >= 500)) {
+      errEl.style.color = ''; errEl.textContent = 'Something went wrong. Please try again.'; errEl.style.display = 'block';
+      btn.textContent = 'Send Reset Link →'; btn.disabled = false; return;
+    }
+    errEl.style.color = 'var(--green)';
+    errEl.textContent = `If an account exists for ${email}, a reset link is on its way — check your inbox.`;
+    errEl.style.display = 'block';
+    btn.textContent = 'Send Reset Link →'; btn.disabled = false;
+  } catch (e) {
+    errEl.style.color = ''; errEl.textContent = 'Network error. Please try again.'; errEl.style.display = 'block';
+    btn.textContent = 'Send Reset Link →'; btn.disabled = false;
+  }
+}
+
+async function doLoginLanding() {
+  const email    = ($('signin-email')?.value    || '').trim();
+  const password =  $('signin-password')?.value || '';
+  const errEl    =  $('signin-err');
+  const btn      =  $('signin-btn-submit');
+  if (!email || !password) {
+    errEl.textContent = 'Email and password required.'; errEl.style.display = 'block'; return;
+  }
+  errEl.style.display = 'none';
+  btn.textContent = 'Signing in…'; btn.disabled = true;
+  try {
+    const { data, error } = await SUPA.auth.signInWithPassword({ email, password });
+    if (error) {
+      errEl.textContent = error.message || 'Sign in failed. Please try again.'; errEl.style.display = 'block';
+      btn.textContent = 'Sign In →'; btn.disabled = false; return;
+    }
+    // Same verification gate as index.html's doLogin() — an account that
+    // exists but was never confirmed must not be usable from either page.
+    if (!data.user?.email_confirmed_at) {
+      await SUPA.auth.signOut().catch(()=>{});
+      errEl.textContent = 'Please verify your email before signing in — check your inbox for the confirmation link.';
+      errEl.style.display = 'block';
+      btn.textContent = 'Sign In →'; btn.disabled = false;
+      return;
+    }
+    // Supabase persists the session in this origin's localStorage, so
+    // index.html's own SUPA client picks it up automatically on load —
+    // no need to duplicate the U-setting logic from onAuthStateChange here.
+    showToast(`Signed in as ${data.user.email} ✓`);
+    setTimeout(() => { window.location.href = 'index.html'; }, 500);
+  } catch (e) {
+    errEl.textContent = 'Network error. Please try again.'; errEl.style.display = 'block';
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+  }
 }
 
 // Remembers which entry path the visitor picked in the hero ("Connect My

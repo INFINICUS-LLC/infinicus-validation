@@ -101,7 +101,19 @@ describe.runIf(run)('BUILD-31 Data Acquisition runtime API — live PostgreSQL',
   beforeAll(async () => {
     const appUrl = process.env.DATABASE_URL!;
     const adminUrl = process.env.ADMIN_DATABASE_URL ?? appUrl;
-    createPool({ connectionString: appUrl });
+    // This suite legitimately issues many requests (a fresh user + several
+    // endpoint calls per test, ~20 tests) — same RATE_LIMIT_MAX override
+    // load-test.integration.test.ts already uses for the same reason;
+    // security.integration.test.ts's own low override is for the opposite
+    // purpose (testing the limiter itself), not applicable here.
+    const config = loadConfig({
+      DATABASE_URL: appUrl,
+      DB_SSL: process.env.DB_SSL,
+      NODE_ENV: 'test',
+      LOG_LEVEL: 'silent',
+      RATE_LIMIT_MAX: '100000',
+    });
+    createPool({ connectionString: appUrl, ssl: config.dbSsl });
     adminPool = new Pool({ connectionString: adminUrl });
 
     await adminPool.query(
@@ -115,12 +127,6 @@ describe.runIf(run)('BUILD-31 Data Acquisition runtime API — live PostgreSQL',
       [WS1, T1]
     );
 
-    // This suite legitimately issues many requests (a fresh user + several
-    // endpoint calls per test, ~20 tests) — same RATE_LIMIT_MAX override
-    // load-test.integration.test.ts already uses for the same reason;
-    // security.integration.test.ts's own low override is for the opposite
-    // purpose (testing the limiter itself), not applicable here.
-    const config = loadConfig({ DATABASE_URL: appUrl, NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '100000' });
     app = await buildApp(config);
     await app.ready();
   });
@@ -547,3 +553,5 @@ describe.skipIf(run)('BUILD-31 Data Acquisition runtime API — live PostgreSQL 
     expect(run).toBe(false);
   });
 });
+
+

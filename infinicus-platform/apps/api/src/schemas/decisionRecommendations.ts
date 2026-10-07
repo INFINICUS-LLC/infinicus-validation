@@ -43,9 +43,13 @@ export const outcomeResponseSchema = z.object({
 
 export const historyResponseSchema = z.object({
   decisions: z.array(z.object({
+    id: z.string().uuid(),
     decisionText: z.string(),
     recommendedAt: z.string(),
     chosen: z.boolean().nullable(),
+    approvedActionId: z.string().uuid().nullable(),
     outcomeNotes: z.string().nullable(),
+    rationale: z.string().nullable(),
+    expectedOutcome: z.string().nullable(),
   })),
 });

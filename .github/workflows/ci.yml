@@ -8,7 +8,6 @@ name: INFINICUS Platform CI
 # Two jobs:
 #   validate                  — lint, typecheck, build, and the full live
 #                                 -database test suite (every package).
-#   build-and-smoke-test-image — builds the immutable apps/api Docker
 #                                 image (tagged by infrastructure/deployment
 #                                 /scripts/version.sh's git-derived version),
 #                                 runs it for real, and smoke-tests it.
@@ -21,6 +20,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - "main"
       - "claude/**"
     paths:
       - "infinicus-platform/**"
@@ -125,7 +125,7 @@ jobs:
       - name: Test
         run: >
           npx turbo run test
-          --filter=@infinicus/database --filter=@infinicus/configuration --filter=@infinicus/observability
+          --filter=@infinicus/database --filter=@infinicus/configuration --filter=@infinicus/observability --filter=@infinicus/business-operations-runtime
           --filter=@infinicus/authentication --filter=@infinicus/authorization --filter=@infinicus/onboarding
           --filter=@infinicus/workflow --filter=@infinicus/api --filter=@infinicus/web
         env:

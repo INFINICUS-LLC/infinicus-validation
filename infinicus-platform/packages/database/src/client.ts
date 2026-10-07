@@ -30,6 +30,15 @@ export interface TenantContext {
 }
 
 export function createPool(config: DbConfig): Pool {
+  if (pool) {
+    // A previous createPool() call left a pool assigned here — close it so
+    // its connections don't leak. Fire-and-forget: we don't want createPool()
+    // to become async and force every call site to change.
+    const stale = pool;
+    stale.end().catch((err) => {
+      console.error('[db] error closing stale pool', err);
+    });
+  }
   const statementTimeoutMs = config.statementTimeoutMillis ?? 30_000;
   const opts: PoolConfig = {
     connectionString: config.connectionString,

@@ -11,12 +11,13 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.1"
   },
   "dependencies": {
-    "@infinicus/shared-types": "workspace:*",
     "@infinicus/authorization": "workspace:*",
     "@infinicus/configuration": "workspace:*",
-    "@infinicus/observability": "workspace:*"
+    "@infinicus/observability": "workspace:*",
+    "@infinicus/shared-types": "workspace:*"
   }
 }

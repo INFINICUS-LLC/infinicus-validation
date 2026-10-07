@@ -27,6 +27,12 @@ const ALLOWLIST = [
     reason:
       'Transitive dependency of Next.js\'s built-in image-optimization component (next/image). apps/web never imports next/image (verified via grep) — no code path in this repository invokes sharp/libvips, so the vulnerable image-processing routines are never executed.',
   },
+  {
+    githubAdvisoryId: 'GHSA-rgj7-g3m4-5g8c',
+    package: 'sharp',
+    reason:
+      'Transitive dependency of Next.js image optimization. apps/web does not import or render next/image and does not expose an image-optimization upload/processing path, so untrusted input cannot reach sharp/libheif in this repository. Next.js itself is upgraded to the patched 15.5.x line; this exception is limited to the otherwise unreachable transitive sharp advisory.',
+  },
 
   // BUILD-30 launch-acceptance findings:
   // esbuild and vite are transitive dependencies of vitest.
@@ -55,24 +61,26 @@ const ALLOWLIST = [
       'Vite development server `server.fs.deny` bypass through Windows alternate paths. No vite development server is started in this repository, so the vulnerable route is unreachable.',
   },
 
-  // Temporary Vitest/Tinypool compatibility exceptions.
-  // Repository-wide tracked-source and package-manifest searches
-  // confirm INFINICUS does not import, invoke, or declare tinypool
-  // directly. tinypool is present only as a transitive dependency of
-  // vitest@1.6.1 and is not part of the production API or web runtime.
-  // These entries must be removed when the dedicated Vitest/Vite
-  // security migration is completed.
+  // ── TEMPORARY exceptions: tinypool (tracked in issue #24) ─────────────────
+  // dev/test-only. tinypool@0.8.4 is a transitive dependency of vitest@1.6.1
+  // (the `vitest run` test runner declared by the workspace packages). No
+  // INFINICUS code declares, imports or calls tinypool, and it is not part of
+  // the production API or web runtime. This is a time-boxed risk acceptance,
+  // NOT permanent CI policy: remove both entries when the vitest/vite
+  // toolchain is upgraded. Tracking issue:
+  // https://github.com/INFINICUS-LLC/infinicus-validation/issues/24
+  // Review/removal target date: 2026-11-06.
   {
     githubAdvisoryId: 'GHSA-5gmw-xhrv-c9v3',
     package: 'tinypool',
     reason:
-      'Transitive dependency of vitest@1.6.1 only. Repository-wide tracked-source and package-manifest searches confirm INFINICUS does not import, invoke, or declare tinypool directly. Vitest is used only as a development/test dependency via `vitest run`; tinypool is not shipped or invoked by the production API or web runtime. Temporary exception pending a dedicated Vitest/Vite migration.',
+      'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
   },
   {
     githubAdvisoryId: 'GHSA-85c8-ppgw-ccpr',
     package: 'tinypool',
     reason:
-      'Transitive dependency of vitest@1.6.1 only. Repository-wide tracked-source and package-manifest searches confirm INFINICUS does not import, invoke, or declare tinypool directly. Vitest is used only as a development/test dependency via `vitest run`; tinypool is not shipped or invoked by the production API or web runtime. Temporary exception pending a dedicated Vitest/Vite migration.',
+      'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
   },
 ];
 

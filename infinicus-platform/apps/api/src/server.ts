@@ -6,6 +6,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   createPool({
     connectionString: config.databaseUrl,
+    ssl: config.dbSsl,
     poolMin: config.dbPoolMin,
     poolMax: config.dbPoolMax,
     idleTimeoutMillis: config.dbIdleTimeoutMs,

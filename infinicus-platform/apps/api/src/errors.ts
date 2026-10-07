@@ -37,6 +37,10 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   // Authentication (@infinicus/authentication)
   InvalidCredentialsError: 401,
   AccountNotActiveError: 403,
+  // 429, not 401/403 — the credentials supplied may well be correct; the
+  // account is rate-limited, not rejected (BUILD-18 known-limitations item,
+  // closed: "No account lockout / rate limiting").
+  AccountLockedError: 429,
   SessionExpiredError: 401,
   SessionRevokedError: 401,
   SessionInvalidError: 401,
@@ -92,6 +96,12 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   PublicationNotReadyError: 409,
   QualityThresholdError: 409,
   WebhookAuthenticationError: 401,
+
+  // Business Operations runtime (BUILD-32)
+  BusinessIntakeRejectedError: 400,
+  UnsupportedOperationalRecordTypeError: 400,
+  OperationalMappingError: 400,
+  OperationalStateTransitionError: 409,
 
   // Fastify / schema validation
   FST_ERR_VALIDATION: 400,

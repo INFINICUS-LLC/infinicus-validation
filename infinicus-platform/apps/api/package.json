@@ -24,7 +24,7 @@
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.0",
     "@fastify/rate-limit": "^11.0.0",
-    "@fastify/swagger": "^9.8.1",
+    "@fastify/swagger": "^9.0.0",
     "@fastify/swagger-ui": "^6.1.1",
     "@infinicus/authentication": "workspace:*",
     "@infinicus/authorization": "workspace:*",
@@ -41,6 +41,7 @@
     "fastify": "^5.12.5",
     "fastify-plugin": "^5.0.0",
     "fastify-type-provider-zod": "^4.0.0",
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "@infinicus/business-operations-runtime": "workspace:*"
   }
 }

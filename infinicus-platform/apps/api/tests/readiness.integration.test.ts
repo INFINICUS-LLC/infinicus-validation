@@ -33,7 +33,7 @@ describe.runIf(run)('GET /v1/ready — live PostgreSQL', () => {
 
   it('returns 200 with pool stats when the database is reachable', async () => {
     const config = loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent' });
-    createPool({ connectionString: config.databaseUrl });
+    createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     app = await buildApp(config);
     await app.ready();
 
@@ -57,7 +57,7 @@ describe.runIf(run)('GET /v1/ready — live PostgreSQL', () => {
       NODE_ENV: 'test', LOG_LEVEL: 'silent',
       DB_CONNECTION_TIMEOUT_MS: '500',
     });
-    createPool({ connectionString: config.databaseUrl, connectionTimeoutMillis: config.dbConnectionTimeoutMs });
+    createPool({ connectionString: config.databaseUrl, connectionTimeoutMillis: config.dbConnectionTimeoutMs, ssl: config.dbSsl });
     app = await buildApp(config);
     await app.ready();
 
@@ -72,3 +72,5 @@ describe.skipIf(run)('GET /v1/ready — live PostgreSQL (skipped, no DATABASE_UR
     expect(run).toBe(false);
   });
 });
+
+
