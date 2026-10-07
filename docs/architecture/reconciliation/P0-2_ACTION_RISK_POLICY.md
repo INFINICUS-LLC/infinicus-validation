@@ -19,7 +19,7 @@ Tiers come from the assignment's current `role_code`: `cashier`=1, `manager`=2, 
 - `grantApproverAuthority` / `POST …/approver-assignments` accept an optional `roleCode` (`cashier | manager | approver | business-owner`; default `approver`). Granting `business-owner` manually is the explicit `aba:admin` decision for businesses the owner dry-run classed UNPROVEN/AMBIGUOUS.
 
 ## Fail-closed choices
-- **Risk is not accepted from API callers.** `riskClass` on `SubmitApprovalInput` is for trusted server code only; the decision route does not map it (a body `riskClass` is stripped, tested). Until P0-3 stores `risk_class` on the data model, every API-initiated approval is **unclassified and treated as `high`**, i.e. owner tier only.
+- **(Superseded by P0-3 Block 3: the `riskClass` input no longer exists; risk comes only from the persisted review version.)** **Risk is not accepted from API callers.** `riskClass` on `SubmitApprovalInput` is for trusted server code only; the decision route does not map it (a body `riskClass` is stripped, tested). Until P0-3 stores `risk_class` on the data model, every API-initiated approval is **unclassified and treated as `high`**, i.e. owner tier only.
 - Unknown/invalid risk class, unknown role, prototype-key role names, or a malformed policy never allow approval.
 
 ## Behaviour change to note
