@@ -17,6 +17,7 @@ name: INFINICUS Platform CI
 #                                 (see known-limitations-build23.md).
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - "main"
@@ -127,6 +128,7 @@ jobs:
           --filter=@infinicus/database --filter=@infinicus/configuration --filter=@infinicus/observability --filter=@infinicus/business-operations-runtime
           --filter=@infinicus/authentication --filter=@infinicus/authorization --filter=@infinicus/onboarding
           --filter=@infinicus/workflow --filter=@infinicus/api --filter=@infinicus/web
+          --filter=@infinicus/data-acquisition-runtime
         env:
           DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
           ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}

@@ -1,12 +1,15 @@
 import type { PoolClient } from 'pg';
+import { createHash } from 'crypto';
 import {
   DataSourceRepository, type DataSource, type CreateDataSourceInput,
   ConnectorRepository, type Connector, type CreateConnectorInput,
   type ConnectorHealthStatus,
+  hashWebhookToken, webhookTokenHashesMatch,
   CollectionRunRepository, type CollectionRun,
   ValidationResultRepository, type ValidationResult, type ValidationIssue,
   DataQualityScoreRepository, type DataQualityScore,
   ManualSubmissionRepository,
+  WebhookReceiptRepository, type CreateWebhookReceiptInput,
   ProvenanceRepository, type ProvenanceRecord,
   PublicationPackageRepository, type PublicationPackage, type PublicationPackageStatus,
   type PageOptions,
@@ -21,8 +24,10 @@ import { MAX_RECORDS_PER_REQUEST } from './validation/schemas.js';
 import { DataQualityScoringService } from './quality/DataQualityScoringService.js';
 import { ProvenanceService } from './provenance/ProvenanceService.js';
 import { PublicationService } from './publication/PublicationService.js';
-import { NotFoundError, ValidationError, CollectionLimitExceededError } from './errors.js';
+import { NotFoundError, ValidationError, CollectionLimitExceededError, WebhookAuthenticationError } from './errors.js';
 import type { ManualIntakeRequest, ManualIntakeResult } from './types.js';
+import type { WebhookDeliveryRequest, WebhookIntakeResult } from './webhook/types.js';
+import { sanitizeWebhookHeaders } from './webhook/headerPolicy.js';
 
 const sources = new DataSourceRepository();
 const connectors = new ConnectorRepository();
@@ -30,6 +35,7 @@ const runs = new CollectionRunRepository();
 const validationResults = new ValidationResultRepository();
 const qualityScores = new DataQualityScoreRepository();
 const manualSubmissions = new ManualSubmissionRepository();
+const webhookReceipts = new WebhookReceiptRepository();
 const provenanceRepo = new ProvenanceRepository();
 const publicationPackages = new PublicationPackageRepository();
 
@@ -37,6 +43,21 @@ const validator = new ManualRecordValidator();
 const scoring = new DataQualityScoringService();
 const provenance = new ProvenanceService();
 const publication = new PublicationService();
+
+/** Internal shape shared by submitManualIntake and receiveWebhook — see runIntake(). */
+interface IntakePipelineInput {
+  businessId: string;
+  dataSourceId: string;
+  connectorId?: string;
+  collectionType: string;
+  submissionType: string;
+  records: unknown[];
+  submissionNotes?: string;
+  sourceReference?: string;
+  metadata?: Record<string, unknown>;
+  submittedBy?: string;
+  correlationId?: string;
+}
 
 /**
  * Orchestrates the Data Acquisition runtime (BUILD-31 §4). Every method
@@ -164,15 +185,6 @@ export class DataAcquisitionService {
    *      handling takes over.
    */
   async submitManualIntake(ctx: TenantContext, request: ManualIntakeRequest): Promise<ManualIntakeResult> {
-    if (!Array.isArray(request.records) || request.records.length === 0) {
-      throw new ValidationError('records must be a non-empty array.');
-    }
-    if (request.records.length > MAX_RECORDS_PER_REQUEST) {
-      throw new CollectionLimitExceededError(
-        'recordsPerRequest', MAX_RECORDS_PER_REQUEST, request.records.length
-      );
-    }
-
     // Step 2: verify the source belongs to this business and is active — a
     // draft or retired source is not "governed" enough to accept intake
     // (BUILD-31 §2 describes the whole source/connector lifecycle as
@@ -189,27 +201,91 @@ export class DataAcquisitionService {
       await connectors.findByIdForSource(ctx, source.id, request.connectorId);
     }
 
-    // Steps 4-6: create the run, start it, emit da.collection.started —
-    // committed on its own so the run's existence survives whatever
-    // happens next.
+    return this.runIntake(ctx, {
+      businessId: request.businessId,
+      dataSourceId: source.id,
+      connectorId: request.connectorId,
+      // collection_runs_type_check (0014_create_da_collection_runs.sql)
+      // permits 'manual', not 'manual_json' — that value names a
+      // *connector* type (connectors_type_check), a different column.
+      collectionType: 'manual',
+      submissionType: request.submissionType,
+      records: request.records,
+      submissionNotes: request.submissionNotes,
+      sourceReference: request.sourceReference,
+      metadata: request.metadata,
+      submittedBy: request.submittedBy,
+      correlationId: request.correlationId,
+    });
+  }
+
+  /**
+   * Shared body of both intake entry points (manual JSON and webhook):
+   * validate the batch size, create+start the run in its own committed
+   * transaction so its existence survives whatever happens next, then run
+   * the steps 7-13 pipeline in a second transaction — same two-phase
+   * shape and failure handling submitManualIntake always used, now
+   * parameterized by collectionType/connectorId instead of assuming
+   * 'manual'.
+   */
+  private async runIntake(
+    ctx: TenantContext,
+    input: IntakePipelineInput,
+    webhookReceiptInput?: Omit<CreateWebhookReceiptInput, 'collectionRunId' | 'businessId' | 'dataSourceId' | 'connectorId' | 'correlationId'>
+  ): Promise<ManualIntakeResult> {
+    if (!Array.isArray(input.records) || input.records.length === 0) {
+      throw new ValidationError('records must be a non-empty array.');
+    }
+    if (input.records.length > MAX_RECORDS_PER_REQUEST) {
+      throw new CollectionLimitExceededError(
+        'recordsPerRequest', MAX_RECORDS_PER_REQUEST, input.records.length
+      );
+    }
+
     const started = await withTenantTransaction(ctx, async (client) => {
       const run = await runs.createOn(client, ctx, {
-        businessId: request.businessId,
-        dataSourceId: source.id,
-        connectorId: request.connectorId,
-        // collection_runs_type_check (0014_create_da_collection_runs.sql)
-        // permits 'manual', not 'manual_json' — that value names a
-        // *connector* type (connectors_type_check), a different column.
-        collectionType: 'manual',
-        correlationId: request.correlationId,
+        businessId: input.businessId,
+        dataSourceId: input.dataSourceId,
+        connectorId: input.connectorId,
+        collectionType: input.collectionType,
+        correlationId: input.correlationId,
       });
       return runs.markStartedOn(client, ctx, run.id);
     });
 
+    const request: ManualIntakeRequest = {
+      businessId: input.businessId,
+      dataSourceId: input.dataSourceId,
+      connectorId: input.connectorId,
+      submissionType: input.submissionType,
+      records: input.records,
+      submissionNotes: input.submissionNotes,
+      sourceReference: input.sourceReference,
+      metadata: input.metadata,
+      submittedBy: input.submittedBy,
+      correlationId: input.correlationId,
+    };
+
     try {
-      return await withTenantTransaction(ctx, (client) =>
-        this.processManualIntakeOn(client, ctx, started, source.id, request)
-      );
+      return await withTenantTransaction(ctx, async (client) => {
+        const result = await this.processManualIntakeOn(client, ctx, started, input.dataSourceId, request);
+        // Persisted on the same client as the rest of the pipeline, so the
+        // receipt (and thus the idempotency guarantee it backs) commits or
+        // rolls back together with the run it describes — never a receipt
+        // for a run that doesn't exist, and never a "processed" run with no
+        // receipt to dedupe a retried delivery against.
+        if (webhookReceiptInput) {
+          await webhookReceipts.createOn(client, ctx, {
+            businessId: input.businessId,
+            dataSourceId: input.dataSourceId,
+            connectorId: input.connectorId,
+            collectionRunId: result.collectionRunId,
+            correlationId: result.correlationId,
+            ...webhookReceiptInput,
+          });
+        }
+        return result;
+      });
     } catch (err) {
       await this.markRunFailedSafely(ctx, started.id, err);
       throw err;
@@ -396,6 +472,133 @@ export class DataAcquisitionService {
       // failure to also mark the run failed is swallowed here rather than
       // masking it.
     }
+  }
+
+  // ── Webhook intake ──────────────────────────────────────────────────────────
+
+  /**
+   * (Re)generates a webhook connector's bearer token — see
+   * ConnectorRepository.generateWebhookToken for the storage shape. Only
+   * a 'webhook'-type connector may have one; generating a token for any
+   * other connector type would create a credential nothing checks.
+   */
+  async generateConnectorWebhookToken(
+    ctx: TenantContext,
+    businessId: string,
+    sourceId: string,
+    connectorId: string
+  ): Promise<string> {
+    const connector = await this.getConnector(ctx, businessId, sourceId, connectorId); // ownership check
+    if (connector.connectorType !== 'webhook') {
+      throw new ValidationError(
+        `Connector ${connectorId} is type '${connector.connectorType}', not 'webhook'; only a webhook connector can generate a webhook token.`
+      );
+    }
+    return connectors.generateWebhookToken(ctx, connectorId);
+  }
+
+  /**
+   * Authenticates and processes one inbound webhook delivery. Unlike every
+   * other method on this service, the caller has no TenantContext yet —
+   * that is resolved here, from the token itself, via
+   * ConnectorRepository.findConnectorForWebhook() (the one legitimate
+   * cross-tenant lookup in this service, see 0171_create_da_webhook_token_lookup.sql).
+   *
+   * Order matters: the token is verified before anything about the
+   * connector or source is checked or disclosed, and findConnectorForWebhook
+   * returning null is handled identically to a hash mismatch — an unknown
+   * token prefix and a wrong secret must be indistinguishable to the caller.
+   *
+   * Idempotent: a delivery carrying the same (dataSourceId, idempotencyKey)
+   * as one already processed returns the prior outcome instead of
+   * reprocessing — see WebhookReceiptRepository's own header comment for
+   * exactly what is and is not deduplicated.
+   */
+  async receiveWebhook(delivery: WebhookDeliveryRequest): Promise<WebhookIntakeResult> {
+    const lookup = await connectors.findConnectorForWebhook(delivery.tokenPrefix);
+    if (!lookup || !webhookTokenHashesMatch(hashWebhookToken(delivery.rawToken), lookup.webhookTokenHash)) {
+      throw new WebhookAuthenticationError();
+    }
+    if (lookup.connectorStatus !== 'active') {
+      throw new ValidationError(
+        `Connector ${lookup.connectorId} is not active (status: ${lookup.connectorStatus}); webhook intake requires an active connector.`
+      );
+    }
+    if (lookup.sourceStatus !== 'active') {
+      throw new ValidationError(
+        `Data source ${lookup.dataSourceId} is not active (status: ${lookup.sourceStatus}); webhook intake requires an active source.`
+      );
+    }
+    if (!lookup.businessId) {
+      throw new ValidationError(
+        `Data source ${lookup.dataSourceId} has no associated business; webhook intake requires a business-scoped source.`
+      );
+    }
+
+    // No human is present for a webhook delivery — the connector's own
+    // creator is the closest available accountable actor for the
+    // app.user_id GUC and audit trail. Every connector is created through
+    // an authenticated route, so createdBy is expected to be set; the nil
+    // UUID is a last-resort fallback for a row created outside that path
+    // (e.g. a hand-inserted fixture), never an expected case.
+    const ctx: TenantContext = {
+      tenantId: lookup.tenantId,
+      workspaceId: lookup.workspaceId,
+      userId: lookup.createdBy ?? '00000000-0000-0000-0000-000000000000',
+    };
+
+    const payloadHash = createHash('sha256').update(delivery.rawBody, 'utf8').digest('hex');
+    const idempotencyKey = delivery.externalEventId ?? payloadHash;
+
+    const priorReceipt = await webhookReceipts.findByIdempotencyKey(ctx, lookup.dataSourceId, idempotencyKey);
+    if (priorReceipt) {
+      const run = await runs.findById(ctx, priorReceipt.collectionRunId);
+      return {
+        collectionRunId: run.id,
+        state: run.state,
+        recordsReceived: run.recordsReceived,
+        recordsAccepted: run.recordsAccepted,
+        recordsRejected: run.recordsRejected,
+        correlationId: run.correlationId,
+        replayed: true,
+      };
+    }
+
+    const result = await this.runIntake(
+      ctx,
+      {
+        businessId: lookup.businessId,
+        dataSourceId: lookup.dataSourceId,
+        connectorId: lookup.connectorId,
+        collectionType: 'webhook',
+        submissionType: 'webhook_delivery',
+        records: delivery.records,
+        // manual_submissions.submitted_by is a nullable FK to
+        // identity.users — a webhook delivery has no human submitter, so
+        // this is left unset rather than passed a non-UUID placeholder
+        // (ctx.userId already carries the connector's creator for the
+        // app.user_id GUC and audit trail — see receiveWebhook above).
+      },
+      {
+        externalEventId: delivery.externalEventId,
+        requestId: delivery.requestId,
+        // Credential-bearing and unneeded headers are dropped before anything is persisted.
+        headers: sanitizeWebhookHeaders(delivery.headers),
+        payload: delivery.records,
+        payloadHash,
+        idempotencyKey,
+      }
+    );
+
+    return {
+      collectionRunId: result.collectionRunId,
+      state: result.state,
+      recordsReceived: result.recordsReceived,
+      recordsAccepted: result.recordsAccepted,
+      recordsRejected: result.recordsRejected,
+      correlationId: result.correlationId,
+      replayed: false,
+    };
   }
 
   // ── Reads (§4.14) ───────────────────────────────────────────────────────────
