@@ -10,6 +10,7 @@ import { AnthropicClient } from '@infinicus/llm-client';
 import { TwinComputationService, type TwinSnapshotResult } from './TwinComputationService.js';
 import { DecisionWorkflowService, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
 import { assessTwinEvidence, type TwinEvidenceAssessment } from './twinEvidence.js';
+import { deriveRiskClass, determineTimeValidity } from './recommendationAuthoring.js';
 
 const TARGET_LAYER_ABA = 'approved_business_action';
 const TARGET_LAYER_OM = 'outcome_monitoring';
@@ -218,7 +219,7 @@ export class BusinessDecisionRecommendationService {
   ) {}
 
   async recommend(ctx: TenantContext, businessId: string): Promise<RecommendationResult> {
-    const { twin } = await this.twins.getOrComputeTwin(ctx, businessId);
+    const { twin, snapshotId } = await this.twins.getOrComputeTwin(ctx, businessId);
     const evidence = assessTwinEvidence(twin);
 
     // Nothing was recorded: say so. Never ask the LLM to (or fall back to rules that) invent conclusions from zeros.
@@ -244,11 +245,27 @@ export class BusinessDecisionRecommendationService {
       await this.cases.createVersion(ctx, decisionCase.id, businessId, item.rationale);
       await this.cases.transitionStatus(ctx, decisionCase.id, 'recommended', 'twin-grounded recommendation');
 
+      // ADI authors the risk and validity facts (P0-3). The generator's risk_level is the only risk evidence
+      // this flow has; anything outside the vocabulary leaves the recommendation unclassified (never lower).
+      const risk = deriveRiskClass({ authoredRiskLevel: item.risk_level });
+      // This flow has no evidence expiry, forecast horizon, action window or policy marker to read (none exist
+      // in the data model yet), so every source is evaluated and none applies: time-sensitive = false, explicitly.
+      // Staleness against newer published Twin snapshots (owner ruling Q3) is the temporal guard here.
+      const validity = determineTimeValidity({
+        evaluated: { evidenceExpiry: true, forecastHorizon: true, actionWindow: true, policy: true, otherAuthoritativePeriod: true },
+      });
+      if (validity.error) throw new Error(`recommendation validity could not be determined: ${validity.error}`);
+
       const { recommendation, version } = await this.recommendations.createRecommendation(
-        ctx, businessId, decisionCase.id, `bizdec-rec-${stamp}-${i}`, item.decision
+        ctx, businessId, decisionCase.id, `bizdec-rec-${stamp}-${i}`, item.decision, undefined,
+        { riskClass: risk.riskClass, isTimeSensitive: validity.isTimeSensitive, validUntil: validity.validUntil, twinSnapshotId: snapshotId },
       );
       await this.recommendations.addRationale(ctx, version.id, businessId, 'twin_evidence', item.rationale, {
         expectedOutcome: item.expected_outcome, riskLevel: item.risk_level,
+      });
+      await this.recommendations.addRationale(ctx, version.id, businessId, 'risk_validity_basis', 'How the risk class and time-sensitivity were determined', {
+        riskClass: risk.riskClass, riskBasis: risk.basis, isTimeSensitive: validity.isTimeSensitive, validityBasis: validity.basis,
+        twinSnapshotId: snapshotId,
       });
       await this.recommendations.validateRecommendation(ctx, recommendation.id, version.id);
       await this.recommendations.publishRecommendation(ctx, recommendation.id, version.id);

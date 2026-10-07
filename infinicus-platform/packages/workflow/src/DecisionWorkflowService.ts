@@ -219,7 +219,9 @@ export class DecisionWorkflowService {
   /** Starts an ABA review package for an already-received ABA intake package (not created by this service — see known limitations). */
   async createReview(ctx: TenantContext, businessId: string, input: CreateReviewInput): Promise<ActionReviewPackage> {
     const review = await this.reviews.createReviewPackage(ctx, businessId, input.intakePackageId, input.reviewCode);
-    await this.reviews.createVersion(ctx, review.id, businessId, input.summary);
+    // Snapshot the facts ADI published (P0-3); ABA copies them and never derives or recalculates them.
+    const snapshot = await this.reviews.resolvePublishedSnapshot(ctx, input.intakePackageId);
+    await this.reviews.createVersion(ctx, review.id, businessId, input.summary, snapshot);
     await this.reviews.transitionStatus(ctx, review.id, 'in_review');
     return this.reviews.getById(ctx, review.id);
   }

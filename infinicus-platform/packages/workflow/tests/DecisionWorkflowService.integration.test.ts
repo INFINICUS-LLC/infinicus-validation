@@ -128,7 +128,7 @@ async function createSimPackage(ctx: TenantContext, businessId: string): Promise
 }
 
 /** Extends createSimPackage() through a published ADI recommendation -> ADI publication targeting approved_business_action. */
-async function createAdiPackage(ctx: TenantContext, businessId: string): Promise<string> {
+async function createAdiPackage(ctx: TenantContext, businessId: string, facts?: Parameters<DecisionRecommendationRepository['createRecommendation']>[6], publish = true): Promise<string> {
   const simPkg = await createSimPackage(ctx, businessId);
 
   const adiIntakeRepo = new ADIIntakeRepository();
@@ -141,9 +141,11 @@ async function createAdiPackage(ctx: TenantContext, businessId: string): Promise
   const case_ = await caseRepo.createCase(ctx, businessId, question.id, uniqueCode('case'));
 
   const recRepo = new DecisionRecommendationRepository();
-  const { recommendation, version: recVersion } = await recRepo.createRecommendation(ctx, businessId, case_.id, uniqueCode('rec'), 'workflow fixture recommendation');
-  await recRepo.validateRecommendation(ctx, recommendation.id, recVersion.id);
-  await recRepo.publishRecommendation(ctx, recommendation.id, recVersion.id);
+  const { recommendation, version: recVersion } = await recRepo.createRecommendation(ctx, businessId, case_.id, uniqueCode('rec'), 'workflow fixture recommendation', undefined, facts);
+  if (publish) {
+    await recRepo.validateRecommendation(ctx, recommendation.id, recVersion.id);
+    await recRepo.publishRecommendation(ctx, recommendation.id, recVersion.id);
+  }
 
   const adiPubRepo = new ADIPublicationRepository();
   const insight = await adiPubRepo.createInsightPackage(ctx, businessId, uniqueCode('adi-insight'));
@@ -153,8 +155,8 @@ async function createAdiPackage(ctx: TenantContext, businessId: string): Promise
 }
 
 /** Extends createAdiPackage() through an accepted ABA intake package (ready for review). */
-async function createAbaIntake(ctx: TenantContext, businessId: string): Promise<string> {
-  const adiPkg = await createAdiPackage(ctx, businessId);
+async function createAbaIntake(ctx: TenantContext, businessId: string, facts?: Parameters<DecisionRecommendationRepository['createRecommendation']>[6], publish = true): Promise<string> {
+  const adiPkg = await createAdiPackage(ctx, businessId, facts, publish);
   const intakeRepo = new ABAIntakeRepository();
   const { package: pkg } = await intakeRepo.receivePackage(ctx, {
     businessId, adiPublicationPackageId: adiPkg, intakeCode: uniqueCode('aba-intake'), idempotencyKey: uniqueCode('idem'),
@@ -447,6 +449,50 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       // A manual administrator grant under the same code (other business) is an explicit decision and is not re-derived from ownership.
       await service.grantApproverAuthority(ctx2, BIZ2, { approverUserId: UID, assignmentCode: 'business-owner-approver' });
       await expect(decide(ctx2, BIZ2, 'business-owner-approver')).resolves.toMatchObject({ status: 'approved' });
+    });
+  });
+
+  describe('ABA review snapshots the published ADI risk/validity facts (P0-3 Block 2)', () => {
+    const TWIN = '66666666-7272-0000-0000-000000000001';
+
+    it('copies risk_class, is_time_sensitive, valid_until, twin_snapshot_id and lineage onto the review version', async () => {
+      const validUntil = new Date(Date.now() + 48 * 3600 * 1000);
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1, { riskClass: 'critical', isTimeSensitive: true, validUntil, twinSnapshotId: TWIN });
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('snap'), summary: 'Snapshot' });
+      const version = await new ActionReviewRepository().getLatestVersion(ctx1, review.id);
+      expect(version).toMatchObject({ riskClass: 'critical', isTimeSensitive: true, twinSnapshotId: TWIN });
+      expect(version?.validUntil?.getTime()).toBe(validUntil.getTime());
+      expect(version?.sourceRecommendationVersionId).toEqual(expect.any(String));
+      const lineage = await adminPool!.query(
+        `SELECT rv.status, rv.risk_class FROM ai_decision_intelligence.decision_recommendation_versions rv WHERE rv.id = $1`, [version!.sourceRecommendationVersionId]);
+      expect(lineage.rows[0]).toMatchObject({ status: 'published', risk_class: 'critical' });
+    });
+
+    it('an unclassified recommendation yields a NULL snapshot (unclassified / unknown) — never a guessed class', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('snap-null'), summary: 'Snapshot' });
+      const version = await new ActionReviewRepository().getLatestVersion(ctx1, review.id);
+      expect(version).toMatchObject({ riskClass: null, isTimeSensitive: null, validUntil: null, twinSnapshotId: null });
+      expect(version?.sourceRecommendationVersionId).toEqual(expect.any(String));
+    });
+
+    it('an explicit not-time-sensitive recommendation is copied as false, not NULL', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1, { riskClass: 'low', isTimeSensitive: false });
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('snap-false'), summary: 'Snapshot' });
+      expect(await new ActionReviewRepository().getLatestVersion(ctx1, review.id)).toMatchObject({ riskClass: 'low', isTimeSensitive: false });
+    });
+
+    it('a recommendation that was not published is not snapshotted: the snapshot is empty and carries no lineage', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1, { riskClass: 'low', isTimeSensitive: false }, false);
+      const snapshot = await new ActionReviewRepository().resolvePublishedSnapshot(ctx1, intakePackageId);
+      expect(snapshot).toEqual({ sourceRecommendationVersionId: null, riskClass: null, isTimeSensitive: null, validUntil: null, twinSnapshotId: null });
+    });
+
+    it('an unknown intake package resolves to an empty snapshot, and another tenant cannot resolve it', async () => {
+      const repo = new ActionReviewRepository();
+      expect((await repo.resolvePublishedSnapshot(ctx1, '00000000-0000-0000-0000-000000000000')).riskClass).toBeNull();
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1, { riskClass: 'high', isTimeSensitive: false });
+      expect((await repo.resolvePublishedSnapshot(ctx2, intakePackageId)).riskClass).toBeNull();
     });
   });
 
