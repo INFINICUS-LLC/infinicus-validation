@@ -5,6 +5,8 @@ import {
   SimulationRunRepository, SimulationResultRepository,
   DecisionCaseRepository, DecisionRecommendationRepository,
   ActionReviewRepository, ApproverAuthorityRepository, ApprovalDecisionRepository,
+  OwnershipEvidenceRepository, provenOwnersOf, OWNER_APPROVER_ASSIGNMENT_CODE, normalizeRevocationReason,
+  ApproverAuthorityNotFoundError, ApproverAuthorityStateConflictError,
   MonitoredActionRepository, OutcomeObservationRepository,
   type TenantContext, type Business, type CreateBusinessInput,
   type PagedBusinesses, type PageOptions,
@@ -12,14 +14,14 @@ import {
   type DigitalTwinInstance, type DigitalTwinSnapshot,
   type SimulationRun, type SimulationResult,
   type DecisionCase, type DecisionRecommendation,
-  type ActionReviewPackage, type ApprovalDecision,
+  type ActionReviewPackage, type ApprovalDecision, type ApproverAssignment, type AuthorityProvenanceEntry,
   type OutcomeObservation, type OutcomeObservationVersion,
 } from '@infinicus/database';
 
 const RECENT_LIMIT = 5;
 
 /** Assignment code used by the business-owner approval flow; the assignment must be granted beforehand. */
-export const DEFAULT_APPROVER_ASSIGNMENT_CODE = 'business-owner-approver';
+export const DEFAULT_APPROVER_ASSIGNMENT_CODE = OWNER_APPROVER_ASSIGNMENT_CODE;
 
 /**
  * Thrown when a decision is attempted without approval authority that was
@@ -36,6 +38,20 @@ export class ApproverAuthorityNotEstablishedError extends Error {
 export interface GrantApproverAuthorityInput {
   approverUserId: string;
   assignmentCode: string;
+  /** Request correlation id for the provenance record, where available. */
+  correlationId?: string | null;
+}
+
+export interface RevokeApproverAuthorityInput {
+  assignmentCode: string;
+  /** Why authority is withdrawn; required, recorded in the provenance history. */
+  reason: string;
+  correlationId?: string | null;
+}
+
+export interface ApproverAuthorityRecord {
+  assignment: ApproverAssignment;
+  provenance: AuthorityProvenanceEntry[];
 }
 
 export interface WorkflowView {
@@ -110,6 +126,7 @@ export class DecisionWorkflowService {
     private readonly recommendations: DecisionRecommendationRepository = new DecisionRecommendationRepository(),
     private readonly reviews: ActionReviewRepository = new ActionReviewRepository(),
     private readonly approverAuthority: ApproverAuthorityRepository = new ApproverAuthorityRepository(),
+    private readonly ownershipEvidence: OwnershipEvidenceRepository = new OwnershipEvidenceRepository(),
     private readonly approvalDecisions: ApprovalDecisionRepository = new ApprovalDecisionRepository(),
     private readonly monitoredActions: MonitoredActionRepository = new MonitoredActionRepository(),
     private readonly outcomeObservations: OutcomeObservationRepository = new OutcomeObservationRepository()
@@ -193,10 +210,63 @@ export class DecisionWorkflowService {
    * before invoking this. Action-risk policy and valid_until are layered on
    * by P0-2 / P0-3 of the reconciliation plan.
    */
-  async grantApproverAuthority(ctx: TenantContext, businessId: string, input: GrantApproverAuthorityInput) {
-    const assignment = await this.approverAuthority.createAssignment(ctx, businessId, input.approverUserId, input.assignmentCode);
-    await this.approverAuthority.createVersion(ctx, assignment.id, businessId, 'approver');
-    return this.approverAuthority.transitionStatus(ctx, assignment.id, 'active');
+  async grantApproverAuthority(ctx: TenantContext, businessId: string, input: GrantApproverAuthorityInput): Promise<ApproverAssignment> {
+    const { assignment, created } = await this.approverAuthority.grantActiveAssignment(ctx, {
+      businessId,
+      userId: input.approverUserId,
+      assignmentCode: input.assignmentCode,
+      roleCode: 'approver',
+      provenance: {
+        action: 'grant',
+        source: 'manual-admin',
+        businessId,
+        assignmentCode: input.assignmentCode,
+        granteeUserId: input.approverUserId,
+        state: 'active',
+        actor: { type: 'user', id: ctx.userId, authority: 'aba:admin' },
+        at: new Date().toISOString(),
+        correlationId: input.correlationId ?? null,
+        proof: null,
+        reason: null,
+      },
+    });
+    if (!created) {
+      // Idempotent for the same grantee; anything else is a conflict the administrator must resolve explicitly.
+      if (assignment.userId !== input.approverUserId) {
+        throw new ApproverAuthorityStateConflictError('ApproverAssignment', `assignment code ${input.assignmentCode} is already held by another user`);
+      }
+      if (assignment.status !== 'active') {
+        throw new ApproverAuthorityStateConflictError('ApproverAssignment', `assignment code ${input.assignmentCode} exists with status ${assignment.status}; use a new assignment code`);
+      }
+    }
+    return assignment;
+  }
+
+  /**
+   * Revokes an approver assignment. Authority does not remain valid merely because it was once
+   * granted: after this the grantee has no authority (submitApprovalDecision only honours an
+   * `active` assignment). Idempotent. The route enforces `aba:admin`. Recorded in the append-only
+   * provenance history with the revoking user and the reason.
+   */
+  async revokeApproverAuthority(ctx: TenantContext, businessId: string, input: RevokeApproverAuthorityInput): Promise<{ assignment: ApproverAssignment; changed: boolean }> {
+    const reason = normalizeRevocationReason(input.reason);
+    const existing = await this.approverAuthority.findByCode(ctx, businessId, input.assignmentCode);
+    if (!existing) throw new ApproverAuthorityNotFoundError('ApproverAssignment', input.assignmentCode);
+    return this.approverAuthority.revokeAssignment(ctx, existing.id, {
+      source: 'manual-admin',
+      actor: { type: 'user', id: ctx.userId, authority: 'aba:admin' },
+      at: new Date().toISOString(),
+      correlationId: input.correlationId ?? null,
+      proof: null,
+      reason,
+    });
+  }
+
+  /** The assignment and its full append-only provenance history (grants and revocations). */
+  async getApproverAuthority(ctx: TenantContext, businessId: string, assignmentCode: string): Promise<ApproverAuthorityRecord> {
+    const assignment = await this.approverAuthority.findByCode(ctx, businessId, assignmentCode);
+    if (!assignment) throw new ApproverAuthorityNotFoundError('ApproverAssignment', assignmentCode);
+    return { assignment, provenance: await this.approverAuthority.listProvenance(ctx, assignment.id) };
   }
 
   /**
@@ -213,6 +283,7 @@ export class DecisionWorkflowService {
     if (!assignment) {
       throw new ApproverAuthorityNotEstablishedError('no active approver assignment exists for this user and business');
     }
+    await this.assertOwnerAuthorityStillProven(ctx, businessId, assignment);
 
     const { decision, version } = await this.approvalDecisions.createDecision(
       ctx, businessId, input.reviewPackageId, assignment.id, input.decisionCode, input.summary
@@ -225,6 +296,26 @@ export class DecisionWorkflowService {
         return this.approvalDecisions.approveWithModifications(ctx, decision.id, version.id);
       case 'reject':
         return this.approvalDecisions.reject(ctx, decision.id, version.id);
+    }
+  }
+
+  /**
+   * An owner authority that was issued automatically (onboarding/backfill) rests on an ownership
+   * relationship. If that relationship no longer holds (owner membership removed, suspended or
+   * stripped of the owner role) the assignment must not stay silently authoritative: the decision is
+   * refused. Nothing is revoked automatically — an administrator reviews and revokes explicitly.
+   * Manual administrator grants are explicit decisions and are not re-derived from ownership.
+   */
+  private async assertOwnerAuthorityStillProven(ctx: TenantContext, businessId: string, assignment: ApproverAssignment): Promise<void> {
+    if (assignment.assignmentCode !== OWNER_APPROVER_ASSIGNMENT_CODE) return;
+    const history = await this.approverAuthority.listProvenance(ctx, assignment.id);
+    const lastGrant = [...history].reverse().find((entry) => entry.action === 'grant');
+    if (!lastGrant || lastGrant.source === 'manual-admin') return;
+    const evidence = await this.ownershipEvidence.loadForBusiness(ctx, businessId);
+    if (!provenOwnersOf(evidence).owners.some((owner) => owner.userId === ctx.userId)) {
+      throw new ApproverAuthorityNotEstablishedError(
+        'the ownership relationship that justified this authority no longer holds; an administrator must review it'
+      );
     }
   }
 

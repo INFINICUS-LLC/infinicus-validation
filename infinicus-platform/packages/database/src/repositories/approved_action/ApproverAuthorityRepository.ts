@@ -1,6 +1,7 @@
 import type { TenantContext } from '../../client.js';
 import { withTenantTransaction } from '../../client.js';
 import { ApproverAuthorityNotFoundError, ValidationError } from './errors.js';
+import { PROVENANCE_SCOPE_TYPE, type AuthorityProvenanceEntry } from './authorityProvenance.js';
 
 export interface ApproverAssignment {
   id: string;
@@ -144,6 +145,117 @@ export class ApproverAuthorityRepository {
         [businessId, userId, assignmentCode]
       );
       return result.rows.length === 0 ? null : rowToAssignment(result.rows[0]);
+    });
+  }
+
+  /** Finds the assignment holding `assignmentCode` for a business, in any status. The code is unique per business. */
+  async findByCode(ctx: TenantContext, businessId: string, assignmentCode: string): Promise<ApproverAssignment | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT * FROM approved_business_action.approver_assignments WHERE business_id = $1 AND assignment_code = $2`,
+        [businessId, assignmentCode]
+      );
+      return result.rows.length === 0 ? null : rowToAssignment(result.rows[0]);
+    });
+  }
+
+  /**
+   * Creates an ACTIVE assignment together with its first version and its
+   * grant provenance entry in ONE transaction, so there is never a half-made
+   * assignment. Idempotent: if the code already exists for the business
+   * (including under a concurrent request) nothing is written and the
+   * existing assignment is returned with `created: false`.
+   */
+  async grantActiveAssignment(
+    ctx: TenantContext,
+    input: { businessId: string; userId: string; assignmentCode: string; roleCode: string; provenance: Omit<AuthorityProvenanceEntry, 'assignmentId'> }
+  ): Promise<{ assignment: ApproverAssignment; created: boolean }> {
+    try {
+      return await withTenantTransaction(ctx, async (client) => {
+        const inserted = await client.query<Record<string, unknown>>(
+          `INSERT INTO approved_business_action.approver_assignments
+             (tenant_id, workspace_id, business_id, user_id, assignment_code, status, latest_version)
+           VALUES ($1,$2,$3,$4,$5,'active',1) RETURNING *`,
+          [ctx.tenantId, ctx.workspaceId, input.businessId, input.userId, input.assignmentCode]
+        );
+        const assignment = rowToAssignment(inserted.rows[0]);
+        const version = await client.query<Record<string, unknown>>(
+          `INSERT INTO approved_business_action.approver_assignment_versions
+             (assignment_id, tenant_id, workspace_id, business_id, version_number, role_code, correlation_id)
+           VALUES ($1,$2,$3,$4,1,$5,gen_random_uuid()) RETURNING id`,
+          [assignment.id, ctx.tenantId, ctx.workspaceId, input.businessId, input.roleCode]
+        );
+        const entry: AuthorityProvenanceEntry = { ...input.provenance, assignmentId: assignment.id };
+        await client.query(
+          `INSERT INTO approved_business_action.approval_authority_scopes
+             (assignment_version_id, tenant_id, workspace_id, business_id, scope_type, scope_value)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [version.rows[0].id, ctx.tenantId, ctx.workspaceId, input.businessId, PROVENANCE_SCOPE_TYPE, JSON.stringify(entry)]
+        );
+        return { assignment, created: true };
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code === '23505') {
+        const existing = await this.findByCode(ctx, input.businessId, input.assignmentCode);
+        if (existing) return { assignment: existing, created: false };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Revokes an assignment and appends the revocation provenance entry in ONE
+   * transaction. Idempotent: an already-revoked assignment is left as is.
+   */
+  async revokeAssignment(
+    ctx: TenantContext,
+    assignmentId: string,
+    provenance: Omit<AuthorityProvenanceEntry, 'assignmentId' | 'businessId' | 'assignmentCode' | 'granteeUserId' | 'state' | 'action'>
+  ): Promise<{ assignment: ApproverAssignment; changed: boolean }> {
+    return withTenantTransaction(ctx, async (client) => {
+      const current = await client.query<Record<string, unknown>>(
+        'SELECT * FROM approved_business_action.approver_assignments WHERE id = $1 FOR UPDATE', [assignmentId]
+      );
+      if (current.rows.length === 0) throw new ApproverAuthorityNotFoundError('ApproverAssignment', assignmentId);
+      const before = rowToAssignment(current.rows[0]);
+      if (before.status === 'revoked') return { assignment: before, changed: false };
+
+      const version = await client.query<Record<string, unknown>>(
+        `SELECT id FROM approved_business_action.approver_assignment_versions
+          WHERE assignment_id = $1 ORDER BY version_number DESC LIMIT 1`, [assignmentId]
+      );
+      const updated = await client.query<Record<string, unknown>>(
+        `UPDATE approved_business_action.approver_assignments SET status = 'revoked' WHERE id = $1 RETURNING *`, [assignmentId]
+      );
+      const assignment = rowToAssignment(updated.rows[0]);
+      if (version.rows.length > 0) {
+        const entry: AuthorityProvenanceEntry = {
+          ...provenance, action: 'revoke', state: 'revoked', assignmentId,
+          businessId: assignment.businessId, assignmentCode: assignment.assignmentCode, granteeUserId: assignment.userId,
+        };
+        await client.query(
+          `INSERT INTO approved_business_action.approval_authority_scopes
+             (assignment_version_id, tenant_id, workspace_id, business_id, scope_type, scope_value)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [version.rows[0].id, ctx.tenantId, ctx.workspaceId, assignment.businessId, PROVENANCE_SCOPE_TYPE, JSON.stringify(entry)]
+        );
+      }
+      return { assignment, changed: true };
+    });
+  }
+
+  /** The assignment's provenance history, oldest first. Append-only: entries are never changed. */
+  async listProvenance(ctx: TenantContext, assignmentId: string): Promise<AuthorityProvenanceEntry[]> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT s.scope_value
+           FROM approved_business_action.approval_authority_scopes s
+           JOIN approved_business_action.approver_assignment_versions v ON v.id = s.assignment_version_id
+          WHERE v.assignment_id = $1 AND s.scope_type = $2
+          ORDER BY s.created_at, s.id`,
+        [assignmentId, PROVENANCE_SCOPE_TYPE]
+      );
+      return result.rows.map((row) => row.scope_value as AuthorityProvenanceEntry);
     });
   }
 

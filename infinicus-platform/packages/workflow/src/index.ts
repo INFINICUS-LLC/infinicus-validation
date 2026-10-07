@@ -6,7 +6,7 @@
 export { DecisionWorkflowService, ApproverAuthorityNotEstablishedError, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
 export type {
   WorkflowView, DecisionHistory,
-  CreateReviewInput, SubmitApprovalInput, GrantApproverAuthorityInput, RecordOutcomeInput,
+  CreateReviewInput, SubmitApprovalInput, GrantApproverAuthorityInput, RevokeApproverAuthorityInput, ApproverAuthorityRecord, RecordOutcomeInput,
 } from './DecisionWorkflowService.js';
 
 export { SimulationOrchestrationService, ValidationError as SimulationValidationError } from './SimulationOrchestrationService.js';
