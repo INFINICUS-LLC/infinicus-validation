@@ -281,7 +281,7 @@ export {
   ActionControlGateRepository,
   ApprovalExceptionRepository,
   ApprovalAppealRepository,
-  ABAAuditRepository,
+  ABAAuditRepository, APPROVAL_EXPIRED_EVENT,
   ABAPublicationRepository,
   ABAComponentRegistryRepository,
 } from './repositories/approved_action/index.js';
@@ -296,12 +296,12 @@ export type {
   ActionControlGate, ActionHold, ActionRelease,
   ApprovalException,
   ApprovalAppeal, ApprovalAppealDecision,
-  ApprovalAttestation, ApprovalSignature,
+  ApprovalAttestation, ApprovalSignature, ExpiryDetectionContext, ExpiryDetectionResult,
   ABAPublicationPackage,
   ABAComponentRegistryEntry, ABADeployment,
 } from './repositories/approved_action/index.js';
 
-export { ApproverAuthorityNotFoundError, ApproverAuthorityStateConflictError } from './repositories/approved_action/errors.js';
+export { ActionReviewNotFoundError, ApproverAuthorityNotFoundError, ApproverAuthorityStateConflictError } from './repositories/approved_action/errors.js';
 
 // ── Business-ownership proof and approver-authority provenance (owner bootstrap) ──
 export {

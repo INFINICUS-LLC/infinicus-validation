@@ -18,7 +18,7 @@
  * Guard pattern: describe.runIf(!!process.env.DATABASE_URL)
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { Pool } from 'pg';
 import {
   createPool, closePool,
@@ -30,7 +30,7 @@ import {
   ADIIntakeRepository, DecisionQuestionRepository, DecisionCaseRepository,
   DecisionRecommendationRepository, ADIPublicationRepository,
   ABAIntakeRepository, ActionReviewRepository, ApproverAuthorityRepository,
-  ApprovalDecisionRepository, ApprovedActionRepository, ABAPublicationRepository,
+  ApprovalDecisionRepository, ABAAuditRepository, ApprovedActionRepository, ABAPublicationRepository,
   OMIntakeRepository, MonitoringPlanRepository, MonitoredActionRepository,
   type TenantContext,
 } from '@infinicus/database';
@@ -647,7 +647,10 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
 
     // ── P0-4 Block 1: every approve / reject / deny / block leaves an append-only audit event ──────────────────────────
     const auditRows = async (biz: string) => (await adminPool!.query(
-      `SELECT id, decision_id, event_type, detail FROM approved_business_action.approval_audit_events WHERE business_id = $1 ORDER BY occurred_at, created_at`, [biz])).rows;
+      `SELECT id, decision_id, event_type, detail FROM approved_business_action.approval_audit_events WHERE business_id = $1 AND event_type <> 'approval.expired' ORDER BY occurred_at, created_at`, [biz])).rows;
+    /** P0-4 Block 2: expiry-detection events (kept apart from the decision/refusal events above). */
+    const expiryRows = async (biz: string) => (await adminPool!.query(
+      `SELECT id, decision_id, event_type, detail, occurred_at, created_at FROM approved_business_action.approval_audit_events WHERE business_id = $1 AND event_type = 'approval.expired' ORDER BY occurred_at, created_at`, [biz])).rows;
 
     it('audit: approve, approve_with_modifications and reject each write exactly one event, atomically with the decision', async () => {
       const biz = await freshBusiness();
@@ -788,6 +791,186 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode, roleCode: 'business-owner' });
       const forged = { reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('gd'), summary: 'x', outcome: 'approve', riskClass: 'low', isTimeSensitive: false, validUntil: hours(24) } as never;
       await expect(service.submitApprovalDecision(ctx1, BIZ1, forged)).rejects.toEqual(blocked(['TIME_SENSITIVITY_UNKNOWN']));
+    });
+
+    describe('expiry audit on detection (P0-4 Block 2)', () => {
+      /** A review (and owner-tier approver) over a recommendation with the given persisted facts, without deciding it. */
+      async function reviewOn(biz: string, facts: Parameters<DecisionRecommendationRepository['createRecommendation']>[6], svc: DecisionWorkflowService = service) {
+        const intakePackageId = await createAbaIntake(ctx1, biz, facts);
+        const review = await svc.createReview(ctx1, biz, { intakePackageId, reviewCode: uniqueCode('exp'), summary: 'Expiry' });
+        const assignmentCode = uniqueCode('wf-exp');
+        await svc.grantApproverAuthority(ctx1, biz, { approverUserId: UID, assignmentCode, roleCode: 'business-owner' });
+        return { review, assignmentCode };
+      }
+      const attempt = (svc: DecisionWorkflowService, biz: string, r: { review: { id: string }; assignmentCode: string }, outcome: 'approve' | 'reject' = 'approve', extra: Record<string, unknown> = {}) =>
+        svc.submitApprovalDecision(ctx1, biz, { reviewPackageId: r.review.id, assignmentCode: r.assignmentCode, decisionCode: uniqueCode('xd'), summary: 'x', outcome, ...extra } as never);
+      const EXPIRED = { riskClass: 'low', isTimeSensitive: true, validUntil: hours(-1) } as const;
+
+      it('the first detection emits approval.expired carrying persisted facts, database time and request context', async () => {
+        const biz = await freshBusiness();
+        const r = await reviewOn(biz, EXPIRED);
+        await expect(attempt(service, biz, r, 'approve', { requestContext: { permissionUsed: 'aba:write', correlationId: 'corr-exp-1' } })).rejects.toEqual(blocked(['EXPIRED']));
+        const rows = await expiryRows(biz);
+        expect(rows).toHaveLength(1);
+        const version = (await adminPool!.query(`SELECT id, valid_until, source_recommendation_version_id FROM approved_business_action.action_review_package_versions WHERE review_package_id = $1`, [r.review.id])).rows[0];
+        expect(rows[0].decision_id).toBeNull();
+        expect(rows[0].detail).toMatchObject({
+          schema: 'approval-audit/1', eventType: 'approval.expired', sourceLayer: 'ABA', reasonCode: 'valid_until_elapsed',
+          businessId: biz, reviewPackageId: r.review.id, reviewVersionId: version.id,
+          sourceRecommendationVersionId: version.source_recommendation_version_id,
+          validUntil: new Date(version.valid_until).toISOString(), reviewStatus: expect.any(String),
+          detectionPath: 'approval_attempt', actorUserId: UID, correlationId: 'corr-exp-1',
+        });
+        // detected_at is database time: the same instant the row was written, and after valid_until.
+        expect(new Date(rows[0].detail.detectedAt).getTime()).toBe(new Date(rows[0].occurred_at).getTime());
+        expect(new Date(rows[0].detail.detectedAt).getTime()).toBeGreaterThan(new Date(version.valid_until).getTime());
+        // The tenant/workspace scope columns are populated.
+        const scope = (await adminPool!.query(`SELECT tenant_id, workspace_id FROM approved_business_action.approval_audit_events WHERE id = $1`, [rows[0].id])).rows[0];
+        expect(scope).toEqual({ tenant_id: T1, workspace_id: WS1 });
+      });
+
+      it('repeated detection - more approval attempts, status reads and concurrent reads - records the logical event once', async () => {
+        const biz = await freshBusiness();
+        const r = await reviewOn(biz, EXPIRED);
+        await expect(attempt(service, biz, r)).rejects.toEqual(blocked(['EXPIRED']));
+        await expect(attempt(service, biz, r)).rejects.toEqual(blocked(['EXPIRED']));
+        await service.getReviewApprovalStatus(ctx1, biz, r.review.id);
+        await Promise.all(Array.from({ length: 6 }, () => service.getReviewApprovalStatus(ctx1, biz, r.review.id)));
+        expect(await expiryRows(biz)).toHaveLength(1);
+        // Each refusal is still its own approval.blocked event: only the expiry fact is deduplicated.
+        expect((await auditRows(biz)).filter((x) => x.event_type === 'approval.blocked')).toHaveLength(2);
+      });
+
+      it('an expired approval stays blocked even when the audit store is down', async () => {
+        const failing = { recordAuditEvent: async () => { throw new Error('audit store down'); }, recordExpiryDetected: async () => { throw new Error('audit store down'); } } as never;
+        const failingService = new DecisionWorkflowService(
+          undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+          undefined, failing,
+        );
+        const biz = await freshBusiness();
+        const r = await reviewOn(biz, EXPIRED, failingService);
+        await expect(attempt(failingService, biz, r)).rejects.toEqual(blocked(['EXPIRED']));
+        expect(await expiryRows(biz)).toHaveLength(0);
+        const decided = await adminPool!.query(`SELECT count(*)::int n FROM approved_business_action.approval_decisions WHERE business_id = $1 AND status <> 'draft'`, [biz]);
+        expect(decided.rows[0].n).toBe(0);
+      });
+
+      it('reject remains allowed on an expired review; the expiry is still recorded once and the review is not rewritten', async () => {
+        const biz = await freshBusiness();
+        const r = await reviewOn(biz, EXPIRED);
+        const before = (await adminPool!.query(`SELECT status, latest_version FROM approved_business_action.action_review_packages WHERE id = $1`, [r.review.id])).rows[0];
+        await expect(attempt(service, biz, r, 'reject')).resolves.toMatchObject({ status: 'rejected' });
+        expect(await expiryRows(biz)).toHaveLength(1);
+        const after = (await adminPool!.query(`SELECT status, latest_version FROM approved_business_action.action_review_packages WHERE id = $1`, [r.review.id])).rows[0];
+        expect(after).toEqual(before);
+      });
+
+      it('a status read of an expired review reports expired, records the event, and changes no state', async () => {
+        const biz = await freshBusiness();
+        const r = await reviewOn(biz, EXPIRED);
+        const status = await service.getReviewApprovalStatus(ctx1, biz, r.review.id, { correlationId: 'corr-read' });
+        expect(status).toMatchObject({ reviewPackageId: r.review.id, expired: true, packageStatus: expect.any(String) });
+        const rows = await expiryRows(biz);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].detail).toMatchObject({ detectionPath: 'status_read', correlationId: 'corr-read', actorUserId: UID });
+        const decisions = await adminPool!.query(`SELECT count(*)::int n FROM approved_business_action.approval_decisions WHERE business_id = $1`, [biz]);
+        expect(decisions.rows[0].n).toBe(0);
+      });
+
+      it('a status read still reports the correct expired state when the audit write fails', async () => {
+        const failing = { recordAuditEvent: async () => undefined, recordExpiryDetected: async () => { throw new Error('audit store down'); } } as never;
+        const failingService = new DecisionWorkflowService(
+          undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+          undefined, failing,
+        );
+        const biz = await freshBusiness();
+        const r = await reviewOn(biz, EXPIRED, failingService);
+        await expect(failingService.getReviewApprovalStatus(ctx1, biz, r.review.id)).resolves.toMatchObject({ expired: true });
+      });
+
+      it('a non-expired review, and a review with NULL valid_until, emit no expiry event', async () => {
+        const biz = await freshBusiness();
+        const future = await reviewOn(biz, { riskClass: 'low', isTimeSensitive: true, validUntil: hours(24) });
+        const open = await reviewOn(biz, { riskClass: 'low', isTimeSensitive: false });
+        await expect(attempt(service, biz, future)).resolves.toMatchObject({ status: 'approved' });
+        await expect(attempt(service, biz, open)).resolves.toMatchObject({ status: 'approved' });
+        await expect(service.getReviewApprovalStatus(ctx1, biz, future.review.id)).resolves.toMatchObject({ expired: false });
+        await expect(service.getReviewApprovalStatus(ctx1, biz, open.review.id)).resolves.toMatchObject({ expired: false, validUntil: null });
+        expect(await expiryRows(biz)).toHaveLength(0);
+      });
+
+      it('unknown time-sensitivity with no valid_until keeps the P0-3 fail-closed block and emits no expiry event', async () => {
+        const biz = await freshBusiness();
+        const r = await reviewOn(biz, { riskClass: 'low' });
+        await expect(attempt(service, biz, r)).rejects.toEqual(blocked(['TIME_SENSITIVITY_UNKNOWN']));
+        expect(await expiryRows(biz)).toHaveLength(0);
+      });
+
+      it('the database clock is authoritative: shifting the application clock changes nothing', async () => {
+        const biz = await freshBusiness();
+        const futureValid = await reviewOn(biz, { riskClass: 'low', isTimeSensitive: true, validUntil: hours(1) });
+        const pastValid = await reviewOn(biz, EXPIRED);
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+          vi.setSystemTime(Date.now() + 10 * 3600 * 1000); // application believes it is 10h later
+          await expect(service.getReviewApprovalStatus(ctx1, biz, futureValid.review.id)).resolves.toMatchObject({ expired: false });
+          vi.setSystemTime(Date.now() - 20 * 3600 * 1000); // application believes it is 10h EARLIER than the database
+          await expect(service.getReviewApprovalStatus(ctx1, biz, pastValid.review.id)).resolves.toMatchObject({ expired: true });
+        } finally {
+          vi.useRealTimers();
+        }
+        const rows = await expiryRows(biz);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].detail.reviewPackageId).toBe(pastValid.review.id);
+      });
+
+      it('the caller cannot fabricate detected_at, valid_until or an expiry', async () => {
+        const biz = await freshBusiness();
+        const live = await reviewOn(biz, { riskClass: 'low', isTimeSensitive: true, validUntil: hours(24) });
+        const forged = { requestContext: { correlationId: 'c', validUntil: '2000-01-01T00:00:00Z', detectedAt: '2000-01-01T00:00:00Z', expired: true }, validUntil: hours(-5), detectedAt: new Date(0) };
+        await expect(attempt(service, biz, live, 'approve', forged)).resolves.toMatchObject({ status: 'approved' });
+        expect(await expiryRows(biz)).toHaveLength(0);
+
+        const stale = await reviewOn(biz, EXPIRED);
+        await expect(attempt(service, biz, stale, 'approve', forged)).rejects.toEqual(blocked(['EXPIRED']));
+        const [row] = await expiryRows(biz);
+        expect(row.detail.detectedAt).not.toMatch(/^(2000|1970)/);
+        expect(row.detail.validUntil).not.toMatch(/^(2000|1970)/);
+        // The repository itself only accepts a version id: a repeated call cannot move the recorded time either.
+        const version = (await adminPool!.query(`SELECT id FROM approved_business_action.action_review_package_versions WHERE review_package_id = $1`, [stale.review.id])).rows[0].id;
+        await expect(new ABAAuditRepository().recordExpiryDetected(ctx1, biz, version, { path: 'status_read', actorUserId: UID, correlationId: null })).resolves.toEqual({ expired: true, recorded: false });
+      });
+
+      it('expiry detection does not cross business or tenant scope', async () => {
+        const biz = await freshBusiness();
+        const other = await freshBusiness();
+        const r = await reviewOn(biz, EXPIRED);
+        await expect(service.getReviewApprovalStatus(ctx1, other, r.review.id)).rejects.toThrow();
+        expect(await expiryRows(other)).toHaveLength(0);
+        expect(await expiryRows(biz)).toHaveLength(0);
+      });
+
+      it('the repository itself refuses to record an expiry for a version that is not expired on the database clock', async () => {
+        const biz = await freshBusiness();
+        const future = await reviewOn(biz, { riskClass: 'low', isTimeSensitive: true, validUntil: hours(24) });
+        const open = await reviewOn(biz, { riskClass: 'low', isTimeSensitive: false });
+        const repo = new ABAAuditRepository();
+        for (const r of [future, open]) {
+          const v = (await adminPool!.query(`SELECT id FROM approved_business_action.action_review_package_versions WHERE review_package_id = $1`, [r.review.id])).rows[0].id;
+          await expect(repo.recordExpiryDetected(ctx1, biz, v, { path: 'status_read', actorUserId: UID, correlationId: null })).resolves.toEqual({ expired: false, recorded: false });
+        }
+        await expect(repo.recordExpiryDetected(ctx1, biz, crypto.randomUUID(), { path: 'status_read', actorUserId: UID, correlationId: null })).resolves.toEqual({ expired: false, recorded: false });
+        expect(await expiryRows(biz)).toHaveLength(0);
+      });
+
+      it('expiry events are append-only', async () => {
+        const biz = await freshBusiness();
+        const r = await reviewOn(biz, EXPIRED);
+        await service.getReviewApprovalStatus(ctx1, biz, r.review.id);
+        const [row] = await expiryRows(biz);
+        await expect(adminPool!.query(`UPDATE approved_business_action.approval_audit_events SET detail = '{}' WHERE id = $1`, [row.id])).rejects.toThrow(/append-only/);
+        await expect(adminPool!.query(`DELETE FROM approved_business_action.approval_audit_events WHERE id = $1`, [row.id])).rejects.toThrow(/append-only/);
+      });
     });
   });
 

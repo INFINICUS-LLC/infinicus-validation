@@ -46,8 +46,8 @@ export type { ApprovalException } from './ApprovalExceptionRepository.js';
 export { ApprovalAppealRepository } from './ApprovalAppealRepository.js';
 export type { ApprovalAppeal, ApprovalAppealDecision } from './ApprovalAppealRepository.js';
 
-export { ABAAuditRepository } from './ABAAuditRepository.js';
-export type { ApprovalAttestation, ApprovalSignature } from './ABAAuditRepository.js';
+export { ABAAuditRepository, APPROVAL_EXPIRED_EVENT } from './ABAAuditRepository.js';
+export type { ApprovalAttestation, ApprovalSignature, ExpiryDetectionContext, ExpiryDetectionResult } from './ABAAuditRepository.js';
 
 export { ABAPublicationRepository } from './ABAPublicationRepository.js';
 export type { ABAPublicationPackage } from './ABAPublicationRepository.js';
