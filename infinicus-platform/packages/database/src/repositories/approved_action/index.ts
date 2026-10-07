@@ -20,7 +20,7 @@ export { ABAIntakeRepository } from './ABAIntakeRepository.js';
 export type { ABAIntakePackage, ReceiveABAPackageInput } from './ABAIntakeRepository.js';
 
 export { ActionReviewRepository } from './ActionReviewRepository.js';
-export type { ActionReviewPackage } from './ActionReviewRepository.js';
+export type { ActionReviewPackage, ActionReviewVersion, ReviewVersionSnapshot } from './ActionReviewRepository.js';
 
 export { ApprovalPolicyRepository } from './ApprovalPolicyRepository.js';
 export type { ApprovalPolicy } from './ApprovalPolicyRepository.js';

@@ -41,6 +41,11 @@ export class DecisionAlternativeStateConflictError extends ConflictError {}
 export class DecisionRecommendationNotFoundError extends NotFoundError {}
 export class DecisionRecommendationStateConflictError extends ConflictError {}
 export class DecisionRecommendationImmutableError extends ConflictError {}
+export class DecisionRecommendationValidationError extends ValidationError {
+  constructor(reasons: readonly string[]) {
+    super('DecisionRecommendationRiskValidity', reasons);
+  }
+}
 export class DecisionPolicyNotFoundError extends NotFoundError {}
 export class DecisionPolicyStateConflictError extends ConflictError {}
 export class DecisionMonitoringRequirementNotFoundError extends NotFoundError {}
