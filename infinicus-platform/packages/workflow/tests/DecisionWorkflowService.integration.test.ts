@@ -128,7 +128,14 @@ async function createSimPackage(ctx: TenantContext, businessId: string): Promise
 }
 
 /** Extends createSimPackage() through a published ADI recommendation -> ADI publication targeting approved_business_action. */
-async function createAdiPackage(ctx: TenantContext, businessId: string, facts?: Parameters<DecisionRecommendationRepository['createRecommendation']>[6], publish = true): Promise<string> {
+/** Persisted facts that pass the approval gate (low risk, explicitly not time-sensitive). Tests that need unclassified/unknown pass `{}`. */
+const APPROVABLE_FACTS = { riskClass: 'low', isTimeSensitive: false } as const;
+
+async function createAdiPackage(ctx: TenantContext, businessId: string, facts: Parameters<DecisionRecommendationRepository['createRecommendation']>[6] = APPROVABLE_FACTS, publish = true): Promise<string> {
+  return createAdiPackageInner(ctx, businessId, facts, publish);
+}
+
+async function createAdiPackageInner(ctx: TenantContext, businessId: string, facts?: Parameters<DecisionRecommendationRepository['createRecommendation']>[6], publish = true): Promise<string> {
   const simPkg = await createSimPackage(ctx, businessId);
 
   const adiIntakeRepo = new ADIIntakeRepository();
@@ -155,7 +162,7 @@ async function createAdiPackage(ctx: TenantContext, businessId: string, facts?: 
 }
 
 /** Extends createAdiPackage() through an accepted ABA intake package (ready for review). */
-async function createAbaIntake(ctx: TenantContext, businessId: string, facts?: Parameters<DecisionRecommendationRepository['createRecommendation']>[6], publish = true): Promise<string> {
+async function createAbaIntake(ctx: TenantContext, businessId: string, facts: Parameters<DecisionRecommendationRepository['createRecommendation']>[6] = APPROVABLE_FACTS, publish = true): Promise<string> {
   const adiPkg = await createAdiPackage(ctx, businessId, facts, publish);
   const intakeRepo = new ABAIntakeRepository();
   const { package: pkg } = await intakeRepo.receivePackage(ctx, {
@@ -316,7 +323,7 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
       const decision = await service.submitApprovalDecision(ctx1, BIZ1, {
         reviewPackageId: review.id, approverUserId: UID, assignmentCode,
-        decisionCode: uniqueCode('wf-dec'), summary: 'Approving', outcome: 'approve', riskClass: 'low',
+        decisionCode: uniqueCode('wf-dec'), summary: 'Approving', outcome: 'approve',
       });
       expect(decision.status).toBe('approved');
 
@@ -375,7 +382,7 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       const intakePackageId = await createAbaIntake(ctx, businessId);
       const review = await service.createReview(ctx, businessId, { intakePackageId, reviewCode: uniqueCode('rv'), summary: 'Authority check' });
       return service.submitApprovalDecision(ctx, businessId, {
-        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('dc'), summary: 'Deciding', outcome: 'approve', riskClass: 'low',
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('dc'), summary: 'Deciding', outcome: 'approve',
       });
     }
 
@@ -490,7 +497,7 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
     });
 
     it('an unclassified recommendation yields a NULL snapshot (unclassified / unknown) — never a guessed class', async () => {
-      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1, {});
       const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('snap-null'), summary: 'Snapshot' });
       const version = await new ActionReviewRepository().getLatestVersion(ctx1, review.id);
       expect(version).toMatchObject({ riskClass: null, isTimeSensitive: null, validUntil: null, twinSnapshotId: null });
@@ -517,18 +524,149 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
     });
   });
 
+  describe('persisted-fact approval gate (P0-3 Block 3)', () => {
+    const decisionCount = async () => Number((await adminPool!.query(
+      `SELECT count(*)::int AS n FROM approved_business_action.approval_decisions WHERE business_id = $1`, [BIZ1])).rows[0].n);
+    const hours = (n: number) => new Date(Date.now() + n * 3600 * 1000);
+
+    /** Review + owner-tier approver (so the risk policy never interferes) + decision on a recommendation with the given persisted facts. */
+    async function decideOn(facts: Parameters<DecisionRecommendationRepository['createRecommendation']>[6], outcome: 'approve' | 'approve_with_modifications' | 'reject' = 'approve', biz: string = BIZ1) {
+      const intakePackageId = await createAbaIntake(ctx1, biz, facts);
+      const review = await service.createReview(ctx1, biz, { intakePackageId, reviewCode: uniqueCode('gate'), summary: 'Gate' });
+      const assignmentCode = uniqueCode('wf-gate');
+      await service.grantApproverAuthority(ctx1, biz, { approverUserId: UID, assignmentCode, roleCode: 'business-owner' });
+      return service.submitApprovalDecision(ctx1, biz, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('gd'), summary: 'Deciding', outcome,
+      });
+    }
+    const blocked = (codes: string[]) => expect.objectContaining({ name: 'ApprovalBlockedError', codes: expect.arrayContaining(codes) });
+
+    /** A fresh business so other fixtures' Twin snapshots (effective 'now') cannot make these recommendations stale. */
+    async function freshBusiness() {
+      const id = crypto.randomUUID();
+      await adminPool!.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Gate Biz',$4,'active')`,
+        [id, ctx1.tenantId, ctx1.workspaceId, uniqueCode('gate-biz')]
+      );
+      return id;
+    }
+
+    /** A Digital Twin snapshot for the business at the given effective time (published unless told otherwise). */
+    async function publishedSnapshot(effectiveAt: Date, publish = true, biz: string = BIZ1) {
+      const defRepo = new DigitalTwinDefinitionRepository();
+      const definition = await defRepo.createDefinition(ctx1, biz, uniqueCode('gdef'), 'Gate Definition');
+      const defVersion = await defRepo.createVersion(ctx1, definition.id, biz, {});
+      await defRepo.validateVersion(ctx1, defVersion.id);
+      await defRepo.activateVersion(ctx1, defVersion.id);
+      const instance = await new DigitalTwinInstanceRepository().createInstance(ctx1, biz, definition.id, uniqueCode('ginst'));
+      await new DigitalTwinInstanceRepository().transitionStatus(ctx1, instance.id, 'active');
+      const snapRepo = new DigitalTwinSnapshotRepository();
+      const { snapshot, version } = await snapRepo.createSnapshot(ctx1, biz, instance.id, uniqueCode('gsnap'), effectiveAt, 'gate snapshot');
+      if (publish) {
+        await snapRepo.validateSnapshot(ctx1, snapshot.id, version.id);
+        await snapRepo.publishSnapshot(ctx1, snapshot.id, version.id);
+      }
+      return snapshot.id;
+    }
+
+    it('allows an explicitly not-time-sensitive recommendation without valid_until, and a time-sensitive one with a future valid_until', async () => {
+      await expect(decideOn({ riskClass: 'low', isTimeSensitive: false })).resolves.toMatchObject({ status: 'approved' });
+      await expect(decideOn({ riskClass: 'low', isTimeSensitive: true, validUntil: hours(24) })).resolves.toMatchObject({ status: 'approved' });
+    });
+
+    it('blocks an expired recommendation on database time, whether or not it was marked time-sensitive; no decision is recorded', async () => {
+      const before = await decisionCount();
+      await expect(decideOn({ riskClass: 'low', isTimeSensitive: true, validUntil: hours(-1) })).rejects.toEqual(blocked(['EXPIRED']));
+      await expect(decideOn({ riskClass: 'low', isTimeSensitive: false, validUntil: hours(-1) })).rejects.toEqual(blocked(['EXPIRED']));
+      expect(await decisionCount()).toBe(before);
+    });
+
+    it('blocks unknown (NULL) time-sensitivity — including a fully unclassified recommendation — for approve and approve_with_modifications', async () => {
+      await expect(decideOn({ riskClass: 'low' })).rejects.toEqual(blocked(['TIME_SENSITIVITY_UNKNOWN']));
+      await expect(decideOn({})).rejects.toEqual(blocked(['TIME_SENSITIVITY_UNKNOWN']));
+      await expect(decideOn({ riskClass: 'low' }, 'approve_with_modifications')).rejects.toEqual(blocked(['TIME_SENSITIVITY_UNKNOWN']));
+    });
+
+    it('blocks a time-sensitive review that carries no valid_until (ABA records what it received and blocks at approval)', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const reviewRepo = new ActionReviewRepository();
+      const review = await reviewRepo.createReviewPackage(ctx1, BIZ1, intakePackageId, uniqueCode('ts-nov'));
+      await reviewRepo.createVersion(ctx1, review.id, BIZ1, 'v1', { riskClass: 'low', isTimeSensitive: true, validUntil: null });
+      await reviewRepo.transitionStatus(ctx1, review.id, 'in_review');
+      const assignmentCode = uniqueCode('wf-ts');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode, roleCode: 'business-owner' });
+      await expect(service.submitApprovalDecision(ctx1, BIZ1, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('gd'), summary: 'x', outcome: 'approve',
+      })).rejects.toEqual(blocked(['TIME_SENSITIVE_WITHOUT_VALIDITY']));
+    });
+
+    it('rejecting is always allowed, even for expired, unknown and stale decisions', async () => {
+      await expect(decideOn({ riskClass: 'low', isTimeSensitive: true, validUntil: hours(-1) }, 'reject')).resolves.toMatchObject({ status: 'rejected' });
+      await expect(decideOn({}, 'reject')).resolves.toMatchObject({ status: 'rejected' });
+    });
+
+    it('is STALE when a newer PUBLISHED Twin snapshot exists for the business; approve and approve_with_modifications are blocked, reject is allowed', async () => {
+      const biz = await freshBusiness();
+      const used = await publishedSnapshot(hours(197), true, biz);
+      const facts = { riskClass: 'low', isTimeSensitive: false, twinSnapshotId: used } as const;
+      await expect(decideOn(facts, 'approve', biz)).resolves.toMatchObject({ status: 'approved' });   // nothing newer yet (fixture-created snapshots are effective 'now', older than these)
+      await publishedSnapshot(hours(199), true, biz);                                                  // newer, published
+      await expect(decideOn(facts, 'approve', biz)).rejects.toEqual(blocked(['STALE']));
+      await expect(decideOn(facts, 'approve_with_modifications', biz)).rejects.toEqual(blocked(['STALE']));
+      await expect(decideOn(facts, 'reject', biz)).resolves.toMatchObject({ status: 'rejected' });
+    });
+
+    it('newer snapshots that are NOT published (draft) do not make a recommendation stale; only a newer published one does', async () => {
+      const biz = await freshBusiness();
+      const used = await publishedSnapshot(hours(195), true, biz);
+      await publishedSnapshot(hours(196), false, biz);
+      await publishedSnapshot(hours(197), false, biz);
+      const facts = { riskClass: 'low', isTimeSensitive: false, twinSnapshotId: used } as const;
+      await expect(decideOn(facts, 'approve', biz)).resolves.toMatchObject({ status: 'approved' });
+      await publishedSnapshot(hours(198), true, biz);
+      await expect(decideOn(facts, 'approve', biz)).rejects.toEqual(blocked(['STALE']));
+    });
+
+    it('the latest published snapshot is fresh; an older snapshot of the same business is stale', async () => {
+      const biz = await freshBusiness();
+      const older = await publishedSnapshot(hours(194), true, biz);
+      const latest = await publishedSnapshot(hours(199), true, biz);
+      await expect(decideOn({ riskClass: 'low', isTimeSensitive: false, twinSnapshotId: latest }, 'approve', biz)).resolves.toMatchObject({ status: 'approved' });
+      await expect(decideOn({ riskClass: 'low', isTimeSensitive: false, twinSnapshotId: older }, 'approve', biz)).rejects.toEqual(blocked(['STALE']));
+    });
+
+    it('an unverifiable Twin reference is blocked rather than assumed fresh: unknown id, a draft snapshot, or another business', async () => {
+      const biz = await freshBusiness();
+      const draft = await publishedSnapshot(hours(-2), false, biz);
+      const otherBiz = await freshBusiness();
+      const foreign = await publishedSnapshot(hours(-2), true, otherBiz);
+      for (const twinSnapshotId of ['00000000-0000-0000-0000-0000000000cc', draft, foreign]) {
+        await expect(decideOn({ riskClass: 'low', isTimeSensitive: false, twinSnapshotId }, 'approve', biz)).rejects.toEqual(blocked(['TWIN_SNAPSHOT_UNVERIFIABLE']));
+      }
+    });
+
+    it('no caller input can set the facts: the input type has no risk or validity fields and extra properties are ignored', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1, {});
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('inj'), summary: 'x' });
+      const assignmentCode = uniqueCode('wf-inj');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode, roleCode: 'business-owner' });
+      const forged = { reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('gd'), summary: 'x', outcome: 'approve', riskClass: 'low', isTimeSensitive: false, validUntil: hours(24) } as never;
+      await expect(service.submitApprovalDecision(ctx1, BIZ1, forged)).rejects.toEqual(blocked(['TIME_SENSITIVITY_UNKNOWN']));
+    });
+  });
+
   describe('action-risk approval policy (P0-2)', () => {
     async function approveAs(
       roleCode: 'cashier' | 'manager' | 'approver' | 'business-owner',
       riskClass: 'low' | 'medium' | 'high' | 'critical' | undefined,
       outcome: 'approve' | 'approve_with_modifications' | 'reject' = 'approve'
     ) {
-      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1, { riskClass, isTimeSensitive: false });
       const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('rk'), summary: 'Risk policy' });
       const assignmentCode = uniqueCode('wf-risk');
       await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode, roleCode });
       return service.submitApprovalDecision(ctx1, BIZ1, {
-        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('rkd'), summary: 'Deciding', outcome, riskClass,
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('rkd'), summary: 'Deciding', outcome,
       });
     }
 

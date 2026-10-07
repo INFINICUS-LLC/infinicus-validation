@@ -145,6 +145,37 @@ export class ActionReviewRepository {
     });
   }
 
+  /** The latest review version with the database clock, read in one statement so expiry is judged on database time. */
+  async getLatestVersionWithClock(ctx: TenantContext, reviewPackageId: string): Promise<{ version: ActionReviewVersion | null; now: Date }> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT v.*, now() AS db_now
+           FROM approved_business_action.action_review_package_versions v
+          WHERE v.review_package_id = $1 ORDER BY v.version_number DESC LIMIT 1`,
+        [reviewPackageId]
+      );
+      if (result.rows.length === 0) {
+        const clock = await client.query<{ db_now: Date }>('SELECT now() AS db_now');
+        return { version: null, now: clock.rows[0].db_now };
+      }
+      const row = result.rows[0];
+      return {
+        now: row.db_now as Date,
+        version: {
+          id: row.id as string,
+          reviewPackageId: row.review_package_id as string,
+          versionNumber: row.version_number as number,
+          summary: row.summary as string,
+          sourceRecommendationVersionId: (row.source_recommendation_version_id as string | null) ?? null,
+          riskClass: (row.risk_class as ReviewVersionSnapshot['riskClass']) ?? null,
+          isTimeSensitive: (row.is_time_sensitive as boolean | null) ?? null,
+          validUntil: (row.valid_until as Date | null) ?? null,
+          twinSnapshotId: (row.twin_snapshot_id as string | null) ?? null,
+        },
+      };
+    });
+  }
+
   async addEvidence(ctx: TenantContext, reviewPackageVersionId: string, businessId: string, evidenceType: string, evidenceReference: Record<string, unknown>): Promise<void> {
     if (!EVIDENCE_TYPES.has(evidenceType)) {
       throw new ValidationError('ActionReviewEvidence', [`unknown evidence_type: ${evidenceType}`]);

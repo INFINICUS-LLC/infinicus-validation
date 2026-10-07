@@ -189,6 +189,33 @@ export class DigitalTwinSnapshotRepository {
     });
   }
 
+  /**
+   * Read-only freshness assessment of a snapshot a recommendation was based on (P0-3, owner ruling Q3). Digital Twin
+   * state is never mutated here. A recommendation is stale when a NEWER snapshot that has been PUBLISHED exists for the
+   * same business after the snapshot it used; drafts, validated-but-unpublished and rejected snapshots do not count.
+   * `usable` is false when the reference cannot be verified: unknown id, another business, or a snapshot that was
+   * never published (callers must treat that as blocking, not as fresh).
+   */
+  async assessFreshness(ctx: TenantContext, businessId: string, snapshotId: string): Promise<{ usable: boolean; newerPublishedExists: boolean }> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<{ status: string; newer: boolean }>(
+        `SELECT s.status,
+                EXISTS (
+                  SELECT 1 FROM business_digital_twin.digital_twin_snapshots n
+                   WHERE n.business_id = s.business_id AND n.id <> s.id
+                     AND n.status IN ('published','superseded') AND n.effective_at > s.effective_at
+                ) AS newer
+           FROM business_digital_twin.digital_twin_snapshots s
+          WHERE s.id = $1 AND s.business_id = $2`,
+        [snapshotId, businessId]
+      );
+      if (result.rows.length === 0) return { usable: false, newerPublishedExists: false };
+      const row = result.rows[0];
+      const wasPublished = row.status === 'published' || row.status === 'superseded';
+      return { usable: wasPublished, newerPublishedExists: row.newer };
+    });
+  }
+
   async getPublishedForInstance(ctx: TenantContext, instanceId: string): Promise<DigitalTwinSnapshot[]> {
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>(
