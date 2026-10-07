@@ -1,6 +1,7 @@
+import { evaluateApprovalGate, type GateBlockCode } from './approvalGate.js';
 import {
   APPROVER_ROLES, DEFAULT_APPROVAL_RISK_POLICY, evaluateApproval,
-  type ApprovalOutcome, type ApprovalRiskPolicy, type ApproverRole, type RiskClass,
+  type ApprovalOutcome, type ApprovalRiskPolicy, type ApproverRole,
 } from './approvalRiskPolicy.js';
 import {
   BusinessRepository,
@@ -47,6 +48,18 @@ export class ApprovalPolicyDeniedError extends Error {
   constructor(reason: string) {
     super(`approval policy denied: ${reason}`);
     this.name = 'ApprovalPolicyDeniedError';
+  }
+}
+
+/**
+ * Thrown when an approving outcome is blocked by the persisted decision facts (P0-3 Block 3): expired, stale,
+ * unknown time-sensitivity, time-sensitive without valid_until, or an unverifiable Twin reference. Rejecting is never
+ * blocked. Recovery is always RECALCULATE DECISION. Mapped to HTTP 409 in apps/api/src/errors.ts.
+ */
+export class ApprovalBlockedError extends Error {
+  constructor(readonly codes: readonly GateBlockCode[], readonly reasons: readonly string[]) {
+    super(`approval blocked (${codes.join(', ')}): ${reasons.join('; ')}; recovery: RECALCULATE DECISION`);
+    this.name = 'ApprovalBlockedError';
   }
 }
 
@@ -111,12 +124,6 @@ export interface SubmitApprovalInput {
   decisionCode: string;
   summary: string;
   outcome: ApprovalOutcome;
-  /**
-   * Action risk class, for TRUSTED server-side callers only. It is not
-   * exposed by the API and must come from the governed data model (P0-3).
-   * When absent the action is unclassified and treated as high risk.
-   */
-  riskClass?: RiskClass;
 }
 
 export interface RecordOutcomeInput {
@@ -315,13 +322,32 @@ export class DecisionWorkflowService {
     }
     await this.assertOwnerAuthorityStillProven(ctx, businessId, assignment);
 
+    // Trusted facts come ONLY from the persisted review version (ADI-authored, snapshotted by ABA); nothing the
+    // caller supplies can set risk or validity. Missing facts are unclassified/unknown and fail closed.
+    const { version: reviewVersion, now } = await this.reviews.getLatestVersionWithClock(ctx, input.reviewPackageId);
     const verdict = evaluateApproval({
-      riskClass: input.riskClass,
+      riskClass: reviewVersion?.riskClass ?? null,
       roleCode: await this.approverAuthority.getCurrentRoleCode(ctx, assignment.id),
       outcome: input.outcome,
       policy: this.riskPolicy,
     });
     if (!verdict.allowed) throw new ApprovalPolicyDeniedError(verdict.reason);
+
+    if (input.outcome !== 'reject') {
+      const twin = reviewVersion?.twinSnapshotId
+        ? await this.dtSnapshots.assessFreshness(ctx, businessId, reviewVersion.twinSnapshotId)
+        : null;
+      const gate = evaluateApprovalGate({
+        facts: reviewVersion && {
+          isTimeSensitive: reviewVersion.isTimeSensitive,
+          validUntil: reviewVersion.validUntil,
+          twinSnapshotId: reviewVersion.twinSnapshotId,
+        },
+        now,
+        twin,
+      });
+      if (!gate.allowed) throw new ApprovalBlockedError(gate.codes, gate.reasons);
+    }
 
     const { decision, version } = await this.approvalDecisions.createDecision(
       ctx, businessId, input.reviewPackageId, assignment.id, input.decisionCode, input.summary

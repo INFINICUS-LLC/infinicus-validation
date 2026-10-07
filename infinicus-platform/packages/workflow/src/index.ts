@@ -3,7 +3,7 @@
 // decision history. Composes existing BI/DT/SIM/ADI/ABA/OM repositories —
 // introduces no new persistence of its own.
 
-export { DecisionWorkflowService, ApproverAuthorityNotEstablishedError, ApprovalPolicyDeniedError, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
+export { DecisionWorkflowService, ApproverAuthorityNotEstablishedError, ApprovalPolicyDeniedError, ApprovalBlockedError, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
 export type {
   WorkflowView, DecisionHistory,
   CreateReviewInput, SubmitApprovalInput, GrantApproverAuthorityInput, RevokeApproverAuthorityInput, ApproverAuthorityRecord, RecordOutcomeInput,
@@ -34,3 +34,5 @@ export type {
 } from './approvalRiskPolicy.js';
 export { deriveRiskClass, determineTimeValidity, RISK_ORDER } from './recommendationAuthoring.js';
 export type { DerivedRisk, RiskInputs, TimeValidity, TimeValiditySignals, AuthoredRiskClass } from './recommendationAuthoring.js';
+export { evaluateApprovalGate } from './approvalGate.js';
+export type { ApprovalGateVerdict, GateBlockCode, GateFacts, TwinFreshness } from './approvalGate.js';

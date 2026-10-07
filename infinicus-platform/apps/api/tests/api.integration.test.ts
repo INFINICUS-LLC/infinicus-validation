@@ -87,7 +87,10 @@ function tenantHeaders(ctx: TenantContext, token: string) {
 }
 
 /** Full BI -> DT -> Simulation -> ADI -> ABA-intake fixture chain (same proven pattern as BUILD-20's workflow tests). */
-async function createAbaIntake(ctx: TenantContext, businessId: string): Promise<string> {
+/** Persisted facts that pass the approval gate; tests needing unclassified/unknown pass `{}` or a subset. */
+const APPROVABLE_FACTS = { riskClass: 'low', isTimeSensitive: false } as const;
+
+async function createAbaIntake(ctx: TenantContext, businessId: string, facts: { riskClass?: 'low' | 'medium' | 'high' | 'critical' | null; isTimeSensitive?: boolean | null; validUntil?: Date | null } = APPROVABLE_FACTS): Promise<string> {
   const insightRepo = new InsightPackageRepository();
   const biPubRepo = new BIPublicationPackageRepository();
   const biPkg = await insightRepo.create(ctx, businessId, uc('insight'));
@@ -145,7 +148,7 @@ async function createAbaIntake(ctx: TenantContext, businessId: string): Promise<
   const caseRepo = new DecisionCaseRepository();
   const case_ = await caseRepo.createCase(ctx, businessId, question.id, uc('case'));
   const recRepo = new DecisionRecommendationRepository();
-  const { recommendation, version: recVersion } = await recRepo.createRecommendation(ctx, businessId, case_.id, uc('rec'), 'api fixture recommendation');
+  const { recommendation, version: recVersion } = await recRepo.createRecommendation(ctx, businessId, case_.id, uc('rec'), 'api fixture recommendation', undefined, facts);
   await recRepo.validateRecommendation(ctx, recommendation.id, recVersion.id);
   await recRepo.publishRecommendation(ctx, recommendation.id, recVersion.id);
   const adiPubRepo = new ADIPublicationRepository();
@@ -474,7 +477,7 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
         `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Policy Biz',$4,'active')`,
         [bizId, ctx.tenantId, ctx.workspaceId, uc('policy-biz')]
       );
-      const intakePackageId = await createAbaIntake(ctx, bizId);
+      const intakePackageId = await createAbaIntake(ctx, bizId, { isTimeSensitive: false });
       const code = uc('m');
       expect((await grantApprover(ctx, token, bizId, userId, code, 'manager')).statusCode).toBe(201);
 
@@ -486,10 +489,37 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
 
       const reject = await app!.inject({
         method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
-        payload: { intakePackageId: await createAbaIntake(ctx, bizId), reviewCode: uc('r'), summary: 'Reject', assignmentCode: code, decisionCode: uc('d'), outcome: 'reject' },
+        payload: { intakePackageId: await createAbaIntake(ctx, bizId, { isTimeSensitive: false }), reviewCode: uc('r'), summary: 'Reject', assignmentCode: code, decisionCode: uc('d'), outcome: 'reject' },
       });
       expect(reject.statusCode).toBe(201);
       expect(reject.json().status).toBe('rejected');
+    });
+
+    it('blocks approving an expired or unknown-time-sensitivity recommendation with 409, ignores forged facts in the body, and still allows rejecting (P0-3 Block 3)', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithOwner(userId);
+      const bizId = crypto.randomUUID();
+      await adminPool!.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Gate Biz',$4,'active')`,
+        [bizId, ctx.tenantId, ctx.workspaceId, uc('gate-biz')]
+      );
+      const code = uc('o');
+      expect((await grantApprover(ctx, token, bizId, userId, code, 'business-owner')).statusCode).toBe(201);
+      const decide = async (facts: Parameters<typeof createAbaIntake>[2], outcome: 'approve' | 'reject', forged: Record<string, unknown> = {}) => app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+        payload: { intakePackageId: await createAbaIntake(ctx, bizId, facts), reviewCode: uc('r'), summary: 's', assignmentCode: code, decisionCode: uc('d'), outcome, ...forged },
+      });
+
+      const expired = await decide({ riskClass: 'low', isTimeSensitive: true, validUntil: new Date(Date.now() - 3600 * 1000) }, 'approve');
+      expect(expired.statusCode).toBe(409);
+      expect(expired.json().error.message).toMatch(/EXPIRED/);
+
+      const unknown = await decide({ riskClass: 'low' }, 'approve', { isTimeSensitive: false, riskClass: 'low', validUntil: '2999-01-01T00:00:00Z' });
+      expect(unknown.statusCode).toBe(409);
+      expect(unknown.json().error.message).toMatch(/TIME_SENSITIVITY_UNKNOWN/);
+
+      expect((await decide({ riskClass: 'low' }, 'reject')).statusCode).toBe(201);
+      expect((await decide(APPROVABLE_FACTS, 'approve')).statusCode).toBe(201);
     });
 
     it('rejects a decision when no approver authority was established beforehand (authority is never self-issued)', async () => {
