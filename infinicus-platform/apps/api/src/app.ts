@@ -30,6 +30,7 @@ import twinRoutes from './routes/twin.js';
 import decisionRecommendationsRoutes from './routes/decisionRecommendations.js';
 import dataAcquisitionRoutes from './routes/dataAcquisition.js';
 import webhooksRoutes from './routes/webhooks.js';
+import { redactUrl } from './redactUrl.js';
 import './types.js';
 
 export async function buildApp(config: InfinicusConfig): Promise<FastifyInstance> {
@@ -99,7 +100,7 @@ export async function buildApp(config: InfinicusConfig): Promise<FastifyInstance
       tenantId: request.ctx?.tenantId ?? null,
       userId: request.session?.user.id ?? null,
       method: request.method,
-      route: request.routeOptions.url ?? request.url,
+      route: request.routeOptions.url ?? redactUrl(request.url),
       statusCode: reply.statusCode,
       durationMs: reply.elapsedTime,
     });

@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyError } from 'fastify';
 import { ErrorEventRepository } from '@infinicus/database';
 import { EnvSecretProvider, redactSecretValues } from '@infinicus/configuration';
 import { statusCodeFor } from '../errors.js';
+import { redactUrl } from '../redactUrl.js';
 
 const errorEventRepo = new ErrorEventRepository();
 const secretProvider = new EnvSecretProvider();
@@ -59,7 +60,7 @@ export default fp(async function errorHandlerPlugin(app: FastifyInstance) {
           message: redactSecretValues(error.message, secretProvider),
           correlationId,
           tenantId: request.ctx?.tenantId ?? null,
-          route: request.routeOptions.url ?? request.url,
+          route: request.routeOptions.url ?? redactUrl(request.url),
           statusCode: 500,
         })
         .catch((persistErr) => request.log.error({ err: persistErr }, 'failed to persist error event'));
@@ -76,7 +77,7 @@ export default fp(async function errorHandlerPlugin(app: FastifyInstance) {
 
   app.setNotFoundHandler((request, reply) => {
     return reply.status(404).send({
-      error: { code: 'route_not_found', message: `No route: ${request.method} ${request.url}`, correlationId: request.correlationId },
+      error: { code: 'route_not_found', message: `No route: ${request.method} ${redactUrl(request.url)}`, correlationId: request.correlationId },
     });
   });
 });

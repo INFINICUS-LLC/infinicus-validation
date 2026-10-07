@@ -11,8 +11,19 @@ api.infini-cus.com {
 
 	encode gzip
 
+	# Access log. The webhook intake route carries its bearer token in the URL
+	# path (/v1/webhooks/data-acquisition/<token>), so the raw request URI must
+	# never reach the logs: the filter below rewrites the token segment to
+	# REDACTED before the entry is written. Everything else is logged as
+	# before. Validated with `caddy adapt` and a live request (see
+	# docs/webhook-token-lifecycle.md, "Log redaction").
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp /v1/webhooks/data-acquisition/[^/?#\s]+ /v1/webhooks/data-acquisition/REDACTED
+			}
+		}
 	}
 }
