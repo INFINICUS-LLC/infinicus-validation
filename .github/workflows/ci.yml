@@ -18,6 +18,7 @@ name: INFINICUS Platform CI
 #                                 (see known-limitations-build23.md).
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - "claude/**"
