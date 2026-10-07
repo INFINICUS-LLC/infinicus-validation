@@ -60,6 +60,28 @@ const ALLOWLIST = [
     reason:
       'Vite development server `server.fs.deny` bypass through Windows alternate paths. No vite development server is started in this repository, so the vulnerable route is unreachable.',
   },
+
+  // ── TEMPORARY exceptions: tinypool (tracked in issue #24) ─────────────────
+  // dev/test-only. tinypool@0.8.4 is a transitive dependency of vitest@1.6.1
+  // (the `vitest run` test runner declared by the workspace packages). No
+  // INFINICUS code declares, imports or calls tinypool, and it is not part of
+  // the production API or web runtime. This is a time-boxed risk acceptance,
+  // NOT permanent CI policy: remove both entries when the vitest/vite
+  // toolchain is upgraded. Tracking issue:
+  // https://github.com/INFINICUS-LLC/infinicus-validation/issues/24
+  // Review/removal target date: 2026-11-06.
+  {
+    githubAdvisoryId: 'GHSA-5gmw-xhrv-c9v3',
+    package: 'tinypool',
+    reason:
+      'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
+  },
+  {
+    githubAdvisoryId: 'GHSA-85c8-ppgw-ccpr',
+    package: 'tinypool',
+    reason:
+      'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
+  },
 ];
 
 function main() {
