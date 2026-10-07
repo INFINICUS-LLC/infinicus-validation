@@ -122,13 +122,63 @@ Residual risks (not covered by this change):
 
 ## Rate limiting
 
-The API registers one global `@fastify/rate-limit` limiter (`RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_MS`,
-default **100 requests per 60 s**), keyed by `request.ip`. See the pull request for the findings about
-how that interacts with Caddy and with webhook delivery/retries; it was **not** changed by this
-documentation.
+### Client identity behind Caddy
+
+Caddy is the only public entry point; the API container is `expose`-only. With `trustProxy` unset the
+API sees Caddy's address for every request, so a per-IP limiter would put **all clients in one bucket**
+(reproduced by a test: one client exhausting the limit returns 429 to an unrelated client).
+
+`TRUST_PROXY=1` (set in both `docker-compose.yml` files) trusts exactly one proxy hop. `request.ip` is then the
+address Caddy appended to `X-Forwarded-For`; addresses a client forges to the left of it are ignored (tested).
+The Docker network's subnet is assigned dynamically, so a hop count is used instead of a CIDR. The setting
+accepts a hop count (1–5) or an explicit IP/CIDR list; `true` is rejected. **Never set it if the API is
+published directly**, because then clients could forge their address.
+
+### Webhook limits
+
+The webhook route opts out of the global limiter (`config.rateLimit = false`) and uses two counters, both
+keyed on the real source address (`plugins/webhookRateLimit.ts`):
+
+| Counter | Key | Setting | Default (test value) |
+|---|---|---|---|
+| Per source | source IP | `WEBHOOK_RATE_LIMIT_IP_MAX` | 300 per window |
+| Per source and connector | source IP + token prefix | `WEBHOOK_RATE_LIMIT_CONNECTOR_MAX` | 120 per window |
+| Window | | `WEBHOOK_RATE_LIMIT_WINDOW_MS` | 60 000 ms |
+
+- One source cannot consume another source's quota, even for the same connector, and a burst on one connector
+  cannot starve another connector from the same source.
+- The per-source counter bounds unauthenticated spraying of invented prefixes, which would otherwise get a
+  fresh per-connector counter each time. The key length of the prefix is capped at 32 characters.
+- An exceeded limit answers `429` with a `Retry-After` header and the standard API error body, so a
+  well-behaved sender backs off. A batch (JSON array) counts as one request.
+- Webhook traffic neither consumes nor is throttled by the global API quota.
+
+**These default values are conservative TEST values, not production values.** No production webhook volume or
+`RATE_LIMIT_MAX` was available: the repository's deployment definitions do not set `RATE_LIMIT_*` (so the
+application default of 100 requests / 60 s applies to every other route), and the running server's
+environment could not be inspected. Measure real sender volume and set the `WEBHOOK_RATE_LIMIT_*` variables
+per environment before relying on these numbers.
+
+## Request headers persisted with a delivery
+
+`webhook_receipts.headers` stores an **allow-listed subset only** (`webhook/headerPolicy.ts`):
+
+- kept: `content-type`, `content-length`, `user-agent`, `accept`, `idempotency-key`, `x-request-id`,
+  `x-correlation-id`, `x-event-id`, `x-delivery-id`, and signature / HMAC / timestamp / event / delivery
+  metadata (for example `x-hub-signature-256`, `stripe-signature`, `x-github-event`);
+- never kept (deny wins over allow): any header whose name contains authorization, authenticate, cookie,
+  token, secret, password, credential, session, api key, bearer or private, so at minimum `authorization`,
+  `cookie`, `proxy-authorization`, `x-api-key`, and shared-secret headers such as `x-gitlab-token` and
+  `x-webhook-token`;
+- everything else (`host`, `x-forwarded-for`, `connection`, …) is dropped; values are truncated to 512 characters.
+
+The request **payload** is still stored in `webhook_receipts.payload`; sensitive-data handling of payload
+content belongs to the DAL sensitive-data engine and is not changed here.
 
 ## Known limitations
 
 - Rotation has no overlap window (above).
-- Request headers sent by the webhook sender are persisted verbatim in `webhook_receipts.headers`; no
-  header is currently excluded (for example `Authorization` or `Cookie` if a sender includes them).
+- The webhook limit defaults are test values (above).
+- The repository's Hetzner/OCI compose files do not set `DB_SSL`, which `loadConfig` requires in production, so
+  they do not describe the running server completely. Reconcile them with the real environment before using
+  them as the source of production values.
