@@ -71,6 +71,7 @@ export async function teardownIntegration(): Promise<void> {
                  )`);
     await clean(`DELETE FROM data_acquisition.validation_results       WHERE tenant_id = ANY($1)`);
     await clean(`DELETE FROM data_acquisition.manual_submissions       WHERE tenant_id = ANY($1)`);
+    await clean(`DELETE FROM data_acquisition.webhook_receipts         WHERE tenant_id = ANY($1)`);
     await clean(`DELETE FROM data_acquisition.collection_runs          WHERE tenant_id = ANY($1)`);
     await clean(`DELETE FROM data_acquisition.connectors               WHERE tenant_id = ANY($1)`);
     await clean(`DELETE FROM data_acquisition.data_sources             WHERE tenant_id = ANY($1)`);

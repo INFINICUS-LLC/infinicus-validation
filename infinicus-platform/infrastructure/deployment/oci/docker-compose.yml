@@ -60,6 +60,17 @@ services:
       EMAIL_VERIFICATION_URL_BASE: ${EMAIL_VERIFICATION_URL_BASE:-https://infini-cus.com/verify-email}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Client-IP derivation for rate limiting and audit: trust exactly ONE proxy
+      # hop. Caddy is the only entry point (this service is `expose`-only, never
+      # published), so the address it appends to X-Forwarded-For is the real
+      # client; anything a client forges to its left is ignored. Without this
+      # every request appears to come from Caddy and all clients share a single
+      # rate-limit bucket. Do NOT set this if the API is ever published directly.
+      TRUST_PROXY: "1"
+      # Webhook intake limits (WEBHOOK_RATE_LIMIT_IP_MAX / _CONNECTOR_MAX / _WINDOW_MS)
+      # and RATE_LIMIT_MAX are intentionally not set here: no production webhook
+      # volume has been measured, so the application's conservative TEST defaults
+      # apply (see packages/configuration). Set them once real volume is known.
     # Not published directly either — Caddy is the only public entry
     # point, so every request is TLS-terminated before it reaches this
     # container.

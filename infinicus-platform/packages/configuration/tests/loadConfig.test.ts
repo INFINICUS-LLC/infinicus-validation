@@ -12,6 +12,10 @@ describe('loadConfig', () => {
       logLevel: 'info',
       rateLimitMax: 100,
       rateLimitWindowMs: 60_000,
+      trustProxy: false,
+      webhookRateLimitIpMax: 300,
+      webhookRateLimitConnectorMax: 120,
+      webhookRateLimitWindowMs: 60_000,
       dbPoolMin: 2,
       dbPoolMax: 10,
       dbIdleTimeoutMs: 30_000,
@@ -70,6 +74,51 @@ describe('loadConfig', () => {
     const config = loadConfig({ DATABASE_URL: 'postgresql://x', RATE_LIMIT_MAX: '50', RATE_LIMIT_WINDOW_MS: '30000' });
     expect(config.rateLimitMax).toBe(50);
     expect(config.rateLimitWindowMs).toBe(30_000);
+  });
+
+  describe('TRUST_PROXY', () => {
+    const base = { DATABASE_URL: 'postgresql://x' };
+
+    it('defaults to false (use the socket address)', () => {
+      expect(loadConfig(base).trustProxy).toBe(false);
+      expect(loadConfig({ ...base, TRUST_PROXY: '' }).trustProxy).toBe(false);
+      expect(loadConfig({ ...base, TRUST_PROXY: 'false' }).trustProxy).toBe(false);
+      expect(loadConfig({ ...base, TRUST_PROXY: '0' }).trustProxy).toBe(false);
+    });
+
+    it('accepts a hop count', () => {
+      expect(loadConfig({ ...base, TRUST_PROXY: '1' }).trustProxy).toBe(1);
+      expect(loadConfig({ ...base, TRUST_PROXY: '2' }).trustProxy).toBe(2);
+    });
+
+    it('accepts an explicit list of proxy addresses/CIDRs', () => {
+      expect(loadConfig({ ...base, TRUST_PROXY: '172.18.0.0/16, 10.0.0.5' }).trustProxy).toEqual(['172.18.0.0/16', '10.0.0.5']);
+    });
+
+    it('rejects trust-everything and malformed values', () => {
+      for (const bad of ['true', 'TRUE', '6', '-1', 'caddy', '1.2.3.4; drop', '*']) {
+        expect(() => loadConfig({ ...base, TRUST_PROXY: bad })).toThrow(ConfigurationError);
+      }
+    });
+  });
+
+  describe('webhook rate limits', () => {
+    const base = { DATABASE_URL: 'postgresql://x' };
+
+    it('has conservative test defaults and is overridable', () => {
+      const d = loadConfig(base);
+      expect(d.webhookRateLimitIpMax).toBe(300);
+      expect(d.webhookRateLimitConnectorMax).toBe(120);
+      expect(d.webhookRateLimitWindowMs).toBe(60_000);
+      const o = loadConfig({ ...base, WEBHOOK_RATE_LIMIT_IP_MAX: '900', WEBHOOK_RATE_LIMIT_CONNECTOR_MAX: '600', WEBHOOK_RATE_LIMIT_WINDOW_MS: '10000' });
+      expect([o.webhookRateLimitIpMax, o.webhookRateLimitConnectorMax, o.webhookRateLimitWindowMs]).toEqual([900, 600, 10_000]);
+    });
+
+    it('rejects zero, negative, fractional and non-numeric values', () => {
+      for (const bad of ['0', '-5', '1.5', 'many']) {
+        expect(() => loadConfig({ ...base, WEBHOOK_RATE_LIMIT_IP_MAX: bad })).toThrow(ConfigurationError);
+      }
+    });
   });
 
   it('applies default connection-pool settings when unset', () => {

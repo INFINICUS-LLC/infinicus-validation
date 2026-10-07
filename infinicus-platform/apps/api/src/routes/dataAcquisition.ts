@@ -14,6 +14,7 @@ import {
   connectorResponseSchema, listConnectorsResponseSchema,
   collectionRunResponseSchema, listCollectionRunsResponseSchema,
   manualIntakeResponseSchema,
+  webhookTokenResponseSchema,
   listValidationResultsResponseSchema, qualityScoreResponseSchema,
   listProvenanceResponseSchema,
   publicationPackageResponseSchema, listPublicationPackagesResponseSchema,
@@ -186,6 +187,28 @@ export default async function dataAcquisitionRoutes(app: FastifyInstance) {
     await businesses.getById(request.ctx!, businessId);
     const connector = await dataAcquisition.updateConnectorStatus(request.ctx!, businessId, sourceId, connectorId, request.body.status);
     return reply.status(200).send(connector);
+  });
+
+  server.post('/v1/businesses/:businessId/data-sources/:sourceId/connectors/:connectorId/webhook-token', {
+    schema: {
+      tags: ['data-acquisition'],
+      summary: '(Re)generate a webhook connector\'s bearer token — shown exactly once here, never retrievable again',
+      params: connectorIdParamsSchema,
+      response: { 201: webhookTokenResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema, 400: errorResponseSchema },
+    },
+    // Deliberately NO requireIdempotencyKey: the idempotency layer persists
+    // every completed response body in api.idempotency_keys and replays it on
+    // a retry. This response carries the raw bearer token, which must exist
+    // only in the single response to the caller (only its SHA-256 hash is
+    // stored, see docs/webhook-token-lifecycle.md). Regeneration is naturally
+    // "last call wins": a client that lost the response simply calls again,
+    // and the previous token is invalidated.
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('da:admin'), app.requireActiveSubscription()],
+  }, async (request, reply) => {
+    const { businessId, sourceId, connectorId } = request.params;
+    await businesses.getById(request.ctx!, businessId);
+    const token = await dataAcquisition.generateConnectorWebhookToken(request.ctx!, businessId, sourceId, connectorId);
+    return reply.status(201).send({ token, webhookUrl: `/v1/webhooks/data-acquisition/${token}` });
   });
 
   // ── Manual JSON intake (§4.5) ───────────────────────────────────────────────
