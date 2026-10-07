@@ -36,3 +36,5 @@ export { deriveRiskClass, determineTimeValidity, RISK_ORDER } from './recommenda
 export type { DerivedRisk, RiskInputs, TimeValidity, TimeValiditySignals, AuthoredRiskClass } from './recommendationAuthoring.js';
 export { evaluateApprovalGate } from './approvalGate.js';
 export type { ApprovalGateVerdict, GateBlockCode, GateFacts, TwinFreshness } from './approvalGate.js';
+export { buildApprovalAuditDetail, auditEventTypeFor, APPROVAL_AUDIT_SCHEMA } from './approvalAudit.js';
+export type { ApprovalAuditEventType, ApprovalAuditInput, ApprovalAuditReasonCode } from './approvalAudit.js';

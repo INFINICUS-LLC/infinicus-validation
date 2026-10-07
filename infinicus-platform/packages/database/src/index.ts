@@ -290,7 +290,7 @@ export type {
   ActionReviewPackage, ActionReviewVersion, ReviewVersionSnapshot,
   ApprovalPolicy,
   ApproverAssignment, ApprovalDelegation,
-  ApprovalDecision, ApprovalDecisionVersion,
+  ApprovalDecision, ApprovalDecisionVersion, DecisionAudit,
   ApprovedAction,
   ActionExecutionPlan,
   ActionControlGate, ActionHold, ActionRelease,

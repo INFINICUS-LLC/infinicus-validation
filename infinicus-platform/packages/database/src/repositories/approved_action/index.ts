@@ -29,7 +29,7 @@ export { ApproverAuthorityRepository } from './ApproverAuthorityRepository.js';
 export type { ApproverAssignment, ApprovalDelegation } from './ApproverAuthorityRepository.js';
 
 export { ApprovalDecisionRepository } from './ApprovalDecisionRepository.js';
-export type { ApprovalDecision, ApprovalDecisionVersion } from './ApprovalDecisionRepository.js';
+export type { ApprovalDecision, ApprovalDecisionVersion, DecisionAudit } from './ApprovalDecisionRepository.js';
 
 export { ApprovedActionRepository } from './ApprovedActionRepository.js';
 export type { ApprovedAction } from './ApprovedActionRepository.js';

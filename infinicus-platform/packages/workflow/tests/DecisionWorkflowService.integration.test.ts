@@ -541,11 +541,11 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
     }
     const blocked = (codes: string[]) => expect.objectContaining({ name: 'ApprovalBlockedError', codes: expect.arrayContaining(codes) });
 
-    /** A fresh business so other fixtures' Twin snapshots (effective 'now') cannot make these recommendations stale. */
+    /** A fresh business so other fixtures' Twin snapshots (effective 'now') cannot make these recommendations stale. Named to sort after the shared fixture businesses so the paged business-list test is unaffected. */
     async function freshBusiness() {
       const id = crypto.randomUUID();
       await adminPool!.query(
-        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Gate Biz',$4,'active')`,
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'ZZ Gate Biz',$4,'active')`,
         [id, ctx1.tenantId, ctx1.workspaceId, uniqueCode('gate-biz')]
       );
       return id;
@@ -643,6 +643,142 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       for (const twinSnapshotId of ['00000000-0000-0000-0000-0000000000cc', draft, foreign]) {
         await expect(decideOn({ riskClass: 'low', isTimeSensitive: false, twinSnapshotId }, 'approve', biz)).rejects.toEqual(blocked(['TWIN_SNAPSHOT_UNVERIFIABLE']));
       }
+    });
+
+    // ── P0-4 Block 1: every approve / reject / deny / block leaves an append-only audit event ──────────────────────────
+    const auditRows = async (biz: string) => (await adminPool!.query(
+      `SELECT id, decision_id, event_type, detail FROM approved_business_action.approval_audit_events WHERE business_id = $1 ORDER BY occurred_at, created_at`, [biz])).rows;
+
+    it('audit: approve, approve_with_modifications and reject each write exactly one event, atomically with the decision', async () => {
+      const biz = await freshBusiness();
+      const approved = await decideOn({ riskClass: 'low', isTimeSensitive: false }, 'approve', biz);
+      const modified = await decideOn({ riskClass: 'low', isTimeSensitive: false }, 'approve_with_modifications', biz);
+      const rejected = await decideOn({ riskClass: 'low', isTimeSensitive: false }, 'reject', biz);
+      const rows = await auditRows(biz);
+      expect(rows.map((r) => r.event_type)).toEqual(['approval.approved', 'approval.approved_with_modifications', 'approval.rejected']);
+      expect(rows.map((r) => r.decision_id)).toEqual([approved.id, modified.id, rejected.id]);
+      const d = rows[0].detail;
+      expect(d).toMatchObject({
+        schema: 'approval-audit/1', approvalType: 'approve', newState: 'approved',
+        approver: { userId: UID, roleCode: 'business-owner' },
+        facts: { riskClass: 'low', isTimeSensitive: false },
+      });
+      expect(d.priorState).toEqual(expect.any(String));
+      expect(d.decisionVersionId).toEqual(expect.any(String));
+      expect(d.unavailable).toEqual(expect.arrayContaining(['actionId', 'simulationRunId', 'modelVersion']));
+    });
+
+    it('audit: records the permission and correlation id the API route supplied, never as decision input', async () => {
+      const biz = await freshBusiness();
+      const intakePackageId = await createAbaIntake(ctx1, biz, APPROVABLE_FACTS);
+      const review = await service.createReview(ctx1, biz, { intakePackageId, reviewCode: uniqueCode('aud-rc'), summary: 'x' });
+      const assignmentCode = uniqueCode('wf-aud');
+      await service.grantApproverAuthority(ctx1, biz, { approverUserId: UID, assignmentCode, roleCode: 'business-owner' });
+      await service.submitApprovalDecision(ctx1, biz, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('ad'), summary: 'ok', outcome: 'approve',
+        requestContext: { permissionUsed: 'aba:write', correlationId: 'req-123' },
+      });
+      expect((await auditRows(biz))[0].detail).toMatchObject({ permissionUsed: 'aba:write', correlationId: 'req-123' });
+    });
+
+    it('audit: a refusal for missing authority writes approval.denied (no decision row), then the error still stands', async () => {
+      const biz = await freshBusiness();
+      const intakePackageId = await createAbaIntake(ctx1, biz, APPROVABLE_FACTS);
+      const review = await service.createReview(ctx1, biz, { intakePackageId, reviewCode: uniqueCode('aud-na'), summary: 'x' });
+      await expect(service.submitApprovalDecision(ctx1, biz, {
+        reviewPackageId: review.id, assignmentCode: uniqueCode('nobody'), decisionCode: uniqueCode('ad'), summary: 'x', outcome: 'approve',
+      })).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
+      const rows = await auditRows(biz);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ event_type: 'approval.denied', decision_id: null });
+      expect(rows[0].detail).toMatchObject({ reasonCodes: ['AUTHORITY_NOT_ESTABLISHED'], approver: { userId: UID, assignmentId: null } });
+      const decisions = await adminPool!.query(`SELECT count(*)::int n FROM approved_business_action.approval_decisions WHERE business_id = $1`, [biz]);
+      expect(decisions.rows[0].n).toBe(0);
+    });
+
+    it('audit: a risk-policy denial writes approval.denied with the approver role and the persisted risk class', async () => {
+      const biz = await freshBusiness();
+      const intakePackageId = await createAbaIntake(ctx1, biz, { riskClass: 'critical', isTimeSensitive: false });
+      const review = await service.createReview(ctx1, biz, { intakePackageId, reviewCode: uniqueCode('aud-rp'), summary: 'x' });
+      const assignmentCode = uniqueCode('wf-aud-m');
+      await service.grantApproverAuthority(ctx1, biz, { approverUserId: UID, assignmentCode, roleCode: 'manager' });
+      await expect(service.submitApprovalDecision(ctx1, biz, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('ad'), summary: 'x', outcome: 'approve',
+      })).rejects.toMatchObject({ name: 'ApprovalPolicyDeniedError' });
+      const rows = await auditRows(biz);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].event_type).toBe('approval.denied');
+      expect(rows[0].detail).toMatchObject({ reasonCodes: ['RISK_POLICY'], approver: { roleCode: 'manager', assignmentCode }, facts: { riskClass: 'critical' } });
+    });
+
+    it('audit: expired, unknown and stale approvals write approval.blocked with the gate codes; reject on the same facts writes approval.rejected', async () => {
+      const biz = await freshBusiness();
+      await expect(decideOn({ riskClass: 'low', isTimeSensitive: true, validUntil: hours(-1) }, 'approve', biz)).rejects.toEqual(blocked(['EXPIRED']));
+      await expect(decideOn({ riskClass: 'low' }, 'approve', biz)).rejects.toEqual(blocked(['TIME_SENSITIVITY_UNKNOWN']));
+      const used = await publishedSnapshot(hours(197), true, biz);
+      await publishedSnapshot(hours(199), true, biz);
+      await expect(decideOn({ riskClass: 'low', isTimeSensitive: false, twinSnapshotId: used }, 'approve', biz)).rejects.toEqual(blocked(['STALE']));
+      await decideOn({ riskClass: 'low', isTimeSensitive: true, validUntil: hours(-1) }, 'reject', biz);
+      const rows = await auditRows(biz);
+      expect(rows.map((r) => r.event_type)).toEqual(['approval.blocked', 'approval.blocked', 'approval.blocked', 'approval.rejected']);
+      expect(rows[0].detail.reasonCodes).toEqual(['EXPIRED']);
+      expect(rows[1].detail.reasonCodes).toEqual(['TIME_SENSITIVITY_UNKNOWN']);
+      expect(rows[2].detail.reasonCodes).toEqual(['STALE']);
+      expect(rows[2].detail.facts.twinSnapshotId).toBe(used);
+      expect(rows[0].decision_id).toBeNull();
+      expect(rows[3].decision_id).toEqual(expect.any(String));
+    });
+
+    it('audit: completeness - every decided decision for the business has exactly one decision audit event', async () => {
+      const biz = await freshBusiness();
+      await decideOn({ riskClass: 'low', isTimeSensitive: false }, 'approve', biz);
+      await decideOn({ riskClass: 'low', isTimeSensitive: false }, 'reject', biz);
+      await expect(decideOn({}, 'approve', biz)).rejects.toEqual(blocked(['TIME_SENSITIVITY_UNKNOWN']));
+      const gaps = await adminPool!.query(
+        `SELECT d.id FROM approved_business_action.approval_decisions d
+          WHERE d.business_id = $1 AND d.status IN ('approved','approved_with_modifications','rejected')
+            AND (SELECT count(*) FROM approved_business_action.approval_audit_events e WHERE e.decision_id = d.id) <> 1`, [biz]);
+      expect(gaps.rows).toEqual([]);
+      const decided = await adminPool!.query(`SELECT count(*)::int n FROM approved_business_action.approval_decisions WHERE business_id = $1 AND status <> 'draft'`, [biz]);
+      expect(decided.rows[0].n).toBe(2);
+      expect(await auditRows(biz)).toHaveLength(3);
+    });
+
+    it('audit: the audit table is append-only (update and delete are rejected by the database)', async () => {
+      const biz = await freshBusiness();
+      await decideOn({ riskClass: 'low', isTimeSensitive: false }, 'approve', biz);
+      const [row] = await auditRows(biz);
+      await expect(adminPool!.query(`UPDATE approved_business_action.approval_audit_events SET event_type = 'x' WHERE id = $1`, [row.id])).rejects.toThrow(/append-only/);
+      await expect(adminPool!.query(`DELETE FROM approved_business_action.approval_audit_events WHERE id = $1`, [row.id])).rejects.toThrow(/append-only/);
+    });
+
+    it('audit: if the audit event cannot be written with a decision, the decision is not finalised (same transaction)', async () => {
+      const biz = await freshBusiness();
+      const intakePackageId = await createAbaIntake(ctx1, biz, APPROVABLE_FACTS);
+      const review = await service.createReview(ctx1, biz, { intakePackageId, reviewCode: uniqueCode('aud-at'), summary: 'x' });
+      const assignment = await new ApproverAuthorityRepository().createAssignment(ctx1, biz, UID, uniqueCode('aud-asg'));
+      const repo = new ApprovalDecisionRepository();
+      const { decision, version } = await repo.createDecision(ctx1, biz, review.id, assignment.id, uniqueCode('aud-dec'), 'x');
+      await expect(repo.approve(ctx1, decision.id, version.id, { eventType: 'approval.approved', detail: { bad: BigInt(1) } as never })).rejects.toThrow();
+      const after = await adminPool!.query(`SELECT status FROM approved_business_action.approval_decisions WHERE id = $1`, [decision.id]);
+      expect(after.rows[0].status).not.toBe('approved');
+      expect(await auditRows(biz)).toHaveLength(0);
+    });
+
+    it('audit: a failing audit write never masks or weakens a refusal', async () => {
+      const failing = { recordAuditEvent: async () => { throw new Error('audit store down'); } } as never;
+      const failingService = new DecisionWorkflowService(
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, failing,
+      );
+      const biz = await freshBusiness();
+      const intakePackageId = await createAbaIntake(ctx1, biz, {});
+      const review = await failingService.createReview(ctx1, biz, { intakePackageId, reviewCode: uniqueCode('aud-fail'), summary: 'x' });
+      const assignmentCode = uniqueCode('wf-aud-f');
+      await failingService.grantApproverAuthority(ctx1, biz, { approverUserId: UID, assignmentCode, roleCode: 'business-owner' });
+      await expect(failingService.submitApprovalDecision(ctx1, biz, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('ad'), summary: 'x', outcome: 'approve',
+      })).rejects.toMatchObject({ name: 'ApprovalBlockedError' });
     });
 
     it('no caller input can set the facts: the input type has no risk or validity fields and extra properties are ignored', async () => {

@@ -189,6 +189,7 @@ export default async function businessRoutes(app: FastifyInstance) {
       decisionCode: request.body.decisionCode,
       summary: request.body.summary,
       outcome: request.body.outcome,
+      requestContext: { permissionUsed: 'aba:write', correlationId: request.correlationId },
     });
     return reply.status(201).send({ id: decision.id, status: decision.status, decisionCode: decision.decisionCode });
   });

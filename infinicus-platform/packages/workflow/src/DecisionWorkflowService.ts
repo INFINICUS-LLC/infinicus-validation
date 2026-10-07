@@ -1,5 +1,9 @@
 import { evaluateApprovalGate, type GateBlockCode } from './approvalGate.js';
 import {
+  auditEventTypeFor, buildApprovalAuditDetail,
+  type ApprovalAuditEventType, type ApprovalAuditInput, type ApprovalAuditReasonCode,
+} from './approvalAudit.js';
+import {
   APPROVER_ROLES, DEFAULT_APPROVAL_RISK_POLICY, evaluateApproval,
   type ApprovalOutcome, type ApprovalRiskPolicy, type ApproverRole,
 } from './approvalRiskPolicy.js';
@@ -9,7 +13,8 @@ import {
   DigitalTwinInstanceRepository, DigitalTwinSnapshotRepository,
   SimulationRunRepository, SimulationResultRepository,
   DecisionCaseRepository, DecisionRecommendationRepository,
-  ActionReviewRepository, ApproverAuthorityRepository, ApprovalDecisionRepository,
+  ActionReviewRepository, ApproverAuthorityRepository, ApprovalDecisionRepository, ABAAuditRepository,
+  type ActionReviewVersion,
   OwnershipEvidenceRepository, provenOwnersOf, OWNER_APPROVER_ASSIGNMENT_CODE, normalizeRevocationReason,
   ApproverAuthorityNotFoundError, ApproverAuthorityStateConflictError,
   MonitoredActionRepository, OutcomeObservationRepository,
@@ -61,6 +66,11 @@ export class ApprovalBlockedError extends Error {
     super(`approval blocked (${codes.join(', ')}): ${reasons.join('; ')}; recovery: RECALCULATE DECISION`);
     this.name = 'ApprovalBlockedError';
   }
+}
+
+interface ApprovalTrace {
+  assignment: { id: string; code: string; roleCode: string | null } | null;
+  reviewVersion: ActionReviewVersion | null;
 }
 
 export interface GrantApproverAuthorityInput {
@@ -124,6 +134,11 @@ export interface SubmitApprovalInput {
   decisionCode: string;
   summary: string;
   outcome: ApprovalOutcome;
+  /**
+   * Request metadata for the audit record only (never an input to any decision): the permission the route enforced and
+   * the request correlation id. Set by the API layer.
+   */
+  requestContext?: { permissionUsed?: string; correlationId?: string };
 }
 
 export interface RecordOutcomeInput {
@@ -160,7 +175,8 @@ export class DecisionWorkflowService {
     private readonly approvalDecisions: ApprovalDecisionRepository = new ApprovalDecisionRepository(),
     private readonly monitoredActions: MonitoredActionRepository = new MonitoredActionRepository(),
     private readonly outcomeObservations: OutcomeObservationRepository = new OutcomeObservationRepository(),
-    private readonly riskPolicy: ApprovalRiskPolicy = DEFAULT_APPROVAL_RISK_POLICY
+    private readonly riskPolicy: ApprovalRiskPolicy = DEFAULT_APPROVAL_RISK_POLICY,
+    private readonly approvalAudit: ABAAuditRepository = new ABAAuditRepository()
   ) {}
 
   /** Business selection, bounded by LIMIT/OFFSET pushed into the repository query. */
@@ -313,6 +329,67 @@ export class DecisionWorkflowService {
    * assignment for this business; it never creates one (V-01).
    */
   async submitApprovalDecision(ctx: TenantContext, businessId: string, input: SubmitApprovalInput): Promise<ApprovalDecision> {
+    const trace: ApprovalTrace = { assignment: null, reviewVersion: null };
+    try {
+      return await this.decideApproval(ctx, businessId, input, trace);
+    } catch (err) {
+      // Every refusal leaves an append-only audit record (approve/deny/block). The refusal itself always stands: if the
+      // audit write fails the original error is still thrown and the failure is logged, never swallowed silently.
+      await this.auditRefusal(ctx, businessId, input, trace, err);
+      throw err;
+    }
+  }
+
+  private auditInput(ctx: TenantContext, businessId: string, input: SubmitApprovalInput, trace: ApprovalTrace, extra: Pick<ApprovalAuditInput, 'eventType' | 'decisionId' | 'decisionVersionId' | 'priorState' | 'newState' | 'reason' | 'reasonCodes'>): ApprovalAuditInput {
+    const v = trace.reviewVersion;
+    return {
+      ...extra,
+      businessId,
+      reviewPackageId: input.reviewPackageId,
+      approverUserId: ctx.userId,
+      assignment: trace.assignment,
+      requestedOutcome: input.outcome,
+      permissionUsed: input.requestContext?.permissionUsed ?? null,
+      correlationId: input.requestContext?.correlationId ?? null,
+      facts: v && {
+        reviewVersionId: v.id,
+        sourceRecommendationVersionId: v.sourceRecommendationVersionId,
+        riskClass: v.riskClass,
+        isTimeSensitive: v.isTimeSensitive,
+        validUntil: v.validUntil,
+        twinSnapshotId: v.twinSnapshotId,
+      },
+    };
+  }
+
+  private async auditRefusal(ctx: TenantContext, businessId: string, input: SubmitApprovalInput, trace: ApprovalTrace, err: unknown): Promise<void> {
+    let eventType: ApprovalAuditEventType;
+    let reasonCodes: ApprovalAuditReasonCode[];
+    if (err instanceof ApproverAuthorityNotEstablishedError) {
+      eventType = 'approval.denied';
+      reasonCodes = ['AUTHORITY_NOT_ESTABLISHED'];
+    } else if (err instanceof ApprovalPolicyDeniedError) {
+      eventType = 'approval.denied';
+      reasonCodes = ['RISK_POLICY'];
+    } else if (err instanceof ApprovalBlockedError) {
+      eventType = 'approval.blocked';
+      reasonCodes = [...err.codes];
+    } else {
+      return; // not a refusal (infrastructure or validation failure): nothing was decided, nothing to attest
+    }
+    try {
+      const detail = buildApprovalAuditDetail(this.auditInput(ctx, businessId, input, trace, {
+        eventType, decisionId: null, decisionVersionId: null, priorState: null, newState: null,
+        reason: err instanceof Error ? err.message : String(err), reasonCodes,
+      }));
+      await this.approvalAudit.recordAuditEvent(ctx, businessId, eventType, detail);
+    } catch (auditError) {
+      // eslint-disable-next-line no-console
+      console.error('[approval-audit] failed to record a refusal; the refusal still stands', { businessId, reviewPackageId: input.reviewPackageId, auditError });
+    }
+  }
+
+  private async decideApproval(ctx: TenantContext, businessId: string, input: SubmitApprovalInput, trace: ApprovalTrace): Promise<ApprovalDecision> {
     if (input.approverUserId !== undefined && input.approverUserId !== ctx.userId) {
       throw new ApproverAuthorityNotEstablishedError('the approver must be the authenticated principal');
     }
@@ -320,14 +397,18 @@ export class DecisionWorkflowService {
     if (!assignment) {
       throw new ApproverAuthorityNotEstablishedError('no active approver assignment exists for this user and business');
     }
+    trace.assignment = { id: assignment.id, code: assignment.assignmentCode, roleCode: null };
     await this.assertOwnerAuthorityStillProven(ctx, businessId, assignment);
 
     // Trusted facts come ONLY from the persisted review version (ADI-authored, snapshotted by ABA); nothing the
     // caller supplies can set risk or validity. Missing facts are unclassified/unknown and fail closed.
     const { version: reviewVersion, now } = await this.reviews.getLatestVersionWithClock(ctx, input.reviewPackageId);
+    trace.reviewVersion = reviewVersion;
+    const roleCode = await this.approverAuthority.getCurrentRoleCode(ctx, assignment.id);
+    trace.assignment = { id: assignment.id, code: assignment.assignmentCode, roleCode };
     const verdict = evaluateApproval({
       riskClass: reviewVersion?.riskClass ?? null,
-      roleCode: await this.approverAuthority.getCurrentRoleCode(ctx, assignment.id),
+      roleCode,
       outcome: input.outcome,
       policy: this.riskPolicy,
     });
@@ -353,13 +434,24 @@ export class DecisionWorkflowService {
       ctx, businessId, input.reviewPackageId, assignment.id, input.decisionCode, input.summary
     );
 
+    const newState = input.outcome === 'approve' ? 'approved' : input.outcome === 'approve_with_modifications' ? 'approved_with_modifications' : 'rejected';
+    const eventType = auditEventTypeFor(input.outcome);
+    // Written in the same transaction as the decision: if the audit event cannot be written the decision is not finalised.
+    const audit = {
+      eventType,
+      detail: buildApprovalAuditDetail(this.auditInput(ctx, businessId, input, trace, {
+        eventType, decisionId: decision.id, decisionVersionId: version.id,
+        priorState: decision.status, newState, reason: input.summary, reasonCodes: [],
+      })),
+    };
+
     switch (input.outcome) {
       case 'approve':
-        return this.approvalDecisions.approve(ctx, decision.id, version.id);
+        return this.approvalDecisions.approve(ctx, decision.id, version.id, audit);
       case 'approve_with_modifications':
-        return this.approvalDecisions.approveWithModifications(ctx, decision.id, version.id);
+        return this.approvalDecisions.approveWithModifications(ctx, decision.id, version.id, audit);
       case 'reject':
-        return this.approvalDecisions.reject(ctx, decision.id, version.id);
+        return this.approvalDecisions.reject(ctx, decision.id, version.id, audit);
     }
   }
 
