@@ -18,6 +18,26 @@ import {
 
 const RECENT_LIMIT = 5;
 
+/** Assignment code used by the business-owner approval flow; the assignment must be granted beforehand. */
+export const DEFAULT_APPROVER_ASSIGNMENT_CODE = 'business-owner-approver';
+
+/**
+ * Thrown when a decision is attempted without approval authority that was
+ * established beforehand by an authoritative source. The `.name` is mapped
+ * to HTTP 403 by apps/api/src/errors.ts.
+ */
+export class ApproverAuthorityNotEstablishedError extends Error {
+  constructor(reason: string) {
+    super(`approver authority not established: ${reason}`);
+    this.name = 'ApproverAuthorityNotEstablishedError';
+  }
+}
+
+export interface GrantApproverAuthorityInput {
+  approverUserId: string;
+  assignmentCode: string;
+}
+
 export interface WorkflowView {
   business: Business;
   biEvidence: InsightPackage[];
@@ -48,7 +68,12 @@ export interface CreateReviewInput {
 
 export interface SubmitApprovalInput {
   reviewPackageId: string;
-  approverUserId: string;
+  /**
+   * Optional and NEVER a source of authority. The approver is always the
+   * authenticated principal (`ctx.userId`); if supplied it must equal it.
+   */
+  approverUserId?: string;
+  /** Code of an approver assignment that was established beforehand. */
   assignmentCode: string;
   decisionCode: string;
   summary: string;
@@ -159,13 +184,35 @@ export class DecisionWorkflowService {
   }
 
   /**
-   * Records a human approver's explicit decision. This forwards the
-   * decision — it does not decide anything itself (AD-021).
+   * Establishes approval authority for a user. This is the ONLY place an
+   * approver assignment is created, and it is a separate operation from
+   * deciding: submitApprovalDecision never calls it.
+   *
+   * The caller MUST be authorised to administer approval authority; the API
+   * route enforces the `aba:admin` permission (seeded in migration 0137)
+   * before invoking this. Action-risk policy and valid_until are layered on
+   * by P0-2 / P0-3 of the reconciliation plan.
    */
-  async submitApprovalDecision(ctx: TenantContext, businessId: string, input: SubmitApprovalInput): Promise<ApprovalDecision> {
+  async grantApproverAuthority(ctx: TenantContext, businessId: string, input: GrantApproverAuthorityInput) {
     const assignment = await this.approverAuthority.createAssignment(ctx, businessId, input.approverUserId, input.assignmentCode);
     await this.approverAuthority.createVersion(ctx, assignment.id, businessId, 'approver');
-    await this.approverAuthority.transitionStatus(ctx, assignment.id, 'active');
+    return this.approverAuthority.transitionStatus(ctx, assignment.id, 'active');
+  }
+
+  /**
+   * Records a human approver's explicit decision. This forwards the
+   * decision — it does not decide anything itself (AD-021). It CHECKS that
+   * the authenticated principal already holds an active approver
+   * assignment for this business; it never creates one (V-01).
+   */
+  async submitApprovalDecision(ctx: TenantContext, businessId: string, input: SubmitApprovalInput): Promise<ApprovalDecision> {
+    if (input.approverUserId !== undefined && input.approverUserId !== ctx.userId) {
+      throw new ApproverAuthorityNotEstablishedError('the approver must be the authenticated principal');
+    }
+    const assignment = await this.approverAuthority.findActiveForUser(ctx, businessId, ctx.userId, input.assignmentCode);
+    if (!assignment) {
+      throw new ApproverAuthorityNotEstablishedError('no active approver assignment exists for this user and business');
+    }
 
     const { decision, version } = await this.approvalDecisions.createDecision(
       ctx, businessId, input.reviewPackageId, assignment.id, input.decisionCode, input.summary

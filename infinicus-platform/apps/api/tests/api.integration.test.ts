@@ -189,6 +189,15 @@ async function createMonitoredAction(ctx: TenantContext, businessId: string): Pr
   return monitoredAction.id;
 }
 
+/** Establishes approver authority through the admin route — a request SEPARATE from deciding (V-01). */
+async function grantApprover(ctx: TenantContext, token: string, bizId: string, approverUserId: string, code: string) {
+  return app!.inject({
+    method: 'POST', url: `/v1/businesses/${bizId}/approver-assignments`,
+    headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('grant-key') },
+    payload: { approverUserId, assignmentCode: code },
+  });
+}
+
 describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
   beforeAll(async () => {
     const appUrl = process.env.DATABASE_URL!;
@@ -443,13 +452,72 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
         [bizId, ctx.tenantId, ctx.workspaceId, uc('decision-biz')]
       );
       const intakePackageId = await createAbaIntake(ctx, bizId);
+      const code = uc('a');
+      expect((await grantApprover(ctx, token, bizId, userId, code)).statusCode).toBe(201);
 
       const res = await app!.inject({
         method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
-        payload: { intakePackageId, reviewCode: uc('r'), summary: 'Approve it', approverUserId: userId, assignmentCode: uc('a'), decisionCode: uc('d'), outcome: 'approve' },
+        payload: { intakePackageId, reviewCode: uc('r'), summary: 'Approve it', approverUserId: userId, assignmentCode: code, decisionCode: uc('d'), outcome: 'approve' },
       });
       expect(res.statusCode).toBe(201);
       expect(res.json().status).toBe('approved');
+    });
+
+    it('rejects a decision when no approver authority was established beforehand (authority is never self-issued)', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithOwner(userId);
+      const bizId = crypto.randomUUID();
+      await adminPool!.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'No Authority Biz',$4,'active')`,
+        [bizId, ctx.tenantId, ctx.workspaceId, uc('no-auth-biz')]
+      );
+      const intakePackageId = await createAbaIntake(ctx, bizId);
+      const res = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+        payload: { intakePackageId, reviewCode: uc('r'), summary: 's', approverUserId: userId, assignmentCode: uc('a'), decisionCode: uc('d'), outcome: 'approve' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe('ApproverAuthorityNotEstablishedError');
+      const { rows } = await adminPool!.query(`SELECT count(*)::int AS n FROM approved_business_action.approver_assignments WHERE business_id = $1`, [bizId]);
+      expect(rows[0].n).toBe(0);
+    });
+
+    it('rejects a decision that names a different approver than the authenticated user, even if that user holds authority', async () => {
+      const { userId, token } = await registerActiveUser();
+      const other = await registerActiveUser();
+      const ctx = await createTenantWithOwner(userId);
+      const bizId = crypto.randomUUID();
+      await adminPool!.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Impersonation Biz',$4,'active')`,
+        [bizId, ctx.tenantId, ctx.workspaceId, uc('imp-biz')]
+      );
+      const intakePackageId = await createAbaIntake(ctx, bizId);
+      const code = uc('a');
+      expect((await grantApprover(ctx, token, bizId, other.userId, code)).statusCode).toBe(201);
+      const res = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+        payload: { intakePackageId, reviewCode: uc('r'), summary: 's', approverUserId: other.userId, assignmentCode: code, decisionCode: uc('d'), outcome: 'approve' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe('ApproverAuthorityNotEstablishedError');
+    });
+
+    it('rejects granting approver authority without aba:admin', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx: TenantContext = { tenantId: T1, workspaceId: WS1, userId };
+      const memberships = new MembershipRepository();
+      const roles = new RoleRepository();
+      const membership = await memberships.create(ctx, userId);
+      await memberships.activate(ctx, membership.id);
+      const memberRole = await roles.getByCode(ctx, 'member');
+      await memberships.assignRole(ctx, membership.id, memberRole.id);
+      const bizId = crypto.randomUUID();
+      await adminPool!.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Member Grant Biz',$4,'active')`,
+        [bizId, T1, WS1, uc('member-grant-biz')]
+      );
+      const res = await grantApprover(ctx, token, bizId, userId, uc('a'));
+      expect(res.statusCode).toBe(403);
     });
 
     it('rejects a request missing the Idempotency-Key header', async () => {
@@ -477,8 +545,10 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
         [bizId, ctx.tenantId, ctx.workspaceId, uc('replay-biz')]
       );
       const intakePackageId = await createAbaIntake(ctx, bizId);
+      const code = uc('a');
+      expect((await grantApprover(ctx, token, bizId, userId, code)).statusCode).toBe(201);
       const key = uc('replay-key');
-      const payload = { intakePackageId, reviewCode: uc('r'), summary: 's', approverUserId: userId, assignmentCode: uc('a'), decisionCode: uc('d'), outcome: 'approve' as const };
+      const payload = { intakePackageId, reviewCode: uc('r'), summary: 's', approverUserId: userId, assignmentCode: code, decisionCode: uc('d'), outcome: 'approve' as const };
 
       const first = await app!.inject({ method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': key }, payload });
       const second = await app!.inject({ method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': key }, payload });
@@ -496,15 +566,17 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
         [bizId, ctx.tenantId, ctx.workspaceId, uc('conflict-biz')]
       );
       const intakePackageId = await createAbaIntake(ctx, bizId);
+      const code = uc('a');
+      expect((await grantApprover(ctx, token, bizId, userId, code)).statusCode).toBe(201);
       const key = uc('conflict-key');
 
       const first = await app!.inject({
         method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': key },
-        payload: { intakePackageId, reviewCode: uc('r'), summary: 'first', approverUserId: userId, assignmentCode: uc('a'), decisionCode: uc('d'), outcome: 'approve' },
+        payload: { intakePackageId, reviewCode: uc('r'), summary: 'first', approverUserId: userId, assignmentCode: code, decisionCode: uc('d'), outcome: 'approve' },
       });
       const second = await app!.inject({
         method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': key },
-        payload: { intakePackageId, reviewCode: uc('r2'), summary: 'different body', approverUserId: userId, assignmentCode: uc('a2'), decisionCode: uc('d2'), outcome: 'reject' },
+        payload: { intakePackageId, reviewCode: uc('r2'), summary: 'different body', approverUserId: userId, assignmentCode: code, decisionCode: uc('d2'), outcome: 'reject' },
       });
       expect(first.statusCode).toBe(201);
       expect(second.statusCode).toBe(409);

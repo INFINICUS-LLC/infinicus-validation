@@ -143,7 +143,8 @@ export const createDecisionBodySchema = z.object({
   intakePackageId: z.string().uuid(),
   reviewCode: z.string().min(1).max(255),
   summary: z.string().min(1).max(10_000),
-  approverUserId: z.string().uuid(),
+  // Never a source of authority: if present it must equal the authenticated user.
+  approverUserId: z.string().uuid().optional(),
   assignmentCode: z.string().min(1).max(255),
   decisionCode: z.string().min(1).max(255),
   outcome: z.enum(['approve', 'approve_with_modifications', 'reject']),
@@ -175,4 +176,15 @@ export const outcomeResponseSchema = z.object({
   id: z.string().uuid(),
   status: z.string(),
   observationCode: z.string(),
+});
+
+export const grantApproverAuthorityBodySchema = z.object({
+  approverUserId: z.string().uuid(),
+  assignmentCode: z.string().min(1).max(255),
+});
+
+export const grantApproverAuthorityResponseSchema = z.object({
+  id: z.string().uuid(),
+  status: z.string(),
+  assignmentCode: z.string(),
 });
