@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { DataAcquisitionService } from '@infinicus/data-acquisition-runtime';
 import { webhookTokenParamsSchema, webhookDeliveryBodySchema, webhookIntakeResponseSchema } from '../schemas/dataAcquisition.js';
 import { errorResponseSchema } from '../schemas/common.js';
+import { createWebhookRateLimitHook, type WebhookRateLimitSettings } from '../plugins/webhookRateLimit.js';
 
 const dataAcquisition = new DataAcquisitionService();
 
@@ -21,10 +22,19 @@ const dataAcquisition = new DataAcquisitionService();
  * model this follows) only let a user configure a target URL, not custom
  * headers, so a header-only scheme would be unreachable for them.
  */
-export default async function webhooksRoutes(app: FastifyInstance) {
+export interface WebhooksRouteOptions {
+  rateLimit: WebhookRateLimitSettings;
+}
+
+export default async function webhooksRoutes(app: FastifyInstance, options: WebhooksRouteOptions) {
   const server = app.withTypeProvider<ZodTypeProvider>();
+  const webhookRateLimit = createWebhookRateLimitHook(app, options.rateLimit);
 
   server.post('/v1/webhooks/data-acquisition/:token', {
+    // The global per-IP limiter is replaced by the webhook-specific limiter
+    // below (see plugins/webhookRateLimit.ts for why and how).
+    config: { rateLimit: false },
+    onRequest: webhookRateLimit,
     schema: {
       tags: ['data-acquisition'],
       summary: 'Receive a webhook delivery for a data-acquisition webhook connector',
@@ -32,7 +42,7 @@ export default async function webhooksRoutes(app: FastifyInstance) {
       body: webhookDeliveryBodySchema,
       response: {
         201: webhookIntakeResponseSchema,
-        400: errorResponseSchema, 401: errorResponseSchema, 413: errorResponseSchema,
+        400: errorResponseSchema, 401: errorResponseSchema, 413: errorResponseSchema, 429: errorResponseSchema,
       },
     },
   }, async (request, reply) => {
