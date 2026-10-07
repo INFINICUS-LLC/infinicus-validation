@@ -39,9 +39,9 @@ Vocabulary: KEEP · WRAP_WITH_CONTRACT · MOVE · SPLIT · MIGRATE · DEPRECATE 
 |---|---|---|---|
 | SOT-03 | HIGH | **BLOCKED_BY_ARCHITECTURE_DECISION** | Needs a ruling on which store is canonical for scenario outcomes (proposal: Stack B `simulation.*`; Supabase/localStorage become read caches). |
 | SOT-04 | HIGH | **MIGRATE** | Server-side CL ingestion via the OM→CL contract, after V-06 and C-03. Browser CL stays as a cache until then. |
-| SOT-05 | MEDIUM | **BLOCKED_BY_ARCHITECTURE_DECISION** | Entitlement/usage split (Supabase `profiles` vs Stack B `billing.*`): owner decision required. |
-| SOT-06 | MEDIUM | **BLOCKED_BY_ARCHITECTURE_DECISION** | Legacy D1 data volume unknown; import-or-abandon is a business decision tied to SOT-02 gates. |
-| SOT-07 | MEDIUM | **BLOCKED_BY_ARCHITECTURE_DECISION** | `platform.*` has no declared single owner; BO vs `business_operations.*` boundary needs a ruling. |
+| SOT-05 | MEDIUM | **RESOLVED (owner ruling)** | Canonical billing = `billing.*`; see `SOT_RULINGS.md`. |
+| SOT-06 | MEDIUM | **RESOLVED (owner ruling)** | `tenancy.*` = identity/scope; `billing.*` = plan/subscription/usage. Legacy D1 volume still unknown (SOT-02 gate). See `SOT_RULINGS.md`. |
+| SOT-07 | MEDIUM | **PARTIALLY RESOLVED (owner ruling)** | `platform.*` not globally canonical; overlapping lifecycle tables are legacy/compat surfaces; per-table classification pending. See `SOT_RULINGS.md`. |
 | V-08 / SOT-08 | MEDIUM | **REMOVE_DUPLICATION** | One writer path per BO table (`business_events`, `inventory_balances`, `purchase_orders`), decided after SOT-07. |
 | V-07 / SOT-09 | MEDIUM | **WRAP_WITH_CONTRACT** | Replace BO's write to `data_acquisition.publication_deliveries` with a contract call or a BO-owned receipt. |
 | SOT-10 | LOW | **DEPRECATE** | Unused `platform.*` foundation tables: mark deprecated; no drops (migrations are immutable). |
