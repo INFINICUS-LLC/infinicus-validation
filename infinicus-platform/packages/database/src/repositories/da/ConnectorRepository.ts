@@ -1,7 +1,7 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, createHash, timingSafeEqual } from 'crypto';
 import type { PoolClient, QueryResult } from 'pg';
 import type { TenantContext } from '../../client.js';
-import { withTenantTransaction } from '../../client.js';
+import { withTenantTransaction, withTransaction } from '../../client.js';
 import {
   NotFoundError,
   UnsupportedConnectorError,
@@ -127,6 +127,21 @@ export interface Connector {
   updatedAt: Date;
   createdBy: string | null;
   deletedAt: Date | null;
+  /** Non-secret half of the webhook bearer token (see generateWebhookToken); null until generated. */
+  webhookTokenPrefix: string | null;
+}
+
+/** Result of find_connector_for_webhook() — the minimal fields needed to verify an inbound webhook and open a real tenant-scoped transaction. Never exposed as a full Connector. */
+export interface WebhookConnectorLookup {
+  connectorId: string;
+  tenantId: string;
+  workspaceId: string;
+  businessId: string | null;
+  dataSourceId: string;
+  connectorStatus: string;
+  sourceStatus: string;
+  webhookTokenHash: string;
+  createdBy: string | null;
 }
 
 export interface CreateConnectorInput {
@@ -163,7 +178,28 @@ function rowToConnector(row: Record<string, unknown>): Connector {
     updatedAt:              row.updated_at               as Date,
     createdBy:              row.created_by               as string | null,
     deletedAt:              row.deleted_at               as Date | null,
+    webhookTokenPrefix:     row.webhook_token_prefix     as string | null,
   };
+}
+
+const WEBHOOK_TOKEN_PREFIX_BYTES = 6;
+const WEBHOOK_TOKEN_SECRET_BYTES = 32;
+
+export function hashWebhookToken(rawToken: string): string {
+  return createHash('sha256').update(rawToken, 'utf8').digest('hex');
+}
+
+/**
+ * Constant-time comparison of two hex-encoded hashes — a plain `===` would
+ * leak timing information proportional to the number of matching leading
+ * characters, letting an attacker recover the hash (and thus forge a
+ * request that produces it) byte by byte.
+ */
+export function webhookTokenHashesMatch(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'hex');
+  const bufB = Buffer.from(b, 'hex');
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 export class ConnectorRepository {
@@ -388,6 +424,73 @@ export class ConnectorRepository {
       );
       if (result.rows.length === 0) throw new NotFoundError('Connector', id);
       return rowToConnector(result.rows[0]);
+    });
+  }
+
+  /**
+   * (Re)generates a webhook connector's bearer token. The raw token
+   * (`prefix.secret`) is returned exactly once — only its SHA-256 hash and
+   * the non-secret prefix are persisted, the same generateApiKey()/
+   * hashToken() shape @infinicus/authentication already uses for session
+   * tokens and API keys. Calling this again on an already-tokened
+   * connector rotates it: the old token stops working immediately, since
+   * only one (prefix, hash) pair is stored per connector.
+   *
+   * @throws NotFoundError connector not visible to this tenant
+   */
+  async generateWebhookToken(ctx: TenantContext, connectorId: string): Promise<string> {
+    const prefix = randomBytes(WEBHOOK_TOKEN_PREFIX_BYTES).toString('hex');
+    const secret = randomBytes(WEBHOOK_TOKEN_SECRET_BYTES).toString('hex');
+    const rawToken = `${prefix}.${secret}`;
+    const hash = hashWebhookToken(rawToken);
+
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `UPDATE data_acquisition.connectors
+         SET webhook_token_prefix = $2, webhook_token_hash = $3, version = version + 1
+         WHERE id = $1
+         RETURNING id`,
+        [connectorId, prefix, hash]
+      );
+      if (result.rows.length === 0) throw new NotFoundError('Connector', connectorId);
+      return rawToken;
+    });
+  }
+
+  /**
+   * Resolves an inbound webhook's token prefix to its owning
+   * connector/tenant/workspace via the SECURITY DEFINER
+   * find_connector_for_webhook() function (0171_create_da_webhook_token_lookup.sql),
+   * which deliberately bypasses RLS for this one read — there is no tenant
+   * context yet, since the request carries only the token itself. Returns
+   * null rather than throwing when the prefix is unknown, so the caller
+   * can respond identically to "unknown token" and "wrong token" without
+   * a branch (never confirm or deny that a prefix exists).
+   *
+   * Does NOT verify the token's secret half — callers must compare their
+   * own hash of the full raw token against the returned webhookTokenHash
+   * using webhookTokenHashesMatch(), then open a real withTenantTransaction
+   * for everything after that point.
+   */
+  async findConnectorForWebhook(tokenPrefix: string): Promise<WebhookConnectorLookup | null> {
+    return withTransaction(async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        'SELECT * FROM data_acquisition.find_connector_for_webhook($1)',
+        [tokenPrefix]
+      );
+      if (result.rows.length === 0) return null;
+      const row = result.rows[0];
+      return {
+        connectorId:      row.connector_id      as string,
+        tenantId:         row.tenant_id         as string,
+        workspaceId:      row.workspace_id      as string,
+        businessId:       row.business_id       as string | null,
+        dataSourceId:     row.data_source_id    as string,
+        connectorStatus:  row.connector_status  as string,
+        sourceStatus:     row.source_status     as string,
+        webhookTokenHash: row.webhook_token_hash as string,
+        createdBy:        row.created_by        as string | null,
+      };
     });
   }
 }

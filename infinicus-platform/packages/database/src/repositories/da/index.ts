@@ -1,13 +1,14 @@
 export { DataSourceRepository, NotFoundError } from './DataSourceRepository.js';
 export type { DataSource, CreateDataSourceInput } from './DataSourceRepository.js';
 
-export { ConnectorRepository } from './ConnectorRepository.js';
+export { ConnectorRepository, hashWebhookToken, webhookTokenHashesMatch } from './ConnectorRepository.js';
 export type {
   Connector,
   CreateConnectorInput,
   ConnectorType,
   ConnectorStatus,
   ConnectorHealthStatus,
+  WebhookConnectorLookup,
 } from './ConnectorRepository.js';
 
 export { CollectionRunRepository, COLLECTION_RUN_TRANSITIONS } from './CollectionRunRepository.js';
@@ -61,6 +62,9 @@ export type {
   ManualSubmissionStatus,
 } from './ManualSubmissionRepository.js';
 
+export { WebhookReceiptRepository } from './WebhookReceiptRepository.js';
+export type { WebhookReceipt, CreateWebhookReceiptInput } from './WebhookReceiptRepository.js';
+
 export {
   InvalidStateTransitionError,
   DuplicateSourceCodeError,
@@ -70,6 +74,7 @@ export {
   CollectionLimitExceededError,
   PublicationNotReadyError,
   QualityThresholdError,
+  WebhookAuthenticationError,
 } from './errors.js';
 
 export { runGuardedTransition, statesAllowing } from './guards.js';

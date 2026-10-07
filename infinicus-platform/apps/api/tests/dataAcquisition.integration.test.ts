@@ -101,11 +101,17 @@ describe.runIf(run)('BUILD-31 Data Acquisition runtime API — live PostgreSQL',
   beforeAll(async () => {
     const appUrl = process.env.DATABASE_URL!;
     const adminUrl = process.env.ADMIN_DATABASE_URL ?? appUrl;
+    // This suite legitimately issues many requests (a fresh user + several
+    // endpoint calls per test, ~20 tests) — same RATE_LIMIT_MAX override
+    // load-test.integration.test.ts already uses for the same reason;
+    // security.integration.test.ts's own low override is for the opposite
+    // purpose (testing the limiter itself), not applicable here.
     const config = loadConfig({
       DATABASE_URL: appUrl,
       DB_SSL: process.env.DB_SSL,
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
+      RATE_LIMIT_MAX: '100000',
     });
     createPool({ connectionString: appUrl, ssl: config.dbSsl });
     adminPool = new Pool({ connectionString: adminUrl });
@@ -266,6 +272,157 @@ describe.runIf(run)('BUILD-31 Data Acquisition runtime API — live PostgreSQL',
       });
       expect(statusRes.statusCode).toBe(200);
       expect(statusRes.json().status).toBe('active');
+    });
+  });
+
+  describe('webhook intake', () => {
+    async function createActiveWebhookConnector(ctx: TenantContext, bizId: string, token: string) {
+      const source = await createActiveSource(ctx, bizId, token, 'Webhook API Test Source');
+      const createRes = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/data-sources/${source.id}/connectors`,
+        headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+        payload: { name: 'Webhook API Connector', connectorType: 'webhook' },
+      });
+      const connector = createRes.json();
+      await app!.inject({
+        method: 'PATCH', url: `/v1/businesses/${bizId}/data-sources/${source.id}/connectors/${connector.id}/status`,
+        headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+        payload: { status: 'active' },
+      });
+      const tokenRes = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/data-sources/${source.id}/connectors/${connector.id}/webhook-token`,
+        headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+      });
+      expect(tokenRes.statusCode).toBe(201);
+      return { source, connector, ...tokenRes.json() as { token: string; webhookUrl: string } };
+    }
+
+    it('never persists the raw webhook token, even when the client sends an Idempotency-Key', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithRole(userId, 'owner');
+      const bizId = await createBusiness(ctx);
+      const { source, connector, token: rawToken } = await createActiveWebhookConnector(ctx, bizId, token);
+      const [, secret] = rawToken.split('.');
+      expect(secret).toMatch(/^[0-9a-f]{64}$/);
+
+      // createActiveWebhookConnector already sent an Idempotency-Key header
+      // with the generate call; send a second one on a regeneration too.
+      const regen = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/data-sources/${source.id}/connectors/${connector.id}/webhook-token`,
+        headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+      });
+      expect(regen.statusCode).toBe(201);
+      const newSecret = (regen.json() as { token: string }).token.split('.')[1];
+      expect(newSecret).not.toBe(secret);
+
+      for (const s of [secret, newSecret]) {
+        const leaked = await adminPool!.query(
+          `SELECT count(*)::int AS n FROM api.idempotency_keys WHERE response_body::text LIKE $1`,
+          [`%${s}%`]
+        );
+        expect(leaked.rows[0].n).toBe(0);
+      }
+    });
+
+    it('generates a one-time webhook token and rejects generating one for a non-webhook connector', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithRole(userId, 'owner');
+      const bizId = await createBusiness(ctx);
+      const { source, webhookUrl } = await createActiveWebhookConnector(ctx, bizId, token);
+      expect(webhookUrl).toMatch(/^\/v1\/webhooks\/data-acquisition\/[0-9a-f]+\.[0-9a-f]+$/);
+
+      const manualConnRes = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/data-sources/${source.id}/connectors`,
+        headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+        payload: { name: 'Manual Connector', connectorType: 'manual_json' },
+      });
+      const rejectRes = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/data-sources/${source.id}/connectors/${manualConnRes.json().id}/webhook-token`,
+        headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+      });
+      expect(rejectRes.statusCode).toBe(400);
+    });
+
+    it('rejects an unauthenticated request with no session — the webhook route itself needs no session, but generating its token does', async () => {
+      const res = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${crypto.randomUUID()}/data-sources/${crypto.randomUUID()}/connectors/${crypto.randomUUID()}/webhook-token`,
+        headers: { 'idempotency-key': uc('key') },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('accepts a real webhook delivery with no auth headers at all, using only the URL token — a single JSON object is normalized to a one-record batch', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithRole(userId, 'owner');
+      const bizId = await createBusiness(ctx);
+      const { webhookUrl } = await createActiveWebhookConnector(ctx, bizId, token);
+
+      const deliveryRes = await app!.inject({
+        method: 'POST', url: webhookUrl,
+        payload: { order: 'WH-100', total: 19.99 },
+      });
+      expect(deliveryRes.statusCode).toBe(201);
+      const result = deliveryRes.json();
+      expect(result.state).toBe('validated');
+      expect(result.recordsReceived).toBe(1);
+      expect(result.recordsAccepted).toBe(1);
+      expect(result.replayed).toBe(false);
+    });
+
+    it('rejects a delivery with a garbled token the same way as a wrong one (401, no distinguishing detail)', async () => {
+      const res = await app!.inject({
+        method: 'POST', url: '/v1/webhooks/data-acquisition/not-a-real-token',
+        payload: { a: 1 },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('replays an identical retried delivery instead of double-processing it', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithRole(userId, 'owner');
+      const bizId = await createBusiness(ctx);
+      const { webhookUrl } = await createActiveWebhookConnector(ctx, bizId, token);
+      const payload = [{ order: 'WH-200', total: 5 }];
+
+      const first = await app!.inject({ method: 'POST', url: webhookUrl, payload });
+      const second = await app!.inject({ method: 'POST', url: webhookUrl, payload });
+      expect(first.statusCode).toBe(201);
+      expect(second.statusCode).toBe(201);
+      expect(second.json().replayed).toBe(true);
+      expect(second.json().collectionRunId).toBe(first.json().collectionRunId);
+    });
+
+    it('a retry carrying an X-Event-Id header is deduplicated by that id even if the body were to differ', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithRole(userId, 'owner');
+      const bizId = await createBusiness(ctx);
+      const { webhookUrl } = await createActiveWebhookConnector(ctx, bizId, token);
+      const eventId = uc('evt');
+
+      const first = await app!.inject({
+        method: 'POST', url: webhookUrl, headers: { 'x-event-id': eventId }, payload: [{ order: 'WH-300' }],
+      });
+      const second = await app!.inject({
+        method: 'POST', url: webhookUrl, headers: { 'x-event-id': eventId }, payload: [{ order: 'WH-300' }],
+      });
+      expect(first.statusCode).toBe(201);
+      expect(second.json().replayed).toBe(true);
+      expect(second.json().collectionRunId).toBe(first.json().collectionRunId);
+    });
+
+    it('the resulting run is a real, ownership-checked collection run visible through the normal authenticated read endpoints', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithRole(userId, 'owner');
+      const bizId = await createBusiness(ctx);
+      const { connector, webhookUrl } = await createActiveWebhookConnector(ctx, bizId, token);
+
+      const deliveryRes = await app!.inject({ method: 'POST', url: webhookUrl, payload: [{ order: 'WH-400' }] });
+      const runId = deliveryRes.json().collectionRunId;
+
+      const runRes = await app!.inject({ method: 'GET', url: `/v1/businesses/${bizId}/collection-runs/${runId}`, headers: tenantHeaders(ctx, token) });
+      expect(runRes.statusCode).toBe(200);
+      expect(runRes.json().collectionType).toBe('webhook');
+      expect(runRes.json().connectorId).toBe(connector.id);
     });
   });
 

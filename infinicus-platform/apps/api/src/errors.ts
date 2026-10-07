@@ -97,6 +97,7 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   CollectionLimitExceededError: 413,
   PublicationNotReadyError: 409,
   QualityThresholdError: 409,
+  WebhookAuthenticationError: 401,
 
   // Business Operations runtime (BUILD-32)
   BusinessIntakeRejectedError: 400,

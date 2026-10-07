@@ -138,3 +138,11 @@ export class QualityThresholdError extends Error {
     this.minimumRequired = minimumRequired;
   }
 }
+
+/** Wrong or unknown webhook bearer token. Deliberately used for both "no such prefix" and "prefix exists, secret is wrong" — never confirms or denies that a token prefix exists. */
+export class WebhookAuthenticationError extends Error {
+  constructor(message = 'Invalid or missing webhook token.') {
+    super(message);
+    this.name = 'WebhookAuthenticationError';
+  }
+}

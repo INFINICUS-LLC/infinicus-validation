@@ -2,6 +2,7 @@
 
 export * from './errors.js';
 export * from './types.js';
+export * from './webhook/types.js';
 
 export { canonicalizeRecord, hashRecord, ProvenanceService } from './provenance/ProvenanceService.js';
 
