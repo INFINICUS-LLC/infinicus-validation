@@ -1,4 +1,8 @@
 import {
+  APPROVER_ROLES, DEFAULT_APPROVAL_RISK_POLICY, evaluateApproval,
+  type ApprovalOutcome, type ApprovalRiskPolicy, type ApproverRole, type RiskClass,
+} from './approvalRiskPolicy.js';
+import {
   BusinessRepository,
   InsightPackageRepository,
   DigitalTwinInstanceRepository, DigitalTwinSnapshotRepository,
@@ -35,9 +39,22 @@ export class ApproverAuthorityNotEstablishedError extends Error {
   }
 }
 
+/**
+ * Thrown when the approver's role does not satisfy the action-risk policy
+ * for an approving outcome (P0-2). Mapped to HTTP 403 in apps/api/src/errors.ts.
+ */
+export class ApprovalPolicyDeniedError extends Error {
+  constructor(reason: string) {
+    super(`approval policy denied: ${reason}`);
+    this.name = 'ApprovalPolicyDeniedError';
+  }
+}
+
 export interface GrantApproverAuthorityInput {
   approverUserId: string;
   assignmentCode: string;
+  /** Approver role (defaults to the generic `approver`, manager tier). Must be a known role. */
+  roleCode?: ApproverRole | 'approver';
   /** Request correlation id for the provenance record, where available. */
   correlationId?: string | null;
 }
@@ -93,7 +110,13 @@ export interface SubmitApprovalInput {
   assignmentCode: string;
   decisionCode: string;
   summary: string;
-  outcome: 'approve' | 'approve_with_modifications' | 'reject';
+  outcome: ApprovalOutcome;
+  /**
+   * Action risk class, for TRUSTED server-side callers only. It is not
+   * exposed by the API and must come from the governed data model (P0-3).
+   * When absent the action is unclassified and treated as high risk.
+   */
+  riskClass?: RiskClass;
 }
 
 export interface RecordOutcomeInput {
@@ -129,7 +152,8 @@ export class DecisionWorkflowService {
     private readonly ownershipEvidence: OwnershipEvidenceRepository = new OwnershipEvidenceRepository(),
     private readonly approvalDecisions: ApprovalDecisionRepository = new ApprovalDecisionRepository(),
     private readonly monitoredActions: MonitoredActionRepository = new MonitoredActionRepository(),
-    private readonly outcomeObservations: OutcomeObservationRepository = new OutcomeObservationRepository()
+    private readonly outcomeObservations: OutcomeObservationRepository = new OutcomeObservationRepository(),
+    private readonly riskPolicy: ApprovalRiskPolicy = DEFAULT_APPROVAL_RISK_POLICY
   ) {}
 
   /** Business selection, bounded by LIMIT/OFFSET pushed into the repository query. */
@@ -211,11 +235,15 @@ export class DecisionWorkflowService {
    * by P0-2 / P0-3 of the reconciliation plan.
    */
   async grantApproverAuthority(ctx: TenantContext, businessId: string, input: GrantApproverAuthorityInput): Promise<ApproverAssignment> {
+    const roleCode = input.roleCode ?? 'approver';
+    if (roleCode !== 'approver' && !(APPROVER_ROLES as readonly string[]).includes(roleCode)) {
+      throw new ApprovalPolicyDeniedError(`unknown approver role: ${String(roleCode)}`);
+    }
     const { assignment, created } = await this.approverAuthority.grantActiveAssignment(ctx, {
       businessId,
       userId: input.approverUserId,
       assignmentCode: input.assignmentCode,
-      roleCode: 'approver',
+      roleCode,
       provenance: {
         action: 'grant',
         source: 'manual-admin',
@@ -284,6 +312,14 @@ export class DecisionWorkflowService {
       throw new ApproverAuthorityNotEstablishedError('no active approver assignment exists for this user and business');
     }
     await this.assertOwnerAuthorityStillProven(ctx, businessId, assignment);
+
+    const verdict = evaluateApproval({
+      riskClass: input.riskClass,
+      roleCode: await this.approverAuthority.getCurrentRoleCode(ctx, assignment.id),
+      outcome: input.outcome,
+      policy: this.riskPolicy,
+    });
+    if (!verdict.allowed) throw new ApprovalPolicyDeniedError(verdict.reason);
 
     const { decision, version } = await this.approvalDecisions.createDecision(
       ctx, businessId, input.reviewPackageId, assignment.id, input.decisionCode, input.summary

@@ -127,6 +127,7 @@ export default async function businessRoutes(app: FastifyInstance) {
     const assignment = await workflow.grantApproverAuthority(request.ctx!, businessId, {
       approverUserId: request.body.approverUserId,
       assignmentCode: request.body.assignmentCode,
+      roleCode: request.body.roleCode,
       correlationId: request.correlationId,
     });
     return reply.status(201).send({ id: assignment.id, status: assignment.status, assignmentCode: assignment.assignmentCode });

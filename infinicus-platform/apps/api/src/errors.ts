@@ -52,6 +52,7 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   PermissionDeniedError: 403,
   // V-01: a decision was attempted without pre-established approval authority.
   ApproverAuthorityNotEstablishedError: 403,
+  ApprovalPolicyDeniedError: 403,
   MembershipNotActiveError: 403,
   InvitationTokenInvalidError: 400,
   InvitationExpiredError: 400,
