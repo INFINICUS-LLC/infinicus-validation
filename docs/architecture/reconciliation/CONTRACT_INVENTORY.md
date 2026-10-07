@@ -15,6 +15,8 @@ These three questions remain **UNRESOLVED**. Findings that depend on them are ta
 | **[P:SOT-02]** | Will the legacy `/api/business/*` endpoints be blocked or removed, and when? (decides whether they stay in the contract surface) |
 | **[P:L-1]** | Does one user interaction constitute sufficient approval authority? (decides whether the ADI→ABA authorization step is valid) |
 
+> **RULINGS RECORDED 2026-10-07:** the three PROVISIONAL tags below are now **resolved as policy rulings**, not as new evidence. **[P:SOT-01]** = NO (provider ids must not be exposed; tenant-claim trust is a remediation item, V-04/V-05). **[P:SOT-02]** = YES, deprecate, retire only after gates (C-13 stays inventoried, gains no authority). **[P:L-1]** = NO (approval sufficiency by action policy / risk class; C-11 is reclassified as an **authorization bypass, implementation defect**, V-01). Finding **F4**: the missing `AuthorizedActionPackage` and `ExecutionEvidence` are **implementation gaps**, not architecture changes; the six dormant validators are to be wired (V-14). See `ARCHITECTURE_VIOLATIONS.md`.
+
 ---
 
 ## 1. Summary — the ten canonical contracts (Manifest §8)

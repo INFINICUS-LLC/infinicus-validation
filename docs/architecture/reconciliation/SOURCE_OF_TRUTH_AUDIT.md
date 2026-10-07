@@ -5,6 +5,12 @@
 **Severity scale (spec §8):** CRITICAL (blocks reconciliation completion) / HIGH / MEDIUM / LOW.
 **Headline:** **no CRITICAL finding by the evidence collected.** Two HIGH findings involve authorisation flow (SOT-01, SOT-02) and are flagged for your explicit severity decision before any later phase proposes a fix (§7).
 
+> **RULINGS RECORDED 2026-10-07 (supersede the open questions in §7):**
+> **SOT-01 = NO** — provider/Supabase ids must not be exposed as public business identifiers; SOT-01 is now treated as a **migration/remediation finding** (see `ARCHITECTURE_VIOLATIONS.md` V-04, V-05), not an open question.
+> **SOT-02 = YES, not now** — legacy `/api/business/*` is to be deprecated and retired only after the retirement gates pass; it stays operational and gains no new authority (V-17). Nothing was blocked or changed.
+> **L-1 = NO** — one user click is not universally sufficient approval authority; sufficiency is decided by action policy / risk class (V-01, V-11).
+> Findings SOT-01 and SOT-02 above keep their descriptions; their severity is reassessed in Phase 6.
+
 ---
 
 ## 0. Corrections to D1 and D2 (found while auditing)
