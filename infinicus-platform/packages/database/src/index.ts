@@ -13,6 +13,39 @@ export {
 export type { DbConfig, TenantContext, PoolStats } from './client.js';
 export { runMigrations } from './migrate.js';
 
+
+// ── Cross-domain eventing repositories (BUILD-33) ───────────────────────────
+export {
+  EventLedgerRepository,
+  OutboxRepository,
+  InboxRepository,
+  DeadLetterRepository,
+  EventSubscriptionRepository,
+  EventDeliveryAttemptRepository,
+  withEventTransaction,
+  EventingError,
+  EventLedgerValidationError,
+  EventLedgerScopeError,
+  EventLedgerConflictError,
+  EventLedgerNotFoundError,
+} from './eventing/index.js';
+export type {
+  StoredBusinessEvent,
+  EventFailure,
+  OutboxStatus,
+  InboxStatus,
+  SubscriptionStatus as EventSubscriptionStatus,
+  OrderingMode,
+  DeliveryAttemptStatus,
+  OutboxEventInput,
+  ClaimBatchOptions,
+  InboxProcessingInput,
+  InboxProcessingResult,
+  CreateEventSubscriptionInput,
+  RecordDeliveryAttemptInput,
+  EventTransactionContext,
+} from './eventing/index.js';
+
 // ── Data Acquisition repositories ─────────────────────────────────────────────
 export {
   DataSourceRepository,
@@ -454,3 +487,20 @@ export type {
   PlatformIncident, PlatformIncidentSeverity, PlatformIncidentStatus,
   PlatformIncidentUpdate, DeclarePlatformIncidentInput,
 } from './repositories/incident/index.js';
+
+
+// ── BUILD-33 canonical publication + replay governance ─────────────────────
+export {
+  CanonicalEventPublisher,
+  LegacyOutboxCompatibilityRegistry,
+  outboxRecordToCanonicalEvent,
+  assertReplayAuthorized,
+} from './eventing/index.js';
+export type {
+  CanonicalPublishResult,
+  LegacyOutboxRecord,
+  LegacyOutboxCompatibilityProfile,
+  ReplayMode,
+  ReplayAuthorization,
+  ReplayCandidate,
+} from './eventing/index.js';

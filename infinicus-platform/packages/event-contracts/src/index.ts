@@ -1,3 +1,21 @@
+export type {
+  BusinessDomain,
+  BusinessEventSensitivity,
+  BusinessEventActorType,
+  EvidenceClass,
+  BusinessEventActor,
+  BusinessEventProvenance,
+  BusinessEventEnvelope,
+  BusinessEventValidationResult,
+} from './business-event.js';
+export { validateBusinessEventEnvelope } from './business-event.js';
+export type {
+  ContractStatus,
+  BusinessEventContract,
+  RegisteredValidationResult,
+} from './registry.js';
+export { BusinessEventContractRegistry, LEGACY_EVENT_ALIASES } from './registry.js';
+
 // @infinicus/event-contracts — canonical PlatformEvent and layer event types (CLAUDE.md § 9)
 export type { PlatformEvent, LayerId } from '@infinicus/shared-types';
 

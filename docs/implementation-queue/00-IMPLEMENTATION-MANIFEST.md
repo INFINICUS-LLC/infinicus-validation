@@ -52,16 +52,30 @@ never execute it."* The required build route is
 `BUILD-10 → BUILD-12 → BUILD-13 → … → BUILD-30`. Confirmed by user decision
 2026-07-22.
 
-## Current Ready Build
+## Current Build
 
-None. BUILD-32 is completed; see its completion report at
-`.claude/state/reports/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-completion.md`.
-No later build is ready for implementation.
+**BUILD-33 — Cross-Domain Business Event Architecture**
+
+Authoritative frozen specification:
+[BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md](./BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md)
+
+Specification version: **1.1**
+
+SHA-256: `5c3eafc06865af79f2395f4e58220342ae4deb91628bcb06ffded7acb3274f54`
+
+Architecture amendment:
+`docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md`
+
+Status: **in_progress — architecture gate open after live PostgreSQL/RLS validation**.
+
+Dependency BUILD-32 is completed and merged. The baseline before BUILD-33 remains
+0001–0171 (v1.2: renumbered, 0171 now belongs to Data Acquisition). The BUILD-33 ledger migration (0172) and redesigned scope migration (0173) have passed the BUILD-33 v1.1 architecture gate. Live validation evidence is recorded in `docs/architecture/BUILD-33-ARCHITECTURE-GATE-VALIDATION.md`.
+
+PR #22 remains draft. BUILD-33 is not complete yet. No BUILD-34 implementation is authorized.
 
 ## Pending Builds
 
-BUILD-33 remains specification preparation only. Later implementation requires
-a separately frozen specification and explicit queue readiness.
+BUILD-34+ remain planned only and are not authorized for implementation.
 
 ## BUILD-32 Specification: Business Operations Runtime
 

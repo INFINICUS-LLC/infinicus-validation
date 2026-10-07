@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "lastUpdated": "2026-10-04T17:11:35Z",
+  "lastUpdated": "2026-10-05T03:46:00Z",
   "platform": "INFINICUS ENGINE v3",
   "builds": [
     {
@@ -411,7 +411,38 @@
       "startedAt": "2026-10-03T00:00:00.000Z",
       "completedAt": "2026-10-04T17:11:35Z",
       "report": ".claude/state/reports/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-completion.md"
+    },
+    {
+      "id": "BUILD-33",
+      "layer": "DATA-EVENT-LEDGER",
+      "name": "Cross-Domain Business Event Architecture",
+      "status": "in_progress",
+      "dependency": "BUILD-32",
+      "specification": "docs/implementation-queue/BUILD-33-CROSS-DOMAIN-BUSINESS-EVENT-ARCHITECTURE-SPECIFICATION.md",
+      "specificationSha256": "5c3eafc06865af79f2395f4e58220342ae4deb91628bcb06ffded7acb3274f54",
+      "notes": "BUILD-33 v1.1 remains in progress under the Master Architecture Guardrail. The event_delivery_attempts conflict has been corrected: BUILD-33 now records one immutable terminal row per delivery attempt, keeps mutable delivery state in outbox_events, and migration 0172 enforces UPDATE/DELETE rejection while preserving historical started status compatibility. Validation is pending. BUILD-34 remains blocked.",
+      "readyAt": "2026-10-04T17:39:00Z",
+      "testsPass": false,
+      "startedAt": "2026-10-04T18:39:00Z",
+      "specificationVersion": "1.1",
+      "architectureGate": "open",
+      "architectureGuardrail": "INFINICUS Master Architecture Guardrail v1.0",
+      "architectureAmendment": "docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md",
+      "architectureCorrections": {
+        "evidenceClassification": "validated",
+        "migration0171": "validated",
+        "migration0172": "validated",
+        "globalScopeModel": [
+          "TENANT_WORKSPACE",
+          "TENANT_GLOBAL",
+          "PLATFORM_GLOBAL"
+        ],
+        "deliveryAttemptAppendOnly": "implemented_pending_validation"
+      },
+      "architectureGateValidatedAt": "2026-10-05T02:39:22Z",
+      "architectureGateValidatedCommit": "2185a3739450f64591e6b299e335f57c22a283d1",
+      "architectureGateEvidence": "docs/architecture/BUILD-33-ARCHITECTURE-GATE-VALIDATION.md"
     }
   ],
-  "currentReadyBuild": null
+  "currentReadyBuild": "BUILD-33"
 }
