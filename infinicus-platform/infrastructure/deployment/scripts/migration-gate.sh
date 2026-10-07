@@ -35,6 +35,6 @@ node -e "
   createPool({ connectionString: process.env.DATABASE_URL });
   runMigrations()
     .then(() => closePool())
-    .then(() => { console.log('Migration gate passed.'); process.exit(0); })
+    .then(() => { process.stdout.write('Migration gate passed.\\n', () => process.exit(0)); })
     .catch((err) => { console.error('Migration gate FAILED:', err); process.exit(1); });
 "
