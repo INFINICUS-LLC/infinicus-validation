@@ -61,6 +61,7 @@ export {
   ManualSubmissionRepository,
   MANUAL_SUBMISSION_STATUSES,
   isManualSubmissionStatus,
+  WebhookReceiptRepository,
   NotFoundError,
   InvalidStateTransitionError,
   DuplicateSourceCodeError,
@@ -70,6 +71,7 @@ export {
   CollectionLimitExceededError,
   PublicationNotReadyError,
   QualityThresholdError,
+  WebhookAuthenticationError,
   runGuardedTransition,
   statesAllowing,
   boundedPage,
@@ -84,6 +86,8 @@ export {
   emitDataQuarantined,
   emitDataQualityScored,
   emitDataPublished,
+  hashWebhookToken,
+  webhookTokenHashesMatch,
 } from './repositories/da/index.js';
 export type {
   DataSource,
@@ -93,6 +97,7 @@ export type {
   ConnectorType,
   ConnectorStatus,
   ConnectorHealthStatus,
+  WebhookConnectorLookup,
   CollectionRun,
   CollectionRunState,
   CreateCollectionRunInput,
@@ -113,6 +118,8 @@ export type {
   ManualSubmission,
   CreateManualSubmissionInput,
   ManualSubmissionStatus,
+  WebhookReceipt,
+  CreateWebhookReceiptInput,
   GuardedTransitionSpec,
   PageOptions,
   BoundedPage,
@@ -293,6 +300,24 @@ export type {
   ABAPublicationPackage,
   ABAComponentRegistryEntry, ABADeployment,
 } from './repositories/approved_action/index.js';
+
+export { ApproverAuthorityNotFoundError, ApproverAuthorityStateConflictError } from './repositories/approved_action/errors.js';
+
+// ── Business-ownership proof and approver-authority provenance (owner bootstrap) ──
+export {
+  OWNER_APPROVER_ASSIGNMENT_CODE, PROVENANCE_SCOPE_TYPE, MAX_REVOCATION_REASON_LENGTH, normalizeRevocationReason,
+} from './repositories/approved_action/authorityProvenance.js';
+export type {
+  AuthoritySource, AuthorityAction, OwnershipProofRef, AuthorityProvenanceEntry,
+} from './repositories/approved_action/authorityProvenance.js';
+export {
+  OwnershipEvidenceRepository, loadOwnershipEvidenceWith, classifyOwnership, provenOwnersOf, CANDIDATE_LABEL,
+  runOwnerAuthorityDryRun,
+} from './repositories/ownership/index.js';
+export type {
+  OwnershipEvidence, OwnershipVerdict, OwnershipClassification, ProvenOwner, CandidateOwner, MembershipFact,
+  DryRunReport, DryRunEntry,
+} from './repositories/ownership/index.js';
 
 // ── Outcome Monitoring repositories (Stage 2I) ──────────────────────────────────
 export {

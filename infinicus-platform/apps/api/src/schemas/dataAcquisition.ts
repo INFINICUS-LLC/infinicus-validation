@@ -27,6 +27,11 @@ export const packageIdParamsSchema = z.object({
   packageId: z.string().uuid(),
 });
 
+/** The full raw bearer token (`prefix.secret`) travels in the URL path — see routes/webhooks.ts for why. */
+export const webhookTokenParamsSchema = z.object({
+  token: z.string().min(1),
+});
+
 // ── Enums (mirroring packages/database/src/repositories/da/*) ─────────────────
 
 const connectorTypeSchema = z.enum([
@@ -210,6 +215,12 @@ export const manualIntakeBodySchema = z.object({
   metadata: z.record(z.unknown()).optional(),
 });
 
+/** Externally-facing — deliberately permissive: an external system's raw delivery, not shaped to our conventions. A bare object is normalized to a one-element array by the route. */
+export const webhookDeliveryBodySchema = z.union([
+  z.record(z.unknown()),
+  z.array(z.unknown()).min(1),
+]);
+
 export const preparePublicationPackageBodySchema = z.object({
   targetBlock: z.string().min(1).max(255),
   packageType: z.string().max(100).optional(),
@@ -247,6 +258,22 @@ export const collectionRunResponseSchema = collectionRunSchema;
 export const listCollectionRunsResponseSchema = z.object({ runs: z.array(collectionRunSchema) });
 
 export const manualIntakeResponseSchema = manualIntakeResultSchema;
+
+/** The raw token is returned exactly once, here — never retrievable again (only its hash is persisted). */
+export const webhookTokenResponseSchema = z.object({
+  token: z.string(),
+  webhookUrl: z.string(),
+});
+
+export const webhookIntakeResponseSchema = z.object({
+  collectionRunId: z.string().uuid(),
+  state: z.string(),
+  recordsReceived: z.number(),
+  recordsAccepted: z.number(),
+  recordsRejected: z.number(),
+  correlationId: z.string().uuid(),
+  replayed: z.boolean(),
+});
 
 export const listValidationResultsResponseSchema = z.object({
   validationResults: z.array(validationResultSchema.extend({ issues: z.array(validationIssueSchema) })),

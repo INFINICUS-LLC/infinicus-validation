@@ -10,3 +10,6 @@ export {
 
 export { OnboardingService } from './OnboardingService.js';
 export type { BeginOnboardingInput, BeginOnboardingResult, CreateOnboardingBusinessInput } from './OnboardingService.js';
+
+export { OwnerApproverAuthorityService, OWNER_BOOTSTRAP_AUTHORITY } from './OwnerApproverAuthorityService.js';
+export type { OwnerBootstrapOutcome, OwnerBootstrapResult } from './OwnerApproverAuthorityService.js';

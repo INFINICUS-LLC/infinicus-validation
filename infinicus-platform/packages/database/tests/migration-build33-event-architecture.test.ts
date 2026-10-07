@@ -9,10 +9,10 @@ function sql(filename: string): string {
 }
 
 describe('BUILD-33 v1.1 migration architecture guardrails', () => {
-  const ledger = sql('0171_create_business_event_ledger.sql');
-  const scope = sql('0172_harden_eventing_scope.sql');
+  const ledger = sql('0172_create_business_event_ledger.sql');
+  const scope = sql('0173_harden_eventing_scope.sql');
 
-  describe('0171 canonical event ledger', () => {
+  describe('0172 canonical event ledger', () => {
     it('persists mandatory Cold-Start evidence classification', () => {
       expect(ledger).toContain('evidence_class    text        NOT NULL');
       for (const value of [
@@ -40,7 +40,7 @@ describe('BUILD-33 v1.1 migration architecture guardrails', () => {
     });
   });
 
-  describe('0172 compatibility-preserving event transport scope', () => {
+  describe('0173 compatibility-preserving event transport scope', () => {
     it('declares all three architecture-approved scope classes', () => {
       expect(scope).toContain('TENANT_WORKSPACE');
       expect(scope).toContain('TENANT_GLOBAL');

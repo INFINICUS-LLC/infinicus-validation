@@ -30,7 +30,7 @@
     blockId,
     order: index + 1,
     name
-  }));
+  })));
 
   global.INFINICUS.DT.manifest =
     Object.freeze({

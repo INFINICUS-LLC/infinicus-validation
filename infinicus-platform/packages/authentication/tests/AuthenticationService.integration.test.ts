@@ -177,6 +177,12 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
     });
   });
 
+  // Each lockout test performs about 7 bcryptjs (pure-JavaScript, deliberately
+  // slow) operations. They take ~2 s locally but exceeded the 5 s default on
+  // loaded parallel CI runners. This per-test allowance only accommodates
+  // runner speed: bcrypt cost, lockout thresholds and assertions are unchanged.
+  const LOCKOUT_TEST_TIMEOUT_MS = 20_000;
+
   describe('login — account lockout', () => {
     it('locks the account after 5 bad-password attempts within the window, even with the correct password on the 6th try', async () => {
       const { email } = await registerAndActivate(service, users);
@@ -184,7 +190,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
         await expect(service.login(email, 'Wrong-Password-9!')).rejects.toBeInstanceOf(InvalidCredentialsError);
       }
       await expect(service.login(email, STRONG_PASSWORD)).rejects.toBeInstanceOf(AccountLockedError);
-    }, 15_000);
+    }, LOCKOUT_TEST_TIMEOUT_MS);
 
     it('records a failed_auth access event with reason=account_locked when lockout triggers', async () => {
       const { email, user } = await registerAndActivate(service, users);
@@ -195,7 +201,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const events = await accessEvents.listForUser(user.id);
       const lockEvent = events.find((e) => e.eventType === 'failed_auth' && e.metadata.reason === 'account_locked');
       expect(lockEvent).toBeDefined();
-    }, 15_000);
+    }, LOCKOUT_TEST_TIMEOUT_MS);
 
     it('does not lock an account that has fewer than the threshold\'s worth of recent failures', async () => {
       const { email } = await registerAndActivate(service, users);

@@ -143,7 +143,8 @@ export const createDecisionBodySchema = z.object({
   intakePackageId: z.string().uuid(),
   reviewCode: z.string().min(1).max(255),
   summary: z.string().min(1).max(10_000),
-  approverUserId: z.string().uuid(),
+  // Never a source of authority: if present it must equal the authenticated user.
+  approverUserId: z.string().uuid().optional(),
   assignmentCode: z.string().min(1).max(255),
   decisionCode: z.string().min(1).max(255),
   outcome: z.enum(['approve', 'approve_with_modifications', 'reject']),
@@ -175,4 +176,49 @@ export const outcomeResponseSchema = z.object({
   id: z.string().uuid(),
   status: z.string(),
   observationCode: z.string(),
+});
+
+export const grantApproverAuthorityBodySchema = z.object({
+  approverUserId: z.string().uuid(),
+  assignmentCode: z.string().min(1).max(255),
+});
+
+export const grantApproverAuthorityResponseSchema = z.object({
+  id: z.string().uuid(),
+  status: z.string(),
+  assignmentCode: z.string(),
+});
+
+export const approverAssignmentParamsSchema = z.object({
+  businessId: z.string().uuid(),
+  assignmentCode: z.string().min(1).max(255),
+});
+
+export const revokeApproverAuthorityBodySchema = z.object({
+  reason: z.string().trim().min(1).max(1000),
+});
+
+export const revokeApproverAuthorityResponseSchema = z.object({
+  id: z.string().uuid(),
+  status: z.string(),
+  assignmentCode: z.string(),
+  changed: z.boolean(),
+});
+
+export const approverAuthorityRecordResponseSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  status: z.string(),
+  assignmentCode: z.string(),
+  provenance: z.array(z.object({
+    action: z.enum(['grant', 'revoke']),
+    source: z.enum(['onboarding', 'manual-admin', 'backfill']),
+    state: z.enum(['active', 'revoked']),
+    granteeUserId: z.string().uuid(),
+    actor: z.object({ type: z.enum(['system', 'user']), id: z.string().nullable(), authority: z.string() }),
+    at: z.string(),
+    correlationId: z.string().nullable(),
+    proof: z.object({ kind: z.string(), membershipId: z.string(), onboardingId: z.string().nullable() }).nullable(),
+    reason: z.string().nullable(),
+  })),
 });

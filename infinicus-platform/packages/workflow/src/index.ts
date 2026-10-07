@@ -3,10 +3,10 @@
 // decision history. Composes existing BI/DT/SIM/ADI/ABA/OM repositories —
 // introduces no new persistence of its own.
 
-export { DecisionWorkflowService } from './DecisionWorkflowService.js';
+export { DecisionWorkflowService, ApproverAuthorityNotEstablishedError, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
 export type {
   WorkflowView, DecisionHistory,
-  CreateReviewInput, SubmitApprovalInput, RecordOutcomeInput,
+  CreateReviewInput, SubmitApprovalInput, GrantApproverAuthorityInput, RevokeApproverAuthorityInput, ApproverAuthorityRecord, RecordOutcomeInput,
 } from './DecisionWorkflowService.js';
 
 export { SimulationOrchestrationService, ValidationError as SimulationValidationError } from './SimulationOrchestrationService.js';
@@ -21,5 +21,7 @@ export type {
 
 export { BusinessDecisionRecommendationService } from './BusinessDecisionRecommendationService.js';
 export type {
-  RecommendedDecision, ChoiceReviewResult, DecisionHistoryEntry, RiskLevel,
+  RecommendedDecision, RecommendationResult, ChoiceReviewResult, DecisionHistoryEntry, RiskLevel,
 } from './BusinessDecisionRecommendationService.js';
+export { assessTwinEvidence } from './twinEvidence.js';
+export type { TwinEvidenceAssessment, AreaEvidence, OverallEvidence } from './twinEvidence.js';

@@ -310,8 +310,10 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
     it('submits an approve decision and it is reflected in the workflow view', async () => {
       const intakePackageId = await createAbaIntake(ctx1, BIZ1);
       const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-a'), summary: 'Approve me' });
+      const assignmentCode = uniqueCode('wf-assign');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
       const decision = await service.submitApprovalDecision(ctx1, BIZ1, {
-        reviewPackageId: review.id, approverUserId: UID, assignmentCode: uniqueCode('wf-assign'),
+        reviewPackageId: review.id, approverUserId: UID, assignmentCode,
         decisionCode: uniqueCode('wf-dec'), summary: 'Approving', outcome: 'approve',
       });
       expect(decision.status).toBe('approved');
@@ -323,11 +325,128 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
     it('submits a reject decision', async () => {
       const intakePackageId = await createAbaIntake(ctx1, BIZ1);
       const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-r'), summary: 'Reject me' });
+      const assignmentCode = uniqueCode('wf-assign-r');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
       const decision = await service.submitApprovalDecision(ctx1, BIZ1, {
-        reviewPackageId: review.id, approverUserId: UID, assignmentCode: uniqueCode('wf-assign-r'),
+        reviewPackageId: review.id, approverUserId: UID, assignmentCode,
         decisionCode: uniqueCode('wf-dec-r'), summary: 'Rejecting', outcome: 'reject',
       });
       expect(decision.status).toBe('rejected');
+    });
+    it('refuses a decision when no approver authority was established beforehand, and creates none (V-01)', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-n'), summary: 'No authority' });
+      const assignmentCode = uniqueCode('wf-assign-n');
+      await expect(service.submitApprovalDecision(ctx1, BIZ1, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('wf-dec-n'), summary: 'Should fail', outcome: 'approve',
+      })).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
+      const { rows } = await adminPool!.query(
+        `SELECT count(*)::int AS n FROM approved_business_action.approver_assignments WHERE business_id = $1 AND assignment_code = $2`, [BIZ1, assignmentCode]);
+      expect(rows[0].n).toBe(0);
+    });
+
+    it('refuses a decision naming a different approver than the authenticated principal', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-o'), summary: 'Other approver' });
+      const assignmentCode = uniqueCode('wf-assign-o');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
+      await expect(service.submitApprovalDecision(ctx1, BIZ1, {
+        reviewPackageId: review.id, approverUserId: '66666666-7070-0000-0000-0000000000aa', assignmentCode,
+        decisionCode: uniqueCode('wf-dec-o'), summary: 'Should fail', outcome: 'approve',
+      })).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
+    });
+
+    it('refuses a decision under a revoked assignment', async () => {
+      const intakePackageId = await createAbaIntake(ctx1, BIZ1);
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('wf-review-v'), summary: 'Revoked' });
+      const assignmentCode = uniqueCode('wf-assign-v');
+      const granted = await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
+      await new ApproverAuthorityRepository().transitionStatus(ctx1, granted.id, 'revoked');
+      await expect(service.submitApprovalDecision(ctx1, BIZ1, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('wf-dec-v'), summary: 'Should fail', outcome: 'approve',
+      })).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
+    });
+  });
+
+  describe('approver authority — revocation, provenance, and the owner-proof re-check', () => {
+    async function decide(ctx: TenantContext, businessId: string, assignmentCode: string) {
+      const intakePackageId = await createAbaIntake(ctx, businessId);
+      const review = await service.createReview(ctx, businessId, { intakePackageId, reviewCode: uniqueCode('rv'), summary: 'Authority check' });
+      return service.submitApprovalDecision(ctx, businessId, {
+        reviewPackageId: review.id, assignmentCode, decisionCode: uniqueCode('dc'), summary: 'Deciding', outcome: 'approve',
+      });
+    }
+
+    it('a revoked approver loses authority at once; revocation is idempotent and needs a reason', async () => {
+      const assignmentCode = uniqueCode('wf-rev');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
+      await expect(decide(ctx1, BIZ1, assignmentCode)).resolves.toMatchObject({ status: 'approved' });
+
+      await expect(service.revokeApproverAuthority(ctx1, BIZ1, { assignmentCode, reason: '   ' })).rejects.toThrow(/reason/i);
+      const revoked = await service.revokeApproverAuthority(ctx1, BIZ1, { assignmentCode, reason: 'approver left the company' });
+      expect(revoked.changed).toBe(true);
+      expect(revoked.assignment.status).toBe('revoked');
+      await expect(decide(ctx1, BIZ1, assignmentCode)).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
+
+      expect((await service.revokeApproverAuthority(ctx1, BIZ1, { assignmentCode, reason: 'again' })).changed).toBe(false);
+    });
+
+    it('records an append-only provenance history for grant and revoke', async () => {
+      const assignmentCode = uniqueCode('wf-prov');
+      await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode, correlationId: 'req-grant' });
+      await service.revokeApproverAuthority(ctx1, BIZ1, { assignmentCode, reason: 'rotation', correlationId: 'req-revoke' });
+      const { assignment, provenance } = await service.getApproverAuthority(ctx1, BIZ1, assignmentCode);
+      expect(assignment.status).toBe('revoked');
+      expect(provenance.map((p) => [p.action, p.source, p.state])).toEqual([['grant', 'manual-admin', 'active'], ['revoke', 'manual-admin', 'revoked']]);
+      expect(provenance[0]).toMatchObject({ granteeUserId: UID, businessId: BIZ1, assignmentCode, correlationId: 'req-grant', actor: { type: 'user', id: UID, authority: 'aba:admin' } });
+      expect(provenance[1]).toMatchObject({ reason: 'rotation', correlationId: 'req-revoke' });
+    });
+
+    it('revoking or reading an unknown assignment is a not-found error', async () => {
+      await expect(service.revokeApproverAuthority(ctx1, BIZ1, { assignmentCode: uniqueCode('none'), reason: 'x' })).rejects.toThrow(/not found/i);
+      await expect(service.getApproverAuthority(ctx1, BIZ1, uniqueCode('none'))).rejects.toThrow(/not found/i);
+    });
+
+    it('granting an existing code to another user is a conflict; the same user is idempotent', async () => {
+      const assignmentCode = uniqueCode('wf-conf');
+      const first = await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
+      const again = await service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: UID, assignmentCode });
+      expect(again.id).toBe(first.id);
+      await expect(service.grantApproverAuthority(ctx1, BIZ1, { approverUserId: '66666666-7070-0000-0000-0000000000bb', assignmentCode })).rejects.toThrow();
+    });
+
+    it('an auto-issued owner authority stops working when the ownership proof lapses, without being revoked; a manual grant is unaffected', async () => {
+      const ownerRole = await adminPool!.query(`SELECT id FROM tenancy.roles WHERE code = 'owner' AND tenant_id IS NULL`);
+      const membership = await adminPool!.query(
+        `INSERT INTO tenancy.memberships (tenant_id, workspace_id, user_id, status, joined_at) VALUES ($1,$2,$3,'active', now())
+         ON CONFLICT (user_id, workspace_id) DO UPDATE SET status = 'active' RETURNING id`, [T1, WS1, UID]
+      );
+      await adminPool!.query(
+        `INSERT INTO tenancy.membership_roles (membership_id, role_id, business_id) VALUES ($1,$2,$3) ON CONFLICT (membership_id, role_id) DO UPDATE SET business_id = EXCLUDED.business_id`,
+        [membership.rows[0].id, ownerRole.rows[0].id, BIZ1]
+      );
+      const authority = new ApproverAuthorityRepository();
+      const { assignment } = await authority.grantActiveAssignment(ctx1, {
+        businessId: BIZ1, userId: UID, assignmentCode: 'business-owner-approver', roleCode: 'business-owner',
+        provenance: {
+          action: 'grant', source: 'onboarding', businessId: BIZ1, assignmentCode: 'business-owner-approver', granteeUserId: UID, state: 'active',
+          actor: { type: 'system', id: null, authority: 'owner-bootstrap:onboarding' }, at: new Date().toISOString(), correlationId: null,
+          proof: { kind: 'explicit-owner-role', membershipId: membership.rows[0].id, onboardingId: null }, reason: null,
+        },
+      });
+
+      // While the owner relationship holds, the owner can decide.
+      await expect(decide(ctx1, BIZ1, 'business-owner-approver')).resolves.toMatchObject({ status: 'approved' });
+
+      // The relationship lapses: the membership is suspended.
+      await adminPool!.query(`UPDATE tenancy.memberships SET status = 'suspended' WHERE id = $1`, [membership.rows[0].id]);
+      await expect(decide(ctx1, BIZ1, 'business-owner-approver')).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
+      // Never silently destructive: the assignment is still active until an administrator revokes it.
+      expect((await authority.getById(ctx1, assignment.id)).status).toBe('active');
+
+      // A manual administrator grant under the same code (other business) is an explicit decision and is not re-derived from ownership.
+      await service.grantApproverAuthority(ctx2, BIZ2, { approverUserId: UID, assignmentCode: 'business-owner-approver' });
+      await expect(decide(ctx2, BIZ2, 'business-owner-approver')).resolves.toMatchObject({ status: 'approved' });
     });
   });
 

@@ -29,6 +29,9 @@ import ordersRoutes from './routes/orders.js';
 import twinRoutes from './routes/twin.js';
 import decisionRecommendationsRoutes from './routes/decisionRecommendations.js';
 import dataAcquisitionRoutes from './routes/dataAcquisition.js';
+import webhooksRoutes from './routes/webhooks.js';
+import { redactUrl } from './redactUrl.js';
+import { resolveTrustProxy } from './trustProxy.js';
 import './types.js';
 
 export async function buildApp(config: InfinicusConfig): Promise<FastifyInstance> {
@@ -39,7 +42,11 @@ export async function buildApp(config: InfinicusConfig): Promise<FastifyInstance
   // usable by any future non-Fastify caller too.
   const auditLogger = createLogger({ name: 'infinicus-api-audit', level: config.logLevel });
 
-  const app = Fastify({ logger: { level: config.logLevel }, disableRequestLogging: true });
+  // trustProxy comes from TRUST_PROXY (hop count or explicit proxy list, never
+  // "trust everything"). Behind Caddy it must be set, otherwise request.ip is
+  // the proxy's address for every client and all clients share one rate-limit
+  // bucket; set too wide, a client could forge its address.
+  const app = Fastify({ logger: { level: config.logLevel }, disableRequestLogging: true, trustProxy: resolveTrustProxy(config.trustProxy) });
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -98,7 +105,7 @@ export async function buildApp(config: InfinicusConfig): Promise<FastifyInstance
       tenantId: request.ctx?.tenantId ?? null,
       userId: request.session?.user.id ?? null,
       method: request.method,
-      route: request.routeOptions.url ?? request.url,
+      route: request.routeOptions.url ?? redactUrl(request.url),
       statusCode: reply.statusCode,
       durationMs: reply.elapsedTime,
     });
@@ -138,6 +145,13 @@ export async function buildApp(config: InfinicusConfig): Promise<FastifyInstance
   await app.register(twinRoutes);
   await app.register(decisionRecommendationsRoutes);
   await app.register(dataAcquisitionRoutes);
+  await app.register(webhooksRoutes, {
+    rateLimit: {
+      ipMax: config.webhookRateLimitIpMax,
+      connectorMax: config.webhookRateLimitConnectorMax,
+      windowMs: config.webhookRateLimitWindowMs,
+    },
+  });
 
   return app;
 }

@@ -209,7 +209,7 @@ describe.runIf(run)('BUILD-33 v1.1 — live PostgreSQL/RLS architecture', () => 
   it('preserves legacy PLATFORM_GLOBAL subscriptions for privileged relay only', async () => {
     const subscriberName = `build33-live-platform-${unique('sub')}`;
     // This is deliberately inserted using only the original 0007 columns:
-    // old platform-global registry rows remain valid after 0172.
+    // old platform-global registry rows remain valid after 0173.
     await adminPool.query(
       `INSERT INTO events.event_subscriptions
         (subscriber_name,event_pattern,destination_type,destination_ref,status)

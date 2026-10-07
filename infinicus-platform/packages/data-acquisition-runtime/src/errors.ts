@@ -20,6 +20,7 @@ import {
   CollectionLimitExceededError,
   PublicationNotReadyError,
   QualityThresholdError,
+  WebhookAuthenticationError,
 } from '@infinicus/database';
 
 export {
@@ -32,4 +33,5 @@ export {
   CollectionLimitExceededError,
   PublicationNotReadyError,
   QualityThresholdError,
+  WebhookAuthenticationError,
 };

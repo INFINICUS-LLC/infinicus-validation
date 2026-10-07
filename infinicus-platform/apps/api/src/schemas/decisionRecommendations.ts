@@ -19,8 +19,20 @@ export const recommendedDecisionSchema = z.object({
   riskLevel: riskLevelSchema,
 });
 
+const areaEvidenceSchema = z.enum(['sufficient', 'insufficient']);
+
+/** How much real recorded activity the recommendations rest on. `insufficient` means no conclusions were drawn. */
+export const evidenceAssessmentSchema = z.object({
+  overall: z.enum(['sufficient', 'partial', 'insufficient']),
+  financial: areaEvidenceSchema,
+  customers: areaEvidenceSchema,
+  team: areaEvidenceSchema,
+  message: z.string(),
+});
+
 export const recommendResponseSchema = z.object({
   decisions: z.array(recommendedDecisionSchema),
+  evidence: evidenceAssessmentSchema,
 });
 
 export const choiceBodySchema = z.object({

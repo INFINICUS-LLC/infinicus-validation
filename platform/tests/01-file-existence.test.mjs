@@ -55,11 +55,30 @@ for (const marker of expectedOrder) {
 // 7. node --check on platform-bootstrap.js exits 0
 execFileSync(process.execPath, ['--check', BOOTSTRAP]); // throws on non-zero exit
 
-// 8. no migration newer than 0049 exists (frozen-migration guard, spec §22.A.8)
+// 8. migration history guard (docs/architecture/MIGRATION-ALLOCATION-POLICY.md).
+//    Originally "no migration beyond 0049" (BUILD-10 added none). Later builds
+//    legitimately add migrations, so the guard now enforces the standing rules:
+//    numbers are unique and contiguous, and the BUILD-10 baseline 0001-0049 is
+//    immutable (SHA-256 over filename + LF-normalised content).
+const FROZEN_THROUGH = 49;
+const FROZEN_BASELINE_SHA256 = '433313310ab06bf53589d66bceeb77cb8bbf36fee6df5d20b640bea36230d07d';
+
 const migrationsDir = resolve(ROOT, 'infinicus-platform/infrastructure/database/migrations');
 const { readdirSync } = await import('node:fs');
-const migrationFiles = readdirSync(migrationsDir).filter((f) => /^\d{4}_/.test(f));
-const maxNumber = Math.max(...migrationFiles.map((f) => parseInt(f.slice(0, 4), 10)));
-assert.equal(maxNumber, 49, 'no migration beyond 0049 may exist after BUILD-10');
+const { createHash } = await import('node:crypto');
+const migrationFiles = readdirSync(migrationsDir).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();
+const numbers = migrationFiles.map((f) => parseInt(f.slice(0, 4), 10));
+
+numbers.forEach((n, i) => {
+  assert.equal(n, i + 1, `migration numbers must be unique and contiguous from 0001 (found ${migrationFiles[i]} at position ${i + 1})`);
+});
+assert.ok(numbers.length >= FROZEN_THROUGH, `migrations 0001-${String(FROZEN_THROUGH).padStart(4, '0')} must all exist`);
+
+const baseline = createHash('sha256');
+for (const f of migrationFiles.slice(0, FROZEN_THROUGH)) {
+  const body = readFileSync(resolve(migrationsDir, f), 'utf8').replace(/\r\n/g, '\n');
+  baseline.update(`${f}\0${body}\0`);
+}
+assert.equal(baseline.digest('hex'), FROZEN_BASELINE_SHA256, 'frozen migrations 0001-0049 must not be modified, renamed, or removed');
 
 console.log('platform/tests/01-file-existence.test.mjs passed.');

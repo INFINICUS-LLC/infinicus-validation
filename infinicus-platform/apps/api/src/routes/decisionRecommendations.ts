@@ -26,8 +26,8 @@ export default async function decisionRecommendationsRoutes(app: FastifyInstance
   }, async (request, reply) => {
     const { businessId } = request.params;
     await businesses.getById(request.ctx!, businessId);
-    const decisions = await businessDecisions.recommend(request.ctx!, businessId);
-    return reply.status(201).send({ decisions });
+    const { decisions, evidence } = await businessDecisions.recommend(request.ctx!, businessId);
+    return reply.status(201).send({ decisions, evidence });
   });
 
   server.post('/v1/businesses/:businessId/decision-recommendations/:recommendationId/choice', {

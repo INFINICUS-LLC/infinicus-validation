@@ -1,0 +1,54 @@
+name: Bundle Guard
+
+# Syntax-checks and loads the 7 root browser layer bundles and syntax-checks
+# every browser-global source under infinicus-platform/layers/*/blocks/*/src.
+# Read-only: reports defects, never edits files or specifications.
+# Local equivalent: node scripts/check-bundles.mjs
+
+on:
+  push:
+    branches:
+      - "main"
+      - "claude/**"
+      - "ccr-**"
+    paths:
+      - "*/*-bundle.js"
+      - "digital-twin/**"
+      - "data-acquisition/**"
+      - "business-intelligence/**"
+      - "ai-decision-intelligence/**"
+      - "approved-business-action/**"
+      - "outcome-monitoring/**"
+      - "continuous-learning/**"
+      - "infinicus-platform/layers/**"
+      - "scripts/check-bundles.mjs"
+      - ".github/workflows/bundle-guard.yml"
+  pull_request:
+    paths:
+      - "*/*-bundle.js"
+      - "digital-twin/**"
+      - "data-acquisition/**"
+      - "business-intelligence/**"
+      - "ai-decision-intelligence/**"
+      - "approved-business-action/**"
+      - "outcome-monitoring/**"
+      - "continuous-learning/**"
+      - "infinicus-platform/layers/**"
+      - "scripts/check-bundles.mjs"
+      - ".github/workflows/bundle-guard.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  bundle-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check bundles and platform block sources
+        run: node scripts/check-bundles.mjs

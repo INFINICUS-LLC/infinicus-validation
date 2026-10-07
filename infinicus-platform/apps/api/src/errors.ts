@@ -50,6 +50,8 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
 
   // Authorization (@infinicus/authorization)
   PermissionDeniedError: 403,
+  // V-01: a decision was attempted without pre-established approval authority.
+  ApproverAuthorityNotEstablishedError: 403,
   MembershipNotActiveError: 403,
   InvitationTokenInvalidError: 400,
   InvitationExpiredError: 400,
@@ -95,6 +97,7 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   CollectionLimitExceededError: 413,
   PublicationNotReadyError: 409,
   QualityThresholdError: 409,
+  WebhookAuthenticationError: 401,
 
   // Business Operations runtime (BUILD-32)
   BusinessIntakeRejectedError: 400,

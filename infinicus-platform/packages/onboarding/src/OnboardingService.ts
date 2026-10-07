@@ -6,6 +6,7 @@ import {
   type OnboardingProgress, type Setting, type Invitation,
 } from '@infinicus/database';
 import { AuthorizationService, type CreatedInvitation } from '@infinicus/authorization';
+import { OwnerApproverAuthorityService } from './OwnerApproverAuthorityService.js';
 
 const DEFAULT_TENANT_SETTINGS: Record<string, unknown> = {
   theme: 'system',
@@ -54,7 +55,8 @@ export class OnboardingService {
     private readonly progress: OnboardingProgressRepository = new OnboardingProgressRepository(),
     private readonly memberships: MembershipRepository = new MembershipRepository(),
     private readonly invitations: InvitationRepository = new InvitationRepository(),
-    private readonly authz: AuthorizationService = new AuthorizationService()
+    private readonly authz: AuthorizationService = new AuthorizationService(),
+    private readonly ownerAuthority: OwnerApproverAuthorityService = new OwnerApproverAuthorityService()
   ) {}
 
   /** Step 1: creates the tenant and its first workspace, and starts progress tracking. */
@@ -110,13 +112,27 @@ export class OnboardingService {
     const current = await this.progress.getById(ctx, onboardingId);
     if (current.initiatedBy !== ctx.userId) throw new OnboardingNotInitiatorError();
     if (current.membershipId) {
-      return { membership: await this.memberships.getById(ctx, current.membershipId), progress: current };
+      const membership = await this.memberships.getById(ctx, current.membershipId);
+      // Re-run on retry: idempotent, so an interrupted first attempt is completed, never duplicated.
+      await this.bootstrapOwnerAuthority(ctx, current);
+      return { membership, progress: current };
     }
     const created = await this.memberships.create(ctx, ctx.userId);
     const active = await this.memberships.activate(ctx, created.id);
     await this.authz.assignRole(ctx, active.id, 'owner');
     const updated = await this.progress.recordOwnerAssigned(ctx, onboardingId, active.id);
+    await this.bootstrapOwnerAuthority(ctx, updated);
     return { membership: active, progress: updated };
+  }
+
+  /**
+   * Issues the owner's approval authority from the server-side ownership proof (the onboarding
+   * record for THIS business and the active owner membership). Does nothing if the business is not
+   * yet registered. Derives nothing from caller-supplied fields; see OwnerApproverAuthorityService.
+   */
+  private async bootstrapOwnerAuthority(ctx: TenantContext, progress: OnboardingProgress): Promise<void> {
+    if (!progress.businessId) return;
+    await this.ownerAuthority.bootstrapForBusiness(ctx, progress.businessId, { onboardingId: progress.id });
   }
 
   /** Step 4: applies default tenant settings, merged with any caller-supplied overrides. Naturally idempotent (upsert). */

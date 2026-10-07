@@ -2,6 +2,7 @@ import {
   DigitalTwinDefinitionRepository, DigitalTwinInstanceRepository, DigitalTwinSnapshotRepository,
   BusinessEventRepository, type TenantContext,
 } from '@infinicus/database';
+import { assessTwinEvidence } from './twinEvidence.js';
 
 const TWIN_DEFINITION_CODE = 'operational-twin';
 const TWIN_INSTANCE_CODE = 'operational-twin';
@@ -133,7 +134,9 @@ export class TwinComputationService {
     const stamp = Date.now().toString(36);
     const { snapshot, version } = await this.snapshots.createSnapshot(
       ctx, businessId, instanceId, `twin-${stamp}`, now,
-      `Twin recomputed: profit30d=${twin.financial.profit30d}, churn=${twin.customers.churnRatePct}%`
+      assessTwinEvidence(twin).overall === 'insufficient'
+        ? `Twin recomputed: insufficient data (no activity recorded in the last ${twin.windowDays} days)`
+        : `Twin recomputed: profit30d=${twin.financial.profit30d}, churn=${twin.customers.churnRatePct}%`
     );
     await this.snapshots.addValue(ctx, version.id, TWIN_METRIC_CODE, twin);
     await this.snapshots.validateSnapshot(ctx, snapshot.id, version.id);

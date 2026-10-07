@@ -1,12 +1,12 @@
 # BUILD-33 — Cross-Domain Business Event Architecture Specification
 
-**Specification version:** 1.1  
+**Specification version:** 1.2  
 **Build ID:** BUILD-33  
 **Domain owner:** DATA → Event Infrastructure / Event Ledger  
 **Status:** FROZEN — AMENDED BY ARCHITECTURE GUARDRAIL RECONCILIATION  
 **Dependency:** BUILD-32 — COMPLETED AND MERGED  
-**Migration baseline before BUILD-33:** 0001–0170  
-**First permitted BUILD-33 migration:** 0171  
+**Migration baseline before BUILD-33:** 0001–0171  
+**First permitted BUILD-33 migration:** 0172  
 **Implementation state:** IN_PROGRESS — PAUSED AT ARCHITECTURE GATE  
 **Governing architecture:** INFINICUS Master Architecture Guardrail v1.0  
 **Amendment record:** docs/architecture/BUILD-33-ARCHITECTURE-GUARDRAIL-RECONCILIATION-v1.1.md
@@ -24,6 +24,24 @@ Architecture-preserving amendment. Adds mandatory dual-architecture validation,
 Cold-Start evidence classification, explicit source-of-truth restrictions,
 approval/action replay constraints, and a compatibility hold on migration 0172.
 
+No domain/layer ownership is reassigned.
+
+### v1.2
+
+Numbering-only correction. Migration 0171 was allocated on `main` to
+`0171_create_da_webhook_token_lookup.sql` (Data Acquisition) before BUILD-33
+merged (see `docs/architecture/MIGRATION-ALLOCATION-POLICY.md`). The BUILD-33
+migrations are renumbered, content unchanged:
+
+| v1.0 / v1.1 name | v1.2 name |
+|---|---|
+| `0171_create_business_event_ledger.sql` | `0172_create_business_event_ledger.sql` |
+| `0172_harden_eventing_scope.sql` | `0173_harden_eventing_scope.sql` |
+
+References to "0171" and "0172" in the v1.0/v1.1 text below mean the BUILD-33
+ledger and scope migrations and read as 0172 and 0173. The v1.1 compatibility
+hold applied to the original scope-hardening draft; the redesigned migration
+passed the architecture gate (`docs/architecture/BUILD-33-ARCHITECTURE-GATE-VALIDATION.md`).
 No domain/layer ownership is reassigned.
 
 ---
@@ -431,16 +449,16 @@ subscriptions or historical delivery records.
 
 ## 18. Migration policy
 
-Migrations 0001–0170 remain immutable.
+Migrations 0001–0171 remain immutable (v1.2: renumbered; see section 0).
 
-### 0171
+### 0172 (ledger; formerly 0171)
 
 The canonical Event Ledger migration is permitted, subject to v1.1 provenance
 and Cold-Start requirements before BUILD-33 completion.
 
-### 0172
+### 0173 (scope hardening; formerly 0172)
 
-The current draft `0172_harden_eventing_scope.sql` is under
+The original draft `0172_harden_eventing_scope.sql` (now `0173_harden_eventing_scope.sql`) is under
 **ARCHITECTURE COMPATIBILITY HOLD** and is not merge-ready.
 
 It must be redesigned to preserve global/legacy event-transport semantics while

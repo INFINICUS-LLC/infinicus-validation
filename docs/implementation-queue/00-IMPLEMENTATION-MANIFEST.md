@@ -69,7 +69,7 @@ Architecture amendment:
 Status: **in_progress — architecture gate open after live PostgreSQL/RLS validation**.
 
 Dependency BUILD-32 is completed and merged. The baseline before BUILD-33 remains
-0001–0170. Migration 0171 and redesigned migration 0172 have passed the BUILD-33 v1.1 architecture gate. Live validation evidence is recorded in `docs/architecture/BUILD-33-ARCHITECTURE-GATE-VALIDATION.md`.
+0001–0171 (v1.2: renumbered, 0171 now belongs to Data Acquisition). The BUILD-33 ledger migration (0172) and redesigned scope migration (0173) have passed the BUILD-33 v1.1 architecture gate. Live validation evidence is recorded in `docs/architecture/BUILD-33-ARCHITECTURE-GATE-VALIDATION.md`.
 
 PR #22 remains draft. BUILD-33 is not complete yet. No BUILD-34 implementation is authorized.
 
