@@ -305,7 +305,12 @@ describe.runIf(run)('owner authority — ownership proof, grant, revoke, provena
     const { membership } = await onboardOwner(assigned.ctx, assignedOwner.id, assignedBiz.id);
     await authority.grantActiveAssignment(assigned.ctx, grantInput(assignedBiz.id, assignedOwner.id, membership.id));
 
-    const countRows = async () => Number((await admin.query('SELECT count(*) AS n FROM approved_business_action.approver_assignments')).rows[0].n);
+    // Scoped to this test's own tenants: other test files write to the same
+    // database in parallel, so a table-wide count is not stable.
+    const ownTenantIds = [proven, ambiguous, unproven, inactive, assigned].map((w) => w.tenant.id);
+    const countRows = async () => Number((await admin.query(
+      'SELECT count(*) AS n FROM approved_business_action.approver_assignments WHERE tenant_id = ANY($1::uuid[])', [ownTenantIds]
+    )).rows[0].n);
     const before = await countRows();
 
     const report = await runOwnerAuthorityDryRun(admin);

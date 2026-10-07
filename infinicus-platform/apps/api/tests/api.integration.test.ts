@@ -190,11 +190,11 @@ async function createMonitoredAction(ctx: TenantContext, businessId: string): Pr
 }
 
 /** Establishes approver authority through the admin route — a request SEPARATE from deciding (V-01). */
-async function grantApprover(ctx: TenantContext, token: string, bizId: string, approverUserId: string, code: string) {
+async function grantApprover(ctx: TenantContext, token: string, bizId: string, approverUserId: string, code: string, roleCode: string = 'business-owner') {
   return app!.inject({
     method: 'POST', url: `/v1/businesses/${bizId}/approver-assignments`,
     headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('grant-key') },
-    payload: { approverUserId, assignmentCode: code },
+    payload: { approverUserId, assignmentCode: code, roleCode },
   });
 }
 
@@ -464,6 +464,32 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
       });
       expect(res.statusCode).toBe(201);
       expect(res.json().status).toBe('approved');
+    });
+
+    it('denies an approval by a manager-tier approver: the API accepts no risk class, so the action is unclassified (high) (P0-2)', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithOwner(userId);
+      const bizId = crypto.randomUUID();
+      await adminPool!.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Policy Biz',$4,'active')`,
+        [bizId, ctx.tenantId, ctx.workspaceId, uc('policy-biz')]
+      );
+      const intakePackageId = await createAbaIntake(ctx, bizId);
+      const code = uc('m');
+      expect((await grantApprover(ctx, token, bizId, userId, code, 'manager')).statusCode).toBe(201);
+
+      const approve = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+        payload: { intakePackageId, reviewCode: uc('r'), summary: 'Approve', assignmentCode: code, decisionCode: uc('d'), outcome: 'approve', riskClass: 'low' },
+      });
+      expect(approve.statusCode).toBe(403);
+
+      const reject = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/decisions`, headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('key') },
+        payload: { intakePackageId: await createAbaIntake(ctx, bizId), reviewCode: uc('r'), summary: 'Reject', assignmentCode: code, decisionCode: uc('d'), outcome: 'reject' },
+      });
+      expect(reject.statusCode).toBe(201);
+      expect(reject.json().status).toBe('rejected');
     });
 
     it('rejects a decision when no approver authority was established beforehand (authority is never self-issued)', async () => {
