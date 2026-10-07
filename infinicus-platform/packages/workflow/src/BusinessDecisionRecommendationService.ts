@@ -9,11 +9,18 @@ import {
 import { AnthropicClient } from '@infinicus/llm-client';
 import { TwinComputationService, type TwinSnapshotResult } from './TwinComputationService.js';
 import { DecisionWorkflowService, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
+import { assessTwinEvidence, type TwinEvidenceAssessment } from './twinEvidence.js';
 
 const TARGET_LAYER_ABA = 'approved_business_action';
 const TARGET_LAYER_OM = 'outcome_monitoring';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
+
+/** Recommendations plus an explicit statement of how much real evidence they rest on. */
+export interface RecommendationResult {
+  decisions: RecommendedDecision[];
+  evidence: TwinEvidenceAssessment;
+}
 
 export interface RecommendedDecision {
   id: string; // DecisionRecommendation id — pass to startChoiceReview/recordChoiceOutcome
@@ -66,7 +73,9 @@ function resolveAnthropicClient(): AnthropicClient | null {
   return key ? new AnthropicClient(key) : null;
 }
 
-function buildPrompt(twin: TwinSnapshotResult): string {
+function buildPrompt(twin: TwinSnapshotResult, evidence: TwinEvidenceAssessment): string {
+  const unknownAreas = (['financial', 'customers', 'team'] as const).filter((area) => evidence[area] === 'insufficient');
+  const unknownNote = unknownAreas.length === 0 ? '' : `\n\nNO RECORDED DATA for: ${unknownAreas.join(', ')}. Treat these as UNKNOWN (not zero, not good, not bad). Make no claim about them.`;
   return `You are INFINICUS Decision Intelligence — an advisor grounded in real business data.
 
 SNAPSHOT: last ${twin.windowDays} days as of ${twin.snapshotAt.slice(0, 10)}
@@ -90,7 +99,7 @@ REAL OPERATIONS:
 REAL TEAM:
 - Hired (${twin.windowDays}d): ${twin.team.hired30d}
 - Terminated (${twin.windowDays}d): ${twin.team.terminated30d}
-- Net headcount change: ${twin.team.netHeadcountDelta}
+- Net headcount change: ${twin.team.netHeadcountDelta}${unknownNote}
 
 Based ONLY on this real data, provide 3 specific, actionable decisions the business owner should consider.
 
@@ -109,48 +118,66 @@ For each decision respond in this exact JSON format:
 Important: Do not invent data. If the data doesn't support a strong recommendation, say so plainly.`;
 }
 
-/** Deterministic fallback when no ANTHROPIC_API_KEY is configured, or the LLM call/parse fails — never blocks the feature. */
-function deterministicRecommendations(twin: TwinSnapshotResult): RawDecisionItem[] {
+/**
+ * Deterministic fallback when no ANTHROPIC_API_KEY is configured, or the LLM call/parse fails — never blocks the feature.
+ *
+ * Draws a conclusion ONLY for an area with recorded activity (see twinEvidence.ts): an empty area produces no
+ * statement at all, never "profitable", "healthy" or "steady" from zeros.
+ */
+export function deterministicRecommendations(twin: TwinSnapshotResult, evidence: TwinEvidenceAssessment = assessTwinEvidence(twin)): RawDecisionItem[] {
   const items: RawDecisionItem[] = [];
 
-  if (twin.financial.profit30d < 0) {
-    items.push({
-      decision: 'Reduce burn rate or increase pricing',
-      rationale: `Expenses ($${twin.financial.expenses30d}) exceeded revenue ($${twin.financial.revenue30d}) over the last ${twin.windowDays} days, a loss of $${Math.abs(twin.financial.profit30d)}.`,
-      expected_outcome: 'Reversing the current burn rate ($' + twin.financial.burnRatePerDay + '/day) protects runway.',
-      risk_level: 'high',
-    });
-  } else {
-    items.push({
-      decision: 'Reinvest profit into customer acquisition',
-      rationale: `The business was profitable over the last ${twin.windowDays} days ($${twin.financial.profit30d}).`,
-      expected_outcome: 'Sustained profit supports scaling acquisition spend without endangering runway.',
-      risk_level: 'low',
-    });
+  if (evidence.financial === 'sufficient') {
+    if (twin.financial.profit30d < 0) {
+      items.push({
+        decision: 'Reduce burn rate or increase pricing',
+        rationale: `Expenses ($${twin.financial.expenses30d}) exceeded revenue ($${twin.financial.revenue30d}) over the last ${twin.windowDays} days, a loss of $${Math.abs(twin.financial.profit30d)}.`,
+        expected_outcome: 'Reversing the current burn rate ($' + twin.financial.burnRatePerDay + '/day) protects runway.',
+        risk_level: 'high',
+      });
+    } else if (twin.financial.profit30d === 0) {
+      items.push({
+        decision: 'Review pricing and costs to move beyond break-even',
+        rationale: `Revenue ($${twin.financial.revenue30d}) equalled expenses ($${twin.financial.expenses30d}) over the last ${twin.windowDays} days: break-even, no profit yet.`,
+        expected_outcome: 'Small gains in margin or volume turn break-even into profit.',
+        risk_level: 'medium',
+      });
+    } else {
+      items.push({
+        decision: 'Reinvest profit into customer acquisition',
+        rationale: `The business was profitable over the last ${twin.windowDays} days ($${twin.financial.profit30d}).`,
+        expected_outcome: 'Sustained profit supports scaling acquisition spend without endangering runway.',
+        risk_level: 'low',
+      });
+    }
   }
 
-  if (twin.customers.churnRatePct > 10) {
-    items.push({
-      decision: 'Investigate and address customer churn',
-      rationale: `Churn rate is ${twin.customers.churnRatePct}%, against ${twin.customers.new30d} new and ${twin.customers.returning30d} returning customers.`,
-      expected_outcome: 'Reducing churn compounds revenue growth from existing acquisition spend.',
-      risk_level: 'medium',
-    });
-  } else {
-    items.push({
-      decision: 'Maintain current retention practices',
-      rationale: `Churn rate is ${twin.customers.churnRatePct}%, within a healthy range.`,
-      expected_outcome: 'Continued low churn supports predictable revenue.',
-      risk_level: 'low',
-    });
+  if (evidence.customers === 'sufficient') {
+    if (twin.customers.churnRatePct > 10) {
+      items.push({
+        decision: 'Investigate and address customer churn',
+        rationale: `Churn rate is ${twin.customers.churnRatePct}%, against ${twin.customers.new30d} new and ${twin.customers.returning30d} returning customers.`,
+        expected_outcome: 'Reducing churn compounds revenue growth from existing acquisition spend.',
+        risk_level: 'medium',
+      });
+    } else {
+      items.push({
+        decision: 'Maintain current retention practices',
+        rationale: `Churn rate is ${twin.customers.churnRatePct}% across ${twin.customers.new30d} new, ${twin.customers.returning30d} returning and ${twin.customers.churned30d} churned customers, within a healthy range.`,
+        expected_outcome: 'Continued low churn supports predictable revenue.',
+        risk_level: 'low',
+      });
+    }
   }
 
-  items.push({
-    decision: twin.team.netHeadcountDelta < 0 ? 'Evaluate whether reduced headcount covers current demand' : 'Hold current team size steady',
-    rationale: `Net headcount change over ${twin.windowDays} days: ${twin.team.netHeadcountDelta} (${twin.team.hired30d} hired, ${twin.team.terminated30d} terminated).`,
-    expected_outcome: 'Right-sizing the team against real sales volume avoids over- or under-staffing.',
-    risk_level: twin.team.netHeadcountDelta < 0 ? 'medium' : 'low',
-  });
+  if (evidence.team === 'sufficient') {
+    items.push({
+      decision: twin.team.netHeadcountDelta < 0 ? 'Evaluate whether reduced headcount covers current demand' : 'Hold current team size steady',
+      rationale: `Net headcount change over ${twin.windowDays} days: ${twin.team.netHeadcountDelta} (${twin.team.hired30d} hired, ${twin.team.terminated30d} terminated).`,
+      expected_outcome: 'Right-sizing the team against real sales volume avoids over- or under-staffing.',
+      risk_level: twin.team.netHeadcountDelta < 0 ? 'medium' : 'low',
+    });
+  }
 
   return items;
 }
@@ -190,20 +217,24 @@ export class BusinessDecisionRecommendationService {
     private readonly llm: AnthropicClient | null = resolveAnthropicClient()
   ) {}
 
-  async recommend(ctx: TenantContext, businessId: string): Promise<RecommendedDecision[]> {
+  async recommend(ctx: TenantContext, businessId: string): Promise<RecommendationResult> {
     const { twin } = await this.twins.getOrComputeTwin(ctx, businessId);
+    const evidence = assessTwinEvidence(twin);
+
+    // Nothing was recorded: say so. Never ask the LLM to (or fall back to rules that) invent conclusions from zeros.
+    if (evidence.overall === 'insufficient') return { decisions: [], evidence };
 
     let items: RawDecisionItem[] = [];
     if (this.llm) {
       try {
-        const text = await this.llm.complete(buildPrompt(twin));
+        const text = await this.llm.complete(buildPrompt(twin, evidence));
         const match = text.match(/\{[\s\S]*\}/);
         if (match) items = (JSON.parse(match[0]).decisions ?? []) as RawDecisionItem[];
       } catch {
         items = []; // falls through to the deterministic generator below
       }
     }
-    if (items.length === 0) items = deterministicRecommendations(twin);
+    if (items.length === 0) items = deterministicRecommendations(twin, evidence);
 
     const stamp = Date.now().toString(36);
     const results: RecommendedDecision[] = [];
@@ -227,7 +258,7 @@ export class BusinessDecisionRecommendationService {
         expectedOutcome: item.expected_outcome, riskLevel: item.risk_level,
       });
     }
-    return results;
+    return { decisions: results, evidence };
   }
 
   async startChoiceReview(ctx: TenantContext, businessId: string, recommendationId: string, chosen: boolean): Promise<ChoiceReviewResult> {
