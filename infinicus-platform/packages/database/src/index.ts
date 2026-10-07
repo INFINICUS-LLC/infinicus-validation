@@ -268,6 +268,24 @@ export type {
   ABAComponentRegistryEntry, ABADeployment,
 } from './repositories/approved_action/index.js';
 
+export { ApproverAuthorityNotFoundError, ApproverAuthorityStateConflictError } from './repositories/approved_action/errors.js';
+
+// ── Business-ownership proof and approver-authority provenance (owner bootstrap) ──
+export {
+  OWNER_APPROVER_ASSIGNMENT_CODE, PROVENANCE_SCOPE_TYPE, MAX_REVOCATION_REASON_LENGTH, normalizeRevocationReason,
+} from './repositories/approved_action/authorityProvenance.js';
+export type {
+  AuthoritySource, AuthorityAction, OwnershipProofRef, AuthorityProvenanceEntry,
+} from './repositories/approved_action/authorityProvenance.js';
+export {
+  OwnershipEvidenceRepository, loadOwnershipEvidenceWith, classifyOwnership, provenOwnersOf, CANDIDATE_LABEL,
+  runOwnerAuthorityDryRun,
+} from './repositories/ownership/index.js';
+export type {
+  OwnershipEvidence, OwnershipVerdict, OwnershipClassification, ProvenOwner, CandidateOwner, MembershipFact,
+  DryRunReport, DryRunEntry,
+} from './repositories/ownership/index.js';
+
 // ── Outcome Monitoring repositories (Stage 2I) ──────────────────────────────────
 export {
   OMIntakeRepository,

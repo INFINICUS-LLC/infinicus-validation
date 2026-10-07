@@ -6,6 +6,8 @@ import {
   createBusinessBodySchema, createBusinessResponseSchema,
   createDecisionBodySchema, decisionResponseSchema,
   grantApproverAuthorityBodySchema, grantApproverAuthorityResponseSchema,
+  approverAssignmentParamsSchema, revokeApproverAuthorityBodySchema, revokeApproverAuthorityResponseSchema,
+  approverAuthorityRecordResponseSchema,
   recordOutcomeBodySchema, outcomeResponseSchema,
   startSimulationBodySchema, startSimulationResponseSchema,
   simulationRunParamsSchema, simulationRunStatusResponseSchema,
@@ -125,8 +127,42 @@ export default async function businessRoutes(app: FastifyInstance) {
     const assignment = await workflow.grantApproverAuthority(request.ctx!, businessId, {
       approverUserId: request.body.approverUserId,
       assignmentCode: request.body.assignmentCode,
+      correlationId: request.correlationId,
     });
     return reply.status(201).send({ id: assignment.id, status: assignment.status, assignmentCode: assignment.assignmentCode });
+  });
+
+  server.get('/v1/businesses/:businessId/approver-assignments/:assignmentCode', {
+    schema: {
+      tags: ['businesses'],
+      summary: 'Read an approver assignment and its append-only provenance history (requires aba:admin)',
+      params: approverAssignmentParamsSchema,
+      response: { 200: approverAuthorityRecordResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
+    },
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('aba:admin')],
+  }, async (request, reply) => {
+    const { businessId, assignmentCode } = request.params;
+    const { assignment, provenance } = await workflow.getApproverAuthority(request.ctx!, businessId, assignmentCode);
+    return reply.status(200).send({
+      id: assignment.id, userId: assignment.userId, status: assignment.status, assignmentCode: assignment.assignmentCode, provenance,
+    });
+  });
+
+  server.post('/v1/businesses/:businessId/approver-assignments/:assignmentCode/revoke', {
+    schema: {
+      tags: ['businesses'],
+      summary: 'Revoke an approver assignment so the holder no longer has approval authority (requires aba:admin; idempotent)',
+      params: approverAssignmentParamsSchema,
+      body: revokeApproverAuthorityBodySchema,
+      response: { 200: revokeApproverAuthorityResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
+    },
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('aba:admin'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+  }, async (request, reply) => {
+    const { businessId, assignmentCode } = request.params;
+    const { assignment, changed } = await workflow.revokeApproverAuthority(request.ctx!, businessId, {
+      assignmentCode, reason: request.body.reason, correlationId: request.correlationId,
+    });
+    return reply.status(200).send({ id: assignment.id, status: assignment.status, assignmentCode: assignment.assignmentCode, changed });
   });
 
   server.post('/v1/businesses/:businessId/decisions', {

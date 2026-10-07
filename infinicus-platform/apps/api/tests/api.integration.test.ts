@@ -217,7 +217,10 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
       [WS1, T1]
     );
 
-    const config = loadConfig({ DATABASE_URL: appUrl, NODE_ENV: 'test', LOG_LEVEL: 'silent' });
+    // One app instance serves every test in this file; the global limiter's default (100 requests per
+    // minute) is a production setting, so give the suite its own budget. The 'rate limiting' test below
+    // asserts only that the limiter is active (headers present), not the threshold.
+    const config = loadConfig({ DATABASE_URL: appUrl, NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '5000' });
     app = await buildApp(config);
     await app.ready();
   });
@@ -611,6 +614,88 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
         `SELECT count(*)::int AS n FROM ai_decision_intelligence.decision_cases WHERE business_id = $1`, [bizId]
       );
       expect(rows[0].n).toBe(0);
+    });
+  });
+
+  describe('businesses — approver authority revocation and provenance (owner bootstrap)', () => {
+    async function ownerWorld(label: string) {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithOwner(userId);
+      const bizId = crypto.randomUUID();
+      await adminPool!.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,$4,$5,'active')`,
+        [bizId, ctx.tenantId, ctx.workspaceId, label, uc(label.toLowerCase().replace(/\W+/g, '-'))]
+      );
+      return { userId, token, ctx, bizId };
+    }
+    const revoke = (w: Awaited<ReturnType<typeof ownerWorld>>, code: string, body: unknown, withKey = true) =>
+      app!.inject({
+        method: 'POST', url: `/v1/businesses/${w.bizId}/approver-assignments/${code}/revoke`,
+        headers: { ...tenantHeaders(w.ctx, w.token), ...(withKey ? { 'idempotency-key': uc('rev-key') } : {}) }, payload: body as object,
+      });
+
+    it('revokes an approver, after which that approver\'s decision is refused with 403', async () => {
+      const w = await ownerWorld('Revoke Biz');
+      const code = uc('rv');
+      expect((await grantApprover(w.ctx, w.token, w.bizId, w.userId, code)).statusCode).toBe(201);
+
+      const res = await revoke(w, code, { reason: 'approver left the company' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ status: 'revoked', assignmentCode: code, changed: true });
+
+      const intakePackageId = await createAbaIntake(w.ctx, w.bizId);
+      const decision = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${w.bizId}/decisions`, headers: { ...tenantHeaders(w.ctx, w.token), 'idempotency-key': uc('key') },
+        payload: { intakePackageId, reviewCode: uc('r'), summary: 's', assignmentCode: code, decisionCode: uc('d'), outcome: 'approve' },
+      });
+      expect(decision.statusCode).toBe(403);
+      expect(decision.json().error.code).toBe('ApproverAuthorityNotEstablishedError');
+    });
+
+    it('exposes the append-only provenance history (grant then revoke, with actor, source and reason)', async () => {
+      const w = await ownerWorld('History Biz');
+      const code = uc('hist');
+      await grantApprover(w.ctx, w.token, w.bizId, w.userId, code);
+      await revoke(w, code, { reason: 'rotation' });
+      const res = await app!.inject({
+        method: 'GET', url: `/v1/businesses/${w.bizId}/approver-assignments/${code}`, headers: tenantHeaders(w.ctx, w.token),
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.status).toBe('revoked');
+      expect(body.provenance.map((p: { action: string; source: string }) => [p.action, p.source])).toEqual([['grant', 'manual-admin'], ['revoke', 'manual-admin']]);
+      expect(body.provenance[0].actor).toMatchObject({ type: 'user', id: w.userId, authority: 'aba:admin' });
+      expect(body.provenance[1].reason).toBe('rotation');
+    });
+
+    it('revoking requires a reason and an Idempotency-Key, and an unknown assignment is 404', async () => {
+      const w = await ownerWorld('Validate Biz');
+      const code = uc('val');
+      await grantApprover(w.ctx, w.token, w.bizId, w.userId, code);
+      expect((await revoke(w, code, {})).statusCode).toBe(400);
+      expect((await revoke(w, code, { reason: '   ' })).statusCode).toBe(400);
+      expect((await revoke(w, code, { reason: 'x' }, false)).statusCode).toBe(400);
+      expect((await revoke(w, uc('unknown'), { reason: 'x' })).statusCode).toBe(404);
+    });
+
+    it('a member without aba:admin can neither revoke nor read the history', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx: TenantContext = { tenantId: T1, workspaceId: WS1, userId };
+      const membership = await new MembershipRepository().create(ctx, userId);
+      await new MembershipRepository().activate(ctx, membership.id);
+      await new MembershipRepository().assignRole(ctx, membership.id, (await new RoleRepository().getByCode(ctx, 'member')).id);
+      const bizId = crypto.randomUUID();
+      await adminPool!.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Member Revoke Biz',$4,'active')`,
+        [bizId, T1, WS1, uc('member-revoke')]
+      );
+      const rev = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/approver-assignments/x/revoke`,
+        headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('k') }, payload: { reason: 'try' },
+      });
+      expect(rev.statusCode).toBe(403);
+      const read = await app!.inject({ method: 'GET', url: `/v1/businesses/${bizId}/approver-assignments/x`, headers: tenantHeaders(ctx, token) });
+      expect(read.statusCode).toBe(403);
     });
   });
 
