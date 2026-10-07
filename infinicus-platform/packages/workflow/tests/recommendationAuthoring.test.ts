@@ -8,24 +8,47 @@ const ALL_EVALUATED: TimeValiditySignals['evaluated'] = {
 };
 const d = (iso: string) => new Date(iso);
 
-describe('deriveRiskClass (ADI authors the class; never lowered by another input)', () => {
-  it('takes the highest of the authored level and persisted risk-profile severities', () => {
+describe('deriveRiskClass = MAX(deterministic floor, validated generator level, authorised human raise)', () => {
+  it('takes the highest of the floor, the generator level and a human raise', () => {
     expect(deriveRiskClass({ authoredRiskLevel: 'low', persistedSeverities: ['medium', 'critical', 'low'] }).riskClass).toBe('critical');
     expect(deriveRiskClass({ authoredRiskLevel: 'high', persistedSeverities: ['low'] }).riskClass).toBe('high');
     expect(deriveRiskClass({ authoredRiskLevel: 'medium' }).riskClass).toBe('medium');
+    expect(deriveRiskClass({ authoredRiskLevel: 'low', humanAdjustment: 'high' }).riskClass).toBe('high');
   });
 
-  it('is unclassified (null) when there is no evidence — never low', () => {
+  it('model output can never lower the structured floor (LOW/MEDIUM cannot reduce HIGH/CRITICAL)', () => {
+    for (const model of ['low', 'medium']) {
+      expect(deriveRiskClass({ authoredRiskLevel: model, persistedSeverities: ['high'] }).riskClass).toBe('high');
+      expect(deriveRiskClass({ authoredRiskLevel: model, persistedSeverities: ['critical'] }).riskClass).toBe('critical');
+    }
+  });
+
+  it('a human adjustment can only raise: a lower human value has no effect', () => {
+    expect(deriveRiskClass({ authoredRiskLevel: 'high', persistedSeverities: ['critical'], humanAdjustment: 'low' }).riskClass).toBe('critical');
+    expect(deriveRiskClass({ authoredRiskLevel: 'high', humanAdjustment: 'medium' }).riskClass).toBe('high');
+  });
+
+  it('invalid or missing model output is ignored when a deterministic floor exists, and never lowers it', () => {
+    for (const bad of ['catastrophic', '', 'LOW', 3, {}, undefined, null]) {
+      expect(deriveRiskClass({ authoredRiskLevel: bad, persistedSeverities: ['high'] }).riskClass).toBe('high');
+    }
+  });
+
+  it('is unclassified (null) when there is no deterministic evidence and the model output is missing or invalid — never low', () => {
     expect(deriveRiskClass({}).riskClass).toBeNull();
     expect(deriveRiskClass({ authoredRiskLevel: null, persistedSeverities: [] }).riskClass).toBeNull();
-  });
-
-  it('an out-of-vocabulary input makes the result unclassified instead of being ignored', () => {
     for (const bad of ['catastrophic', '', 'LOW', 3, {}]) {
       const result = deriveRiskClass({ authoredRiskLevel: bad });
       expect(result.riskClass).toBeNull();
-      expect(result.basis.join(' ')).toMatch(/vocabulary/);
+      expect(result.basis.join(' ')).toMatch(/unclassified/);
     }
+  });
+
+  it('an invalid human adjustment is ignored, not applied', () => {
+    expect(deriveRiskClass({ authoredRiskLevel: 'medium', humanAdjustment: 'extreme' }).riskClass).toBe('medium');
+  });
+
+  it('a persisted severity outside the vocabulary yields unclassified rather than a guess', () => {
     expect(deriveRiskClass({ authoredRiskLevel: 'high', persistedSeverities: ['bogus'] }).riskClass).toBeNull();
   });
 });
@@ -69,6 +92,12 @@ describe('determineTimeValidity (explicit fact; risk never implies it)', () => {
       expect(result.isTimeSensitive).toBeNull();
       expect(result.basis.join(' ')).toContain(key);
     }
+  });
+
+  it('an evaluation error leaves the fact unknown (null) — never false', () => {
+    const result = determineTimeValidity({ evaluated: ALL_EVALUATED, evaluationError: 'source unavailable' });
+    expect(result).toMatchObject({ isTimeSensitive: null, validUntil: null, error: null });
+    expect(result.basis.join(' ')).toMatch(/unknown, not false/);
   });
 
   it('rejects an invalid date in a signal', () => {
@@ -122,5 +151,50 @@ describe('BusinessDecisionRecommendationService.recommend — authors risk/valid
     const basis = rationales.filter((r) => r.code === 'risk_validity_basis');
     expect(basis).toHaveLength(2);
     expect(basis[0].ref).toMatchObject({ riskClass: 'high', isTimeSensitive: false, twinSnapshotId: SNAP });
+  });
+
+  async function recommendWith(evaluator?: (...args: never[]) => Promise<TimeValiditySignals>) {
+    const created: Array<{ riskValidity: Record<string, unknown> }> = [];
+    const rationales: Array<{ code: string; ref: Record<string, unknown> }> = [];
+    const llm = { complete: async () => JSON.stringify({ decisions: [{ decision: 'Hold prices', rationale: 'r', expected_outcome: 'o', risk_level: 'low' }] }) };
+    const recommendations = {
+      createRecommendation: async (...args: unknown[]) => { created.push({ riskValidity: args[6] as Record<string, unknown> }); return { recommendation: { id: 'rec' }, version: { id: 'ver' } }; },
+      addRationale: async (_c: unknown, _v: unknown, _b: unknown, code: string, _s: string, ref: Record<string, unknown>) => { rationales.push({ code, ref }); },
+      validateRecommendation: async () => undefined,
+      publishRecommendation: async () => undefined,
+    };
+    const service = new BusinessDecisionRecommendationService(
+      { createQuestion: async () => ({ id: 'q' }) } as never,
+      { createCase: async () => ({ id: 'c' }), createVersion: async () => undefined, transitionStatus: async () => undefined } as never,
+      recommendations as never, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      { getOrComputeTwin: async () => ({ twin: twinWithSales(), cached: true, snapshotId: '66666666-0000-0000-0000-0000000000bb' }) } as never,
+      undefined, llm as never, evaluator as never,
+    );
+    await service.recommend({ tenantId: 't', workspaceId: 'w', userId: 'u' }, 'b1');
+    return { created, rationales };
+  }
+
+  it('is_time_sensitive = false only after a COMPLETE evaluation; a failing evaluator leaves it unknown (null), not false', async () => {
+    const complete = await recommendWith();
+    expect(complete.created[0].riskValidity.isTimeSensitive).toBe(false);
+
+    const failed = await recommendWith(async () => { throw new Error('policy store unreachable'); });
+    expect(failed.created[0].riskValidity.isTimeSensitive).toBeNull();
+    expect(failed.created[0].riskValidity.validUntil).toBeNull();
+    expect(JSON.stringify(failed.rationales)).toMatch(/policy store unreachable/);
+
+    const incomplete = await recommendWith(async () => ({ evaluated: { ...ALL_EVALUATED, forecastHorizon: false } }));
+    expect(incomplete.created[0].riskValidity.isTimeSensitive).toBeNull();
+  });
+
+  it('is_time_sensitive = true with the earliest end date when a source applies', async () => {
+    const end = new Date('2026-11-01T00:00:00Z');
+    const result = await recommendWith(async () => ({ evaluated: ALL_EVALUATED, actionWindowEnd: end }));
+    expect(result.created[0].riskValidity.isTimeSensitive).toBe(true);
+    expect((result.created[0].riskValidity.validUntil as Date).getTime()).toBe(end.getTime());
+  });
+
+  it('a policy-marked time-sensitive decision with no end date is refused rather than stored without valid_until', async () => {
+    await expect(recommendWith(async () => ({ evaluated: ALL_EVALUATED, policyTimeSensitive: true }))).rejects.toThrow(/validity could not be determined/);
   });
 });

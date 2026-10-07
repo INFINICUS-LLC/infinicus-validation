@@ -2,11 +2,10 @@
  * ADI authoring of the risk and temporal-validity facts of a recommendation (P0-3 Block 2).
  *
  * Pure and database-free. Owner rulings applied:
- *  - Q1  ADI derives `risk_class` from persisted risk evidence; a classification is only ever
- *        the HIGHEST of its inputs (it can be raised, never lowered by another input).
- *  - Q2  vocabulary low | medium | high | critical; an unknown/unrecognised input makes the
- *        result UNCLASSIFIED (null), which consumers treat as high risk (P0-2). It is never
- *        ignored, because ignoring a bad input could silently lower the class.
+ *  - Q1/Q2  risk_class = MAX(deterministic persisted floor, validated generator level, authorised human
+ *        upward adjustment); model output alone is never trusted and can never lower the floor. Vocabulary
+ *        low | medium | high | critical; with no valid evidence the result is UNCLASSIFIED (null), which
+ *        consumers treat as high risk (P0-2).
  *  - Q5  time-sensitivity is an explicit, separate fact. It is TRUE when any authoritative
  *        signal says so, FALSE only when every signal source was evaluated and none applies,
  *        and unknown (null) when the sources were not evaluated. Risk alone never implies it.
@@ -16,10 +15,12 @@ export const RISK_ORDER = ['low', 'medium', 'high', 'critical'] as const;
 export type AuthoredRiskClass = (typeof RISK_ORDER)[number];
 
 export interface RiskInputs {
-  /** Risk level authored with the recommendation (e.g. the generator's risk_level). */
+  /** Risk level proposed by the generator (model output). An input/proposal only; it can never lower the floor. */
   authoredRiskLevel?: unknown;
-  /** Severities of persisted `alternative_risk_profiles` rows for the chosen alternative. */
+  /** Severities of persisted `alternative_risk_profiles` rows for the chosen alternative: the deterministic floor. */
   persistedSeverities?: readonly unknown[];
+  /** Authorised human upward adjustment. Raise-only: a value below the other inputs has no effect. */
+  humanAdjustment?: unknown;
 }
 
 export interface DerivedRisk {
@@ -32,26 +33,45 @@ function isRisk(value: unknown): value is AuthoredRiskClass {
   return typeof value === 'string' && (RISK_ORDER as readonly string[]).includes(value);
 }
 
+/**
+ * risk_class = MAX(deterministic persisted floor, validated generator level, authorised human upward adjustment).
+ *  - Invalid/missing generator output is ignored when other valid evidence exists; it can never reduce the result.
+ *  - With no valid input at all the recommendation stays UNCLASSIFIED (null), which P0-2 treats as high risk.
+ *  - A persisted severity outside the vocabulary cannot occur (database CHECK); if one is supplied the result is
+ *    unclassified rather than guessed.
+ */
 export function deriveRiskClass(inputs: RiskInputs): DerivedRisk {
   const basis: string[] = [];
-  const values: unknown[] = [];
+  const persisted = inputs.persistedSeverities ?? [];
+  if (!persisted.every(isRisk)) {
+    return { riskClass: null, basis: ['a persisted risk severity is outside the vocabulary: unclassified'] };
+  }
+  const valid: AuthoredRiskClass[] = [];
+  for (const severity of persisted as AuthoredRiskClass[]) {
+    valid.push(severity);
+    basis.push(`persisted risk profile severity (deterministic floor input): ${severity}`);
+  }
   if (inputs.authoredRiskLevel !== undefined && inputs.authoredRiskLevel !== null) {
-    values.push(inputs.authoredRiskLevel);
-    basis.push(`authored risk level: ${String(inputs.authoredRiskLevel)}`);
+    if (isRisk(inputs.authoredRiskLevel)) {
+      valid.push(inputs.authoredRiskLevel);
+      basis.push(`generator risk level (proposal): ${inputs.authoredRiskLevel}`);
+    } else {
+      basis.push(`generator risk level ignored (outside the vocabulary): ${String(inputs.authoredRiskLevel)}`);
+    }
+  } else {
+    basis.push('generator risk level missing');
   }
-  for (const severity of inputs.persistedSeverities ?? []) {
-    values.push(severity);
-    basis.push(`persisted risk profile severity: ${String(severity)}`);
+  if (inputs.humanAdjustment !== undefined && inputs.humanAdjustment !== null) {
+    if (isRisk(inputs.humanAdjustment)) {
+      valid.push(inputs.humanAdjustment);
+      basis.push(`authorised human adjustment (raise-only): ${inputs.humanAdjustment}`);
+    } else {
+      basis.push(`human adjustment ignored (outside the vocabulary): ${String(inputs.humanAdjustment)}`);
+    }
   }
-  if (values.length === 0) return { riskClass: null, basis: ['no risk evidence available: unclassified'] };
-  if (!values.every(isRisk)) {
-    return { riskClass: null, basis: [...basis, 'an input is outside the risk vocabulary: unclassified (never lowered by ignoring it)'] };
-  }
-  const highest = values.reduce<AuthoredRiskClass>(
-    (max, v) => (RISK_ORDER.indexOf(v) > RISK_ORDER.indexOf(max) ? v : max),
-    values[0] as AuthoredRiskClass,
-  );
-  return { riskClass: highest, basis: [...basis, `class is the highest input: ${highest}`] };
+  if (valid.length === 0) return { riskClass: null, basis: [...basis, 'no valid risk evidence: unclassified'] };
+  const highest = valid.reduce((max, v) => (RISK_ORDER.indexOf(v) > RISK_ORDER.indexOf(max) ? v : max), valid[0]);
+  return { riskClass: highest, basis: [...basis, `class is the highest valid input: ${highest}`] };
 }
 
 /**
@@ -73,6 +93,8 @@ export interface TimeValiditySignals {
   actionWindowEnd?: Date | null;
   policyTimeSensitive?: boolean;
   otherAuthoritativeEnds?: readonly Date[];
+  /** Set when evaluating a source threw or was unavailable: the fact is unknown, never false. */
+  evaluationError?: string;
 }
 
 export interface TimeValidity {
@@ -89,6 +111,9 @@ function finiteDates(values: readonly (Date | null | undefined)[]): Date[] {
 
 export function determineTimeValidity(signals: TimeValiditySignals): TimeValidity {
   const basis: string[] = [];
+  if (signals.evaluationError) {
+    return { isTimeSensitive: null, validUntil: null, error: null, basis: [`validity signal evaluation failed (${signals.evaluationError}): time-sensitivity is unknown, not false`] };
+  }
   const ends = finiteDates([
     ...(signals.evidenceExpiries ?? []),
     signals.forecastHorizonEnd,

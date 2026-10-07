@@ -35,7 +35,7 @@ export type { DecisionAlternative } from './DecisionAlternativeRepository.js';
 
 export { DecisionRecommendationRepository } from './DecisionRecommendationRepository.js';
 export type { DecisionRecommendation, DecisionRecommendationVersion, RecommendationRationale, RecommendationRiskValidity, RiskClass } from './DecisionRecommendationRepository.js';
-export { RISK_CLASSES, normalizeRiskValidity } from './DecisionRecommendationRepository.js';
+export { RISK_CLASSES, normalizeRiskValidity, maxRiskClass } from './DecisionRecommendationRepository.js';
 
 export { DecisionConfidenceRepository } from './DecisionConfidenceRepository.js';
 export type { DecisionConfidenceScore } from './DecisionConfidenceRepository.js';

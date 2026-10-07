@@ -247,7 +247,7 @@ export {
   ReasoningRunRepository,
   DecisionEvidenceRepository,
   DecisionAlternativeRepository,
-  DecisionRecommendationRepository, RISK_CLASSES, normalizeRiskValidity,
+  DecisionRecommendationRepository, RISK_CLASSES, normalizeRiskValidity, maxRiskClass,
   DecisionConfidenceRepository,
   DecisionPolicyRepository,
   DecisionMonitoringRequirementRepository,

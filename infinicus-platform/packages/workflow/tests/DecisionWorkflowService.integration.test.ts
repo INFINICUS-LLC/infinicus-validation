@@ -468,6 +468,27 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       expect(lineage.rows[0]).toMatchObject({ status: 'published', risk_class: 'critical' });
     });
 
+    it('ABA snapshots the persisted ADI-authored class and does not recalculate it, including a human upward adjustment made before publication', async () => {
+      const recRepo = new DecisionRecommendationRepository();
+      const simPkg = await createSimPackage(ctx1, BIZ1);
+      await new ADIIntakeRepository().receivePackage(ctx1, { businessId: BIZ1, simulationPublicationPackageId: simPkg, intakeCode: uniqueCode('adi-intake'), idempotencyKey: uniqueCode('idem') });
+      const question = await new DecisionQuestionRepository().createQuestion(ctx1, BIZ1, uniqueCode('q'), 'Raise before publish?');
+      const case_ = await new DecisionCaseRepository().createCase(ctx1, BIZ1, question.id, uniqueCode('case'));
+      const { recommendation, version } = await recRepo.createRecommendation(ctx1, BIZ1, case_.id, uniqueCode('rec'), 'Raised', undefined, { riskClass: 'low', isTimeSensitive: false });
+      await recRepo.raiseRiskClass(ctx1, version.id, 'critical');
+      await recRepo.validateRecommendation(ctx1, recommendation.id, version.id);
+      await recRepo.publishRecommendation(ctx1, recommendation.id, version.id);
+      const adiPubRepo = new ADIPublicationRepository();
+      const insight = await adiPubRepo.createInsightPackage(ctx1, BIZ1, uniqueCode('adi-insight'));
+      const insightVersion = await adiPubRepo.createVersion(ctx1, insight.id, BIZ1, 'raised fixture', version.id);
+      const { package: pub } = await adiPubRepo.createPackage(ctx1, BIZ1, insightVersion.id, 'approved_business_action', 'ABA-01', uniqueCode('idem'));
+      const { package: intake } = await new ABAIntakeRepository().receivePackage(ctx1, { businessId: BIZ1, adiPublicationPackageId: pub.id, intakeCode: uniqueCode('aba-intake'), idempotencyKey: uniqueCode('idem') });
+
+      const review = await service.createReview(ctx1, BIZ1, { intakePackageId: intake.id, reviewCode: uniqueCode('snap-raised'), summary: 'Snapshot' });
+      const snapshot = await new ActionReviewRepository().getLatestVersion(ctx1, review.id);
+      expect(snapshot).toMatchObject({ riskClass: 'critical', isTimeSensitive: false, sourceRecommendationVersionId: version.id });
+    });
+
     it('an unclassified recommendation yields a NULL snapshot (unclassified / unknown) — never a guessed class', async () => {
       const intakePackageId = await createAbaIntake(ctx1, BIZ1);
       const review = await service.createReview(ctx1, BIZ1, { intakePackageId, reviewCode: uniqueCode('snap-null'), summary: 'Snapshot' });
