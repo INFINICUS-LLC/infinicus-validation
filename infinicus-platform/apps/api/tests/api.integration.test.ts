@@ -583,6 +583,37 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
     });
   });
 
+  describe('businesses — decision recommendations on an empty business (CS-01)', () => {
+    it('states that there is not enough real data, and makes no positive claim, for a business with no recorded activity', async () => {
+      const { userId, token } = await registerActiveUser();
+      const ctx = await createTenantWithOwner(userId);
+      const bizId = crypto.randomUUID();
+      await adminPool!.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Empty Biz',$4,'active')`,
+        [bizId, ctx.tenantId, ctx.workspaceId, uc('empty-biz')]
+      );
+
+      const res = await app!.inject({
+        method: 'POST', url: `/v1/businesses/${bizId}/decision-recommendations`,
+        headers: { ...tenantHeaders(ctx, token), 'idempotency-key': uc('cs01-key') },
+      });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.decisions).toEqual([]);
+      expect(body.evidence.overall).toBe('insufficient');
+      expect(body.evidence.message).toMatch(/not enough real data/i);
+      const text = JSON.stringify(body);
+      expect(text).not.toMatch(/profitable/i);
+      expect(text).not.toMatch(/healthy/i);
+      expect(text).not.toMatch(/\$0\)/);
+
+      const { rows } = await adminPool!.query(
+        `SELECT count(*)::int AS n FROM ai_decision_intelligence.decision_cases WHERE business_id = $1`, [bizId]
+      );
+      expect(rows[0].n).toBe(0);
+    });
+  });
+
   describe('businesses — OM outcomes (permission + idempotency)', () => {
     it('records an outcome end-to-end with a real monitored action', async () => {
       const { userId, token } = await registerActiveUser();

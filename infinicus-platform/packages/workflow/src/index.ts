@@ -21,5 +21,7 @@ export type {
 
 export { BusinessDecisionRecommendationService } from './BusinessDecisionRecommendationService.js';
 export type {
-  RecommendedDecision, ChoiceReviewResult, DecisionHistoryEntry, RiskLevel,
+  RecommendedDecision, RecommendationResult, ChoiceReviewResult, DecisionHistoryEntry, RiskLevel,
 } from './BusinessDecisionRecommendationService.js';
+export { assessTwinEvidence } from './twinEvidence.js';
+export type { TwinEvidenceAssessment, AreaEvidence, OverallEvidence } from './twinEvidence.js';
