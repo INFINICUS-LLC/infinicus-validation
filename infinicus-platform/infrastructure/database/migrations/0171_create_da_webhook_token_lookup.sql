@@ -1,4 +1,4 @@
--- Migration: 0170_create_da_webhook_token_lookup
+-- Migration: 0171_create_da_webhook_token_lookup
 -- BUILD-31 follow-up — webhook intake for 'webhook'-type connectors.
 --
 -- Adds a prefix+hash bearer-token pair to connectors (the same
@@ -55,6 +55,11 @@ CREATE OR REPLACE FUNCTION data_acquisition.find_connector_for_webhook(
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
+-- Hardening: pin the search_path so a SECURITY DEFINER body can never resolve
+-- an object through a caller-controlled schema or a pg_temp shadow. Every
+-- relation below is schema-qualified; pg_catalog resolves the built-in types
+-- and operators, pg_temp is last so temporary objects can never shadow them.
+SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
   RETURN QUERY
@@ -70,7 +75,18 @@ BEGIN
 END;
 $$;
 
-INSERT INTO _migrations (filename) VALUES ('0170_create_da_webhook_token_lookup.sql')
+-- Hardening: functions are executable by PUBLIC by default. This one returns a
+-- token hash and a tenant/workspace mapping and bypasses RLS, so PUBLIC must
+-- not be able to call it. No GRANT appears here on purpose: this repository's
+-- migrations contain no role-specific GRANTs (role provisioning is
+-- environment-specific). The application role receives EXECUTE through
+-- infrastructure/database/scripts/grant-app-role.sh (GRANT EXECUTE ON ALL
+-- FUNCTIONS IN SCHEMA + default privileges), which CI and deployment run after
+-- the migration gate. Verified by the "webhook lookup function privileges"
+-- test in packages/database/tests/da-repositories.integration.test.ts.
+REVOKE ALL ON FUNCTION data_acquisition.find_connector_for_webhook(text) FROM PUBLIC;
+
+INSERT INTO _migrations (filename) VALUES ('0171_create_da_webhook_token_lookup.sql')
   ON CONFLICT (filename) DO NOTHING;
 
 COMMIT;

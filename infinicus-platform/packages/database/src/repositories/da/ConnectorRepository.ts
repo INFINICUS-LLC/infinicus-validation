@@ -460,7 +460,7 @@ export class ConnectorRepository {
   /**
    * Resolves an inbound webhook's token prefix to its owning
    * connector/tenant/workspace via the SECURITY DEFINER
-   * find_connector_for_webhook() function (0170_create_da_webhook_token_lookup.sql),
+   * find_connector_for_webhook() function (0171_create_da_webhook_token_lookup.sql),
    * which deliberately bypasses RLS for this one read — there is no tenant
    * context yet, since the request carries only the token itself. Returns
    * null rather than throwing when the prefix is unknown, so the caller

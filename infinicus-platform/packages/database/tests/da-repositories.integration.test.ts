@@ -375,6 +375,43 @@ describe.runIf(RUN)('Schema: connectors_type_check', () => {
   });
 });
 
+describe.runIf(RUN)('Schema: find_connector_for_webhook() hardening', () => {
+  const FN = "'data_acquisition.find_connector_for_webhook(text)'::regprocedure";
+
+  beforeAll(setupIntegration);
+  afterAll(teardownIntegration);
+
+  it('is SECURITY DEFINER with a pinned search_path (pg_catalog, pg_temp)', async () => {
+    await withTenantTransaction(ctx1, async (client) => {
+      const res = await client.query(
+        `SELECT prosecdef, proconfig FROM pg_proc WHERE oid = ${FN}`
+      );
+      expect(res.rows[0].prosecdef).toBe(true);
+      expect(res.rows[0].proconfig).toContain('search_path=pg_catalog, pg_temp');
+    });
+  });
+
+  it('is not executable by PUBLIC', async () => {
+    await withTenantTransaction(ctx1, async (client) => {
+      const res = await client.query(
+        `SELECT count(*)::int AS n
+           FROM pg_proc p, aclexplode(p.proacl) a
+          WHERE p.oid = ${FN} AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'`
+      );
+      expect(res.rows[0].n).toBe(0);
+    });
+  });
+
+  it('is executable by the application role (granted by grant-app-role.sh, not by the migration)', async () => {
+    await withTenantTransaction(ctx1, async (client) => {
+      const res = await client.query(
+        `SELECT has_function_privilege(current_user, ${FN}, 'EXECUTE') AS ok`
+      );
+      expect(res.rows[0].ok).toBe(true);
+    });
+  });
+});
+
 describe.runIf(RUN)('Integration: CollectionRunRepository', () => {
   const srcRepo = new DataSourceRepository();
   const runRepo = new CollectionRunRepository();

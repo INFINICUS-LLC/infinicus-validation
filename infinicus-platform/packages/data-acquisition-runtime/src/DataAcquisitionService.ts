@@ -501,7 +501,7 @@ export class DataAcquisitionService {
    * other method on this service, the caller has no TenantContext yet —
    * that is resolved here, from the token itself, via
    * ConnectorRepository.findConnectorForWebhook() (the one legitimate
-   * cross-tenant lookup in this service, see 0170_create_da_webhook_token_lookup.sql).
+   * cross-tenant lookup in this service, see 0171_create_da_webhook_token_lookup.sql).
    *
    * Order matters: the token is verified before anything about the
    * connector or source is checked or disclosed, and findConnectorForWebhook
