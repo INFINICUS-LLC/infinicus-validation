@@ -11,7 +11,7 @@
       code:String(input.code),
       minimumConfidence:Math.max(0,Math.min(1,Number(input.minimumConfidence??0.5))),
       minimumReliability:Math.max(0,Math.min(1,Number(input.minimumReliability??0.5))),
-      requireHumanReview:Boolean(input.requireHumanReview),
+      requireHumanReview:input.requireHumanReview===undefined ? true : Boolean(input.requireHumanReview),
       status:String(input.status||"active"),
       createdAt:new Date().toISOString()
     });
