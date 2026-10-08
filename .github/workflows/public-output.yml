@@ -1,0 +1,96 @@
+name: Public Output
+
+# Validates the Cloudflare Pages public output (dist/): explicit allowlist, static dependency closure,
+# no internal files, generated _headers/_routes.json, and that Pages Functions still compile and are routed.
+# Read-only: builds into dist/ on the runner, never deploys and never touches Cloudflare.
+# Local equivalent:  node --test scripts/tests/build-public.test.mjs && node scripts/build-public.mjs
+
+on:
+  push:
+    branches:
+      - "main"
+      - "claude/**"
+      - "ccr-**"
+      - "remediation/**"
+    paths:
+      - "scripts/build-public.mjs"
+      - "scripts/tests/build-public.test.mjs"
+      - "public-manifest.json"
+      - "package.json"
+      - "package-lock.json"
+      - "functions/**"
+      - "_routes.json"
+      - "*.html"
+      - "theme.js"
+      - "i18n.js"
+      - "i18n/**"
+      - "manifest.json"
+      - "*.svg"
+      - "infinicus logo.jpeg"
+      - "*/*-bundle.js"
+      - "platform/platform-bootstrap.js"
+      - "docs/deployment/**"
+      - ".github/workflows/public-output.yml"
+  pull_request:
+    paths:
+      - "scripts/build-public.mjs"
+      - "scripts/tests/build-public.test.mjs"
+      - "public-manifest.json"
+      - "package.json"
+      - "package-lock.json"
+      - "functions/**"
+      - "_routes.json"
+      - "*.html"
+      - "theme.js"
+      - "i18n.js"
+      - "i18n/**"
+      - "manifest.json"
+      - "*.svg"
+      - "infinicus logo.jpeg"
+      - "*/*-bundle.js"
+      - "platform/platform-bootstrap.js"
+      - "docs/deployment/**"
+      - ".github/workflows/public-output.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  public-output:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WRANGLER_SEND_METRICS: "false"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Public output tests
+        run: node --test scripts/tests/build-public.test.mjs
+
+      - name: Build dist/ from the allowlist
+        run: node scripts/build-public.mjs
+
+      - name: Show the published file list
+        run: find dist -type f | sort
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Compile Pages Functions (wrangler, no Cloudflare account needed)
+        run: >
+          npx --yes wrangler@3.114.17 pages functions build functions
+          --outfile "$RUNNER_TEMP/_worker.js"
+          --output-routes-path "$RUNNER_TEMP/functions-routes.json"
+
+      - name: Functions routes match the discovered routes
+        run: node scripts/build-public.mjs --compare-routes "$RUNNER_TEMP/functions-routes.json"
+
+      - name: Existing repository checks (bundles, platform bootstrap)
+        run: |
+          node scripts/check-bundles.mjs
+          node --test platform/tests/*.test.mjs
