@@ -32,6 +32,7 @@ before(async () => {
   const [cmd, ...pre] = WRANGLER;
   child = spawn(cmd, [...pre, 'pages', 'dev', join(scratch, 'dist'), '--port', String(port), '--ip', '127.0.0.1', '--compatibility-date=2024-01-01', '--persist-to', join(scratch, 'state')], {
     cwd: ROOT, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: 'true' }, stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true, // own process group, so the whole tree (npx -> wrangler -> workerd) can be stopped
   });
   let log = '';
   child.stdout.on('data', (d) => { log += d; });
@@ -46,7 +47,20 @@ before(async () => {
   if (!unavailable) unavailable = `wrangler did not become ready: ${log.slice(-400)}`;
 });
 
-after(() => { if (child && child.exitCode === null) child.kill('SIGTERM'); rmSync(scratch, { recursive: true, force: true }); });
+/** Stops the whole wrangler process tree; npx/wrangler/workerd would otherwise outlive the test run and keep it from exiting. */
+async function stopServer() {
+  if (!child || child.pid === undefined) return;
+  const signal = (sig) => { try { process.kill(-child.pid, sig); } catch { /* already gone */ } };
+  const exited = new Promise((r) => child.once('exit', r));
+  signal('SIGTERM');
+  await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
+  signal('SIGKILL');
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.unref();
+}
+
+after(async () => { await stopServer(); rmSync(scratch, { recursive: true, force: true }); });
 
 function guard(t) {
   if (!unavailable) return false;
