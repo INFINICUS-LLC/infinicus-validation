@@ -1,6 +1,6 @@
 # P0-5 handoff — `AuthorizedActionPackage`
 
-Status: **handoff (planning input), not an implementation.** Prepared at the close of P0-4 on `main` `e0e45cc`. Nothing here defines the locked contract; the contract content is fixed by the locked specifications cited below. P0-5 Block 1 (contract/reconciliation and source-of-truth ownership) comes first and needs owner approval before any code.
+Status: **handoff (planning input), not an implementation.** Superseded in detail by `P0-5_BLOCK1_RECONCILIATION.md` (owner rulings D-1..D-7 applied); where the two differ, the Block 1 reconciliation governs. Prepared at the close of P0-4 on `main` `e0e45cc`. Nothing here defines the locked contract; the contract content is fixed by the locked specifications cited below. P0-5 Block 1 (contract/reconciliation and source-of-truth ownership) comes first and needs owner approval before any code.
 Authority applied: owner reconciliation order (P0-4 -> P0-5 -> P0-6), violations V-12 and V-13, rulings F4, L-1, SOT-02.
 
 ## 1. The locked chain (preserved)
