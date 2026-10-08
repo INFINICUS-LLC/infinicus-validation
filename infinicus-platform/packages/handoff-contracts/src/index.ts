@@ -11,3 +11,6 @@ export * from './adi-to-aba';
 export * from './aba-to-om';
 export * from './om-to-cl';
 export * from './cl-feedback';
+
+// Authorized Action Package (P0-5): ABA -> BO authorization contract
+export * from './authorized-action-package';

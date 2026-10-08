@@ -129,6 +129,7 @@ jobs:
           --filter=@infinicus/authentication --filter=@infinicus/authorization --filter=@infinicus/onboarding
           --filter=@infinicus/workflow --filter=@infinicus/api --filter=@infinicus/web
           --filter=@infinicus/data-acquisition-runtime --filter=@infinicus/layer-continuous-learning
+          --filter=@infinicus/event-contracts --filter=@infinicus/handoff-contracts
         env:
           DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
           ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
