@@ -3,6 +3,7 @@
 //
 //   node scripts/build-public.mjs                      build dist/ from public-manifest.json
 //   node scripts/build-public.mjs --check              validate everything, write nothing
+//   node scripts/build-public.mjs --stage-github-pages DIR   stage ONLY the declared public files (no Cloudflare-only _headers/_routes.json) for GitHub Pages
 //   node scripts/build-public.mjs --compare-routes F   compare Pages Functions routes with a wrangler routes file
 //
 // Publishes ONLY the files listed in public-manifest.json, plus the generated _headers and _routes.json.
@@ -411,6 +412,30 @@ export function buildPublic({ root = process.cwd(), outDir, manifest = loadManif
   return { outDir: target, files: manifest.files.length + GENERATED.length, digest: treeDigest(target) };
 }
 
+/**
+ * Stages the declared public files, and nothing else, for GitHub Pages. GitHub Pages has no Functions and ignores `_headers` and
+ * `_routes.json`, so those Cloudflare-only generated files are left out; the result must equal the manifest's file list exactly.
+ * `outDir` must not exist or must be empty. Returns { outDir, files, digest }.
+ */
+export function stageGithubPages({ root = process.cwd(), outDir, manifest = loadManifest(root) } = {}) {
+  if (!outDir) throw new PublicOutputError('stageGithubPages needs an explicit output directory');
+  const rootAbs = resolve(root);
+  const target = resolve(outDir);
+  if (target === rootAbs || target === join(rootAbs, manifest.outputDir)) throw new PublicOutputError(`refusing to stage into ${target}`);
+  buildPublic({ root: rootAbs, outDir: target, manifest });
+  for (const generated of GENERATED) rmSync(join(target, generated), { force: true });
+  const present = walkFiles(target).map(({ abs, symlink }) => ({ rel: toPosix(relative(target, abs)), symlink }));
+  const problems = [];
+  const declared = new Set(manifest.files);
+  for (const { rel, symlink } of present) {
+    if (symlink) problems.push(`staged output contains a symlink: ${rel}`);
+    if (!declared.has(rel)) problems.push(`staged output contains an undeclared file: ${rel}`);
+  }
+  for (const f of declared) if (!present.some((p) => p.rel === f)) problems.push(`staged output is missing ${f}`);
+  if (problems.length) throw new PublicOutputError(problems);
+  return { outDir: target, files: present.length, digest: treeDigest(target) };
+}
+
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────────
 
 function main(argv) {
@@ -421,6 +446,14 @@ function main(argv) {
       const problems = compareRoutes(root, argv[compareIdx + 1], loadManifest(root).routes);
       if (problems.length) throw new PublicOutputError(problems);
       console.log('Effective Pages Functions routes match wrangler and are covered by the generated routing.');
+      return 0;
+    }
+    const stageIdx = argv.indexOf('--stage-github-pages');
+    if (stageIdx !== -1) {
+      const dir = argv[stageIdx + 1];
+      if (!dir || dir.startsWith('--')) throw new PublicOutputError('--stage-github-pages needs a directory');
+      const { outDir, files, digest } = stageGithubPages({ root, outDir: resolve(process.cwd(), dir) });
+      console.log(`Staged ${files} files for GitHub Pages into ${outDir}\nTree digest: sha256:${digest}`);
       return 0;
     }
     if (argv.includes('--check')) {

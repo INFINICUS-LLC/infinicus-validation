@@ -1,0 +1,90 @@
+name: GitHub Pages (published files only)
+
+# Replaces "deploy the whole repository root" with "deploy only the allowlisted public files".
+# The staged site is exactly the files declared in public-manifest.json (38 files, incl. 404.html); nothing else in the repository
+# (Stack B, docs, schemas, config, archives, scripts, Functions source) is uploaded.
+#
+# SAFE TO MERGE: the deploy job does nothing until the owner (1) sets the repository variable PAGES_DEPLOY_FROM_ACTIONS=true and
+# (2) switches Settings -> Pages -> Source to "GitHub Actions". Until then GitHub's built-in branch deployment is unchanged.
+# Pull requests only stage and verify; they never deploy. See docs/deployment/GITHUB_PAGES_EXPOSURE_REPORT.md.
+# Local equivalent:  node scripts/build-public.mjs --stage-github-pages /tmp/pages
+
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "scripts/build-public.mjs"
+      - "public-manifest.json"
+      - "*.html"
+      - "theme.js"
+      - "i18n.js"
+      - "i18n/**"
+      - "manifest.json"
+      - "*.svg"
+      - "infinicus logo.jpeg"
+      - "*/*-bundle.js"
+      - "platform/platform-bootstrap.js"
+      - ".github/workflows/github-pages.yml"
+  pull_request:
+    paths:
+      - "scripts/build-public.mjs"
+      - "scripts/tests/github-pages.test.mjs"
+      - "public-manifest.json"
+      - "*.html"
+      - "theme.js"
+      - "i18n.js"
+      - "i18n/**"
+      - "manifest.json"
+      - "*.svg"
+      - "infinicus logo.jpeg"
+      - "*/*-bundle.js"
+      - "platform/platform-bootstrap.js"
+      - ".github/workflows/github-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Allowlist and staging tests
+        run: node --test scripts/tests/build-public.test.mjs scripts/tests/github-pages.test.mjs
+
+      - name: Stage the published files only
+        run: node scripts/build-public.mjs --stage-github-pages "$RUNNER_TEMP/pages"
+
+      - name: Show exactly what would be published
+        run: find "$RUNNER_TEMP/pages" -type f | sort
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/pages
+
+  deploy:
+    needs: stage
+    if: github.ref == 'refs/heads/main' && vars.PAGES_DEPLOY_FROM_ACTIONS == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
