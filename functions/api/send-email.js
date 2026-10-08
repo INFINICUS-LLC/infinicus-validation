@@ -1,13 +1,58 @@
 // functions/api/send-email.js — INFINICUS ENGINE v3
-// Cloudflare Pages Function · Email Delivery via Resend
-// Env: set RESEND_API_KEY in Cloudflare Pages → Settings → Environment Variables
+// Cloudflare Pages Function · Simulation report email
+//
+// DISABLED BY DEFAULT (PR-C). Nothing is sent unless EMAIL_MODE is "live" and a verified sending identity is configured
+// (functions/_shared/email.js). While disabled the route validates the request and answers 503 "Service unavailable"
+// (the same status the previous "Email service not configured" answer used), so the frontend's existing error path runs.
+//
+// Hardened in PR-C: exact-origin allowlist instead of wildcard CORS; bounded body; strict field validation; every
+// user-supplied value HTML-escaped and length-capped before it enters the template; fixed subject lines; sender and reply-to
+// come only from server configuration; per-IP, per-recipient and global limits (best-effort, not authentication).
+// Remaining blocker for live mode: a requester can still ask for a report to be mailed to an address they typed without
+// proving they own it (no double opt-in yet).
+// Env: ALLOWED_ORIGINS, INFINICUS_WAITLIST (counters), EMAIL_MODE, RESEND_API_KEY, EMAIL_FROM, EMAIL_VERIFIED_DOMAINS (+ optional
+// EMAIL_REPLY_TO, EMAIL_ALLOWED_RECIPIENT_DOMAINS)
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Content-Type': 'application/json',
+import { gate, checkLimit, intEnv } from '../_shared/route.js';
+import { deliver, emailMode } from '../_shared/email.js';
+import { escapeHtml, toFiniteNumber } from '../_shared/escape.js';
+
+const SCHEMA = {
+  name: { type: 'string', max: 80 },
+  email: { type: 'email', required: true },
+  idea: { type: 'string', max: 500, multiline: true },
+  verdict: { type: 'string', max: 12 },
+  headline: { type: 'string', max: 200 },
+  summary: { type: 'string', max: 1200, multiline: true },
+  capital: { type: 'number', min: 0, max: 1e12 },
+  revenue: { type: 'number', min: -1e12, max: 1e12 },
+  profit: { type: 'number', min: -1e12, max: 1e12 },
+  endCash: { type: 'number', min: -1e12, max: 1e12 },
+  profDays: { type: 'number', min: 0, max: 90 },
+  mcSurvival: { type: 'number', min: 0, max: 1 },
+  score_viability: { type: 'number', min: 0, max: 100 },
+  score_market: { type: 'number', min: 0, max: 100 },
+  score_execution: { type: 'number', min: 0, max: 100 },
+  score_financial: { type: 'number', min: 0, max: 100 },
 };
+
+const SUBJECTS = {
+  go: '✅ Your Business Got a GO — INFINICUS Report',
+  modify: '⚠️ Your Simulation Results — Adjustments Needed',
+  stop: '🛑 Your Simulation Results — INFINICUS Analysis',
+};
+
+/** Escaped strings and clamped numbers only: the template below never sees a raw user value. */
+function safeReportData(v) {
+  const text = (s, max) => escapeHtml(s ?? '', { maxLength: max }).replace(/\n/g, '<br>');
+  const num = (n) => (n === undefined ? undefined : toFiniteNumber(n));
+  const verdict = ['go', 'modify', 'stop'].includes((v.verdict ?? '').toLowerCase()) ? v.verdict.toLowerCase() : 'stop';
+  return {
+    name: text(v.name, 80), email: escapeHtml(v.email), idea: text(v.idea, 500), verdict, headline: text(v.headline, 200), summary: text(v.summary, 1200),
+    capital: num(v.capital), revenue: num(v.revenue), profit: num(v.profit), endCash: num(v.endCash), profDays: num(v.profDays), mcSurvival: num(v.mcSurvival),
+    score_viability: num(v.score_viability), score_market: num(v.score_market), score_execution: num(v.score_execution), score_financial: num(v.score_financial),
+  };
+}
 
 function buildEmailHTML(data) {
   const {
@@ -142,65 +187,34 @@ function buildEmailHTML(data) {
 }
 
 export async function onRequest(context) {
-  const { request, env } = context;
+  const { env } = context;
+  const g = await gate(context, {
+    route: '/api/send-email',
+    methods: ['POST'],
+    limits: [
+      { name: 'email-ip', scope: 'ip', limit: intEnv(env, 'SEND_EMAIL_IP_PER_HOUR', 5), windowMs: 3_600_000 },
+      { name: 'email-all', scope: 'global', limit: intEnv(env, 'SEND_EMAIL_PER_DAY', 500), windowMs: 86_400_000 },
+    ],
+    body: { maxBytes: 8192, schema: SCHEMA },
+  });
+  if (!g.ok) return g.response;
 
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 200, headers: CORS });
-  }
+  // Disabled by default: answer before spending any per-recipient quota or building content.
+  if (emailMode(env) === 'disabled') return g.respond(503, { ok: false, error: 'Service unavailable' });
 
-  if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: CORS });
-  }
+  const quota = await checkLimit(env, { name: 'email-to', key: g.value.email, limit: 3, windowMs: 86_400_000 });
+  if (quota.degraded) return g.respond(503, { ok: false, error: 'Service unavailable' });
+  if (!quota.allowed) return g.respond(429, { ok: false, error: 'Too many requests' }, { 'Retry-After': String(Math.max(1, quota.retryAfterSec)) });
 
-  const apiKey = env.RESEND_API_KEY;
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'Email service not configured' }), { status: 503, headers: CORS });
-  }
+  const data = safeReportData(g.value);
+  const result = await deliver(env, {
+    route: '/api/send-email', kind: 'user', to: g.value.email,
+    subject: SUBJECTS[data.verdict],
+    html: buildEmailHTML(data),
+  });
 
-  let body;
-  try { body = await request.json(); } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: CORS });
-  }
-
-  const { name, email } = body;
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return new Response(JSON.stringify({ error: 'Invalid email address' }), { status: 400, headers: CORS });
-  }
-
-  const html = buildEmailHTML(body);
-  const subject = body.verdict === 'go'
-    ? `✅ Your Business Got a GO — INFINICUS Report`
-    : body.verdict === 'modify'
-    ? `⚠️ Your Simulation Results — Adjustments Needed`
-    : `🛑 Your Simulation Results — INFINICUS Analysis`;
-
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'INFINICUS ENGINE <noreply@infinicus-validation.pages.dev>',
-        reply_to: 'infinicussimulationengine@gmail.com',
-        to: [email],
-        subject,
-        html,
-      }),
-    });
-
-    const result = await res.json();
-
-    if (!res.ok) {
-      console.error('Resend error:', result);
-      return new Response(JSON.stringify({ ok: false, error: 'Email delivery failed' }), { status: 500, headers: CORS });
-    }
-
-    return new Response(JSON.stringify({ ok: true, id: result.id }), { status: 200, headers: CORS });
-
-  } catch (e) {
-    console.error('Send error:', e);
-    return new Response(JSON.stringify({ ok: false, error: 'Network error' }), { status: 500, headers: CORS });
-  }
+  if (result.status === 'sent') return g.respond(200, { ok: true });
+  if (result.status === 'logged') return g.respond(200, { ok: true, delivered: false });
+  if (result.status === 'refused') return g.respond(400, { ok: false, error: 'Invalid request' });
+  return g.respond(result.status === 'unconfigured' || result.status === 'disabled' ? 503 : 502, { ok: false, error: 'Email delivery failed' });
 }

@@ -1,51 +1,35 @@
 // Cloudflare Pages Function — POST /api/nurture-batch
 // Loops through all waitlist signups in KV and sends Day 3 + Day 7 nurture emails.
 //
-// CALL THIS DAILY via a free cron service:
-//   → cron-job.org (free) → POST https://infini-cus.com/api/nurture-batch
-//   → Authorization: Bearer <your NURTURE_BATCH_SECRET>
+// SERVER-TO-SERVER ONLY. Call daily from a trusted scheduler:
+//   POST https://<site>/api/nurture-batch   Authorization: Bearer <NURTURE_BATCH_SECRET>
 //
-// Required env vars (set in Cloudflare Pages → Settings → Environment Variables):
-//   RESEND_API_KEY        — your Resend API key
-//   NURTURE_BATCH_SECRET  — any random string you choose (e.g. openssl rand -hex 32)
+// Hardened in PR-C (fail closed):
+//   - NURTURE_BATCH_SECRET is mandatory (>= 32 chars). Unset/weak => 503, never "no check".
+//   - Constant-time bearer verification; no CORS; no browser access.
+//   - Email follows functions/_shared/email.js (EMAIL_MODE defaults to disabled). While disabled or in log mode nothing is
+//     sent and NO signup is marked as sent, so enabling live mode later does not skip anyone.
 //
-// Required KV binding (set in Cloudflare Pages → Settings → Functions → KV bindings):
-//   INFINICUS_WAITLIST    — the KV namespace where waitlist signups are stored
+// Required binding: INFINICUS_WAITLIST (signup records)
 
-const FROM_ADDRESS = 'INFINICUS ENGINE <noreply@infini-cus.com>';
+import { gate } from '../_shared/route.js';
+import { deliver, emailMode } from '../_shared/email.js';
+import { escapeHtml, plainTextLine } from '../_shared/escape.js';
+
 const DAY_MS = 86_400_000;
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json',
-};
+export async function onRequest(context) {
+  const { env } = context;
+  const g = await gate(context, { route: '/api/nurture-batch', methods: ['POST'], bearer: 'NURTURE_BATCH_SECRET' });
+  if (!g.ok) return g.response;
 
-export async function onRequestOptions() {
-  return new Response(null, { status: 204, headers: CORS });
-}
+  const kv = env.INFINICUS_WAITLIST;
+  if (!kv || typeof kv.list !== 'function') return g.respond(503, { ok: false, error: 'Service unavailable' });
 
-export async function onRequestPost(context) {
-  const { request, env } = context;
-
-  // ── Auth gate ──────────────────────────────────────────────────────────────
-  const secret = env.NURTURE_BATCH_SECRET;
-  if (secret) {
-    const auth = request.headers.get('Authorization') || '';
-    if (auth !== `Bearer ${secret}`) {
-      return new Response(JSON.stringify({ ok: false, error: 'Unauthorized' }), { status: 401, headers: CORS });
-    }
-  }
-
-  const kv     = env.INFINICUS_WAITLIST;
-  const apiKey = env.RESEND_API_KEY;
-
-  if (!kv)     return new Response(JSON.stringify({ ok: false, error: 'INFINICUS_WAITLIST KV not configured' }), { status: 500, headers: CORS });
-  if (!apiKey) return new Response(JSON.stringify({ ok: false, error: 'RESEND_API_KEY not configured' }),        { status: 500, headers: CORS });
-
+  const mode = emailMode(env);
   const now = Date.now();
   const stats = { day3: 0, day7: 0, skipped: 0, errors: 0 };
+  if (mode === 'disabled') return g.respond(200, { ok: true, mode, stats, processed: 0 });
 
   // ── Paginate through all signup keys ──────────────────────────────────────
   let cursor;
@@ -69,35 +53,31 @@ export async function onRequestPost(context) {
 
         if (!day) { stats.skipped++; continue; }
 
-        const firstName = (s.name || '').split(' ')[0] || 'there';
-        const html      = day === 3 ? buildDay3(firstName) : buildDay7(firstName);
+        const firstName = plainTextLine((s.name || '').split(' ')[0], 40) || 'there';
+        const html      = day === 3 ? buildDay3(escapeHtml(firstName)) : buildDay7(escapeHtml(firstName));
         const subject   = day === 3
           ? `Did you run your first simulation yet, ${firstName}?`
           : `${firstName}, your business idea deserves real numbers — here's what 500 simulations reveal`;
 
-        const res = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: FROM_ADDRESS, to: [s.email], subject, html }),
-        });
+        const result = await deliver(env, { route: '/api/nurture-batch', kind: 'user', to: s.email, subject, html });
 
-        if (res.ok) {
+        if (result.status === 'sent') {
           s[`day${day}SentAt`] = now;
           await kv.put(key.name, JSON.stringify(s));
           stats[`day${day}`]++;
+        } else if (result.status === 'logged') {
+          stats.skipped++; // rehearsal: do not mark as sent
         } else {
-          console.error(`nurture-batch Day ${day} failed for ${s.email}:`, res.status);
           stats.errors++;
         }
       } catch (e) {
-        console.error('nurture-batch key error:', key.name, e);
         stats.errors++;
       }
       processed++;
     }
   } while (cursor && processed < 10000);
 
-  return new Response(JSON.stringify({ ok: true, stats, processed }), { status: 200, headers: CORS });
+  return g.respond(200, { ok: true, mode, stats, processed });
 }
 
 // ── DAY 3 EMAIL ───────────────────────────────────────────────────────────────

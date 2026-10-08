@@ -1,69 +1,41 @@
 // Cloudflare Pages Function — POST /api/nurture
-// Sends Day 3 and Day 7 nurture emails via Resend.
+// Sends ONE Day 3 or Day 7 nurture email.
 //
-// Call format:
-//   POST /api/nurture
+//   POST /api/nurture   Authorization: Bearer <NURTURE_BATCH_SECRET>
 //   { "email": "user@example.com", "name": "Jane", "day": 3 }
 //
-// Trigger Day 3 / Day 7 from a Cloudflare Cron or your own scheduler.
-// Env var required: RESEND_API_KEY
+// SERVER-TO-SERVER ONLY (PR-C): previously an unauthenticated route that could email any address. It is now behind the same
+// mandatory bearer secret as /api/nurture-batch, has no CORS, and sends only through functions/_shared/email.js
+// (EMAIL_MODE defaults to disabled). No frontend page calls it.
 
-const FROM_ADDRESS = 'INFINICUS ENGINE <noreply@infini-cus.com>';
+import { gate } from '../_shared/route.js';
+import { deliver } from '../_shared/email.js';
+import { escapeHtml, plainTextLine } from '../_shared/escape.js';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Content-Type': 'application/json',
+const SCHEMA = {
+  email: { type: 'email', required: true },
+  name: { type: 'string', max: 80 },
+  day: { type: 'number', integer: true, required: true, min: 3, max: 7 },
 };
 
-export async function onRequestOptions() {
-  return new Response(null, { status: 204, headers: CORS });
-}
+export async function onRequest(context) {
+  const { env } = context;
+  const g = await gate(context, { route: '/api/nurture', methods: ['POST'], bearer: 'NURTURE_BATCH_SECRET', body: { maxBytes: 2048, schema: SCHEMA } });
+  if (!g.ok) return g.response;
 
-export async function onRequestPost(context) {
-  const { request, env } = context;
+  const { email, day } = g.value;
+  if (day !== 3 && day !== 7) return g.respond(400, { ok: false, error: 'Invalid request' });
 
-  let email = '', name = '', day = 0;
-  try {
-    const body = await request.json();
-    email = (body.email || '').trim();
-    name  = (body.name  || '').trim();
-    day   = parseInt(body.day) || 0;
-  } catch {
-    return new Response(JSON.stringify({ ok:false, error:'Invalid JSON' }), { status:400, headers:CORS });
-  }
-
-  if (!email || !email.includes('@')) {
-    return new Response(JSON.stringify({ ok:false, error:'Invalid email' }), { status:400, headers:CORS });
-  }
-  if (day !== 3 && day !== 7) {
-    return new Response(JSON.stringify({ ok:false, error:'day must be 3 or 7' }), { status:400, headers:CORS });
-  }
-
-  const apiKey = env.RESEND_API_KEY;
-  if (!apiKey) {
-    return new Response(JSON.stringify({ ok:true, note:'RESEND_API_KEY not configured' }), { status:200, headers:CORS });
-  }
-
-  const firstName = name ? name.split(' ')[0] : 'there';
-  const html = day === 3 ? buildDay3(firstName) : buildDay7(firstName);
+  const firstName = plainTextLine((g.value.name || '').split(' ')[0], 40) || 'there';
+  const html = day === 3 ? buildDay3(escapeHtml(firstName)) : buildDay7(escapeHtml(firstName));
   const subject = day === 3
     ? `Did you run your first simulation yet, ${firstName}?`
     : `${firstName}, your business idea deserves real numbers — here's what 500 simulations reveal`;
 
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization:`Bearer ${apiKey}`, 'Content-Type':'application/json' },
-      body: JSON.stringify({ from:FROM_ADDRESS, to:[email], subject, html }),
-    });
-    if (!res.ok) console.error('Resend nurture error:', res.status, await res.text().catch(()=>''));
-  } catch (e) {
-    console.error('Nurture email failed:', e);
-  }
-
-  return new Response(JSON.stringify({ ok:true, day }), { status:200, headers:CORS });
+  const result = await deliver(env, { route: '/api/nurture', kind: 'user', to: email, subject, html });
+  if (result.status === 'disabled' || result.status === 'logged') return g.respond(200, { ok: true, day, delivered: false });
+  if (result.status === 'sent') return g.respond(200, { ok: true, day, delivered: true });
+  return g.respond(result.status === 'refused' ? 400 : 503, { ok: false, error: result.status === 'refused' ? 'Invalid request' : 'Service unavailable' });
 }
 
 // ── DAY 3 ─────────────────────────────────────────────────────────────────────
