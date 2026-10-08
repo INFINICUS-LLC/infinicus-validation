@@ -90,7 +90,8 @@ jobs:
           --output-routes-path "$RUNNER_TEMP/functions-routes.json"
 
       - name: HTTP validation of the built output (published 200, excluded and unknown paths a genuine 404)
-        run: PUBLIC_OUTPUT_HTTP=required node --test scripts/tests/public-output-http.test.mjs
+        timeout-minutes: 5
+        run: PUBLIC_OUTPUT_HTTP=required node --test --test-timeout=120000 scripts/tests/public-output-http.test.mjs
 
       - name: Effective Functions routes match Wrangler and the generated routing covers them
         run: node scripts/build-public.mjs --compare-routes "$RUNNER_TEMP/functions-routes.json"
