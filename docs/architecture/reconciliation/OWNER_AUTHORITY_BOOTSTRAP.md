@@ -47,7 +47,7 @@ Single `READ ONLY` transaction (the database rejects any write); enumerates tena
 ## Known limitations (recorded; locked architecture unchanged)
 1. **Single holder per code.** `UNIQUE (business_id, assignment_code)` means `business-owner-approver` can belong to one user; several valid owners are reported AMBIGUOUS and need an explicit `aba:admin` decision. This is a model limitation for later review, not a statement that several owners are invalid.
 2. **No reinstatement.** A revoked assignment cannot be re-granted under the same code (a manual grant returns a conflict). A new code or a reinstatement operation is a later decision.
-3. **Provenance, not canonical audit.** P0-4 adds the canonical audit events; `audit.access_events` has a closed event-type list, so that needs a migration.
+3. **Provenance is the canonical record (owner ruling D3, closed in P0-4).** `approval_authority_scopes` is the canonical append-only record of authority grant/revoke; it is deliberately not duplicated into `approval_audit_events` (canonical for approval decision/refusal/expiry audit). `audit.access_events` has a closed event-type list and is not used for this.
 4. **Businesses created outside onboarding** with no business-scoped owner role are UNPROVEN until an administrator grants authority.
 5. The web workflow form still takes `tenantId`/`workspaceId`/`userId` from form fields; nothing here uses them. Tracked for the V-05/V-04 identity block.
 

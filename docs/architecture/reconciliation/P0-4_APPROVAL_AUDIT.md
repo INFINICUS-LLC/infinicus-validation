@@ -1,6 +1,6 @@
 # P0-4 Block 1 — Approval Audit Trail
 
-Status: Block 1 merged (#45); Block 2 in review. Locked-spec reference: ABA §25 (audit record).
+Status: Blocks 1 and 2 merged (#45, #46); Block 3 merged (#47, see `P0-4_BLOCK3_AUTHORIZATION_AUDIT.md`); acceptance record: `P0-4_ACCEPTANCE.md`. Locked-spec reference: ABA §25 (audit record).
 No locked spec, migration, or ABA→BO path is changed by this block.
 
 ## Purpose
@@ -96,3 +96,7 @@ unknown time-sensitivity keeps P0-3 fail-closed; database clock authoritative (a
 shifted); forged detected_at/valid_until ignored; scope isolation; append-only; repository refuses
 non-expired versions. Mutation proofs (all caught): no idempotency check (2 failed), audit failure
 propagates (2), application clock used (1), repository expiry guard weakened (1).
+
+## Canonical records (owner ruling D3)
+- `approval_audit_events`: canonical audit for approval decision, refusal and expiry (this document).
+- `approval_authority_scopes` (`scope_type='provenance'`): canonical append-only audit/provenance for approver-authority grant and revocation. Not duplicated into `approval_audit_events`.
