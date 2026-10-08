@@ -3,6 +3,7 @@
   "description": "Explicit allowlist of the files published by Cloudflare Pages (output directory: dist). Everything not listed is internal. Adding a file here is a publication decision that needs explicit owner approval.",
   "outputDir": "dist",
   "files": [
+    "404.html",
     "account.html",
     "ai-decision-intelligence/adi-bundle.js",
     "approved-business-action/aba-bundle.js",
