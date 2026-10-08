@@ -34,6 +34,13 @@ export interface NotApplicableReason {
   code: string;
   /** Human-readable governed statement. */
   statement: string;
+  /**
+   * The authoritative basis that makes the field legitimately not apply. REQUIRED where "no bound applies" must be an
+   * explicit governed fact (the expiry): an ACTION_SCHEMA basis names the action type (`code@schemaVersion`) whose
+   * contract explicitly allows it; a POLICY basis names the governed policy version. "No source found" is never a basis:
+   * it is UNAVAILABLE.
+   */
+  basis?: { kind: 'ACTION_SCHEMA' | 'POLICY'; ref: string };
 }
 
 /**
@@ -84,8 +91,25 @@ export type RiskClassBasis = 'PERSISTED' | 'UNCLASSIFIED_FAIL_CLOSED_HIGH';
 
 export type DecisionStatus = 'approved' | 'approved_with_modifications';
 
-/** ABA automation levels permitted on an issued package: 2 (human approval, system execution) and 3 (rule-authorized). */
-export type PermittedAutomationLevel = 2 | 3;
+/**
+ * ABA automation levels an AuthorizedActionPackage can represent (locked ABA spec 17 governs Levels 2-4):
+ *   2 = human approval / system execution        -> HUMAN_APPROVAL provenance
+ *   3 = rule-authorized automation               -> RULE_AUTHORIZED provenance
+ *   4 = future autonomous optimization under explicit governance -> RULE_AUTHORIZED provenance
+ * Levels 0 (observe) and 1 (recommend) do not authorize execution and are INVALID for a package.
+ * Being representable is a CONTRACT fact; being enabled is a separate, current POLICY fact (see
+ * {@link PackageEnablementPolicy}). Level 4 is recognized by the contract and NOT_ENABLED by current policy.
+ */
+export const AUTOMATION_LEVELS = [2, 3, 4] as const;
+export type AutomationLevelValue = (typeof AUTOMATION_LEVELS)[number];
+
+/** Which automation levels the CURRENT implementation issues and executes. A policy value, not a contract constraint. */
+export interface PackageEnablementPolicy {
+  readonly automationLevels: readonly AutomationLevelValue[];
+}
+
+/** Level 2 supported; Level 3 supported only with proper rule-authorization provenance; Level 4 NOT_ENABLED. */
+export const CURRENT_PACKAGE_ENABLEMENT: PackageEnablementPolicy = Object.freeze({ automationLevels: Object.freeze([2, 3] as AutomationLevelValue[]) });
 
 export interface PackageIdentity {
   packageId: string;
@@ -135,7 +159,7 @@ export interface MonitoringMetric {
 }
 
 export interface AutomationLevel {
-  level: PermittedAutomationLevel;
+  level: AutomationLevelValue;
   /** The governed ABA policy the level comes from (R-3). No policy source = UNAVAILABLE = no issuance. */
   policy: { policyId: string; policyVersionId: string };
 }
@@ -205,7 +229,15 @@ export interface PackageLineage {
   modificationEvaluation: Governed<ModificationEvaluation>;
 }
 
-export interface PackageAuthorization {
+/** Risk facts common to every authorization mode. */
+export interface RiskFacts {
+  riskClass: RiskClass;
+  basis: RiskClassBasis;
+}
+
+/** Level 2: a human approver decided under assigned authority. `permissionUsed` is REQUIRED and real. */
+export interface HumanApprovalProvenance {
+  mode: 'HUMAN_APPROVAL';
   decisionStatus: DecisionStatus;
   decidedAt: string;
   approver: { userId: string; assignmentId: string; assignmentVersionId: string; roleCode: string };
@@ -213,13 +245,31 @@ export interface PackageAuthorization {
   authorityProvenance: { scopeId: string };
   /** Permission the approving request used, as recorded by the approval audit. */
   permissionUsed: string;
-  risk: {
-    riskClass: RiskClass;
-    basis: RiskClassBasis;
-    requiredApproverTier: number;
-    approverTier: number;
-  };
+  /** The approval audit record (`approval_audit_events`) for the decision. */
+  approvalAuditEventId: string;
+  risk: RiskFacts & { requiredApproverTier: number; approverTier: number };
 }
+
+/**
+ * Level 3 / 4: authorized by governed policy and rules, with no per-instance human approval. It never carries a
+ * human `permissionUsed`, approver or assignment: a rule-authorized package must not masquerade as a human approval.
+ */
+export interface RuleAuthorizedProvenance {
+  mode: 'RULE_AUTHORIZED';
+  /** The governed ABA policy version that authorizes this automation. */
+  policy: { policyId: string; policyVersionId: string };
+  /** The specific rule, where the policy is rule-based; otherwise a governed NOT_APPLICABLE. */
+  rule: Governed<{ ruleId: string; ruleVersionId: string }>;
+  /** Database time at which the governed evaluation passed. */
+  evaluatedAt: string;
+  /** The system / service principal that evaluated, where one applies. */
+  servicePrincipal: Governed<{ principalId: string; component: string }>;
+  /** The governance audit record of the rule evaluation. */
+  governanceAuditEventId: string;
+  risk: RiskFacts;
+}
+
+export type PackageAuthorization = HumanApprovalProvenance | RuleAuthorizedProvenance;
 
 export interface AccountableOwner {
   /** Canonical Identity/Tenancy truth (R-2). ABA owns only the assignment and its provenance below. */
@@ -251,8 +301,6 @@ export interface PackageTrace {
   correlationId: string;
   /** The immediate causing record (e.g. the final ABA step that led to issuance). */
   causationId: string;
-  /** The approval audit record (`approval_audit_events`) for the decision. */
-  approvalAuditEventId: string;
 }
 
 export interface PackageIntegrity {

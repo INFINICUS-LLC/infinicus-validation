@@ -64,14 +64,16 @@ describe('AuthorizedActionPackage architecture guard', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('the contract imports only itself (no database, I/O, ABA or BO code, no Node built-ins)', () => {
+  it('the contract imports only itself, plus node:crypto in canonical.ts for SHA-256 (no database, I/O, ABA or BO code)', () => {
     const files = [...walk(CONTRACT_SRC)];
     expect(files.length).toBeGreaterThanOrEqual(6);
     for (const file of files) {
       const text = readFileSync(file, 'utf8');
       const specs = [...text.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
       for (const spec of specs) {
-        expect(spec.startsWith('./') || spec.startsWith('../'), `${relative(PLATFORM_ROOT, file)} imports ${spec}`).toBe(true);
+        const rel = relative(PLATFORM_ROOT, file).split('\\').join('/');
+        const cryptoOk = spec === 'node:crypto' && rel.endsWith('/authorized-action-package/canonical.ts');
+        expect(spec.startsWith('./') || spec.startsWith('../') || cryptoOk, `${rel} imports ${spec}`).toBe(true);
       }
       expect(/\brequire\(|\bprocess\.|\bfs\b|Date\.now\(|new Date\(\)/.test(text), `${relative(PLATFORM_ROOT, file)} must stay pure`).toBe(false);
     }

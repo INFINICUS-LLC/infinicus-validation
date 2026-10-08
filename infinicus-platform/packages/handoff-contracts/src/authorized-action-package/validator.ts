@@ -12,12 +12,13 @@
 //  - validateForExecution(p, ctx)        : what Business Operations runs immediately before execution (owner ruling R-10):
 //                                          validation + scope + capability + window + AUTHORITATIVE status. Fails closed.
 
-import { AAP_CONTRACT_VERSION, AAP_DIGEST_ALGORITHM, GOVERNANCE_DIMENSIONS, PACKAGE_LIFECYCLE_STATES, RISK_CLASSES, SUPPORTED_AAP_CANONICAL_VERSIONS, SUPPORTED_AAP_CONTRACT_VERSIONS } from './types';
+import { AAP_CONTRACT_VERSION, AAP_DIGEST_ALGORITHM, AUTOMATION_LEVELS, CURRENT_PACKAGE_ENABLEMENT, GOVERNANCE_DIMENSIONS, PACKAGE_LIFECYCLE_STATES, RISK_CLASSES, SUPPORTED_AAP_CANONICAL_VERSIONS, SUPPORTED_AAP_CONTRACT_VERSIONS } from './types';
 import type {
   AccountableOwner, AuthoritativePackageStatus, AuthorizedActionPackageBody, AuthorizedActionPackageV1, ExpiryBound,
   ExpiryBoundSource, Governed, GovernanceDimension, GovernanceEvidence, JsonValue, Modification, ModificationEvaluation,
   NotApplicableReason, PackageAction, PackageAuthorization, PackageLineage, PackageScope, PackageValidity, ParameterChange,
-  Precondition, PreconditionOperator, ProposedParameters, RiskClass, RiskClassBasis,
+  Precondition, PreconditionOperator, ProposedParameters, RiskClass, RiskClassBasis, PackageEnablementPolicy, AutomationLevelValue,
+  HumanApprovalProvenance, RuleAuthorizedProvenance, RiskFacts,
 } from './types';
 import { buildIntegrity, canonicalize, CanonicalizationError, computePackageDigest, isWellFormedDigest } from './canonical';
 import { isDecimalString, isDottedNumeric } from './primitives';
@@ -41,7 +42,7 @@ export const AAP_ERROR_CODES = [
   // lineage / modification
   'MODIFICATION_REQUIRED', 'MODIFICATION_NOT_ALLOWED', 'MODIFICATION_LINEAGE_INCONSISTENT', 'MODIFICATION_EVALUATION_MISSING', 'MODIFICATION_EVALUATION_INVALID',
   // authorization
-  'OWNER_INVALID', 'PROVENANCE_INVALID', 'AUTOMATION_LEVEL_NOT_PERMITTED', 'RISK_INCONSISTENT',
+  'OWNER_INVALID', 'PROVENANCE_INVALID', 'AUTOMATION_LEVEL_NOT_PERMITTED', 'AUTOMATION_LEVEL_NOT_ENABLED', 'AUTHORIZATION_MODE_MISMATCH', 'RISK_INCONSISTENT',
   // validity
   'VALIDITY_INCONSISTENT', 'WINDOW_INVALID', 'EXPIRY_MISMATCH', 'TIMELINE_INCONSISTENT', 'ISSUED_IN_FUTURE', 'PACKAGE_EXPIRED',
   'EXECUTION_WINDOW_NOT_OPEN',
@@ -88,7 +89,6 @@ const MAX_CANONICAL_CHARS = 256 * 1024;
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const CREDENTIAL_LIKE = ['password', 'secret', 'apikey', 'token', 'credential', 'privatekey'];
 const OPERATORS: readonly PreconditionOperator[] = ['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'between', 'in', 'not_in', 'contains'];
-const PERMITTED_AUTOMATION_LEVELS = [2, 3] as const;
 
 export function isValidTimestamp(value: unknown): value is string {
   if (typeof value !== 'string' || !TIMESTAMP.test(value)) return false;
@@ -203,11 +203,16 @@ function readArray<T>(c: Collector, path: string, v: unknown, readItem: (p: stri
 }
 
 function readNotApplicableReason(c: Collector, path: string, v: unknown): NotApplicableReason | undefined {
-  const o = readObject(c, path, v, ['code', 'statement']);
+  const o = readObject(c, path, v, ['code', 'statement'], ['basis']);
   if (!o) return undefined;
   const code = readPattern(c, `${path}.code`, o.code, REASON_CODE, 'an UPPER_SNAKE reason code');
   const statement = readString(c, `${path}.statement`, o.statement);
-  return code !== undefined && statement !== undefined ? { code, statement } : undefined;
+  if (code === undefined || statement === undefined) return undefined;
+  if (!('basis' in o)) return { code, statement };
+  const b = readObject(c, `${path}.basis`, o.basis, ['kind', 'ref']);
+  const kind = b ? readEnum(c, `${path}.basis.kind`, b.kind, ['ACTION_SCHEMA', 'POLICY'] as const) : undefined;
+  const ref = b ? readString(c, `${path}.basis.ref`, b.ref, 200) : undefined;
+  return kind !== undefined && ref !== undefined ? { code, statement, basis: { kind, ref } } : undefined;
 }
 
 /** A governed field: {state:'VALUE',value} or {state:'NOT_APPLICABLE',reason}. Any other state is rejected. */
@@ -325,12 +330,11 @@ function parseBody(c: Collector, root: Rec): AuthorizedActionPackageBody | undef
   })();
 
   const trace = c.within('PROVENANCE_INVALID', () => {
-    const o = readObject(c, '$.trace', top.trace, ['correlationId', 'causationId', 'approvalAuditEventId']);
+    const o = readObject(c, '$.trace', top.trace, ['correlationId', 'causationId']);
     if (!o) return undefined;
     const correlationId = readString(c, '$.trace.correlationId', o.correlationId, 200);
     const causationId = readUuid(c, '$.trace.causationId', o.causationId);
-    const approvalAuditEventId = readUuid(c, '$.trace.approvalAuditEventId', o.approvalAuditEventId);
-    return correlationId && causationId && approvalAuditEventId ? { correlationId, causationId, approvalAuditEventId } : undefined;
+    return correlationId && causationId ? { correlationId, causationId } : undefined;
   });
 
   if (c.count !== before || !identity || !scope || !issuance || !action || !lineage || !authorization || !accountableOwner || !validity || !consumption || !trace) return undefined;
@@ -411,8 +415,8 @@ function parseAction(c: Collector, v: unknown): PackageAction | undefined {
     type: { code: typeCode, schemaVersion: typeVersion },
     target: { kind: targetKind, id: targetId },
     parameters,
-    // The permitted-level rule is semantic (AUTOMATION_LEVEL_NOT_PERMITTED); the cast keeps the typed shape.
-    automationLevel: { level: level as 2 | 3, policy: { policyId, policyVersionId } },
+    // 0-1 are rejected semantically (AUTOMATION_LEVEL_NOT_PERMITTED) and enablement is policy (AUTOMATION_LEVEL_NOT_ENABLED); the cast keeps the typed shape.
+    automationLevel: { level: level as AutomationLevelValue, policy: { policyId, policyVersionId } },
     executionWindow, preconditions, budget, rollback, monitoring,
   };
 }
@@ -494,8 +498,25 @@ function parseLineage(c: Collector, v: unknown): PackageLineage | undefined {
   };
 }
 
+function readRisk(c: Collector, path: string, o: Rec | undefined): RiskFacts | undefined {
+  if (!o) return undefined;
+  const riskClass = readEnum<RiskClass>(c, `${path}.riskClass`, o.riskClass, RISK_CLASSES);
+  const basis = readEnum<RiskClassBasis>(c, `${path}.basis`, o.basis, ['PERSISTED', 'UNCLASSIFIED_FAIL_CLOSED_HIGH']);
+  return riskClass !== undefined && basis !== undefined ? { riskClass, basis } : undefined;
+}
+
+/** Authorization provenance is a discriminated union on `mode`; each mode has its own strict field set. */
 function parseAuthorization(c: Collector, v: unknown): PackageAuthorization | undefined {
-  const o = readObject(c, '$.authorization', v, ['decisionStatus', 'decidedAt', 'approver', 'authorityProvenance', 'permissionUsed', 'risk']);
+  if (isMarker(v)) return undefined;
+  if (!isRec(v)) { c.add('NOT_AN_OBJECT', '$.authorization', 'must be an object'); return undefined; }
+  if (v.mode === 'HUMAN_APPROVAL') return parseHumanApproval(c, v);
+  if (v.mode === 'RULE_AUTHORIZED') return parseRuleAuthorized(c, v);
+  c.add('INVALID_VALUE', '$.authorization.mode', 'must be HUMAN_APPROVAL or RULE_AUTHORIZED');
+  return undefined;
+}
+
+function parseHumanApproval(c: Collector, v: Rec): HumanApprovalProvenance | undefined {
+  const o = readObject(c, '$.authorization', v, ['mode', 'decisionStatus', 'decidedAt', 'approver', 'authorityProvenance', 'permissionUsed', 'approvalAuditEventId', 'risk']);
   if (!o) return undefined;
   const decisionStatus = readEnum(c, '$.authorization.decisionStatus', o.decisionStatus, ['approved', 'approved_with_modifications'] as const);
   const decidedAt = readTimestamp(c, '$.authorization.decidedAt', o.decidedAt);
@@ -510,21 +531,46 @@ function parseAuthorization(c: Collector, v: unknown): PackageAuthorization | un
   const scopeId = prov ? readUuid(c, '$.authorization.authorityProvenance.scopeId', prov.scopeId) : undefined;
 
   const permissionUsed = readPattern(c, '$.authorization.permissionUsed', o.permissionUsed, PERMISSION, 'a permission code such as aba:write');
+  const approvalAuditEventId = readUuid(c, '$.authorization.approvalAuditEventId', o.approvalAuditEventId);
 
   const risk = readObject(c, '$.authorization.risk', o.risk, ['riskClass', 'basis', 'requiredApproverTier', 'approverTier']);
-  const riskClass = risk ? readEnum<RiskClass>(c, '$.authorization.risk.riskClass', risk.riskClass, RISK_CLASSES) : undefined;
-  const basis = risk ? readEnum<RiskClassBasis>(c, '$.authorization.risk.basis', risk.basis, ['PERSISTED', 'UNCLASSIFIED_FAIL_CLOSED_HIGH']) : undefined;
+  const facts = readRisk(c, '$.authorization.risk', risk);
   const requiredApproverTier = risk ? readInt(c, '$.authorization.risk.requiredApproverTier', risk.requiredApproverTier, 1, 10) : undefined;
   const approverTier = risk ? readInt(c, '$.authorization.risk.approverTier', risk.approverTier, 1, 10) : undefined;
 
-  if (!decisionStatus || !decidedAt || !userId || !assignmentId || !assignmentVersionId || !roleCode || !scopeId || !permissionUsed || !riskClass || !basis || requiredApproverTier === undefined || approverTier === undefined) return undefined;
+  if (!decisionStatus || !decidedAt || !userId || !assignmentId || !assignmentVersionId || !roleCode || !scopeId || !permissionUsed || !approvalAuditEventId || !facts || requiredApproverTier === undefined || approverTier === undefined) return undefined;
   return {
-    decisionStatus, decidedAt,
+    mode: 'HUMAN_APPROVAL', decisionStatus, decidedAt,
     approver: { userId, assignmentId, assignmentVersionId, roleCode },
     authorityProvenance: { scopeId },
-    permissionUsed,
-    risk: { riskClass, basis, requiredApproverTier, approverTier },
+    permissionUsed, approvalAuditEventId,
+    risk: { ...facts, requiredApproverTier, approverTier },
   };
+}
+
+function parseRuleAuthorized(c: Collector, v: Rec): RuleAuthorizedProvenance | undefined {
+  const o = readObject(c, '$.authorization', v, ['mode', 'policy', 'rule', 'evaluatedAt', 'servicePrincipal', 'governanceAuditEventId', 'risk']);
+  if (!o) return undefined;
+  const pol = readObject(c, '$.authorization.policy', o.policy, ['policyId', 'policyVersionId']);
+  const policyId = pol ? readUuid(c, '$.authorization.policy.policyId', pol.policyId) : undefined;
+  const policyVersionId = pol ? readUuid(c, '$.authorization.policy.policyVersionId', pol.policyVersionId) : undefined;
+  const rule = readGoverned(c, '$.authorization.rule', o.rule, (p, x) => {
+    const r = readObject(c, p, x, ['ruleId', 'ruleVersionId']);
+    const ruleId = r ? readUuid(c, `${p}.ruleId`, r.ruleId) : undefined;
+    const ruleVersionId = r ? readUuid(c, `${p}.ruleVersionId`, r.ruleVersionId) : undefined;
+    return ruleId !== undefined && ruleVersionId !== undefined ? { ruleId, ruleVersionId } : undefined;
+  });
+  const evaluatedAt = readTimestamp(c, '$.authorization.evaluatedAt', o.evaluatedAt);
+  const servicePrincipal = readGoverned(c, '$.authorization.servicePrincipal', o.servicePrincipal, (p, x) => {
+    const sp = readObject(c, p, x, ['principalId', 'component']);
+    const principalId = sp ? readString(c, `${p}.principalId`, sp.principalId, 200) : undefined;
+    const component = sp ? readString(c, `${p}.component`, sp.component, 200) : undefined;
+    return principalId !== undefined && component !== undefined ? { principalId, component } : undefined;
+  });
+  const governanceAuditEventId = readUuid(c, '$.authorization.governanceAuditEventId', o.governanceAuditEventId);
+  const risk = readRisk(c, '$.authorization.risk', readObject(c, '$.authorization.risk', o.risk, ['riskClass', 'basis']));
+  if (!policyId || !policyVersionId || !rule || !evaluatedAt || !servicePrincipal || !governanceAuditEventId || !risk) return undefined;
+  return { mode: 'RULE_AUTHORIZED', policy: { policyId, policyVersionId }, rule, evaluatedAt, servicePrincipal, governanceAuditEventId, risk };
 }
 
 function parseOwner(c: Collector, v: unknown): AccountableOwner | undefined {
@@ -585,7 +631,7 @@ export function computePackageExpiry(bounds: readonly ExpiryBound[]): string | n
 
 const canonicalEqual = (a: unknown, b: unknown): boolean => canonicalize(a) === canonicalize(b);
 
-function checkSemantics(c: Collector, body: AuthorizedActionPackageBody, actionTypes: ActionTypeRegistry, now: string | undefined): void {
+function checkSemantics(c: Collector, body: AuthorizedActionPackageBody, actionTypes: ActionTypeRegistry, now: string | undefined, enablement: PackageEnablementPolicy): void {
   const { action, lineage, authorization, accountableOwner, validity, issuance } = body;
   const issuedMs = toMs(issuance.issuedAt);
 
@@ -597,22 +643,36 @@ function checkSemantics(c: Collector, body: AuthorizedActionPackageBody, actionT
     checkActionConformance(c, body, contract);
   }
 
-  // --- automation level (R-3; ABA 17) ---
-  if (!(PERMITTED_AUTOMATION_LEVELS as readonly number[]).includes(action.automationLevel.level)) {
-    c.add('AUTOMATION_LEVEL_NOT_PERMITTED', '$.action.automationLevel.level', 'aap/1 permits automation levels 2 and 3 only (0-1 do not execute; 4 is future autonomous)');
+  // --- automation level (R-3; ABA 17) and authorization mode ---
+  // The contract recognizes Levels 2-4; 0-1 do not authorize execution. Which recognized levels are ENABLED is policy.
+  const level = action.automationLevel.level;
+  if (!(AUTOMATION_LEVELS as readonly number[]).includes(level)) {
+    c.add('AUTOMATION_LEVEL_NOT_PERMITTED', '$.action.automationLevel.level', 'Levels 0 (observe) and 1 (recommend) do not authorize execution and are invalid for an AuthorizedActionPackage');
+  } else {
+    const expectedMode = level === 2 ? 'HUMAN_APPROVAL' : 'RULE_AUTHORIZED';
+    if (authorization.mode !== expectedMode) {
+      c.add('AUTHORIZATION_MODE_MISMATCH', '$.authorization.mode', `automation Level ${level} requires ${expectedMode} provenance; a ${authorization.mode} package may not declare it (a rule-authorized package must not masquerade as a human approval, nor the reverse)`);
+    }
+    if (!enablement.automationLevels.includes(level)) {
+      c.add('AUTOMATION_LEVEL_NOT_ENABLED', '$.action.automationLevel.level', `automation Level ${level} is recognized by the contract but NOT_ENABLED by the current issuance/execution policy`);
+    }
   }
 
   // --- risk facts ---
   const risk = authorization.risk;
   if (risk.basis === 'UNCLASSIFIED_FAIL_CLOSED_HIGH' && risk.riskClass !== 'high') c.add('RISK_INCONSISTENT', '$.authorization.risk', 'an unclassified action is treated as high');
-  if (risk.approverTier < risk.requiredApproverTier) c.add('RISK_INCONSISTENT', '$.authorization.risk', 'approver tier is below the required tier: the risk policy did not pass');
+  if (authorization.mode === 'HUMAN_APPROVAL' && authorization.risk.approverTier < authorization.risk.requiredApproverTier) {
+    c.add('RISK_INCONSISTENT', '$.authorization.risk', 'approver tier is below the required tier: the risk policy did not pass');
+  }
 
   // --- modification lineage (D-2, R-7) ---
   checkModification(c, body, contract ?? null);
 
   // --- timeline ---
-  const decidedMs = toMs(authorization.decidedAt);
-  if (decidedMs > issuedMs) c.add('TIMELINE_INCONSISTENT', '$.authorization.decidedAt', 'decision is after issuance');
+  const authorizedAt = authorization.mode === 'HUMAN_APPROVAL' ? authorization.decidedAt : authorization.evaluatedAt;
+  if (toMs(authorizedAt) > issuedMs) {
+    c.add('TIMELINE_INCONSISTENT', authorization.mode === 'HUMAN_APPROVAL' ? '$.authorization.decidedAt' : '$.authorization.evaluatedAt', 'authorization is after issuance');
+  }
   if (toMs(accountableOwner.assignment.assignedAt) > issuedMs) c.add('TIMELINE_INCONSISTENT', '$.accountableOwner.assignment.assignedAt', 'owner assignment is after issuance');
   if (toMs(validity.freshness.assessedAt) > issuedMs) c.add('TIMELINE_INCONSISTENT', '$.validity.freshness.assessedAt', 'freshness assessment is after issuance');
   if (accountableOwner.dueAt.state === 'VALUE' && toMs(accountableOwner.dueAt.value) <= toMs(accountableOwner.assignment.assignedAt)) c.add('TIMELINE_INCONSISTENT', '$.accountableOwner.dueAt', 'due date must be after the assignment');
@@ -638,6 +698,7 @@ function checkSemantics(c: Collector, body: AuthorizedActionPackageBody, actionT
   const expectedExpiry = computePackageExpiry(validity.expiryBounds);
   if (expectedExpiry === null) {
     if (validity.expiresAt.state !== 'NOT_APPLICABLE') c.add('EXPIRY_MISMATCH', '$.validity.expiresAt', 'no bound applies, so expiresAt must be NOT_APPLICABLE');
+    else checkNoBoundBasis(c, validity.expiresAt.reason, body.action, contract ?? null);
   } else if (validity.expiresAt.state !== 'VALUE' || validity.expiresAt.value !== expectedExpiry) {
     c.add('EXPIRY_MISMATCH', '$.validity.expiresAt', `expiresAt must be the earliest applicable bound (${expectedExpiry})`);
   }
@@ -652,6 +713,26 @@ function checkSemantics(c: Collector, body: AuthorizedActionPackageBody, actionT
       if (validity.expiresAt.state === 'VALUE' && toMs(now) >= toMs(validity.expiresAt.value)) c.add('PACKAGE_EXPIRED', '$.validity.expiresAt', 'package has expired');
     }
   }
+}
+
+/**
+ * A package with NO validity bound is legitimate only when an authoritative action schema or policy explicitly says no
+ * bound applies. "No source found" is UNAVAILABLE (refused), never NOT_APPLICABLE.
+ */
+function checkNoBoundBasis(c: Collector, reason: NotApplicableReason, action: PackageAction, contract: ActionTypeContract | null): void {
+  const path = '$.validity.expiresAt.reason';
+  const basis = reason.basis;
+  if (!basis) {
+    c.add('NOT_APPLICABLE_NOT_PERMITTED', path, 'NOT_APPLICABLE expiry requires a governed applicability basis (an action schema or policy that explicitly says no validity bound applies); "no source found" is UNAVAILABLE');
+    return;
+  }
+  if (basis.kind === 'ACTION_SCHEMA') {
+    const expected = `${action.type.code}@${action.type.schemaVersion}`;
+    if (basis.ref !== expected) c.add('NOT_APPLICABLE_NOT_PERMITTED', `${path}.basis.ref`, `the schema basis must reference this package's action type (${expected})`);
+    else if (contract && contract.applicability.validityBound !== 'NOT_APPLICABLE_ALLOWED') c.add('NOT_APPLICABLE_NOT_PERMITTED', `${path}.basis`, `${expected} does not explicitly allow a package without a validity bound`);
+  }
+  // A POLICY basis names the governed policy version; it is carried and digest-covered. That the policy really says so is
+  // verified by the issuer against the policy store (this contract is pure and cannot read it).
 }
 
 function checkActionConformance(c: Collector, body: AuthorizedActionPackageBody, contract: ActionTypeContract): void {
@@ -676,7 +757,8 @@ function checkActionConformance(c: Collector, body: AuthorizedActionPackageBody,
 function checkModification(c: Collector, body: AuthorizedActionPackageBody, contract: ActionTypeContract | null): void {
   const { lineage, authorization, action, issuance } = body;
   const { proposedParameters: proposed, modification, modificationEvaluation: evaluation } = lineage;
-  const status = authorization.decisionStatus;
+  // A rule-authorized package carries no human modification: it follows the plain-approval path.
+  const status = authorization.mode === 'HUMAN_APPROVAL' ? authorization.decisionStatus : 'approved';
 
   if (status === 'approved') {
     if (modification.state === 'VALUE') c.add('MODIFICATION_NOT_ALLOWED', '$.lineage.modification', 'a plain approval carries no modification');
@@ -742,6 +824,8 @@ export interface PackageValidationOptions {
   actionTypes: ActionTypeRegistry;
   /** Validation time (database time in production). When supplied, issuance and expiry are checked against it. */
   now?: string;
+  /** Which recognized automation levels are enabled. Defaults to CURRENT_PACKAGE_ENABLEMENT (Level 4 is NOT_ENABLED). */
+  enablement?: PackageEnablementPolicy;
 }
 
 const result = (c: Collector): AapValidationResult => ({ valid: c.count === 0, errors: c.errors });
@@ -769,7 +853,7 @@ function validateBodyInternal(c: Collector, input: unknown, opts: PackageValidat
 
   const body = parseBody(c, input);
   if (!body || c.count > 0) return undefined;
-  checkSemantics(c, body, opts.actionTypes, opts.now);
+  checkSemantics(c, body, opts.actionTypes, opts.now, opts.enablement ?? CURRENT_PACKAGE_ENABLEMENT);
   return c.count === 0 ? body : undefined;
 }
 
@@ -837,6 +921,8 @@ export interface ExecutionContext {
   status: AuthoritativePackageStatus | null | undefined;
   /** How old the status answer may be. Required: this contract invents no default. */
   statusMaxAgeMs: number;
+  /** Which recognized automation levels are enabled for execution. Defaults to CURRENT_PACKAGE_ENABLEMENT. */
+  enablement?: PackageEnablementPolicy;
 }
 
 /**
@@ -852,7 +938,7 @@ export function validateForExecution(input: unknown, ctx: ExecutionContext): Aap
   if (typeof ctx.statusMaxAgeMs !== 'number' || !Number.isFinite(ctx.statusMaxAgeMs) || ctx.statusMaxAgeMs < 0) c.add('CONTEXT_INVALID', '$ctx.statusMaxAgeMs', 'a non-negative maximum status age must be supplied');
   if (c.count > 0) return result(c);
 
-  const structural = validateAuthorizedActionPackage(input, { actionTypes: ctx.actionTypes, now: ctx.now });
+  const structural = validateAuthorizedActionPackage(input, { actionTypes: ctx.actionTypes, now: ctx.now, ...(ctx.enablement ? { enablement: ctx.enablement } : {}) });
   for (const e of structural.errors) c.errors.push(e);
   if (!structural.valid) return result(c);
 

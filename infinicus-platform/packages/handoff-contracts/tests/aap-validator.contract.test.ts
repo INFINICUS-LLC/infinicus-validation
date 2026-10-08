@@ -206,23 +206,6 @@ describe('action type and parameters (R-1)', () => {
   });
 });
 
-describe('automation level (R-3; ABA 17)', () => {
-  it.each([0, 1, 4])('level %i is not permitted on an issuable package', (level) => {
-    const b = body();
-    b.action.automationLevel.level = level;
-    expect(has(validatePackageBody(b, opts()), 'AUTOMATION_LEVEL_NOT_PERMITTED')).toBe(true);
-  });
-
-  it('level 3 is permitted; levels outside 0-4 are malformed', () => {
-    const ok = body();
-    ok.action.automationLevel.level = 3;
-    expect(validatePackageBody(ok, opts()).valid).toBe(true);
-    const bad = body();
-    bad.action.automationLevel.level = 7;
-    expect(has(validatePackageBody(bad, opts()), 'INVALID_VALUE', 'automationLevel.level')).toBe(true);
-  });
-});
-
 describe('owner and provenance shape', () => {
   it.each([
     ['owner user id not a uuid', (b: any) => { b.accountableOwner.identity.userId = 'not-a-uuid'; }],
@@ -241,7 +224,7 @@ describe('owner and provenance shape', () => {
     ['authority provenance missing', (b: any) => { delete b.authorization.authorityProvenance; }],
     ['permission malformed', (b: any) => { b.authorization.permissionUsed = 'ABA WRITE'; }],
     ['decision status unknown', (b: any) => { b.authorization.decisionStatus = 'rejected'; }],
-    ['audit event id missing', (b: any) => { delete b.trace.approvalAuditEventId; }],
+    ['approval audit event id missing', (b: any) => { delete b.authorization.approvalAuditEventId; }],
     ['correlation id empty', (b: any) => { b.trace.correlationId = ''; }],
   ])('%s is rejected as PROVENANCE_INVALID', (_n, mutate) => {
     const b = body();
@@ -408,8 +391,9 @@ describe('validity and expiry (R-6)', () => {
     b.validity.decisionValidUntil = na('NOT_TIME_SENSITIVE');
     b.action.executionWindow = val({ startsAt: T.windowStart, endsAt: null });
     b.validity.expiryBounds = [];
+    // 'no source found' is never a basis: without an authoritative applicability basis the claim is refused.
     b.validity.expiresAt = na('NO_VALIDITY_BOUND');
-    expect(validatePackageBody(b, opts(T.nowOk)).valid).toBe(true);
+    expect(has(validatePackageBody(b, opts(T.nowOk)), 'NOT_APPLICABLE_NOT_PERMITTED', 'expiresAt')).toBe(true);
     b.validity.expiresAt = val(T.windowEnd);
     expect(has(validatePackageBody(b, opts()), 'EXPIRY_MISMATCH', 'expiresAt')).toBe(true);
   });

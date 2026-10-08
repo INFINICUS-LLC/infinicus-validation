@@ -13,15 +13,25 @@
 //  - strings: JSON string escaping (as JSON.stringify), UTF-8 on the wire; strings with lone surrogates are rejected.
 //  - governed applicability is encoded structurally ({"state":"VALUE",...} / {"state":"NOT_APPLICABLE",...}), so a change of
 //    applicability state changes the digest.
+//  - SHA-256 comes from the platform's trusted crypto implementation (node:crypto); nothing bespoke is maintained.
 //  - the digest input is UTF-8 of `aap-canonical/1` + "\n" + the canonical form of the package WITHOUT its `integrity`
 //    block (the version prefix is domain separation: a different canonical version can never produce the same digest). The
 //    canonical form itself carries `contractVersion`. Digest string: `sha256:<64 lowercase hex>`.
 //  - covered: every field capable of changing what is executed, for whom, under which authorization and within which
 //    validity/constraints (that is: everything except `integrity` itself).
 
-import { sha256Hex, utf8Bytes } from './sha256';
+import { createHash } from 'node:crypto';
 import { AAP_CANONICAL_VERSION, AAP_DIGEST_ALGORITHM } from './types';
 import type { AuthorizedActionPackageBody, AuthorizedActionPackageV1, PackageIntegrity } from './types';
+
+/**
+ * SHA-256 of a string (UTF-8) as 64 lowercase hex characters, computed by the platform's trusted cryptographic
+ * implementation (Node.js `crypto`, OpenSSL-backed). No bespoke implementation is maintained. Callers must have
+ * rejected lone surrogates first (canonicalize does), so UTF-8 encoding is exact.
+ */
+export function sha256HexOfText(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
 
 export class CanonicalizationError extends Error {
   constructor(public readonly path: string, public readonly reason: string) {
@@ -106,7 +116,7 @@ export function digestCoveredContent(pkg: AuthorizedActionPackageBody | Authoriz
 
 /** `sha256:<hex>` over the canonical form of the package body (integrity excluded). Tamper evidence only. */
 export function computePackageDigest(pkg: AuthorizedActionPackageBody | AuthorizedActionPackageV1): string {
-  return `sha256:${sha256Hex(utf8Bytes(`${AAP_CANONICAL_VERSION}\n${canonicalize(digestCoveredContent(pkg))}`))}`;
+  return `sha256:${sha256HexOfText(`${AAP_CANONICAL_VERSION}\n${canonicalize(digestCoveredContent(pkg))}`)}`;
 }
 
 export function isWellFormedDigest(digest: unknown): digest is string {

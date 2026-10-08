@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalize, CanonicalizationError, computePackageDigest, digestCoveredContent, isWellFormedDigest } from '../src';
-import { approvedBody, clone, modifiedBody, na, val, ID } from './aap-fixtures';
+import { approvedBody, clone, modifiedBody, ruleBody, unboundedBody, na, val, ID } from './aap-fixtures';
 
 describe('aap-canonical/1', () => {
   it('is deterministic', () => {
@@ -98,7 +98,8 @@ describe('package integrity digest (tamper evidence only)', () => {
       (b: any) => { b.authorization.permissionUsed = 'aba:admin'; },
       (b: any) => { b.authorization.risk.riskClass = 'low'; },
       (b: any) => { b.lineage.decision.decisionVersionId = ID.decision; },
-      (b: any) => { b.trace.approvalAuditEventId = ID.causation; },
+      (b: any) => { b.authorization.approvalAuditEventId = ID.causation; },
+      (b: any) => { b.trace.causationId = 'other'; },
     ]) {
       const b: any = approvedBody();
       mutate(b);
@@ -155,5 +156,44 @@ describe('package integrity digest (tamper evidence only)', () => {
       parent[key] = typeof current === 'string' ? `${current}x` : typeof current === 'number' ? current + 1 : typeof current === 'boolean' ? !current : 'changed';
       expect(digest(b), `leaf ${path.join('.')} must be covered by the digest`).not.toBe(baseDigest);
     }
+  });
+
+  it('changing the authorization mode changes the digest', () => {
+    const human: any = approvedBody();
+    const rule: any = ruleBody();
+    expect(digest(human)).not.toBe(digest(rule));
+    const flipped: any = approvedBody();
+    flipped.authorization = { ...flipped.authorization, mode: 'RULE_AUTHORIZED' };
+    expect(digest(flipped)).not.toBe(digest(human));
+  });
+
+  it('covers RULE_AUTHORIZED provenance: every leaf of a Level-3 package changes the digest', () => {
+    const base = ruleBody();
+    const baseDigest = digest(base);
+    const leaves: Array<Array<string | number>> = [];
+    const walk = (v: unknown, path: Array<string | number>): void => {
+      if (Array.isArray(v)) v.forEach((x, i) => walk(x, [...path, i]));
+      else if (v !== null && typeof v === 'object') Object.entries(v).forEach(([k, x]) => walk(x, [...path, k]));
+      else leaves.push(path);
+    };
+    walk(base, []);
+    expect(leaves.some((l) => l.join('.').startsWith('authorization.policy'))).toBe(true);
+    expect(leaves.some((l) => l.join('.').startsWith('authorization.rule'))).toBe(true);
+    for (const path of leaves) {
+      const b: any = ruleBody();
+      let parent = b;
+      for (const p of path.slice(0, -1)) parent = parent[p];
+      const key = path[path.length - 1];
+      const current = parent[key];
+      parent[key] = typeof current === 'string' ? `${current}x` : typeof current === 'number' ? current + 1 : typeof current === 'boolean' ? !current : 'changed';
+      expect(digest(b), `leaf ${path.join('.')} must be covered by the digest`).not.toBe(baseDigest);
+    }
+  });
+
+  it('covers the NOT_APPLICABLE expiry basis', () => {
+    const base = unboundedBody();
+    const b: any = unboundedBody();
+    b.validity.expiresAt.reason.basis.ref = 'other@1';
+    expect(digest(b)).not.toBe(digest(base));
   });
 });

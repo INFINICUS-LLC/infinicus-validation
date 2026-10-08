@@ -31,6 +31,9 @@ export const ID = {
   causation: 'aaaaaaaa-0000-4000-8000-000000000001',
   auditEvent: 'aaaaaaaa-0000-4000-8000-000000000002',
   evidence: 'bbbbbbbb-0000-4000-8000-000000000001',
+  rule: 'cccccccc-0000-4000-8000-000000000001',
+  ruleVersion: 'cccccccc-0000-4000-8000-000000000002',
+  governanceAudit: 'cccccccc-0000-4000-8000-000000000003',
   otherPackage: '11111111-0000-4000-8000-000000000009',
   otherTenant: '22222222-0000-4000-8000-0000000000ff',
 };
@@ -66,7 +69,14 @@ export const ADJUST_PRICE: ActionTypeContract = {
   // rollback is not listed => REQUIRED
 };
 
-export const registry = (): InMemoryActionTypeRegistry => new InMemoryActionTypeRegistry([ADJUST_PRICE]);
+/** An action schema that EXPLICITLY allows a package with no validity bound (expiry NOT_APPLICABLE). */
+export const ADJUST_PRICE_UNBOUNDED: ActionTypeContract = {
+  ...ADJUST_PRICE,
+  code: 'adjust_price_unbounded',
+  applicability: { ...ADJUST_PRICE.applicability, validityBound: 'NOT_APPLICABLE_ALLOWED' },
+};
+
+export const registry = (): InMemoryActionTypeRegistry => new InMemoryActionTypeRegistry([ADJUST_PRICE, ADJUST_PRICE_UNBOUNDED]);
 
 export const na = (code: string, statement = 'governed test reason') => ({ state: 'NOT_APPLICABLE' as const, reason: { code, statement } });
 export const val = <V>(value: V) => ({ state: 'VALUE' as const, value });
@@ -102,11 +112,13 @@ export function approvedBody(): AuthorizedActionPackageBody {
       modificationEvaluation: na('NO_MODIFICATION', 'approved as recommended'),
     },
     authorization: {
+      mode: 'HUMAN_APPROVAL',
       decisionStatus: 'approved',
       decidedAt: T.decided,
       approver: { userId: ID.approver, assignmentId: ID.assignment, assignmentVersionId: ID.assignmentVersion, roleCode: 'business-owner' },
       authorityProvenance: { scopeId: ID.scope },
       permissionUsed: 'aba:write',
+      approvalAuditEventId: ID.auditEvent,
       risk: { riskClass: 'medium', basis: 'PERSISTED', requiredApproverTier: 2, approverTier: 3 },
     },
     accountableOwner: {
@@ -127,7 +139,7 @@ export function approvedBody(): AuthorizedActionPackageBody {
       expiresAt: val(T.windowEnd),
     },
     consumption: { mode: 'SINGLE_USE' },
-    trace: { correlationId: 'corr-aap-1', causationId: ID.causation, approvalAuditEventId: ID.auditEvent },
+    trace: { correlationId: 'corr-aap-1', causationId: ID.causation },
   }));
 }
 
@@ -152,3 +164,34 @@ export function modifiedBody(): AuthorizedActionPackageBody {
 }
 
 export const clone = <V>(v: V): V => JSON.parse(JSON.stringify(v));
+
+/** A Level-3 rule-authorized package: no human approver, no human permissionUsed, no human modification. */
+export function ruleBody(): AuthorizedActionPackageBody {
+  const b = approvedBody() as unknown as Record<string, any>;
+  b.action.automationLevel.level = 3;
+  b.authorization = {
+    mode: 'RULE_AUTHORIZED',
+    policy: { policyId: ID.policy, policyVersionId: ID.policyVersion },
+    rule: val({ ruleId: ID.rule, ruleVersionId: ID.ruleVersion }),
+    evaluatedAt: T.decided,
+    servicePrincipal: val({ principalId: 'svc-aba-rule-engine', component: 'aba.rule-evaluator' }),
+    governanceAuditEventId: ID.governanceAudit,
+    risk: { riskClass: 'medium', basis: 'PERSISTED' },
+  };
+  return b as AuthorizedActionPackageBody;
+}
+
+/** A package whose action schema allows (and which declares) no validity bound: expiry NOT_APPLICABLE with a schema basis. */
+export function unboundedBody(): AuthorizedActionPackageBody {
+  const b = approvedBody() as unknown as Record<string, any>;
+  b.action.type.code = 'adjust_price_unbounded';
+  b.validity.isTimeSensitive = false;
+  b.validity.decisionValidUntil = na('NOT_TIME_SENSITIVE', 'ADI evaluated the recommendation as not time-sensitive');
+  b.action.executionWindow = val({ startsAt: T.windowStart, endsAt: null });
+  b.validity.expiryBounds = [];
+  b.validity.expiresAt = {
+    state: 'NOT_APPLICABLE',
+    reason: { code: 'NO_VALIDITY_BOUND', statement: 'the action schema declares that no validity bound applies', basis: { kind: 'ACTION_SCHEMA', ref: 'adjust_price_unbounded@1' } },
+  };
+  return b as AuthorizedActionPackageBody;
+}

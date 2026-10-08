@@ -15,6 +15,12 @@ import type { GovernanceDimension, JsonValue } from './types';
 /** Governed fields whose NOT_APPLICABLE status an action-type contract decides. Unlisted = REQUIRED (fail closed). */
 export const ACTION_APPLICABILITY_FIELDS = ['executionWindow', 'preconditions', 'budget', 'rollback', 'monitoring'] as const;
 export type ActionApplicabilityField = (typeof ACTION_APPLICABILITY_FIELDS)[number];
+/**
+ * `validityBound` is the one applicability rule that is not a package field: it says whether this action schema
+ * explicitly allows a package with NO validity bound (expiry NOT_APPLICABLE). Unlisted = REQUIRED (a bound must exist).
+ */
+export const APPLICABILITY_RULE_KEYS = [...ACTION_APPLICABILITY_FIELDS, 'validityBound'] as const;
+export type ApplicabilityRuleKey = (typeof APPLICABILITY_RULE_KEYS)[number];
 export type ApplicabilityRule = 'REQUIRED' | 'NOT_APPLICABLE_ALLOWED';
 
 export type ParameterSpec =
@@ -43,7 +49,7 @@ export interface ActionTypeContract {
    */
   readonly governanceImpact: Readonly<Record<string, readonly GovernanceDimension[]>>;
   /** Which governed fields may be NOT_APPLICABLE for this action type. Anything not listed is REQUIRED. */
-  readonly applicability: Readonly<Partial<Record<ActionApplicabilityField, ApplicabilityRule>>>;
+  readonly applicability: Readonly<Partial<Record<ApplicabilityRuleKey, ApplicabilityRule>>>;
 }
 
 /** Resolves the ABA-governed action-type contract for a (code, schemaVersion), or null when it is unknown. */
@@ -104,7 +110,7 @@ export function validateActionTypeContract(contract: ActionTypeContract): string
     for (const d of dims) if (!(GOVERNANCE_DIMENSIONS as readonly string[]).includes(d)) problems.push(`unknown governance dimension ${d} for ${name}`);
   }
   for (const [field, rule] of Object.entries(contract.applicability)) {
-    if (!(ACTION_APPLICABILITY_FIELDS as readonly string[]).includes(field)) problems.push(`applicability references unknown field ${field}`);
+    if (!(APPLICABILITY_RULE_KEYS as readonly string[]).includes(field)) problems.push(`applicability references unknown field ${field}`);
     if (rule !== 'REQUIRED' && rule !== 'NOT_APPLICABLE_ALLOWED') problems.push(`applicability rule for ${field} is invalid`);
   }
   return problems;
