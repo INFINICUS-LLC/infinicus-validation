@@ -33,12 +33,12 @@ compatibility_date = "2024-01-01"
 
 [[kv_namespaces]]
 binding = "INFINICUS_USERS"
-id      = "a8a31fa4081142d28165a287fe67b23d"
+id      = "bf4715a0010049cebfe1d155ed5e7fd4"
 # preview_id = "REPLACE_WITH_PREVIEW_NAMESPACE_ID_IF_NEEDED"
 
 [[kv_namespaces]]
 binding = "INFINICUS_WAITLIST"
-id      = "b0613650e9694e12b8c44447beead373"
+id      = "197867e6aa0341469cae2d196644a738"
 # preview_id = "REPLACE_WITH_PREVIEW_NAMESPACE_ID_IF_NEEDED"
 
 # ── D1 Database Binding ───────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ id      = "b0613650e9694e12b8c44447beead373"
 [[d1_databases]]
 binding     = "INFINICUS_DB"
 database_name = "infinicus_db"
-database_id   = "baabfac9-7825-4843-815b-53759067d99b"
+database_id   = "35baaecf-2948-47bb-956b-9a7492bf1859"
 
 # ── Environment Variables ─────────────────────────────────────────────────────
 # Set these in: Cloudflare Pages → Settings → Environment Variables (NOT here)
