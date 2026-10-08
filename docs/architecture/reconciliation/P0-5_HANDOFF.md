@@ -50,7 +50,7 @@ Execution window, automation level, budget, preconditions, rollback instructions
 2. **Re-validate at consumption**, not just issuance (BO re-check, §16): expiry, staleness against the current published Twin, revoked authority, and package integrity.
 3. **The legacy outcome route is not an evidence path.** `POST .../decision-recommendations/outcome` takes a client `approvedActionId` + `outcomeNotes`. It is compatibility-only (SOT-02 gates apply), not ExecutionEvidence, and must stay unverified/manual. P0-5 / V-13 replace it; do not remove it before the retirement gate.
 4. **Extend, do not remove, the BO isolation guard** (`boIsolation.architecture.test.ts`): after P0-5, BO may reach ABA output **only** through `AuthorizedActionPackage`. The forbidden list (ABA tables, repositories, entities, execution plans, control gates, ABA-layer imports) stays; the guard additionally requires the package path. The route audit already asserts no BO route accepts an ApprovedAction; keep it.
-5. **Authority changes**: the owner's D3 confirmation (see `P0-4_ACCEPTANCE.md` section 6) determines whether grant/revoke events must also appear in `approval_audit_events`; package issuance should reference whichever record the owner confirms.
+5. **Authority lineage source** (owner ruling D3, closed): `approval_authority_scopes` is the canonical record of authority grants/revocations; `approval_audit_events` is canonical for approval decision/refusal/expiry. A package references the assignment and the decision's `approval_audit_events` row; it must not re-create or duplicate authority lifecycle events.
 
 ## 6. Suggested P0-5 block structure (one block at a time, owner approval before Block 1 code)
 1. **Contract/reconciliation and SOT ownership** - map §8.7 / §16 / §32 fields to sources; mark unavailable fields; decide ownership (ABA issues, BO consumes); document the status machine and integrity scheme. No code.
@@ -68,5 +68,5 @@ Execution wiring is not part of P0-5.
 - Live database: 0170-0175 unapplied, live at 0169; P0-5's migration, if any, joins the controlled deployment review. No deployment is authorised.
 
 ## 8. Open items P0-5 depends on or should surface
-- Owner: D3 confirmation; deployment review of 0170-0175 before any package migration is applied live; per-table `platform.*` classification (SOT-07); legacy D1 row counts (SOT-02 gate); explicit `aba:admin` grants for the 120 UNPROVEN businesses (no backfill).
+- Owner: deployment review of 0170-0175 before any package migration is applied live; per-table `platform.*` classification (SOT-07); legacy D1 row counts (SOT-02 gate); explicit `aba:admin` grants for the 120 UNPROVEN businesses (no backfill).
 - Separate security follow-up: login lockout intermittent UUID error (not a P0-5 dependency).

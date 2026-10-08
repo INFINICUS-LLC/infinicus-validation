@@ -8,8 +8,9 @@
  * claims that came from a browser: the grantee and actor are server-derived
  * user ids, and the ownership proof is a reference to server-side records.
  *
- * P0-4 introduces the canonical authorization/audit event contract; these
- * entries are the provenance record until then.
+ * Canonical record (owner ruling D3, closed in P0-4): `approval_authority_scopes` is the canonical append-only
+ * audit/provenance record for approver-authority grants and revocations. These events are deliberately NOT duplicated
+ * into `approval_audit_events`, which is canonical for approval decision, refusal and expiry audit.
  */
 
 /** The one assignment code the owner bootstrap issues. Unique per business, so it has exactly one holder. */

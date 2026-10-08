@@ -19,7 +19,7 @@ Any flow that decides without prior authority now fails with 403 until authority
 
 ## Not done here (by design, later blocks)
 - P0-2 action-risk policy; P0-3 `risk_class`/`valid_until`; P0-4 audit-record validation; P0-5 `AuthorizedActionPackage`; P0-6 ABA→BO wiring.
-- Grant audit trail beyond existing access events (P0-4).
+- Grant audit trail beyond existing access events: resolved by owner ruling D3 (P0-4) - `approval_authority_scopes` is the canonical record of authority grant/revoke; not duplicated into `approval_audit_events`.
 - Web workflow action still takes `tenantId/workspaceId/userId` from the form. That is a separate trust issue; recorded for the identity block (V-05/V-04).
 
 ## Validation (local, pnpm 10.33.0, live PostgreSQL 16)

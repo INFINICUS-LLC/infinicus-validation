@@ -96,3 +96,7 @@ unknown time-sensitivity keeps P0-3 fail-closed; database clock authoritative (a
 shifted); forged detected_at/valid_until ignored; scope isolation; append-only; repository refuses
 non-expired versions. Mutation proofs (all caught): no idempotency check (2 failed), audit failure
 propagates (2), application clock used (1), repository expiry guard weakened (1).
+
+## Canonical records (owner ruling D3)
+- `approval_audit_events`: canonical audit for approval decision, refusal and expiry (this document).
+- `approval_authority_scopes` (`scope_type='provenance'`): canonical append-only audit/provenance for approver-authority grant and revocation. Not duplicated into `approval_audit_events`.

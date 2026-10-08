@@ -1,6 +1,6 @@
 # P0-4 — Authorization and audit validation: acceptance record
 
-Status: **COMPLETE** against the reconciliation-plan gate ("all tests green; audit trail complete"), with **one owner confirmation outstanding (D3, section 6)**. Documentation only; this block changes no production behaviour, no migration, no locked specification. Base: `main` at `e0e45cc`.
+Status: **COMPLETE** against the reconciliation-plan gate ("all tests green; audit trail complete"), with owner ruling D3 recorded and **closed** (section 6). Documentation only (plus one source-comment correction under the D3 ruling); this block changes no production behaviour, no migration, no locked specification. Base: `main` at `e0e45cc`.
 Companions: `P0-4_APPROVAL_AUDIT.md` (design record, Blocks 1-2), `P0-4_BLOCK3_AUTHORIZATION_AUDIT.md` (route matrix and findings), `P0-5_HANDOFF.md`, `P0-3_HANDOFF.md`.
 
 ## 1. What was delivered
@@ -73,7 +73,7 @@ Merged by the owner; CI green on each head (`validate`, `operations-runtime`, `b
 - P0-4 added no migration, so it adds nothing to the unapplied set.
 
 ## 6. Observations recorded during the handoff (for owner confirmation)
-- **D3 - canonical audit of authority grant/revoke (needs owner confirmation).** The owner's D3 ruling and `P0-1_APPROVAL_AUTHORITY.md` list a canonical audit trail for authority changes as a P0-4 follow-up. P0-4 as scoped (plan row: "audit record on every approve/deny/expire") is delivered. Grants and revocations are recorded, append-only, with actor (and the authority it acted under), source, timestamp, correlation id and, for revocations, the reason, as provenance entries in `approval_authority_scopes` (`scope_type='provenance'`), and are visible via `GET .../approver-assignments/:code`. They are **not** also written to `approval_audit_events`, and the comment in `authorityProvenance.ts` ("until P0-4") is stale. This is not an authorization defect. If the owner wants authority changes in the canonical audit table too, it is a small follow-up needing no migration (`event_type` is open text, e.g. `authority.granted` / `authority.revoked`). Until the owner rules, treat P0-4 as complete under the plan gate and this item as open.
+- **D3 - canonical record of authority grant/revoke (owner ruling, CLOSED).** `approval_authority_scopes` (`scope_type='provenance'`) is the **canonical append-only audit/provenance record** for ABA approver-authority grants and revocations (actor and the authority it acted under, source, timestamp, correlation id, and the reason for revocations; readable via `GET .../approver-assignments/:code`). `approval_audit_events` is the **canonical audit** for approval decision, refusal and expiry events (`approval.approved`, `approval.approved_with_modifications`, `approval.rejected`, `approval.denied`, `approval.blocked`, `approval.expired`). Authority lifecycle events are deliberately **not** duplicated into `approval_audit_events`: a second canonical stream for the same mutation would create duplicate sources of truth. The stale "until P0-4" comment in `authorityProvenance.ts` was replaced (comment only; no runtime change, no migration, no locked-spec change).
 - **ApprovedAction creation does not itself assert an approved decision** (`ApprovedActionRepository.createAction`). The only route path (the choice route) creates one after an approve, and a reject returns before creation, so no HTTP route can create an ApprovedAction from a non-approved decision. It is an invariant P0-5 issuance must enforce itself (see `P0-5_HANDOFF.md`).
 
 ## 7. Open owner items (carried forward)
@@ -84,13 +84,12 @@ Merged by the owner; CI green on each head (`validate`, `operations-runtime`, `b
 5. Explicit `aba:admin` grants for the 120 UNPROVEN businesses (no backfill executed).
 6. Login lockout intermittent UUID issue (F above).
 7. Public documentation production-gating review (E above).
-8. D3 confirmation (section 6).
-9. Incident `affectedTenantIds` under `platform:admin`: later platform-operator contract review (N7).
+8. Incident `affectedTenantIds` under `platform:admin`: later platform-operator contract review (N7).
 
 ## 8. P0-4 exit gate
 - Blocks 1-3 merged (#45, #46, #47) and CI green: yes.
-- Documentation matches the implementation: yes, verified against `main` at `e0e45cc` (the stale `authorityProvenance.ts` comment is recorded in section 6, not edited in this documentation-only block).
+- Documentation matches the implementation: yes, verified against `main` at `e0e45cc`; the one stale source comment (`authorityProvenance.ts`) was corrected under the D3 ruling (comment only).
 - Unresolved P0-4 authorization defect: none found.
-- Architecture conflict hidden as a deferral: none. Section 6 lists the two items a reader might otherwise miss.
+- Architecture conflict hidden as a deferral: none. Section 6 records D3 (closed) and the `createAction` invariant carried into P0-5.
 
-**P0-4 is COMPLETE**, conditional only on the owner's D3 confirmation. P0-5 may start after the owner merges this record.
+**P0-4 is COMPLETE. D3 is CLOSED.** P0-5 may start after the owner merges this record.
