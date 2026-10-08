@@ -17,6 +17,12 @@ import { paginationQuerySchema, errorResponseSchema } from '../schemas/common.js
 const workflow = new DecisionWorkflowService();
 const simulations = new SimulationOrchestrationService();
 
+/**
+ * The workflow view aggregates BO, BI, Digital Twin, Simulation, ADI, ABA and OM state, so it requires EVERY layer's
+ * read permission (P0-4 Block 3, owner ruling F2). Never reduce this to a single permission.
+ */
+export const WORKFLOW_VIEW_PERMISSIONS = ['bo:read', 'bi:read', 'dt:read', 'sim:read', 'adi:read', 'aba:read', 'om:read'] as const;
+
 export default async function businessRoutes(app: FastifyInstance) {
   const server = app.withTypeProvider<ZodTypeProvider>();
 
@@ -27,7 +33,7 @@ export default async function businessRoutes(app: FastifyInstance) {
       querystring: paginationQuerySchema,
       response: { 200: businessListResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
   }, async (request, reply) => {
     const { page, pageSize } = request.query;
     const { items, total } = await workflow.listBusinesses(request.ctx!, {
@@ -63,7 +69,7 @@ export default async function businessRoutes(app: FastifyInstance) {
       params: businessIdParamsSchema,
       response: { 200: workflowViewResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requireAllPermissions(WORKFLOW_VIEW_PERMISSIONS)],
   }, async (request, reply) => {
     const view = await workflow.getWorkflowView(request.ctx!, request.params.businessId);
     return reply.status(200).send({

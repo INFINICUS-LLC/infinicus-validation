@@ -841,6 +841,29 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
         expect((await auditRows(biz)).filter((x) => x.event_type === 'approval.blocked')).toHaveLength(2);
       });
 
+      it('concurrency: parallel approval attempts, status reads and direct recordings across several expired reviews yield exactly one expiry event per review version', async () => {
+        const biz = await freshBusiness();
+        const reviews = await Promise.all([1, 2, 3].map(() => reviewOn(biz, EXPIRED)));
+        const repo = new ABAAuditRepository();
+        const versionOf = async (reviewId: string) => (await adminPool!.query(`SELECT id FROM approved_business_action.action_review_package_versions WHERE review_package_id = $1`, [reviewId])).rows[0].id as string;
+        const versionIds = await Promise.all(reviews.map((r) => versionOf(r.review.id)));
+        const work: Array<Promise<unknown>> = [];
+        for (let round = 0; round < 4; round++) {
+          reviews.forEach((r, i) => {
+            work.push(attempt(service, biz, r).catch((e) => e));
+            work.push(service.getReviewApprovalStatus(ctx1, biz, r.review.id));
+            work.push(repo.recordExpiryDetected(ctx1, biz, versionIds[i], { path: 'status_read', actorUserId: UID, correlationId: null }));
+          });
+        }
+        await Promise.all(work);
+        const rows = await expiryRows(biz);
+        expect(rows).toHaveLength(3);
+        expect(rows.map((x) => x.detail.reviewVersionId).sort()).toEqual([...versionIds].sort());
+        // Exactly one of the 36 concurrent calls recorded each version; every other call saw the existing event.
+        const results = await Promise.all(versionIds.map((v) => repo.recordExpiryDetected(ctx1, biz, v, { path: 'status_read', actorUserId: UID, correlationId: null })));
+        expect(results.every((x) => x.expired && !x.recorded)).toBe(true);
+      });
+
       it('an expired approval stays blocked even when the audit store is down', async () => {
         const failing = { recordAuditEvent: async () => { throw new Error('audit store down'); }, recordExpiryDetected: async () => { throw new Error('audit store down'); } } as never;
         const failingService = new DecisionWorkflowService(
