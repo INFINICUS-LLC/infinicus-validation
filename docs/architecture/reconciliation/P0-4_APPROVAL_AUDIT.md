@@ -1,6 +1,6 @@
 # P0-4 Block 1 — Approval Audit Trail
 
-Status: Block 1 merged (#45); Block 2 in review. Locked-spec reference: ABA §25 (audit record).
+Status: Blocks 1 and 2 merged (#45, #46); Block 3 merged (#47, see `P0-4_BLOCK3_AUTHORIZATION_AUDIT.md`); acceptance record: `P0-4_ACCEPTANCE.md`. Locked-spec reference: ABA §25 (audit record).
 No locked spec, migration, or ABA→BO path is changed by this block.
 
 ## Purpose
