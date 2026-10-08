@@ -1,44 +1,57 @@
 // functions/api/simulate.js — INFINICUS ENGINE v3
 // Cloudflare Pages Function · Venture Engine AI Analysis
 // URL: /api/simulate (auto-mapped by Cloudflare Pages)
-// Env: set ANTHROPIC_API_KEY in Cloudflare Pages → Settings → Environment Variables
+// Env: ANTHROPIC_API_KEY (required), ALLOWED_ORIGINS (required), INFINICUS_WAITLIST (abuse counters, required)
+//
+// Hardened in PR-C. This route is anonymous by product design (the browser sends no credential), so it is protected by
+// controls that are NOT authentication: exact-origin allowlist (replaces wildcard CORS), bounded body and strict field
+// validation, per-IP and global daily abuse limits (best-effort KV counters), and fail-closed configuration. The optional
+// INFINICUS_API_KEY gate is removed: it failed open when unset and could never be satisfied by a browser. A hard spend
+// cap at the AI provider remains the real cost backstop.
 
 import Anthropic from '@anthropic-ai/sdk';
+import { gate, intEnv } from '../_shared/route.js';
+import { validateFields } from '../_shared/guard.js';
+import { plainTextLine } from '../_shared/escape.js';
 
-// ─── CORS headers ─────────────────────────────────────────────────────────────
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Infinicus-Key',
-  'Content-Type': 'application/json',
+const TOP_LEVEL = new Set(['idea', 'capital', 'price', 'mktBud', 'team', 'industry', 'loc', 'mkt', 'scores', 'metrics', 'verdict', 'mcSurvival']);
+const SCALARS = {
+  idea: { type: 'string', required: true, max: 1000, multiline: true },
+  capital: { type: 'number', required: true, min: 0, max: 100_000_000 },
+  price: { type: 'number', required: true, min: 0, max: 1_000_000 },
+  mktBud: { type: 'number', required: true, min: 0, max: 100_000_000 },
+  team: { type: 'number', required: true, min: 0, max: 100_000 },
+  industry: { type: 'string', required: true, max: 60 },
+  loc: { type: 'string', max: 120 },
+  mkt: { type: 'string', max: 200 },
+  verdict: { type: 'string', required: true, max: 12 },
+  mcSurvival: { type: 'number', min: 0, max: 1 },
 };
+const REQUIRED_METRICS = ['totalRev', 'netProfit', 'endCash', 'profDays', 'finalCust', 'breakEvenDay'];
 
-// ─── Rate limiting (per IP, in-memory — resets on cold start) ─────────────────
-const rateMap = new Map();
-const RATE_LIMIT = 10;
-const RATE_WINDOW = 60 * 60 * 1000;
-
-function checkRate(ip) {
-  const now = Date.now();
-  const entry = rateMap.get(ip) || { count: 0, reset: now + RATE_WINDOW };
-  if (now > entry.reset) { entry.count = 0; entry.reset = now + RATE_WINDOW; }
-  entry.count++;
-  rateMap.set(ip, entry);
-  return entry.count <= RATE_LIMIT;
+/** A flat object of finite numbers with short, plain keys (they are interpolated into the prompt). Null if anything is off. */
+function numericMap(value, { maxKeys, required = [] }) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.length === 0 || entries.length > maxKeys) return null;
+  const out = {};
+  for (const [k, v] of entries) {
+    if (!/^[A-Za-z][A-Za-z0-9 _-]{0,29}$/.test(k) || typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) > 1e15) return null;
+    out[k] = v;
+  }
+  return required.every((k) => Object.prototype.hasOwnProperty.call(out, k)) ? out : null;
 }
 
-// ─── Input validation ──────────────────────────────────────────────────────────
-function validate(body) {
-  const required = ['idea', 'capital', 'price', 'mktBud', 'team', 'industry', 'scores', 'metrics'];
-  for (const k of required) {
-    if (body[k] === undefined || body[k] === null || body[k] === '') {
-      return `Missing required field: ${k}`;
-    }
-  }
-  if (typeof body.idea !== 'string' || body.idea.length > 1000) return 'Invalid idea field';
-  if (body.capital < 0 || body.capital > 100_000_000) return 'Capital out of range';
-  if (body.price < 0 || body.price > 1_000_000) return 'Price out of range';
-  return null;
+/** Validates the request body. Returns the cleaned data object, or null when anything is invalid or unexpected. */
+function parseInput(raw) {
+  if (Object.keys(raw).some((k) => !TOP_LEVEL.has(k))) return null;
+  const scalars = validateFields(Object.fromEntries(Object.entries(raw).filter(([k]) => k in SCALARS)), SCALARS);
+  const scores = numericMap(raw.scores, { maxKeys: 10 });
+  const metrics = numericMap(raw.metrics, { maxKeys: 20, required: REQUIRED_METRICS });
+  if (!scalars.ok || !scores || !metrics) return null;
+  const verdict = plainTextLine(scalars.value.verdict, 12).toLowerCase();
+  if (!/^[a-z]{2,12}$/.test(verdict)) return null;
+  return { ...scalars.value, verdict, mcSurvival: scalars.value.mcSurvival ?? 0, scores, metrics };
 }
 
 // ─── Build the INFINICUS Decision Intelligence prompt ─────────────────────────
@@ -194,47 +207,21 @@ Respond with valid JSON only. No markdown. No explanation outside the JSON. No p
 
 // ─── Cloudflare Pages Function handler ────────────────────────────────────────
 export async function onRequest(context) {
-  const { request, env } = context;
-  const method = request.method;
+  const { env } = context;
+  const g = await gate(context, {
+    route: '/api/simulate',
+    methods: ['POST'],
+    secrets: [{ name: 'ANTHROPIC_API_KEY', minLength: 20 }],
+    limits: [
+      { name: 'simulate-ip', scope: 'ip', limit: intEnv(env, 'SIMULATE_IP_PER_HOUR', 10), windowMs: 3_600_000 },
+      { name: 'simulate-all', scope: 'global', limit: intEnv(env, 'SIMULATE_PER_DAY', 3000), windowMs: 86_400_000 },
+    ],
+    body: { maxBytes: 16 * 1024 },
+  });
+  if (!g.ok) return g.response;
 
-  // Preflight
-  if (method === 'OPTIONS') {
-    return new Response(null, { status: 200, headers: CORS });
-  }
-
-  // Method gate
-  if (method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: CORS });
-  }
-
-  // API key gate (optional — set INFINICUS_API_KEY in Cloudflare env to restrict)
-  const apiKey = env.INFINICUS_API_KEY;
-  if (apiKey && request.headers.get('x-infinicus-key') !== apiKey) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
-  }
-
-  // Rate limit
-  const ip = request.headers.get('CF-Connecting-IP')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]
-    || 'unknown';
-  if (!checkRate(ip)) {
-    return new Response(
-      JSON.stringify({ error: 'Rate limit exceeded. Try again in an hour.' }),
-      { status: 429, headers: CORS }
-    );
-  }
-
-  // Parse body
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400, headers: CORS });
-  }
-
-  // Validate
-  const err = validate(body);
-  if (err) return new Response(JSON.stringify({ error: err }), { status: 400, headers: CORS });
+  const data = parseInput(g.value);
+  if (!data) return g.respond(400, { ok: false, error: 'Invalid request' });
 
   // Call Anthropic
   try {
@@ -243,7 +230,7 @@ export async function onRequest(context) {
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 3000,
-      messages: [{ role: 'user', content: buildPrompt(body) }],
+      messages: [{ role: 'user', content: buildPrompt(data) }],
     });
 
     const raw = message.content[0]?.text || '';
@@ -265,13 +252,9 @@ export async function onRequest(context) {
       };
     }
 
-    return new Response(JSON.stringify({ ok: true, data: aiData }), { status: 200, headers: CORS });
+    return g.respond(200, { ok: true, data: aiData });
 
   } catch (e) {
-    console.error('Anthropic error:', e);
-    return new Response(
-      JSON.stringify({ ok: false, error: 'AI analysis unavailable', fallback: true }),
-      { status: 500, headers: CORS }
-    );
+    return g.respond(500, { ok: false, error: 'AI analysis unavailable', fallback: true });
   }
 }

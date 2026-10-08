@@ -1,0 +1,60 @@
+name: Functions Shared Guards
+
+# Tests functions/_shared/guard.js and functions/_shared/escape.js (legacy Pages Functions security primitives) and proves
+# they compile for the Cloudflare Pages Workers runtime. Read-only: never deploys and never touches Cloudflare.
+# Local equivalent:  node --test scripts/tests/functions-guard.test.mjs
+
+on:
+  push:
+    branches:
+      - "main"
+      - "claude/**"
+      - "ccr-**"
+      - "remediation/**"
+    paths:
+      - "functions/_shared/**"
+      - "scripts/tests/functions-guard.test.mjs"
+      - "docs/deployment/LEGACY_FUNCTIONS_SHARED_GUARDS.md"
+      - ".github/workflows/functions-guard.yml"
+  pull_request:
+    paths:
+      - "functions/_shared/**"
+      - "scripts/tests/functions-guard.test.mjs"
+      - "docs/deployment/LEGACY_FUNCTIONS_SHARED_GUARDS.md"
+      - ".github/workflows/functions-guard.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  functions-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WRANGLER_SEND_METRICS: "false"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Unit tests
+        run: node --test scripts/tests/functions-guard.test.mjs
+
+      - name: Compile the shared guards for the Pages Workers runtime
+        run: |
+          mkdir -p "$RUNNER_TEMP/probe/functions/api" "$RUNNER_TEMP/probe/functions/_shared"
+          cp functions/_shared/guard.js functions/_shared/escape.js "$RUNNER_TEMP/probe/functions/_shared/"
+          cat > "$RUNNER_TEMP/probe/functions/api/probe.js" <<'JS'
+          import * as guard from '../_shared/guard.js';
+          import * as escape from '../_shared/escape.js';
+          export async function onRequestGet() {
+            return Response.json({ guard: Object.keys(guard).length, escape: Object.keys(escape).length });
+          }
+          JS
+          npx --yes wrangler@3.114.17 pages functions build "$RUNNER_TEMP/probe/functions" \
+            --outfile "$RUNNER_TEMP/probe/_worker.js" --output-routes-path "$RUNNER_TEMP/probe/routes.json"
+          test -s "$RUNNER_TEMP/probe/_worker.js"
+          grep -q '"/api/probe"' "$RUNNER_TEMP/probe/routes.json"

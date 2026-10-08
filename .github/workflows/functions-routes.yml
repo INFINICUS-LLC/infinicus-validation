@@ -1,0 +1,69 @@
+name: Functions Route Hardening
+
+# Tests the hardened legacy Pages Functions (routes, shared gate, email policy, default-deny families) and compiles the
+# COMPLETE functions tree for the Pages Workers runtime. Read-only: never deploys and never touches Cloudflare.
+# Local equivalent: see docs/deployment/LEGACY_ROUTE_HARDENING.md ("Verification")
+
+on:
+  push:
+    branches:
+      - "main"
+      - "claude/**"
+      - "ccr-**"
+      - "remediation/**"
+    paths:
+      - "functions/**"
+      - "scripts/tests/functions-routes.test.mjs"
+      - "scripts/tests/functions-guard.test.mjs"
+      - "docs/deployment/LEGACY_ROUTE_HARDENING.md"
+      - "index.html"
+      - "account.html"
+      - "landing.html"
+      - ".github/workflows/functions-routes.yml"
+  pull_request:
+    paths:
+      - "functions/**"
+      - "scripts/tests/functions-routes.test.mjs"
+      - "scripts/tests/functions-guard.test.mjs"
+      - "docs/deployment/LEGACY_ROUTE_HARDENING.md"
+      - "index.html"
+      - "account.html"
+      - "landing.html"
+      - ".github/workflows/functions-routes.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  functions-routes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: "false"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the pinned AI SDK used by simulate.js
+        run: npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund @anthropic-ai/sdk@0.39.0
+
+      - name: Route, gate, email-policy and default-deny tests
+        run: node --test scripts/tests/functions-routes.test.mjs scripts/tests/functions-guard.test.mjs
+
+      - name: Compile the complete Pages Functions tree
+        run: >
+          npx --yes wrangler@3.114.17 pages functions build functions
+          --outfile "$RUNNER_TEMP/_worker.js" --output-routes-path "$RUNNER_TEMP/routes.json"
+
+      - name: Generated routes cover every hardened route and both default-deny families
+        run: |
+          node -e "
+          const r = JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/routes.json', 'utf8')).include;
+          const need = ['/api/feedback','/api/nurture','/api/nurture-batch','/api/parse-idea','/api/send-email','/api/simulate','/api/waitlist','/api/business/*','/api/auth/*'];
+          const missing = need.filter((n) => !r.includes(n));
+          if (missing.length) { console.error('missing routes:', missing); process.exit(1); }
+          console.log('routes ok:', r.join(' '));"
