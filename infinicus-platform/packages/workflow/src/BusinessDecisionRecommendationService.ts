@@ -297,7 +297,14 @@ export class BusinessDecisionRecommendationService {
     return { decisions: results, evidence };
   }
 
-  async startChoiceReview(ctx: TenantContext, businessId: string, recommendationId: string, chosen: boolean): Promise<ChoiceReviewResult> {
+  /**
+   * `requestContext` is audit metadata only (permission used, correlation id) forwarded to the approval audit trail; it
+   * never affects the approval decision.
+   */
+  async startChoiceReview(
+    ctx: TenantContext, businessId: string, recommendationId: string, chosen: boolean,
+    requestContext?: { permissionUsed?: string; correlationId?: string },
+  ): Promise<ChoiceReviewResult> {
     const stamp = Date.now().toString(36);
 
     const recommendationVersion = await this.recommendations.getPublishedVersion(ctx, recommendationId);
@@ -321,6 +328,7 @@ export class BusinessDecisionRecommendationService {
       reviewPackageId: review.id, assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE,
       decisionCode: `bizdec-decision-${stamp}`, summary: chosen ? 'Approved by business owner' : 'Declined by business owner',
       outcome: chosen ? 'approve' : 'reject',
+      requestContext,
     });
 
     if (!chosen) return { approved: false, approvedActionId: null };

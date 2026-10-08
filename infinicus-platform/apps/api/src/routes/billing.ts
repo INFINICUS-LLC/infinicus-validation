@@ -34,7 +34,7 @@ export default async function billingRoutes(app: FastifyInstance) {
       summary: 'Current tenant\'s subscription, plan, and this billing period\'s usage',
       response: { 200: subscriptionResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('platform:admin')],
   }, async (request, reply) => {
     const { subscription, plan } = await entitlements.getSubscriptionWithPlan(request.ctx!);
     const usageEntries = await Promise.all(

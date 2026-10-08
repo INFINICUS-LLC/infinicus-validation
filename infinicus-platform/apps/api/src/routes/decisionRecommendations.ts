@@ -41,7 +41,9 @@ export default async function decisionRecommendationsRoutes(app: FastifyInstance
     preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('aba:write'), app.requireActiveSubscription(), app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, recommendationId } = request.params;
-    const result = await businessDecisions.startChoiceReview(request.ctx!, businessId, recommendationId, request.body.chosen);
+    const result = await businessDecisions.startChoiceReview(request.ctx!, businessId, recommendationId, request.body.chosen, {
+      permissionUsed: 'aba:write', correlationId: request.correlationId,
+    });
     return reply.status(201).send(result);
   });
 
