@@ -15,6 +15,7 @@ on:
     paths:
       - "scripts/build-public.mjs"
       - "scripts/tests/build-public.test.mjs"
+      - "scripts/tests/public-output-http.test.mjs"
       - "public-manifest.json"
       - "package.json"
       - "package-lock.json"
@@ -35,6 +36,7 @@ on:
     paths:
       - "scripts/build-public.mjs"
       - "scripts/tests/build-public.test.mjs"
+      - "scripts/tests/public-output-http.test.mjs"
       - "public-manifest.json"
       - "package.json"
       - "package-lock.json"
@@ -87,7 +89,10 @@ jobs:
           --outfile "$RUNNER_TEMP/_worker.js"
           --output-routes-path "$RUNNER_TEMP/functions-routes.json"
 
-      - name: Functions routes match the discovered routes
+      - name: HTTP validation of the built output (published 200, excluded and unknown paths a genuine 404)
+        run: PUBLIC_OUTPUT_HTTP=required node --test scripts/tests/public-output-http.test.mjs
+
+      - name: Effective Functions routes match Wrangler and the generated routing covers them
         run: node scripts/build-public.mjs --compare-routes "$RUNNER_TEMP/functions-routes.json"
 
       - name: Existing repository checks (bundles, platform bootstrap)

@@ -8,7 +8,7 @@ The legacy site (static pages, 7 browser layer bundles, localisation files and `
 ## Architecture
 ```
 public-manifest.json ──► scripts/build-public.mjs ──► dist/            (Pages "output directory")
- (allowlist, deny rules,    validates, then copies    37 declared files + generated _headers + _routes.json
+ (allowlist, deny rules,    validates, then copies    38 declared files + generated _headers + _routes.json
   headers, routes)          byte-for-byte
 functions/  (repo root, NOT in dist) ──► Pages compiles it separately into the Functions worker
 ```
@@ -19,16 +19,18 @@ functions/  (repo root, NOT in dist) ──► Pages compiles it separately into
 ## Files
 | File | Role |
 |---|---|
-| `public-manifest.json` | The allowlist (37 files), deny rules, header and routing configuration, documented known-missing references |
+| `public-manifest.json` | The allowlist (38 files), deny rules, header and routing configuration, documented known-missing references |
 | `scripts/build-public.mjs` | Validator and builder (no dependencies; Node 18+). `--check` validates only; `--compare-routes F` compares with wrangler |
-| `scripts/tests/build-public.test.mjs` | 31 tests (`node --test scripts/tests/build-public.test.mjs`) |
+| `scripts/tests/build-public.test.mjs` | 40 tests (`node --test scripts/tests/build-public.test.mjs`) |
+| `scripts/tests/public-output-http.test.mjs` | 5 HTTP tests against the real Pages runtime: published paths 200, every excluded or unknown path a genuine 404, headers served, Functions in front and default-deny families still 404 |
+| `404.html` | The only addition to the public set after the first review: a minimal, script-free page so unknown paths return a genuine 404 |
 | `.github/workflows/public-output.yml` | Path-filtered CI: tests, build, `npm ci`, wrangler Functions compile, route comparison, existing bundle/platform checks |
 | `package-lock.json` | Locks the only dependency (`@anthropic-ai/sdk` 0.39.0, used by `functions/api/simulate.js`) |
 | `functions/_routes.json` | Removed: Pages reads `_routes.json` only from the output directory, and it was not a route. Build output was identical with and without it |
 | `_routes.json` (repo root) | Unchanged; identical to the generated `dist/_routes.json` (a test enforces this) |
 
-## Public set (37 files)
-`index.html`, `landing.html`, `account.html`, `legal.html`, `theme.js`, `i18n.js`, `i18n/<code>.js` (19), the 7 layer bundles (`*/*-bundle.js`), `platform/platform-bootstrap.js`, `manifest.json`, `infinicus-mark.svg`, `og-image.svg`, `infinicus logo.jpeg`. Generated: `_headers`, `_routes.json`.
+## Public set (38 files)
+`404.html`, `index.html`, `landing.html`, `account.html`, `legal.html`, `theme.js`, `i18n.js`, `i18n/<code>.js` (19), the 7 layer bundles (`*/*-bundle.js`), `platform/platform-bootstrap.js`, `manifest.json`, `infinicus-mark.svg`, `og-image.svg`, `infinicus logo.jpeg`. Generated: `_headers`, `_routes.json`.
 
 ## Internal by default (not published)
 `bol.html`, `dal.html`, `pitch deck.html`, `pitch deck_files/`, `icon.svg` (unreferenced), `docs/`, `.claude/`, `.github/`, `infinicus-platform/` (Stack B), the layer directories apart from their bundle, `functions/`, `schema.sql`, `wrangler.toml`, `package*.json`, `*.bat`, `scripts/`, `templates/`, `platform/tests/`, both `.zip` archives, `QUEUE-INTEGRITY-SHA256.json`, `CLAUDE-*.md`, `INSTALL-INTO-REPOSITORY.md`, `gate.txt`, `CNAME`.
@@ -49,7 +51,7 @@ functions/  (repo root, NOT in dist) ──► Pages compiles it separately into
 Bindings, secrets and the custom domain are configured separately. The original account keeps publishing the repository root until its owner changes it; nothing here touches it. Rollback in the new project: set the output directory back to `/`.
 
 ## Behaviour to know
-- With no `404.html`, Pages treats the project as a single-page app: an unknown path (including every excluded file) returns `index.html` with status 200, not 404. Excluded files are not exposed, but they do not 404. Adding a `404.html` is a publication decision left to the owner.
+- `404.html` is published (and required by the manifest check). Pages therefore answers every unknown or excluded path with HTTP 404 and that page, instead of the single-page-app fallback that would return `index.html` with 200. Verified over HTTP by `public-output-http.test.mjs` against `wrangler pages dev`. Static assets answer only GET/HEAD, so a POST to a path that has no Function is refused (405), never executed.
 - `landing.html`, `account.html`, `legal.html` are served at clean URLs (a 308 from the `.html` path); this is Pages behaviour and unchanged.
 - Known pre-existing issue: `index.html` and `landing.html` register `/sw.js`, which does not exist (`i18n/sw.js` is the Swahili language file). The error is caught by the pages; recorded in the manifest, not changed here.
 - `dist/` is a build artifact. The repository has no root `.gitignore`; do not commit `dist/`.
@@ -64,7 +66,15 @@ node scripts/build-public.mjs
 npm ci --ignore-scripts
 npx wrangler@3.114.17 pages functions build functions --outfile /tmp/_worker.js --output-routes-path /tmp/routes.json
 node scripts/build-public.mjs --compare-routes /tmp/routes.json
+PUBLIC_OUTPUT_HTTP=required node --test scripts/tests/public-output-http.test.mjs
 ```
 
 ## Not in scope (later blocks)
 Authentication and authorization (`/api/business/*`, `nurture-batch`, `simulate`, `send-email`), CORS, email behaviour, Turnstile, `_headers` CSP, secrets, bindings, D1 verification, domain and DNS. Stack B, SOT-02 boundaries and the frozen architecture are unchanged.
+
+## Middleware-protected route families
+A `_middleware.js` that exports an `onRequest` handler (including the export-list form `export { onRequest }`) guards its directory and everything below it, and Wrangler reports that family as one wildcard route (for example `/api/business/*`) instead of one route per file. `build-public.mjs` models exactly that:
+- `discoverFunctionRoutes` lists handler files (middleware files and handler names that appear only in comments are not routes); `discoverMiddlewareFamilies` lists the guarded families; `effectiveFunctionRoutes` collapses routes under a family into the family wildcard, outermost family first.
+- `--compare-routes` compares the effective routes with Wrangler's list **and** proves the generated `_routes.json` sends every Wrangler route to Functions and excludes none of them, so a guarded family can never fall through to a static path.
+- A `_middleware` file that exports no handler is a build failure: it would guard nothing and give false assurance.
+- Fail-closed behaviour is not weakened: the middleware itself (default-deny 404 unless the family flag is exactly `enabled`) is unchanged; this tooling only validates it.
