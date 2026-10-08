@@ -75,6 +75,7 @@ export function validateManifest(manifest, root) {
     problems.push('files must be a non-empty array');
     return problems;
   }
+  if (!files.includes('404.html')) problems.push('404.html must be published so excluded paths return a genuine 404 instead of the single-page-app fallback');
   const seen = new Set();
   for (const entry of files) {
     const path = safeRelativePath(entry);
@@ -153,44 +154,104 @@ export function routeMatches(pattern, path) {
 // ── Pages Functions discovery ──────────────────────────────────────────────────────────────────────
 
 const HANDLER = /export\s+(?:async\s+)?(?:function|const)\s+onRequest(?:Get|Post|Put|Delete|Patch|Head|Options)?\b/;
+const HANDLER_LIST = /export\s*\{[^}]*\bonRequest(?:Get|Post|Put|Delete|Patch|Head|Options)?\b[^}]*\}/;
+const MIDDLEWARE_FILE = /^_middleware\.(?:js|mjs|ts)$/;
+const FUNCTION_FILE = /\.(?:js|mjs|ts)$/;
 
-/** Routes Pages derives from functions/ (file-based routing): every .js/.mjs/.ts file exporting an onRequest* handler. */
-export function discoverFunctionRoutes(root) {
+/** Removes comments so that prose mentioning "export function onRequest" can never create a route. URLs ("://") are kept. */
+const stripComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+const exportsHandler = (text) => { const code = stripComments(text); return HANDLER.test(code) || HANDLER_LIST.test(code); };
+
+/** Every function-like file under functions/ with its path relative to functions/ and whether it exports a handler. */
+function scanFunctions(root) {
   const base = join(root, 'functions');
-  const routes = [];
+  const files = [];
   const walk = (dir) => {
     for (const name of readdirSync(dir).sort()) {
       const abs = join(dir, name);
-      const st = lstatSync(abs);
-      if (st.isDirectory()) { walk(abs); continue; }
-      if (!/\.(?:js|mjs|ts)$/.test(name)) continue;
-      if (!HANDLER.test(readFileSync(abs, 'utf8'))) continue;
-      let route = `/${toPosix(relative(base, abs)).replace(/\.(?:js|mjs|ts)$/, '')}`;
-      route = route.replace(/\/index$/, '') || '/';
-      routes.push(route);
+      if (lstatSync(abs).isDirectory()) { walk(abs); continue; }
+      if (!FUNCTION_FILE.test(name)) continue;
+      files.push({ rel: toPosix(relative(base, abs)), middleware: MIDDLEWARE_FILE.test(name), handler: exportsHandler(readFileSync(abs, 'utf8')) });
     }
   };
   if (existsSync(base)) walk(base);
-  return routes.sort();
+  return files;
+}
+
+/** Routes Pages derives from functions/ file-based routing: every non-middleware file exporting an onRequest* handler. */
+export function discoverFunctionRoutes(root) {
+  return scanFunctions(root).filter((f) => f.handler && !f.middleware).map((f) => {
+    const route = `/${f.rel.replace(/\.(?:js|mjs|ts)$/, '')}`.replace(/\/index$/, '');
+    return route || '/';
+  }).sort();
+}
+
+/**
+ * Middleware-protected route families: a `_middleware` file that exports a handler guards its directory and everything below it.
+ * Returns wildcard routes ("/api/business/*", or "/*" for functions/_middleware.js).
+ */
+export function discoverMiddlewareFamilies(root) {
+  return [...new Set(scanFunctions(root).filter((f) => f.middleware && f.handler).map((f) => {
+    const dir = posix.dirname(f.rel);
+    return dir === '.' ? '/*' : `/${dir}/*`;
+  }))].sort();
+}
+
+/** A `_middleware` file that exports no handler guards nothing; treating it as protection would be false assurance. */
+export function inertMiddleware(root) {
+  return scanFunctions(root).filter((f) => f.middleware && !f.handler).map((f) => f.rel);
+}
+
+const wildcardPrefix = (route) => route.slice(0, -1); // "/api/x/*" -> "/api/x/"
+const covers = (family, route) => (route.endsWith('/*') ? wildcardPrefix(route).startsWith(wildcardPrefix(family)) && route !== family : route.startsWith(wildcardPrefix(family)));
+
+/**
+ * The routes the Functions worker is actually invoked for, as Wrangler reports them: each middleware family collapses to its
+ * wildcard and any route beneath a family is absorbed by it; routes outside every family stay exact.
+ */
+export function effectiveFunctionRoutes(root) {
+  const families = discoverMiddlewareFamilies(root);
+  const exact = discoverFunctionRoutes(root).filter((r) => !families.some((f) => covers(f, r)));
+  const outer = families.filter((f) => !families.some((g) => covers(g, f)));
+  return [...new Set([...exact, ...outer])].sort();
+}
+
+/** A representative request path for a route or family (used to ask "would this be routed to Functions?"). */
+const samplePath = (route) => (route.endsWith('/*') ? `${wildcardPrefix(route)}probe` : route);
+
+/** include/exclude check for the generated routing: every effective route and every guarded file route must reach Functions. */
+function routingProblems(routes, targets, label) {
+  const problems = [];
+  for (const target of targets) {
+    const path = samplePath(target);
+    if (!routes.include.some((p) => routeMatches(p, path))) problems.push(`${label} ${target} is not covered by routes.include (it would not be invoked)`);
+    if (routes.exclude.some((p) => routeMatches(p, path))) problems.push(`${label} ${target} is matched by routes.exclude (it would be served as a static path)`);
+  }
+  return problems;
 }
 
 export function validateFunctionRouting(root, routes) {
   const problems = [];
   const discovered = discoverFunctionRoutes(root);
   if (discovered.length === 0) problems.push('no Pages Functions routes were discovered under functions/');
-  for (const r of discovered) {
-    if (!routes.include.some((p) => routeMatches(p, r))) problems.push(`Pages Function route ${r} is not covered by routes.include (it would not be invoked)`);
-    if (routes.exclude.some((p) => routeMatches(p, r))) problems.push(`Pages Function route ${r} is matched by routes.exclude (it would be served as a static path)`);
-  }
+  for (const rel of inertMiddleware(root)) problems.push(`functions/${rel} exports no onRequest handler, so it would protect nothing`);
+  problems.push(...routingProblems(routes, discovered, 'Pages Function route'));
+  problems.push(...routingProblems(routes, discoverMiddlewareFamilies(root), 'Middleware-protected family'));
   return problems;
 }
 
-/** Compares our discovered routes with the routes file written by `wrangler pages functions build`. */
-export function compareRoutes(root, wranglerRoutesFile) {
+/**
+ * Compares the effective routes we derive (middleware families collapsed) with the routes file written by
+ * `wrangler pages functions build`, and, when the generated routing config is supplied, proves that config routes every one
+ * of Wrangler's routes to Functions (so a protected family can never fall through to a static path).
+ */
+export function compareRoutes(root, wranglerRoutesFile, generatedRoutes) {
   const theirs = JSON.parse(readFileSync(wranglerRoutesFile, 'utf8')).include ?? [];
-  const ours = discoverFunctionRoutes(root);
-  const a = [...ours].sort(); const b = [...theirs].sort();
-  return JSON.stringify(a) === JSON.stringify(b) ? [] : [`discovered routes differ from wrangler:\n    ours:    ${a.join(' ')}\n    wrangler: ${b.join(' ')}`];
+  const a = effectiveFunctionRoutes(root);
+  const b = [...theirs].sort();
+  const problems = JSON.stringify(a) === JSON.stringify(b) ? [] : [`effective routes differ from wrangler:\n    ours:    ${a.join(' ')}\n    wrangler: ${b.join(' ')}`];
+  if (generatedRoutes) problems.push(...routingProblems(generatedRoutes, b, 'Wrangler route'));
+  return problems;
 }
 
 // ── static dependency closure ──────────────────────────────────────────────────────────────────────
@@ -357,9 +418,9 @@ function main(argv) {
   try {
     const compareIdx = argv.indexOf('--compare-routes');
     if (compareIdx !== -1) {
-      const problems = compareRoutes(root, argv[compareIdx + 1]);
+      const problems = compareRoutes(root, argv[compareIdx + 1], loadManifest(root).routes);
       if (problems.length) throw new PublicOutputError(problems);
-      console.log('Pages Functions routes match wrangler.');
+      console.log('Effective Pages Functions routes match wrangler and are covered by the generated routing.');
       return 0;
     }
     if (argv.includes('--check')) {

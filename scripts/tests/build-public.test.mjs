@@ -13,6 +13,7 @@ import {
   analyzeClosure, buildPublic, compareRoutes, denyReason, discoverFunctionRoutes, extractReferences, languageCodes,
   loadManifest, PublicOutputError, renderHeaders, renderRoutes, routeMatches, safeRelativePath, treeDigest,
   validateAll, validateFunctionRouting, validateHeaders, validateManifest, validateRoutes, verifyOutput,
+  discoverMiddlewareFamilies, effectiveFunctionRoutes, inertMiddleware,
 } from '../build-public.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -31,6 +32,7 @@ function fixture(overrides = {}) {
   const write = (rel, text) => { mkdirSync(dirname(join(root, rel)), { recursive: true }); writeFileSync(join(root, rel), text); };
   write('index.html', '<link rel="icon" href="/mark.svg"><script src="/app.js"></script><a href="./other.html">x</a>');
   write('other.html', '<p>other</p>');
+  write('404.html', '<p>404</p>');
   write('app.js', 'console.log(1)');
   write('mark.svg', '<svg/>');
   write('functions/api/hello.js', 'export async function onRequestGet() { return new Response("ok"); }');
@@ -39,7 +41,7 @@ function fixture(overrides = {}) {
   const manifest = {
     schemaVersion: 1,
     outputDir: 'dist',
-    files: ['app.js', 'index.html', 'mark.svg', 'other.html'],
+    files: ['404.html', 'app.js', 'index.html', 'mark.svg', 'other.html'],
     knownMissingReferences: [],
     deny: { directories: ['docs', 'functions'], extensions: ['.sql'], basenames: ['package.json'], directoryPrefixes: [] },
     headers: [{ pattern: '/*', values: { 'X-Content-Type-Options': 'nosniff' } }],
@@ -88,7 +90,7 @@ test('the build is deterministic and idempotent', () => {
 test('the public set is the approved set: pages, localisation, bundles, branding only', () => {
   const { files } = loadManifest(ROOT);
   const approved = [
-    'index.html', 'landing.html', 'account.html', 'legal.html', 'theme.js', 'i18n.js', 'manifest.json',
+    '404.html', 'index.html', 'landing.html', 'account.html', 'legal.html', 'theme.js', 'i18n.js', 'manifest.json',
     'infinicus-mark.svg', 'og-image.svg', 'infinicus logo.jpeg', 'platform/platform-bootstrap.js',
   ];
   for (const f of approved) assert.ok(files.includes(f), `${f} must be public`);
@@ -207,8 +209,8 @@ test('a fixture repository builds and rebuilds cleanly (control)', () => {
   const out = tmp();
   try {
     assert.deepEqual(validateAll(root), []);
-    assert.equal(buildPublic({ root, outDir: join(out, 'd') }).files, 6);
-    assert.deepEqual(list(join(out, 'd')), ['_headers', '_routes.json', 'app.js', 'index.html', 'mark.svg', 'other.html']);
+    assert.equal(buildPublic({ root, outDir: join(out, 'd') }).files, 7);
+    assert.deepEqual(list(join(out, 'd')), ['404.html', '_headers', '_routes.json', 'app.js', 'index.html', 'mark.svg', 'other.html']);
   } finally { cleanup(root, out); }
 });
 
@@ -372,4 +374,131 @@ test('path, route and deny helpers behave', () => {
   assert.equal(denyReason('app.js', { directories: [], extensions: [], basenames: [] }), null);
   assert.ok(denyReason('x/.env.production', {}));
   assert.ok(denyReason('a/tests/b.js', {}));
+});
+
+// ── middleware-protected route families (routing compatibility correction) ─────────────────────────
+
+const HANDLER_SRC = 'export async function onRequestPost() { return new Response("ok"); }';
+const MW_LIST = 'async function onRequest(ctx) { return ctx.next(); }\nexport { onRequest };';
+
+/** Fixture whose functions/ tree mirrors the PR-C shape: two middleware-guarded families plus ordinary routes. */
+function familyFixture(extra = {}) {
+  const f = fixture({ routes: { version: 1, include: ['/api/*'], exclude: ['/api/_shared/*'] }, ...extra });
+  f.write('functions/api/business/_middleware.js', MW_LIST);
+  f.write('functions/api/business/manage.js', HANDLER_SRC);
+  f.write('functions/api/business/decisions/history.js', HANDLER_SRC);
+  f.write('functions/api/auth/_middleware.js', 'export const onRequest = async (ctx) => ctx.next();');
+  f.write('functions/api/auth/login.js', HANDLER_SRC);
+  f.write('functions/api/waitlist.js', HANDLER_SRC);
+  return f;
+}
+
+test('a _middleware file is a route-family guard, never a route, and prose in comments cannot create routes', () => {
+  const { root, write } = familyFixture();
+  write('functions/api/business/_middleware.js', `// Written so scanners do not see \`export function onRequest\` here.\n/* export async function onRequestGet() {} */\n${MW_LIST}`);
+  write('functions/api/notes.js', '// export async function onRequestGet() {}\nexport const helper = 1;');
+  try {
+    const routes = discoverFunctionRoutes(root);
+    assert.ok(!routes.some((r) => r.includes('_middleware')), routes.join());
+    assert.ok(!routes.includes('/api/notes'), 'a handler named only in a comment is not a route');
+    assert.deepEqual(discoverMiddlewareFamilies(root), ['/api/auth/*', '/api/business/*']);
+    assert.deepEqual(inertMiddleware(root), []);
+  } finally { cleanup(root); }
+});
+
+test('effective routes collapse each middleware family exactly like Wrangler and leave other routes exact', () => {
+  const { root } = familyFixture();
+  try {
+    assert.deepEqual(discoverFunctionRoutes(root), ['/api/auth/login', '/api/business/decisions/history', '/api/business/manage', '/api/hello', '/api/waitlist']);
+    assert.deepEqual(effectiveFunctionRoutes(root), ['/api/auth/*', '/api/business/*', '/api/hello', '/api/waitlist']);
+  } finally { cleanup(root); }
+});
+
+test('nested and root middleware: the outermost family wins and a root middleware guards everything', () => {
+  const nested = familyFixture();
+  nested.write('functions/api/business/decisions/_middleware.js', MW_LIST);
+  const root = familyFixture();
+  root.write('functions/_middleware.js', MW_LIST);
+  try {
+    assert.deepEqual(effectiveFunctionRoutes(nested.root), ['/api/auth/*', '/api/business/*', '/api/hello', '/api/waitlist']);
+    assert.deepEqual(effectiveFunctionRoutes(root.root), ['/*']);
+    assert.deepEqual(validateFunctionRouting(nested.root, { version: 1, include: ['/api/*'], exclude: [] }), []);
+  } finally { cleanup(nested.root, root.root); }
+});
+
+test('a middleware file that exports no handler is rejected (it would protect nothing)', () => {
+  const { root, write } = familyFixture();
+  write('functions/api/business/_middleware.js', 'export const notAHandler = 1;');
+  try {
+    assert.deepEqual(inertMiddleware(root), ['api/business/_middleware.js']);
+    assert.ok(validateAll(root).some((p) => p.includes('api/business/_middleware.js') && p.includes('protect nothing')));
+    assert.deepEqual(discoverMiddlewareFamilies(root), ['/api/auth/*'], 'an inert file does not count as a guarded family');
+  } finally { cleanup(root); }
+});
+
+test('the generated routing must send every guarded family to Functions (never to a static path)', () => {
+  const { root } = familyFixture();
+  try {
+    const problems = (routes) => validateFunctionRouting(root, routes).join('\n');
+    assert.equal(problems({ version: 1, include: ['/api/*'], exclude: ['/api/_shared/*'] }), '');
+    assert.match(problems({ version: 1, include: ['/api/auth/*', '/api/hello', '/api/waitlist'], exclude: [] }), /Middleware-protected family \/api\/business\/\* is not covered/);
+    assert.match(problems({ version: 1, include: ['/api/*'], exclude: ['/api/business/*'] }), /Middleware-protected family \/api\/business\/\* is matched by routes\.exclude/);
+    assert.match(problems({ version: 1, include: ['/other/*'], exclude: [] }), /not covered by routes\.include/);
+  } finally { cleanup(root); }
+});
+
+test('compareRoutes accepts Wrangler\'s collapsed list, rejects drift, and proves the generated config covers Wrangler\'s routes', () => {
+  const { root } = familyFixture();
+  const dir = tmp();
+  try {
+    const file = join(dir, 'r.json');
+    const wrangler = (include) => writeFileSync(file, JSON.stringify({ version: 1, include, exclude: [] }));
+    const config = { version: 1, include: ['/api/*'], exclude: ['/api/_shared/*'] };
+    wrangler(['/api/auth/*', '/api/business/*', '/api/hello', '/api/waitlist']);
+    assert.deepEqual(compareRoutes(root, file, config), []);
+    assert.deepEqual(compareRoutes(root, file), []);
+    wrangler(['/api/auth/login', '/api/business/manage', '/api/hello', '/api/waitlist']);
+    assert.match(compareRoutes(root, file, config).join('\n'), /effective routes differ from wrangler/);
+    wrangler(['/api/auth/*', '/api/business/*', '/api/hello', '/api/waitlist', '/api/extra']);
+    assert.equal(compareRoutes(root, file, config).length, 1);
+    wrangler(['/api/auth/*', '/api/business/*', '/api/hello', '/api/waitlist']);
+    assert.match(compareRoutes(root, file, { version: 1, include: ['/api/hello', '/api/waitlist'], exclude: [] }).join('\n'), /Wrangler route \/api\/business\/\* is not covered/);
+    assert.match(compareRoutes(root, file, { version: 1, include: ['/api/*'], exclude: ['/api/auth/*'] }).join('\n'), /Wrangler route \/api\/auth\/\* is matched by routes\.exclude/);
+  } finally { cleanup(root, dir); }
+});
+
+test('real tree: every middleware file is recognised, none is inert, and the generated routing covers the effective routes', () => {
+  assert.deepEqual(inertMiddleware(ROOT), []);
+  const mwFiles = execFileSync('git', ['ls-files', 'functions'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter((f) => /\/_middleware\.(?:js|mjs|ts)$/.test(f));
+  const expected = mwFiles.map((f) => `/${f.replace(/^functions\//, '').replace(/\/_middleware\.\w+$/, '')}/*`).sort();
+  assert.deepEqual(discoverMiddlewareFamilies(ROOT), expected);
+  const { routes } = loadManifest(ROOT);
+  assert.deepEqual(validateFunctionRouting(ROOT, routes), []);
+  assert.ok(effectiveFunctionRoutes(ROOT).length > 0);
+});
+
+// ── 404.html: a genuine 404 for everything that is not published ───────────────────────────────────
+
+test('404.html is required, minimal and self-contained; it is the only addition to the public set', () => {
+  const manifest = loadManifest(ROOT);
+  assert.ok(manifest.files.includes('404.html'));
+  const text = readFileSync(join(ROOT, '404.html'), 'utf8');
+  assert.ok(text.includes('404') && /name="robots" content="noindex"/.test(text));
+  assert.ok(!/<script|https?:\/\/(?!www\.w3\.org)|<iframe|<link\s|<img|<form|onerror|onload/i.test(text), 'no scripts, external resources or forms');
+  assert.ok(text.length < 2000);
+  const without = { ...manifest, files: manifest.files.filter((f) => f !== '404.html') };
+  assert.ok(validateManifest(without, ROOT).some((p) => p.includes('404.html must be published')));
+  assert.equal(manifest.files.length, 38, 'public set is the PR-A set plus exactly 404.html');
+  const { problems } = analyzeClosure(ROOT, manifest);
+  assert.deepEqual(problems, []);
+});
+
+test('the built output contains 404.html at the root next to _headers and _routes.json', () => {
+  const out = tmp();
+  try {
+    buildPublic({ root: ROOT, outDir: join(out, 'dist') });
+    const files = list(join(out, 'dist'));
+    assert.ok(files.includes('404.html') && files.includes('_headers') && files.includes('_routes.json'));
+    assert.ok(readFileSync(join(out, 'dist', '404.html')).equals(readFileSync(join(ROOT, '404.html'))));
+  } finally { cleanup(out); }
 });
