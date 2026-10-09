@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "description": "Explicit allowlist of the files published by Cloudflare Pages (output directory: dist). Everything not listed is internal. Adding a file here is a publication decision that needs explicit owner approval.",
+  "outputDir": "dist",
+  "files": [
+    "404.html",
+    "account.html",
+    "ai-decision-intelligence/adi-bundle.js",
+    "approved-business-action/aba-bundle.js",
+    "business-intelligence/bi-bundle.js",
+    "continuous-learning/cl-bundle.js",
+    "data-acquisition/da-bundle.js",
+    "digital-twin/dt-bundle.js",
+    "i18n.js",
+    "i18n/ar.js",
+    "i18n/bn.js",
+    "i18n/de.js",
+    "i18n/es.js",
+    "i18n/fa.js",
+    "i18n/fr.js",
+    "i18n/ha.js",
+    "i18n/hi.js",
+    "i18n/id.js",
+    "i18n/it.js",
+    "i18n/ja.js",
+    "i18n/ko.js",
+    "i18n/pt.js",
+    "i18n/ru.js",
+    "i18n/sw.js",
+    "i18n/tr.js",
+    "i18n/ur.js",
+    "i18n/vi.js",
+    "i18n/zh.js",
+    "index.html",
+    "infinicus logo.jpeg",
+    "infinicus-mark.svg",
+    "landing.html",
+    "legal.html",
+    "manifest.json",
+    "og-image.svg",
+    "outcome-monitoring/om-bundle.js",
+    "platform/platform-bootstrap.js",
+    "theme.js"
+  ],
+  "knownMissingReferences": [
+    {
+      "ref": "sw.js",
+      "referencedFrom": [
+        "index.html",
+        "landing.html"
+      ],
+      "note": "Pre-existing dangling reference: the pages register a service worker at /sw.js (errors are caught) but no sw.js exists in the repository. i18n/sw.js is the Swahili language file, not a service worker. Not changed by PR-A."
+    }
+  ],
+  "deny": {
+    "directories": [
+      ".claude",
+      ".git",
+      ".github",
+      "docs",
+      "functions",
+      "infinicus-platform",
+      "node_modules",
+      "scripts",
+      "templates",
+      "platform/tests"
+    ],
+    "extensions": [
+      ".sql",
+      ".zip",
+      ".bat",
+      ".toml",
+      ".md",
+      ".ts",
+      ".mjs",
+      ".cjs",
+      ".sh",
+      ".map",
+      ".download",
+      ".env",
+      ".pem",
+      ".key"
+    ],
+    "basenames": [
+      "package.json",
+      "package-lock.json",
+      "schema.sql",
+      "wrangler.toml",
+      "gate.txt",
+      "CNAME",
+      "QUEUE-INTEGRITY-SHA256.json",
+      ".gitignore",
+      ".env.example",
+      "bol.html",
+      "dal.html",
+      "pitch deck.html",
+      "icon.svg"
+    ],
+    "directoryPrefixes": [
+      "pitch deck_files"
+    ]
+  },
+  "headers": [
+    {
+      "pattern": "/*",
+      "values": {
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+      }
+    }
+  ],
+  "routes": {
+    "version": 1,
+    "include": [
+      "/api/*"
+    ],
+    "exclude": [
+      "/api/_shared/*"
+    ]
+  }
+}
