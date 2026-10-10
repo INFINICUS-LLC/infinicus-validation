@@ -84,7 +84,37 @@ The 0176 hash above is the hash at the time of writing; it is frozen only after 
 | Sub-block | Content | Needs |
 |---|---|---|
 | **3a (this)** | Package storage + DB guards + proofs | done, awaiting review |
-| 3b | Repository (insert/read through the guards, derived status function, RLS-scoped) - no issuer | no migration |
+| **3b (this PR)** | Repository (insert/read through the guards, derived status, revoke, expiry detection, RLS-scoped) - no issuer | no migration, **done, awaiting review** |
 | 3c | Capture/owner/policy sources the issuer needs | new migration number, authorization |
 | 3d | Issuer (single component, verifies decision/facts/authority, idempotent, atomic audit) | 3b + 3c |
 | 3e | BO-side receipt + consumption validator + extended isolation guard | new migration number, authorization |
+
+## 8. Block 3b - AuthorizedActionPackageRepository (no migration)
+
+Status: implemented, draft for owner review. Authorized: "P0-5 Block 3b". **No migration, no issuer, no events, no BO receipt, no ABA->BO wiring.**
+
+`packages/database/src/repositories/approved_action/AuthorizedActionPackageRepository.ts`, exported from `@infinicus/database`. Every method runs in a tenant transaction (RLS-confined).
+
+| Method | Behaviour |
+|---|---|
+| `ensureHeader` | Creates the single stable package identity for an authorized action (or returns it). Idempotent and concurrency-safe; re-pointing the action to a different decision/business is a `ConflictError`. The id is what the issuer puts in `identity.packageId` before sealing. |
+| `insertVersion(document)` | Stores an already-sealed document. The queryable columns are **read from the document** (one source of truth; any missing/malformed field is a `ValidationError` before the database is touched). Idempotent replay (also after supersession); a different document for the same version is a `ConflictError`; scope must equal the caller's; size-bounded (256 KiB). The 0176 guards re-verify everything. |
+| `getVersion` / `getLatestVersion` / `getHeaderByActionId` / `listLifecycle` | Reads. Other tenants see nothing. |
+| `getAuthoritativeStatus` | The R-10 pull answer, **derived on the database clock**: a recorded terminal fact wins; otherwise a package past its expiry is `EXPIRED` even if nobody recorded it; otherwise `ISSUED`. Echoes the digest and reports the latest version. `null` for an unknown version. |
+| `revoke` | Explicit, attributable (actor), reasoned (bounded) `REVOKED` fact. Refuses a version that already has any terminal fact (so revoke-after-consume and double revoke are conflicts). The document is never touched. |
+| `recordExpiryIfDue` | Idempotent expiry detection (P0-4 `approval.expired` pattern; no scheduler exists). Records `EXPIRED` only when due; returns `NOT_DUE` / `NOT_APPLICABLE` / `ALREADY_TERMINAL` otherwise. |
+
+**Deliberately not here:** issuing (decision / authority / freshness checks - Block 3d), sealing and contract validation (the issuer validates with `@infinicus/handoff-contracts` before calling `insertVersion`; persistence has **no dependency on the contract package**), recording `CONSUMED` (it comes from the BO receipt, Block 3e), `SUPERSEDED` (written atomically by the 0176 trigger), event emission.
+
+**BO isolation guard extended (not loosened).** `boIsolation.architecture.test.ts` gains a rule: BO code may not name `AuthorizedActionPackageRepository` or the three package tables. The contract name `AuthorizedActionPackage` stays allowed - BO reaches a package only through the validated contract (handoff invariant 4). Existing rules are unchanged.
+
+**Evidence.**
+- `p0-5-block3b-aap-repository.integration.test.ts` - 45 live PostgreSQL tests (including concurrency: 6 simultaneous header creations, identical inserts, revocations and expiry detections each yield exactly one fact), run as the least-privilege application role.
+- `p0-5-block3b-aap-repository.architecture.test.ts` - 5 static tests (imports, tables touched, no issuance reads, no UPDATE/DELETE, every query in a tenant transaction).
+- **Mutation proofs (9/9 detected):** replay pre-check, clock-derived expiry, the insert lock, the revoke/expiry lock, the revoke terminal check, the scope check, accepting an UNAVAILABLE expiry, the size bound, and header re-pointing.
+- 3a's 60 live tests pass unchanged after moving their fixtures to `tests/helpers/aapFixtures.ts`. BO isolation: 7 tests (1 new).
+- Full `@infinicus/database` suite on a migrated database: 3012 passed, 0 failed. In this sandbox 11 unrelated files cannot load `@infinicus/event-contracts` (workspace build unavailable), identically to `main`.
+
+**Open questions for the owner**
+- Q-1: `revoke` is not yet bound to a permission or an `approval_audit_events` write. The permission (suggested `aba:admin`) and the atomic audit belong to the route/issuer layer; `auditEventId` is accepted but optional. Confirm that placement.
+- Q-2: `recordExpiryIfDue` has no caller yet and no scheduler (consistent with P0-4). Confirm it should be invoked on read by the status contract (3d/3e) rather than by a job.
