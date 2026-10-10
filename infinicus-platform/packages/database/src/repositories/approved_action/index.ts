@@ -34,6 +34,15 @@ export type { ApprovalDecision, ApprovalDecisionVersion, DecisionAudit } from '.
 export { ApprovedActionRepository } from './ApprovedActionRepository.js';
 export type { ApprovedAction } from './ApprovedActionRepository.js';
 
+export {
+  AuthorizedActionPackageRepository, columnsFromDocument, PACKAGE_LIFECYCLE_STATES,
+  MAX_PACKAGE_DOCUMENT_BYTES, MAX_LIFECYCLE_REASON_LENGTH,
+} from './AuthorizedActionPackageRepository.js';
+export type {
+  PackageHeader, EnsureHeaderInput, PackageVersionRecord, PackageLifecycleEvent, PackageLifecycleState,
+  AuthoritativePackageStatus, RevokeInput, RecordExpiryInput, RecordExpiryResult,
+} from './AuthorizedActionPackageRepository.js';
+
 export { ActionExecutionPlanRepository } from './ActionExecutionPlanRepository.js';
 export type { ActionExecutionPlan } from './ActionExecutionPlanRepository.js';
 

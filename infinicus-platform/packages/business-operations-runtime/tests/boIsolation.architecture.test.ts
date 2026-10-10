@@ -47,6 +47,9 @@ export const FORBIDDEN_IN_BO: readonly { readonly name: string; readonly pattern
   { name: 'ABA schema (approved_business_action)', pattern: /approved_business_action/i },
   { name: 'ABA execution plan', pattern: /ActionExecutionPlan|action_execution_plans?/i },
   { name: 'ABA control gate', pattern: /ActionControlGate|action_control_gates?/i },
+  // P0-5 Block 3b: the package STORE is ABA-owned. BO reaches a package only through the validated AuthorizedActionPackage
+  // contract (never through ABA's repository or tables), so the contract name stays allowed while its persistence does not.
+  { name: 'AuthorizedActionPackage repository/table (ABA-owned storage)', pattern: /AuthorizedActionPackageRepository|authorized_action_package(?:s|_versions|_lifecycle_events)\b/i },
   { name: 'import from the ABA layer', pattern: /(?:from|require\()\s*['"][^'"]*approved-business-action[^'"]*['"]/i },
 ];
 
@@ -129,6 +132,14 @@ describe('Business Operations isolation guard — the matcher itself', () => {
     expect(findViolations('x.ts', 'const p: ActionExecutionPlan = load();')).toHaveLength(1);
     expect(findViolations('x.ts', 'gate = ActionControlGate.open();')).toHaveLength(1);
     expect(findViolations('x.ts', "import { x } from '../../approved-business-action/src';")).toHaveLength(1);
+  });
+
+  it('detects the package repository and the package tables used from BO code', () => {
+    expect(findViolations('x.ts', "import { AuthorizedActionPackageRepository } from '@infinicus/database';").map((v) => v.rule))
+      .toContain('AuthorizedActionPackage repository/table (ABA-owned storage)');
+    for (const table of ['authorized_action_packages', 'authorized_action_package_versions', 'authorized_action_package_lifecycle_events']) {
+      expect(findViolations('x.ts', `SELECT 1 FROM ${table}`).map((v) => v.rule)).toContain('AuthorizedActionPackage repository/table (ABA-owned storage)');
+    }
   });
 
   it('does not flag unrelated operational code or the future validated authority name', () => {
