@@ -264,11 +264,11 @@ describe.runIf(run)('Stage 2H Approved Business Action — live PostgreSQL', () 
 
   // ── 1. Schema and security posture sanity ─────────────────────────────────
   describe('schema and RLS posture', () => {
-    it('approved_business_action schema exists with 46 tables', async () => {
+    it('approved_business_action schema exists with 49 tables (46 original + 3 AuthorizedActionPackage tables from 0176)', async () => {
       const result = await adminPool!.query(
         `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'approved_business_action'`
       );
-      expect(result.rows[0].n).toBe(46);
+      expect(result.rows[0].n).toBe(49);
     });
 
     it('every approved_business_action table has RLS enabled and forced', async () => {
@@ -278,7 +278,7 @@ describe.runIf(run)('Stage 2H Approved Business Action — live PostgreSQL', () 
          JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.schemaname
          WHERE t.schemaname = 'approved_business_action' AND c.relrowsecurity AND c.relforcerowsecurity`
       );
-      expect(result.rows[0].n).toBe(46);
+      expect(result.rows[0].n).toBe(49);
     });
 
     it('fails closed with no tenant context set (app_test_user, RLS enforced)', async () => {
