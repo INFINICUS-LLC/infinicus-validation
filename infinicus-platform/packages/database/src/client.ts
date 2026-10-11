@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Pool, type PoolClient, type PoolConfig, type QueryResult } from 'pg';
 
 let pool: Pool | null = null;
@@ -107,10 +108,33 @@ export async function withTransaction<T>(
   }
 }
 
+interface SharedTransaction { client: PoolClient; ctx: TenantContext }
+const sharedTransaction = new AsyncLocalStorage<SharedTransaction>();
+
+export class SharedTransactionScopeError extends Error {}
+
+/**
+ * Runs `fn` in ONE tenant transaction that every `withTenantTransaction` call made inside it JOINS instead of opening
+ * its own (P0-5 Block 3d: package issuance must load sources, persist the package and write its audit atomically).
+ * Opt-in and explicit: outside this scope nothing changes. A joined call for a different tenant or workspace is a
+ * programming error and fails closed. An error anywhere inside rolls the whole transaction back.
+ */
+export async function withSharedTenantTransaction<T>(ctx: TenantContext, fn: () => Promise<T>): Promise<T> {
+  if (sharedTransaction.getStore()) throw new SharedTransactionScopeError('shared tenant transactions cannot be nested');
+  return withTenantTransaction(ctx, (client) => sharedTransaction.run({ client, ctx }, fn));
+}
+
 export async function withTenantTransaction<T>(
   ctx: TenantContext,
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
+  const shared = sharedTransaction.getStore();
+  if (shared) {
+    if (shared.ctx.tenantId !== ctx.tenantId || shared.ctx.workspaceId !== ctx.workspaceId) {
+      throw new SharedTransactionScopeError('a joined transaction cannot cross tenant or workspace');
+    }
+    return fn(shared.client);
+  }
   return withTransaction(async (client) => {
     await client.query('SELECT set_config($1, $2, true)', ['app.tenant_id',    ctx.tenantId]);
     await client.query('SELECT set_config($1, $2, true)', ['app.workspace_id', ctx.workspaceId]);

@@ -39,3 +39,12 @@ export { evaluateApprovalGate } from './approvalGate.js';
 export type { ApprovalGateVerdict, GateBlockCode, GateFacts, TwinFreshness } from './approvalGate.js';
 export { buildApprovalAuditDetail, auditEventTypeFor, APPROVAL_AUDIT_SCHEMA } from './approvalAudit.js';
 export type { ApprovalAuditEventType, ApprovalAuditInput, ApprovalAuditReasonCode } from './approvalAudit.js';
+
+// ── ABA package issuer (P0-5 Block 3d) ─────────────────────────────────────────
+export { AuthorizedActionPackageIssuer, PackageIssuanceRefusedError } from './AuthorizedActionPackageIssuer.js';
+export type { IssuePackageRequest, IssuePackageResult, IssuerDependencies } from './AuthorizedActionPackageIssuer.js';
+export {
+  ISSUER_COMPONENT, ISSUABLE_AUTOMATION_LEVELS, ISSUANCE_ENABLEMENT, POLICY_ACTION_TYPES_KEY, NOT_APPLICABLE_CODE_PATTERN,
+  evaluateIssuance, notApplicableCodeProblems, authoritativeInputsKey,
+} from './packageIssuancePolicy.js';
+export type { IssuanceFacts, IssuanceEvaluation, IssuanceRefusal, IssuanceRefusalCode } from './packageIssuancePolicy.js';

@@ -4,3 +4,4 @@ export * from './types';
 export * from './action-types';
 export * from './canonical';
 export * from './validator';
+export * from './canonical-actions';

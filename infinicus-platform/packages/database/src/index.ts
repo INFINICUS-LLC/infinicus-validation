@@ -8,6 +8,8 @@ export {
   closeDatabasePool,
   withTransaction,
   withTenantTransaction,
+  withSharedTenantTransaction,
+  SharedTransactionScopeError,
   poolStats,
 } from './client.js';
 export type { DbConfig, TenantContext, PoolStats } from './client.js';
@@ -281,6 +283,7 @@ export {
   AuthorizedActionCaptureRepository, toAccountableOwnerShape,
   ActionTypeRegistryRepository, toActionTypeContract, AutomationLevelPolicyRepository,
   AuthorizedActionBoundaryRepository, toPackageBoundaryParts,
+  AuthorizedActionIssuanceRepository, PACKAGE_ISSUED_EVENT, PACKAGE_ISSUANCE_REFUSED_EVENT, ISSUANCE_AUDIT_SCHEMA,
   ActionExecutionPlanRepository,
   ActionControlGateRepository,
   ApprovalExceptionRepository,
@@ -290,6 +293,7 @@ export {
   ABAComponentRegistryRepository,
 } from './repositories/approved_action/index.js';
 export type {
+  IssuanceSources, IssuanceAction, IssuanceDecision, IssuanceApprovalAudit, IssuanceAssignment, IssuanceReview, IssuanceAuditInput,
   ABAIntakePackage, ReceiveABAPackageInput,
   ActionReviewPackage, ActionReviewVersion, ReviewVersionSnapshot,
   ApprovalPolicy,
