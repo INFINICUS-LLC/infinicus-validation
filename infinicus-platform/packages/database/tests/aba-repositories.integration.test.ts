@@ -608,6 +608,49 @@ describe.runIf(run)('Stage 2H Approved Business Action — live PostgreSQL', () 
       expect(approved.status).toBe('approved_with_modifications');
     });
 
+    describe('B2c: the authoritative time an approved-with-modifications decision became final', () => {
+      const dbTime = async (id: string) => (await adminPool!.query(`SELECT to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') t FROM approved_business_action.approval_decisions WHERE id=$1`, [id])).rows[0].t as string;
+
+      it('is the decided row\'s database-stamped updated_at (millisecond UTC) and needs NO approval_decision_modifications row', async () => {
+        const { repo, decision, version } = await createDecision(ctx1, BIZ1);
+        expect(await repo.getModifiedDecisionFinalAt(ctx1, decision.id)).toBeNull(); // still draft
+        await repo.approveWithModifications(ctx1, decision.id, version.id);
+        const at = await repo.getModifiedDecisionFinalAt(ctx1, decision.id);
+        expect(at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+        expect(at).toBe(await dbTime(decision.id));
+        expect(Number((await adminPool!.query('SELECT count(*) n FROM approved_business_action.approval_decision_modifications WHERE decision_version_id=$1', [version.id])).rows[0].n)).toBe(0);
+        expect(await repo.getModifiedDecisionFinalAt(ctx1, decision.id)).toBe(at); // stable across reads
+      });
+
+      it('exists ONLY for the approved_with_modifications state: plain approvals, rejections and drafts have none', async () => {
+        const approved = await createDecision(ctx1, BIZ1);
+        await approved.repo.approve(ctx1, approved.decision.id, approved.version.id);
+        expect(await approved.repo.getModifiedDecisionFinalAt(ctx1, approved.decision.id)).toBeNull();
+        const rejected = await createDecision(ctx1, BIZ1);
+        await rejected.repo.reject(ctx1, rejected.decision.id, rejected.version.id);
+        expect(await rejected.repo.getModifiedDecisionFinalAt(ctx1, rejected.decision.id)).toBeNull();
+      });
+
+      it('is scoped to the caller\'s tenant and workspace, and malformed ids give null', async () => {
+        const { repo, decision, version } = await createDecision(ctx1, BIZ1);
+        await repo.approveWithModifications(ctx1, decision.id, version.id);
+        expect(await repo.getModifiedDecisionFinalAt(ctx2, decision.id)).toBeNull();
+        expect(await repo.getModifiedDecisionFinalAt(ctx1, 'not-a-uuid')).toBeNull();
+        expect(await repo.getModifiedDecisionFinalAt(ctx1, '00000000-0000-0000-0000-000000000000')).toBeNull();
+      });
+
+      it('the decided STATUS is immutable; a later non-status touch could only move updated_at FORWARD (stricter, never laxer)', async () => {
+        const { repo, decision, version } = await createDecision(ctx1, BIZ1);
+        await repo.approveWithModifications(ctx1, decision.id, version.id);
+        const first = (await repo.getModifiedDecisionFinalAt(ctx1, decision.id))!;
+        await expect(adminPool!.query(`UPDATE approved_business_action.approval_decisions SET status='approved' WHERE id=$1`, [decision.id])).rejects.toThrow(/decided decisions are immutable/);
+        await new Promise((r) => setTimeout(r, 5));
+        await adminPool!.query(`UPDATE approved_business_action.approval_decisions SET latest_version = latest_version, updated_at = '1999-01-01' WHERE id=$1`, [decision.id]);
+        const later = (await repo.getModifiedDecisionFinalAt(ctx1, decision.id))!;
+        expect(Date.parse(later)).toBeGreaterThanOrEqual(Date.parse(first)); // set_updated_at stamps now(): an explicit earlier value is overridden
+      });
+    });
+
     it('rejects a decision', async () => {
       const { repo, decision, version } = await createDecision(ctx1, BIZ1);
       const rejected = await repo.reject(ctx1, decision.id, version.id);
