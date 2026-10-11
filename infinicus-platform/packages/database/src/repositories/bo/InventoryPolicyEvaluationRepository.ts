@@ -146,6 +146,34 @@ export class InventoryPolicyEvaluationRepository {
     });
   }
 
+  /**
+   * Appends several evaluation facts ATOMICALLY (one tenant transaction): all rows are written or none is. Each row is validated first and goes
+   * through exactly the same INSERT as `record`; this is a batching convenience, not a second writer. Returns the rows in input order.
+   */
+  async recordAll(ctx: TenantContext, inputs: RecordInventoryPolicyEvaluationInput[]): Promise<InventoryPolicyEvaluation[]> {
+    if (inputs.length === 0) throw new InventoryPolicyEvaluationValidationError(['at least one evaluation is required']);
+    for (const input of inputs) validate(input);
+    return withTenantTransaction(ctx, async (client) => {
+      const out: InventoryPolicyEvaluation[] = [];
+      for (const input of inputs) {
+        const result = await client.query<Record<string, unknown>>(
+          `INSERT INTO business_operations.inventory_policy_evaluations
+             (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, dimension, result, subject, subject_digest,
+              rule_set_version, inputs, findings, requested_by_user_id, correlation_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11::jsonb,$12::jsonb,$13,$14)
+           RETURNING ${COLUMNS}`,
+          [
+            ctx.tenantId, ctx.workspaceId, input.businessId, input.inventoryItemId, input.warehouseId ?? null, input.dimension, input.result,
+            JSON.stringify(input.subject), input.subjectDigest, input.ruleSetVersion, JSON.stringify(input.inputs), JSON.stringify(input.findings),
+            input.requestedByUserId, input.correlationId,
+          ],
+        );
+        out.push(rowToEvaluation(result.rows[0]));
+      }
+      return out;
+    });
+  }
+
   /** One evaluation by id within the caller's tenant and workspace AND the stated business; anything else is NotFound. */
   async getById(ctx: TenantContext, businessId: string, id: string): Promise<InventoryPolicyEvaluation> {
     if (!UUID.test(businessId) || !UUID.test(id)) throw new NotFoundError(ENTITY, id);

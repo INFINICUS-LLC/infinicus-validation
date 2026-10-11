@@ -41,7 +41,8 @@ describe('data-capture Block C architecture', () => {
     const writers = production.filter((f) => /INTO\s+business_operations\.inventory_movements/.test(f.code)).map((f) => f.rel);
     expect(writers).toEqual([EXECUTOR]);
     const costColumn = production.filter((f) => /unit_cost/.test(f.code)).map((f) => f.rel).sort();
-    expect(costColumn).toEqual([EXECUTOR]);
+    // B2b: the READ-ONLY policy facts repository selects unit_cost (never writes it; the INTO check above is the writer proof).
+    expect(costColumn).toEqual([EXECUTOR, 'packages/database/src/repositories/bo/InventoryPolicyFactsRepository.ts'].sort());
   });
 
   it('the executor stores the supplied currency verbatim and never defaults it', () => {
@@ -77,7 +78,7 @@ describe('data-capture Block C architecture', () => {
     const aba = production.filter((f) => f.rel.startsWith('packages/workflow/src/') || f.rel.startsWith('packages/database/src/repositories/approved_action/') || f.rel.startsWith('packages/handoff-contracts/src/'));
     expect(aba.length).toBeGreaterThan(20);
     expect(aba.filter((f) => /unit_cost|unitCost|inventory_movements/.test(f.code)).map((f) => f.rel)).toEqual([]);
-    expect(production.filter((f) => /unit_cost_currency|unitCostCurrency/.test(f.code)).map((f) => f.rel).sort()).toEqual([EXECUTOR, MAPPERS, 'packages/business-operations-runtime/src/types.ts'].sort());
+    expect(production.filter((f) => /unit_cost_currency|unitCostCurrency/.test(f.code)).map((f) => f.rel).sort()).toEqual([EXECUTOR, MAPPERS, 'packages/business-operations-runtime/src/types.ts', 'packages/business-operations-runtime/src/inventory-policy/evaluate.ts', 'packages/database/src/repositories/bo/InventoryPolicyFactsRepository.ts'].sort()); // B2b adds two READERS (evaluator, facts repository)
   });
 
   it('introduces no Block A, B, D or E structure, no evaluator, no transport and no execution capability', () => {
