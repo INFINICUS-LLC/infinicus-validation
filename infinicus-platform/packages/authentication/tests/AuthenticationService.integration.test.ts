@@ -29,6 +29,12 @@ function uniqueEmail(prefix: string): string {
 
 const STRONG_PASSWORD = 'Correct-Horse-9!';
 
+// bcryptjs is pure JavaScript and deliberately slow at the production cost factor (12). A test that registers and logs in
+// (or changes a password) performs two or more hashes, which on a loaded shared CI runner can pass the 5000 ms default
+// (seen on #62, #63). The lockout tests below carry their own allowance. This only gives such tests an explicit, bounded
+// patience: the bcrypt cost, lockout thresholds, assertions and the global default timeout are unchanged.
+const MULTI_BCRYPT_TEST_TIMEOUT_MS = 30_000;
+
 /** Captures every message "sent" instead of making a real HTTP call — lets tests recover the raw verification token, which is otherwise never returned from register()'s own public API (see AuthenticationService.register()'s doc comment: it's emailed, not returned). */
 class CapturingEmailSender implements EmailSender {
   readonly sent: EmailMessage[] = [];
@@ -77,7 +83,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const email = uniqueEmail('reg-login');
       await service.register(email, STRONG_PASSWORD);
       await expect(service.login(email, STRONG_PASSWORD)).resolves.toBeDefined();
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('stores a bcrypt hash, never the plaintext password', async () => {
       const email = uniqueEmail('reg-hash');
@@ -140,7 +146,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
 
       const events = await accessEvents.listForUser(user.id);
       expect(events.some((e) => e.eventType === 'login')).toBe(true);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('updates last_login_at on successful login', async () => {
       const { email, user } = await registerAndActivate(service, users);
@@ -148,7 +154,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       await service.login(email, STRONG_PASSWORD);
       const reloaded = await users.getById(user.id);
       expect(reloaded.lastLoginAt).not.toBeNull();
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('rejects an unknown email and records a failed_auth access event', async () => {
       const unknownEmail = uniqueEmail('never-registered');
@@ -160,7 +166,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       await expect(service.login(email, 'Totally-Wrong-9!')).rejects.toBeInstanceOf(InvalidCredentialsError);
       const events = await accessEvents.listForUser(user.id);
       expect(events.some((e) => e.eventType === 'failed_auth')).toBe(true);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('login\'s active-status guard still rejects a genuinely pending account (defense in depth — register() itself no longer produces one, but the guard must still hold for any account created outside it)', async () => {
       const email = uniqueEmail('pending');
@@ -168,13 +174,13 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const directlyCreated = await users.createUser({ email: uniqueEmail('pending-direct'), passwordHash: passwordHash! });
       expect(directlyCreated.status).toBe('pending');
       await expect(service.login(directlyCreated.email, STRONG_PASSWORD)).rejects.toBeInstanceOf(AccountNotActiveError);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('rejects login for a suspended account', async () => {
       const { email, user } = await registerAndActivate(service, users);
       await users.suspend(user.id);
       await expect(service.login(email, STRONG_PASSWORD)).rejects.toBeInstanceOf(AccountNotActiveError);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
   });
 
   // Each lockout test performs about 7 bcryptjs (pure-JavaScript, deliberately
@@ -228,14 +234,14 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       await service.logout(rawSessionToken);
       const reloaded = await sessions.getById(session.id);
       expect(reloaded.revokedAt).not.toBeNull();
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('is idempotent for an already-revoked session', async () => {
       const { email } = await registerAndActivate(service, users);
       const { rawSessionToken } = await service.login(email, STRONG_PASSWORD);
       await service.logout(rawSessionToken);
       await expect(service.logout(rawSessionToken)).resolves.toBeUndefined();
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('is a silent no-op for an unknown session token', async () => {
       await expect(service.logout(generateSessionToken())).resolves.toBeUndefined();
@@ -248,7 +254,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const { rawSessionToken } = await service.login(email, STRONG_PASSWORD);
       const validated = await service.validateSession(rawSessionToken);
       expect(validated.user.id).toBe(user.id);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('throws SessionInvalidError for an unknown raw token', async () => {
       await expect(service.validateSession(generateSessionToken())).rejects.toBeInstanceOf(SessionInvalidError);
@@ -259,7 +265,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const { rawSessionToken } = await service.login(email, STRONG_PASSWORD);
       await service.logout(rawSessionToken);
       await expect(service.validateSession(rawSessionToken)).rejects.toBeInstanceOf(SessionRevokedError);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('throws SessionExpiredError for an expired session', async () => {
       const { user } = await registerAndActivate(service, users);
@@ -273,7 +279,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const { rawSessionToken } = await service.login(email, STRONG_PASSWORD);
       await users.suspend(user.id);
       await expect(service.validateSession(rawSessionToken)).rejects.toBeInstanceOf(AccountNotActiveError);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
   });
 
   describe('revokeSession / revokeAllUserSessions', () => {
@@ -285,7 +291,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       expect(reloaded.revokedAt).not.toBeNull();
       const events = await accessEvents.listForUser(user.id);
       expect(events.some((e) => e.eventType === 'session_revocation')).toBe(true);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('revokeAllUserSessions revokes every active session for the user and returns the count', async () => {
       const { email, user } = await registerAndActivate(service, users);
@@ -295,7 +301,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       expect(count).toBeGreaterThanOrEqual(2);
       const active = await sessions.listActiveForUser(user.id);
       expect(active).toHaveLength(0);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
   });
 
   describe('changePassword', () => {
@@ -304,20 +310,20 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const newPassword = 'New-Correct-Horse-9!';
       await service.changePassword(user.id, STRONG_PASSWORD, newPassword);
       await expect(service.login(email, newPassword)).resolves.toBeDefined();
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('rejects the change when the old password is wrong, leaving the original password intact', async () => {
       const { email, user } = await registerAndActivate(service, users);
       await expect(service.changePassword(user.id, 'Wrong-Old-Password-9!', 'New-Correct-Horse-9!')).rejects.toBeInstanceOf(InvalidCredentialsError);
       await expect(service.login(email, STRONG_PASSWORD)).resolves.toBeDefined();
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('revokes all existing sessions as a defense-in-depth side effect', async () => {
       const { email, user } = await registerAndActivate(service, users);
       const { rawSessionToken } = await service.login(email, STRONG_PASSWORD);
       await service.changePassword(user.id, STRONG_PASSWORD, 'New-Correct-Horse-9!');
       await expect(service.validateSession(rawSessionToken)).rejects.toBeInstanceOf(SessionRevokedError);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
   });
 });
 
