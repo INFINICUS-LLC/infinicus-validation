@@ -5,3 +5,4 @@ export * from './action-types';
 export * from './canonical';
 export * from './validator';
 export * from './canonical-actions';
+export * from './status-provider';

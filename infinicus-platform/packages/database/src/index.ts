@@ -141,6 +141,7 @@ export {
   ProductRepository,
   RegisterSessionRepository,
   OrderRepository,
+  AuthorizedActionIntakeRepository,
 } from './repositories/bo/index.js';
 export type {
   Lead, CreateLeadInput,
@@ -155,6 +156,7 @@ export type {
   RegisterSession, OpenRegisterSessionInput, CloseRegisterSessionInput,
   Product, CreateProductInput, UpdateProductInput,
   Order, OrderLineItem, OrderOperationalStatus, CreateOrderInput, AddLineItemInput,
+  IntakeOutcome, IntakeEvaluation, IntakeRequest, IntakeResult, IntakeAttemptInput, AuthorizedActionReceipt, AuthorizedActionClaim,
 } from './repositories/bo/index.js';
 
 // ── Business Intelligence repositories (Stage 2D) ───────────────────────────────
