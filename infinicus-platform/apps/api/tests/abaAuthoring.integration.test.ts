@@ -439,10 +439,16 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
       // boundaries: lowercase code refused outright
       expect((await post(s, `${base}/boundaries`, boundariesBody(s, { budget: lower }))).statusCode).toBe(400);
       // boundaries: a well-formed NOT_APPLICABLE is refused for every field this canonical type requires (fail closed)
-      for (const field of ['executionWindow', 'preconditions', 'budget', 'rollback', 'monitoring', 'simulationRun']) {
+      for (const field of ['executionWindow', 'preconditions', 'budget', 'rollback', 'monitoring']) {
         const res = await post(s, `${base}/boundaries`, boundariesBody(s, { [field]: { state: 'NOT_APPLICABLE', reason: { code: 'NOT_NEEDED', statement: 'n/a' } } }));
         expect(res.statusCode, field).toBe(400);
         expect(res.json().error.message, field).toContain('NOT_APPLICABLE is not permitted');
+      }
+      // B2c amendment: simulationRun is the ONE field with a governed exemption for this type, and only with the exact canonical reason
+      for (const code of ['NOT_NEEDED', 'NOT_SIMULATION_BACKED', 'NO_APPLICABLE_SIMULATION_MODE']) {
+        const res = await post(s, `${base}/boundaries`, boundariesBody(s, { simulationRun: { state: 'NOT_APPLICABLE', reason: { code, statement: 'n/a' } } }));
+        expect(res.statusCode, code).toBe(400);
+        expect(res.json().error.message, code).toContain('NO_APPLICABLE_SIMULATION_MODEL');
       }
       expect(await countOf(`SELECT count(*) n FROM approved_business_action.authorized_action_boundaries WHERE business_id=$1`, [s.bizId])).toBe(0);
     });
@@ -760,11 +766,12 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
   describe('B1. governance evidence is verified, never asserted', () => {
     const capturesFor = (s: Session) => countOf(`SELECT count(*) n FROM approved_business_action.authorized_action_captures WHERE business_id=$1`, [s.bizId]);
 
-    it('with NO verifier registered (the production default) a modified approval cannot be captured, and nothing is stored', async () => {
+    it('with NO verifier registered (the service default) a modified approval cannot be captured, and nothing is stored', async () => {
       const s = await setup('owner');
       await governance(s);
       const a = await approvedAction(s, 'approve_with_modifications');
-      const bare = await buildApp(loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '5000' }));
+      // The service default is fail-closed; only the API composition root registers the BO adapter, so a bare service has none.
+      const bare = await buildApp(loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '5000' }), { abaAuthoring: { evidenceVerifier: null } });
       await bare.ready();
       try {
         const res = await bare.inject({ method: 'POST', url: `${actionBase(s, a.actionId)}/capture`, headers: keyed(s), payload: modifiedBody() as any });
