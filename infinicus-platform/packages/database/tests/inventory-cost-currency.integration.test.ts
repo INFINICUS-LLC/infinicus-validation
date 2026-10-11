@@ -116,7 +116,7 @@ describe.runIf(run)('explicit currency on inventory costs (0183) - live PostgreS
       expect((await admin.query(`SELECT tgname FROM pg_trigger WHERE tgrelid = 'business_operations.inventory_movements'::regclass AND NOT tgisinternal ORDER BY tgname`)).rows)
         .toEqual([{ tgname: 'forbid_mutation_inventory_movements' }, { tgname: 'forbid_truncate_inventory_movements' }]);
       const f = (await admin.query(`SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'business_operations.inventory_movements'::regclass`)).rows[0];
-      expect(f).toEqual({ relrowsecurity: true, relforcerowsecurity: false });
+      expect(f).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
       const pol = (await admin.query(`SELECT policyname, qual FROM pg_policies WHERE schemaname='business_operations' AND tablename='inventory_movements'`)).rows;
       expect(pol).toHaveLength(1);
       expect(pol[0].policyname).toBe('inventory_movements_isolation');
