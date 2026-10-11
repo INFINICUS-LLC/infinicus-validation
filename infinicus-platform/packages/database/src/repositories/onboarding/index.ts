@@ -20,3 +20,12 @@ export type { Setting, SettingsScope } from './SettingsRepository.js';
 
 export { OnboardingProgressRepository, STEP_ORDER } from './OnboardingProgressRepository.js';
 export type { OnboardingProgress, OnboardingStatus, OnboardingStep } from './OnboardingProgressRepository.js';
+
+export {
+  BusinessDeclaredCurrencyReader, BusinessDeclaredCurrencyRepository, BusinessAdministrationAuditRepository,
+  DeclaredCurrencyValidationError, DeclaredCurrencyConflictError, DECLARED_CURRENCY_PATTERN, DECLARED_CURRENCY_REASON_MAX_LENGTH,
+  DECLARED_CURRENCY_AUDIT_ENTITY, DECLARED_CURRENCY_AUDIT_DECLARED, DECLARED_CURRENCY_AUDIT_CHANGED,
+} from './BusinessDeclaredCurrencyRepository.js';
+export type {
+  DeclaredCurrencyRecord, DeclaredCurrencyState, DeclareCurrencyInput, DeclareCurrencyOutcome, DeclareCurrencyResult, BusinessAdminAuditInput,
+} from './BusinessDeclaredCurrencyRepository.js';

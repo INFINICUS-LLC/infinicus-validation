@@ -454,6 +454,15 @@ export {
   OnboardingProgressRepository,
   STEP_ORDER as ONBOARDING_STEP_ORDER,
 } from './repositories/onboarding/index.js';
+// Business Administration: the governed, business-scoped declared currency (migration 0185). The Reader is the read-only boundary for BO/ABA.
+export {
+  BusinessDeclaredCurrencyReader, BusinessDeclaredCurrencyRepository, BusinessAdministrationAuditRepository,
+  DeclaredCurrencyValidationError, DeclaredCurrencyConflictError, DECLARED_CURRENCY_PATTERN, DECLARED_CURRENCY_REASON_MAX_LENGTH,
+  DECLARED_CURRENCY_AUDIT_ENTITY, DECLARED_CURRENCY_AUDIT_DECLARED, DECLARED_CURRENCY_AUDIT_CHANGED,
+} from './repositories/onboarding/index.js';
+export type {
+  DeclaredCurrencyRecord, DeclaredCurrencyState, DeclareCurrencyInput, DeclareCurrencyOutcome, DeclareCurrencyResult, BusinessAdminAuditInput,
+} from './repositories/onboarding/index.js';
 export type {
   Tenant, CreateTenantInput,
   Workspace, CreateWorkspaceInput,
