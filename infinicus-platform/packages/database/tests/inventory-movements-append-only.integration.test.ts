@@ -171,9 +171,9 @@ describe.runIf(run)('inventory_movements is append-only (0184) - live PostgreSQL
   });
 
   describe('RLS and tenant isolation are unchanged', () => {
-    it('policy text is the original tenant+workspace policy and FORCE RLS is deliberately not changed here', async () => {
+    it('policy text is the original tenant+workspace policy and FORCE RLS is now on (0186)', async () => {
       const f = (await admin.query(`SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = '${T}'::regclass`)).rows[0];
-      expect(f).toEqual({ relrowsecurity: true, relforcerowsecurity: false });
+      expect(f).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
       const pol = (await admin.query(`SELECT policyname, qual FROM pg_policies WHERE schemaname='business_operations' AND tablename='inventory_movements'`)).rows;
       expect(pol).toHaveLength(1);
       expect(pol[0].policyname).toBe('inventory_movements_isolation');
