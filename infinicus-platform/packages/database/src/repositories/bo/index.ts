@@ -40,3 +40,12 @@ export { AuthorizedActionIntakeRepository, MAX_RECEIPT_DOCUMENT_BYTES } from './
 export type {
   IntakeOutcome, IntakeEvaluation, IntakeRequest, IntakeResult, IntakeAttemptInput, AuthorizedActionReceipt, AuthorizedActionClaim,
 } from './AuthorizedActionIntakeRepository.js';
+
+export {
+  InventoryPolicyEvaluationRepository, InventoryPolicyEvaluationValidationError,
+  INVENTORY_POLICY_EVALUATION_DIMENSIONS, INVENTORY_POLICY_EVALUATION_RESULTS,
+} from './InventoryPolicyEvaluationRepository.js';
+export type {
+  InventoryPolicyEvaluation, InventoryPolicyEvaluationSubject, InventoryPolicyEvaluationDimension, InventoryPolicyEvaluationResult,
+  RecordInventoryPolicyEvaluationInput, EvaluationJson,
+} from './InventoryPolicyEvaluationRepository.js';
