@@ -50,6 +50,8 @@ export const FORBIDDEN_IN_BO: readonly { readonly name: string; readonly pattern
   // P0-5 Block 3b: the package STORE is ABA-owned. BO reaches a package only through the validated AuthorizedActionPackage
   // contract (never through ABA's repository or tables), so the contract name stays allowed while its persistence does not.
   { name: 'AuthorizedActionPackage repository/table (ABA-owned storage)', pattern: /AuthorizedActionPackageRepository|authorized_action_package(?:s|_versions|_lifecycle_events)\b/i },
+  // P0-5 Block 3c-1: the capture (original / delta / final parameters) and owner assignment are ABA-owned too; BO sees only the package.
+  { name: 'ABA authorized-action capture/owner-assignment (ABA-owned storage)', pattern: /AuthorizedActionCaptureRepository|authorized_action_(?:captures|owner_assignments)\b/i },
   { name: 'import from the ABA layer', pattern: /(?:from|require\()\s*['"][^'"]*approved-business-action[^'"]*['"]/i },
 ];
 
@@ -139,6 +141,14 @@ describe('Business Operations isolation guard — the matcher itself', () => {
       .toContain('AuthorizedActionPackage repository/table (ABA-owned storage)');
     for (const table of ['authorized_action_packages', 'authorized_action_package_versions', 'authorized_action_package_lifecycle_events']) {
       expect(findViolations('x.ts', `SELECT 1 FROM ${table}`).map((v) => v.rule)).toContain('AuthorizedActionPackage repository/table (ABA-owned storage)');
+    }
+  });
+
+  it('detects the capture repository and the capture / owner-assignment tables used from BO code', () => {
+    const rule = 'ABA authorized-action capture/owner-assignment (ABA-owned storage)';
+    expect(findViolations('x.ts', 'new AuthorizedActionCaptureRepository();').map((v) => v.rule)).toContain(rule);
+    for (const table of ['authorized_action_captures', 'authorized_action_owner_assignments']) {
+      expect(findViolations('x.ts', `SELECT 1 FROM ${table}`).map((v) => v.rule)).toContain(rule);
     }
   });
 

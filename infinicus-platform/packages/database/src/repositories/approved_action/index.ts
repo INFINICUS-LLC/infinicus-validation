@@ -43,6 +43,12 @@ export type {
   AuthoritativePackageStatus, RevokeInput, RecordExpiryInput, RecordExpiryResult,
 } from './AuthorizedActionPackageRepository.js';
 
+export { AuthorizedActionCaptureRepository, toAccountableOwnerShape } from './AuthorizedActionCaptureRepository.js';
+export type {
+  AuthorizedActionCapture, RecordCaptureInput, OwnerAssignment, AssignOwnerInput, AccountableOwnerShape,
+  GovernedValue, ProposedParametersValue, ModificationValue, ModificationEvaluationValue, ParameterMap,
+} from './AuthorizedActionCaptureRepository.js';
+
 export { ActionExecutionPlanRepository } from './ActionExecutionPlanRepository.js';
 export type { ActionExecutionPlan } from './ActionExecutionPlanRepository.js';
 

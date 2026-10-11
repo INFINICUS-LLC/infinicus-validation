@@ -84,8 +84,10 @@ The 0176 hash above is the hash at the time of writing; it is frozen only after 
 | Sub-block | Content | Needs |
 |---|---|---|
 | **3a (this)** | Package storage + DB guards + proofs | done, awaiting review |
-| **3b (this PR)** | Repository (insert/read through the guards, derived status, revoke, expiry detection, RLS-scoped) - no issuer | no migration, **done, awaiting review** |
-| 3c | Capture/owner/policy sources the issuer needs | new migration number, authorization |
+| 3b | Repository (insert/read through the guards, derived status, revoke, expiry detection, RLS-scoped) - no issuer | no migration, **merged (#62)** |
+| **3c-1 (this PR)** | Structured capture (original / delta / final parameters) + accountable-owner assignment | migration **0177**, **done, awaiting review** |
+| 3c-2 | Governed action-type registry + automation-level policy (Level 2) | migration 0178, authorization, **initial vocabulary from the owner** |
+| 3c-3 | Execution-boundary authoring (window, preconditions, rollback, budget, monitoring) + simulation reference | migration 0179, authorization |
 | 3d | Issuer (single component, verifies decision/facts/authority, idempotent, atomic audit) | 3b + 3c |
 | 3e | BO-side receipt + consumption validator + extended isolation guard | new migration number, authorization |
 
@@ -118,3 +120,68 @@ Status: implemented, draft for owner review. Authorized: "P0-5 Block 3b". **No m
 **Open questions for the owner**
 - Q-1: `revoke` is not yet bound to a permission or an `approval_audit_events` write. The permission (suggested `aba:admin`) and the atomic audit belong to the route/issuer layer; `auditEventId` is accepted but optional. Confirm that placement.
 - Q-2: `recordExpiryIfDue` has no caller yet and no scheduler (consistent with P0-4). Confirm it should be invoked on read by the status contract (3d/3e) rather than by a job.
+
+## 9. Block 3c-1 - authorized-action capture and owner assignment (migration 0177)
+
+Status: implemented, draft for owner review. Authorized: "3c-1 with migration 0177". **No issuer, no package change, no event emission, no BO receipt, no change to the approval route, no data, no backfill, no live apply.**
+
+**What 0177 creates** (`approved_business_action`, append-only, RLS forced on tenant + workspace):
+
+| Table | Role |
+|---|---|
+| `authorized_action_captures` | The one immutable decision-time capture per authorized action: original proposed parameters (governed), structured modification delta + reason (governed), recorded governance evidence (governed), and the **complete final effective parameter set**; action type + schema version; target; decision, decision version and status. |
+| `authorized_action_owner_assignments` | The accountable owner as a linear version chain: owner user + membership, role, assigner, assignment time, due date and escalation (both governed). Re-assignment is a new version. |
+
+**Guards the database enforces (second line behind the repository):**
+- The final set is **re-derived**: `approved` => final equals the proposed set and no modification or evaluation; `approved_with_modifications` => a structured delta over a proposed set, and `final = original with the delta applied` (the contract's ADD / SET / REMOVE rules, one change per parameter, SET must change the value, `before` must equal the original). A final set that disagrees can never be stored (`MODIFICATION_LINEAGE_INCONSISTENT` in the contract).
+- The decision must be approved and the capture must state exactly its status; the decision version and the action must belong to the decision, in the same scope.
+- Governed fields are `VALUE` or `NOT_APPLICABLE` with a code + statement; `UNAVAILABLE` is never storable. Modification must not post-date the capture; evidence must be recorded as PASSED, within the known dimensions, and not predate the modification.
+- The owner must be a real user holding an **ACTIVE membership in this tenant and workspace** (Identity/Tenancy stay the truth; ABA stores only the assignment and provenance). Due date must be after the assignment.
+- Facts are stamped with the **database clock**; sizes are bounded; `UPDATE` and `DELETE` are rejected for every role.
+
+**Repository** (`AuthorizedActionCaptureRepository`, `@infinicus/database`): `recordCapture` (idempotent; an identical replay returns the stored row, a different capture is a `ConflictError`), `getCaptureByActionId`, `requireCapture`, `assignOwner` (idempotent for the same owner; otherwise the next linear version), `getCurrentOwner`, `getOwnerVersion`, `listOwnerVersions`, and `toAccountableOwnerShape` (the assignment as the contract's `accountableOwner` block). Guard rejections surface as `ValidationError` carrying the database's own message. It is **not imported by any route, service or layer** (architecture-tested).
+
+**BO isolation guard extended (not loosened):** BO code may not name the capture repository or the two tables.
+
+### Decisions taken in this block (please confirm or overrule)
+
+| # | Decision | Why / cost if overruled |
+|---|---|---|
+| C-1 | **One capture per action**, immutable (`UNIQUE(action_id)`). A different set of authorized parameters is a new decision and a new action, never an amendment. | The capture is the decision-time record (Block 1 5.2). Versioning it would let authorized parameters change under an unchanged decision. Relaxing needs a new migration. |
+| C-2 | The **owner** is a version chain, because re-assignment is legitimate after issuance (a package version can then pick it up). | Matches P-1 (one package header, many versions). |
+| C-3 | The modification **evaluation evidence is recorded here but not decided here**; whether an evaluation is *required* for a given change depends on the action-type contract (3c-2). The issuer / validator enforces that. | No vocabulary exists yet; inventing one would violate "no fabricated values". |
+| C-4 | `action_type_code` / `schema_version` are **soft references** until the registry exists (3c-2). | Registry is the next sub-block. |
+| C-5 | The capture is **not wired into the approve path.** `approveWithModifications` is unchanged. | Wiring it atomically with the decision touches P0-1..P0-4 behaviour and is still an open owner decision (atomic with approval vs a separate ABA step before issuance). |
+| C-6 | **No backfill.** Existing decisions have no capture and therefore no package; nothing is fabricated. | Standing rule. |
+
+### Open owner decisions
+- **Placement of the capture write** (atomic with the approval vs a separate step) - still open from the 3c proposal; blocks any wiring, not this storage.
+- The **initial action vocabulary and parameter schemas** (3c-2) - not invented.
+- 3a's P-1..P-6 and 3b's Q-1/Q-2 remain unconfirmed.
+
+### Evidence
+**Migration record (MIGRATION-ALLOCATION-POLICY):**
+
+| Item | Value |
+|---|---|
+| Predecessor final migration | `0176_create_authorized_action_packages.sql` (unchanged; hash below still matches the 3a record) |
+| New range | `0177` only |
+| Allocation check | no file, branch or open PR used 0177 on `main` `2af1a82` |
+| SHA-256 of frozen 0001-0176 (concatenated in name order) | `26ee2c41b93cd439520e119f374d2c36506abf4c8859e7e46dadc98bee1b0d8d` |
+| SHA-256 of `0177_create_authorized_action_capture.sql` | `9cef41a3cb0175322eb20b4b87607a9e80f1007c2c18efb6511863356744fbe4` |
+| Empty install | 177 migrations applied to a brand-new PostgreSQL 16 database via the runner's exact logic; no error |
+| Re-run | runner re-run applies 0; forced re-execution of the 0177 file succeeds (idempotent DDL) |
+| Earlier migrations | none modified |
+
+The 0177 hash is the hash at the time of writing; it is frozen only after owner validation.
+
+**Tests:**
+- `migration-p0-5-block3c1.test.ts` - 9 static tests. `p0-5-block3c1-capture.architecture.test.ts` - 6 static tests (imports, tables touched, no authority/package logic, append-only, tenant transactions, not wired anywhere).
+- `p0-5-block3c1-capture.integration.test.ts` - 54 live PostgreSQL tests as the least-privilege role, including the delta arithmetic (every ADD / SET / REMOVE rule), decision relationship, shapes, immutability, RLS, Identity/Tenancy binding, direct-to-database guards that bypass the repository, and concurrency (repeated rounds).
+- **Mutation proofs:** 12 of 12 effective migration mutants detected (duplicate-parameter check, SET-must-change, final-set derivation, plain-approval equality, decision-status check, stale evidence, future modification, active-membership, membership-user match, past due date, owner chain, RLS enabled, append-only trigger) and 6 of 6 repository mutants (replay comparison, capture lock, owner idempotency, owner lock, governed check, guard-error mapping). One mutant, `FORCE ROW LEVEL SECURITY`, is *equivalent* for the non-owner application role and is covered by the static test instead. A surviving concurrency mutant (capture lock) led to a stronger repeated-round test.
+- `aba-repositories.integration.test.ts`: the two table-count assertions move **49 -> 51** (the only existing test touched). BO isolation: 8 tests (1 new).
+- **Shared-database footprint:** the owner-authority dry-run test scans every business in the shared CI database under a 5 s timeout. The 3c-1 tests therefore reuse two shared worlds (tenant/workspace/business) instead of creating one per test, adding 2 businesses rather than about 100. 3a/3b fixtures were left as merged.
+- Full `@infinicus/database` suite on a migrated database: 3081 passed, 0 failed. In this sandbox 11 unrelated files cannot load `@infinicus/event-contracts` (workspace build unavailable), identically to `main`.
+
+### Deployment
+0177 joins the **controlled deployment review** with 0170-0176. Live Supabase is at **0169**; **0170-0177 are unapplied.** No deployment, live apply, backfill or data change is authorized or performed.
