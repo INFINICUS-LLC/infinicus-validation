@@ -35,3 +35,8 @@ export type { RegisterSession, OpenRegisterSessionInput, CloseRegisterSessionInp
 
 export { OrderRepository } from './OrderRepository.js';
 export type { Order, OrderLineItem, OrderOperationalStatus, CreateOrderInput, AddLineItemInput } from './OrderRepository.js';
+
+export { AuthorizedActionIntakeRepository, MAX_RECEIPT_DOCUMENT_BYTES } from './AuthorizedActionIntakeRepository.js';
+export type {
+  IntakeOutcome, IntakeEvaluation, IntakeRequest, IntakeResult, IntakeAttemptInput, AuthorizedActionReceipt, AuthorizedActionClaim,
+} from './AuthorizedActionIntakeRepository.js';

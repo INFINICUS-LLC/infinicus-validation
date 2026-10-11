@@ -61,6 +61,10 @@ export const FORBIDDEN_IN_BO: readonly { readonly name: string; readonly pattern
   // P0-5 Block 3d: the ABA issuer is the only component that seals and persists a package. BO never issues, seals, audits issuance or
   // reaches the issuer's source reader; it consumes a package only through the validated contract.
   { name: 'ABA package issuer / issuance audit (ABA-owned)', pattern: /AuthorizedActionPackageIssuer|AuthorizedActionIssuanceRepository|PackageIssuanceRefusedError|sealAuthorizedActionPackage|package-issuance-audit|package\.issued|package\.issuance_refused/i },
+  // P0-5 Block 3e: BO reaches ABA ONLY through the shared AuthorizedActionPackage contract, its validator and the injected
+  // authoritative-status provider interface. It may not import ABA workflow services, approval/authority/review repositories or the issuer.
+  { name: 'ABA workflow package (services, issuer)', pattern: /(?:from|require\()\s*['"]@infinicus\/workflow(?:\/[^'"]*)?['"]/i },
+  { name: 'ABA approval/authority/review repositories', pattern: /\b(?:Approval\w*Repository|Approver\w*Repository|ActionReviewRepository|ABAIntakeRepository|ABAAuditRepository|ABAPublicationRepository|ABAComponentRegistryRepository|DecisionWorkflowService)\b/ },
   { name: 'import from the ABA layer', pattern: /(?:from|require\()\s*['"][^'"]*approved-business-action[^'"]*['"]/i },
 ];
 
@@ -184,8 +188,59 @@ describe('Business Operations isolation guard — the matcher itself', () => {
     expect(findViolations('x.ts', "event_type = 'package.issued'").map((v) => v.rule)).toContain(rule);
   });
 
+  it('detects the workflow package, approval repositories and the decision workflow used from BO code', () => {
+    expect(findViolations('x.ts', "import { AuthorizedActionPackageIssuer } from '@infinicus/workflow';").map((v) => v.rule)).toContain('ABA workflow package (services, issuer)');
+    expect(findViolations('x.ts', "import x from '@infinicus/workflow/dist/foo';").map((v) => v.rule)).toContain('ABA workflow package (services, issuer)');
+    for (const name of ['ApprovalDecisionRepository', 'ApproverAuthorityRepository', 'ActionReviewRepository', 'ABAAuditRepository', 'DecisionWorkflowService']) {
+      expect(findViolations('x.ts', `new ${name}();`).map((v) => v.rule), name).toContain('ABA approval/authority/review repositories');
+    }
+  });
+
   it('does not flag unrelated operational code or the future validated authority name', () => {
     expect(findViolations('x.ts', 'const order = await orders.create(ctx, input);')).toHaveLength(0);
     expect(findViolations('x.ts', 'function accept(pkg: AuthorizedActionPackage) { return pkg; }')).toHaveLength(0);
+  });
+});
+
+describe('Business Operations isolation guard - BO may import only the shared contract, its own database repositories and Node/pg', () => {
+  const ALLOWED = new Set(['@infinicus/database', '@infinicus/handoff-contracts', 'pg']);
+  const isAllowed = (spec: string): boolean => spec.startsWith('.') || spec.startsWith('node:') || ['crypto'].includes(spec) || ALLOWED.has(spec);
+
+  it('every non-relative import in Business Operations source is on the allow-list (extended in 3e; nothing ABA-owned is reachable)', () => {
+    const offenders: string[] = [];
+    let scanned = 0;
+    for (const root of BO_CODE_ROOTS) {
+      for (const file of listSourceFiles(resolve(PLATFORM_ROOT, root))) {
+        if (!/\.(ts|tsx|js|mjs|cjs)$/.test(file)) continue;
+        scanned += 1;
+        for (const m of readFileSync(file, 'utf8').matchAll(/(?:from|require\()\s*['"]([^'"]+)['"]/g)) {
+          if (!isAllowed(m[1])) offenders.push(`${relative(PLATFORM_ROOT, file)} imports ${m[1]}`);
+        }
+      }
+    }
+    expect(scanned).toBeGreaterThan(20);
+    expect(offenders).toEqual([]);
+  });
+
+  it('the intake service and policy import only the shared contract, the database package and Node crypto', () => {
+    for (const rel of ['AuthorizedActionIntakeService.ts', 'authorizedActionIntakePolicy.ts', 'boActionCapabilities.ts']) {
+      const text = readFileSync(resolve(PLATFORM_ROOT, 'packages/business-operations-runtime/src/authorized-action', rel), 'utf8');
+      const specs = [...text.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1]).filter((s) => !s.startsWith('.'));
+      for (const spec of specs) expect(['@infinicus/database', '@infinicus/handoff-contracts', 'node:crypto'], `${rel} imports ${spec}`).toContain(spec);
+    }
+  });
+
+  it('the production capability registry declares no executable action type (no execution adapter exists before P0-6)', () => {
+    const text = readFileSync(resolve(PLATFORM_ROOT, 'packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts'), 'utf8');
+    expect(text).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
+    expect(text).not.toMatch(/inventory_reorder_policy_update@1['"]\s*[,\]]/);
+  });
+
+  it('the intake code is read-only toward inventory, events and execution', () => {
+    const dir = resolve(PLATFORM_ROOT, 'packages/business-operations-runtime/src/authorized-action');
+    for (const file of listSourceFiles(dir)) {
+      const code = readFileSync(file, 'utf8').split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+      expect(code, file).not.toMatch(/OperationalCommandExecutor|executeOn\(|ExecutionEvidence|inventory_balances|inventory_movements|emit_outbox_event|business_event_ledger|outbox_events|CanonicalEventPublisher/);
+    }
   });
 });

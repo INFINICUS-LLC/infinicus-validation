@@ -88,8 +88,8 @@ The 0176 hash above is the hash at the time of writing; it is frozen only after 
 | 3c-1 | Structured capture (original / delta / final parameters) + accountable-owner assignment | migration 0177, **merged (#63)** |
 | 3c-2 | Governed action-type registry + automation-level policy (Level 2 enablement) | migration 0178, **merged (#65); registry ships EMPTY - vocabulary still needed from the owner** |
 | 3c-3 | Execution-boundary authoring (window, preconditions, rollback, budget, monitoring) + simulation reference | migration 0179, **merged (#66)** |
-| **3d (this PR)** | Issuer (single component, verifies decision/facts/authority, idempotent, atomic audit) | 3b + 3c; **no migration** |
-| 3e | BO-side receipt + consumption validator + extended isolation guard | new migration number, authorization |
+| 3d | Issuer (single component, verifies decision/facts/authority, idempotent, atomic audit) | 3b + 3c; no migration, **merged (#67)** |
+| **3e (this PR)** | BO-side intake: validate, immutable receipt, atomic single-use claim; injected ABA status provider; extended isolation guard | migration **0180**, **done, awaiting review** |
 
 ## 8. Block 3b - AuthorizedActionPackageRepository (no migration)
 
@@ -383,3 +383,70 @@ Status: implemented, draft for owner review. Authorized: "P0-5 Block 3d". **No m
 
 ### Deployment
 No migration. The issuer is not wired to any route, job or event. Production is non-issuable until a workspace activates the action type and a Level 2 policy through a later authorized administration path (`aba:admin`).
+
+## 13. Block 3e - Business Operations intake, receipt and single-use claim (migration 0180)
+
+Status: implemented, draft for owner review. Authorized: "P0-5 Block 3e". **BO-side only. It ends at VALIDATED + RECEIVED + SINGLE-USE CLAIMED.** No inventory mutation, no `reorder_point` / `reorder_quantity` change, no execution of `inventory_reorder_policy_update`, no `ExecutionEvidence`, no `ACTION_AUTHORIZED`, no ABA->BO transport, no event consumer or producer, no ABA table read or write, no production route, no P0-6, no scheduler, no backfill, no live migration.
+
+**Migration record (MIGRATION-ALLOCATION-POLICY):**
+
+| Item | Value |
+|---|---|
+| Predecessor final migration | `0179_create_authorized_action_boundaries.sql` (unchanged) |
+| New range | `0180` only |
+| Allocation check | `main` `e04b325`; no open PR; no remote branch carries a `0180` file |
+| SHA-256 of frozen 0001-0179 (concatenated in name order) | `756c48a85235846f3d274e0a6b094137fcb9f70abf217e496fc4b43c7e613d9d` |
+| SHA-256 of `0180_create_bo_authorized_action_intake.sql` | `57bcc8deb3d41e39d471c47463f3ebd73ac952b32a83819b4c440720c5c04656` |
+| Empty install | 180 migrations applied to a brand-new PostgreSQL 16 database by `migration-gate.sh`; no error |
+| Re-run | the gate re-run skips 0180; forced re-execution of the file succeeds (idempotent DDL) |
+| Earlier migrations | none modified |
+
+The 0180 hash is the hash at the time of writing; it is frozen only after owner validation.
+
+### Read-only BO survey (findings)
+- BO owns `business_operations.inventory_balances.reorder_point` / `.reorder_quantity`; the only existing writers are `InventoryBalanceRepository` (create) and the movement path in `OperationalCommandExecutor`. **Nothing in BO executes an authorized action, and BO has no capability registry at all.**
+- **No existing BO receipt / command-claim mechanism** (only a per-command `idempotencyKey` string used by the DAL-to-BO intake): a new receipt/claim model does not duplicate a source of truth.
+- BO RLS convention: tenant + workspace, null-safe, fail closed. 0180 follows it and additionally FORCEs it, as the ABA tables do. The platform has ONE application database role, so "the role cannot mutate ABA" is not enforceable at the database level; it is enforced by the code boundary (architecture tests) and proven behaviourally (a claim leaves every ABA row for the tenant unchanged).
+- `validateForExecution` needs no ABA table access: it takes the status answer as input. No stop condition was triggered.
+
+### Table / model design (all `business_operations`, tenant + workspace + business scoped, RLS forced, append-only incl. TRUNCATE, database clock)
+| Table | Role | Key guarantees |
+|---|---|---|
+| `authorized_action_receipts` | immutable verbatim sealed package + digest, `received_at`, `validated_at`, `status_verified_at`, correlation id | unique `(package_id, package_version)`; columns must equal the stored document (contract, canonical version, algorithm, digest, scope, SINGLE_USE); digest well-formed; size bound; written ONLY after the authoritative status confirmed the package identity |
+| `authorized_action_claims` | canonical BO truth of consumption | **unique `(package_id, package_version)` = single use**; composite FK to the receipt (same tenant/workspace/business/package/version); guard re-checks the digest and refuses an expired package or a window that has not opened, on the database clock |
+| `authorized_action_intake_attempts` | append-only log: `CLAIMED` / `REPLAYED` / `REFUSED` + refusal codes | preserves every refusal reason; no foreign key into ABA |
+
+ABA identifiers are soft references; no foreign key and no read of `approved_business_action`.
+
+### Status provider boundary (shared contract, `status-provider.ts`)
+`AuthoritativePackageStatusProvider.getStatus({packageId, packageVersion, digest, scope}) -> {status: AuthoritativePackageStatus, authority: {state: CURRENT | REVOKED | UNVERIFIABLE, verifiedAt}} | null`. It is implemented on the ABA side later; no production implementation or transport exists. A provider must never answer CURRENT from cached or inferred state. A null answer, a thrown error, a malformed answer, one about a different id / version / digest, a stale or future one, or non-CURRENT authority are all refusals.
+
+### Receipt / claim semantics
+- **CONSUMED** = BO atomically claimed this package version for one execution attempt. Not execution, success, completion, failure or rollback. ABA may mirror it later from trusted BO evidence. If BO and ABA disagree (ABA says `CONSUMED` but BO has no claim) BO **fails closed**; if BO holds the claim it is canonical and an exact replay returns it.
+- **Receipt without claim:** once ABA vouches for the exact package identity, BO stores the receipt even if the package is not executable (revoked, superseded, expired, window not open, authority not current, **capability absent**). It is never claimable until it is executable. An unverified delivery can never occupy an identity (forged payloads cannot pre-register a package id).
+- **Replay:** the exact same package returns the existing claim (`REPLAYED`) with no second claim and no further call to ABA. **Collision:** the same package id and version with a different digest is a hard `PAYLOAD_COLLISION` refusal.
+- **Concurrency:** a per-(package, version) advisory lock serialises callers; exactly one `CLAIMED`, every other caller `REPLAYED` (3 rounds x 8 parallel callers in the tests).
+
+### Pre-claim validation (all must hold)
+Contract + digest + supported versions; scope equals BO's own authenticated tenant/workspace/business; not expired; execution window open; status answer present, well-formed, about this exact package, fresh under `statusMaxAgeMs`; lifecycle `ISSUED`; not revoked / superseded / consumed / not the current version; authority CURRENT and fresh; BO capability present. `statusMaxAgeMs` is a required constructor argument: no default is invented.
+
+### Transaction and race analysis
+Order: static validation -> authoritative status (provider) -> **one transaction** { per-package lock, database clock, dedupe, assess against that clock, receipt, claim, attempt } -> commit. Nothing is claimed before it is validated, and a failed claim rolls the receipt back (tested).
+- **Status check -> claim window (TOCTOU):** the status and authority answers are judged against the DATABASE clock INSIDE the transaction, after the lock, so a slow path ages the answer out and fails closed. The remaining window is bounded by `statusMaxAgeMs`. A revoke inside that window can only leave a claim on a package ABA has since revoked. This is safe by construction because a claim is not execution and not authority: **the later execution step (P0-6) must obtain a fresh authoritative status again immediately before changing anything.** No distributed lock is invented. If the owner wants a stricter bound, lower `statusMaxAgeMs`.
+- **Cross-version:** claims are per package version; once a newer version exists ABA answers `SUPERSEDED` / not-current for the old one, so BO refuses it within the same bounded window.
+
+### Capability finding
+`PRODUCTION_BO_CAPABILITIES` is **empty**: `inventory_reorder_policy_update@1` is NOT production-supported (no BO execution adapter exists). In production a valid package is received but returns `ACTION_TYPE_UNSUPPORTED_BY_EXECUTOR` and is never claimed. Tests inject `explicitCapabilities([...])`; a test and a mutation proof assert the production registry stays empty until P0-6 adds a real adapter.
+
+### Isolation
+`boIsolation.architecture.test.ts` is extended (not loosened): BO may not import `@infinicus/workflow`, approval/authority/review repositories, `DecisionWorkflowService` or the issuer; every non-relative import in the BO source roots must be on an allow-list (`@infinicus/database`, `@infinicus/handoff-contracts`, `pg`, Node); the intake code is checked to be read-only toward inventory, events and execution; the production capability registry is checked to be empty.
+
+### Tests
+- `AuthorizedActionIntake.integration.test.ts` - 45 live PostgreSQL tests as the least-privilege role: happy path with a test capability; digest / malformed / three scope mismatches / status unavailable / stale / future / wrong id, version, digest / malformed status; revoked, superseded, consumed, expired (ABA and own expiry), not-current, window not open, authority revoked / unverifiable / stale; production capability absent; replay; collision; forged-delivery; 3 x 8 concurrent; independent versions; immutability (UPDATE, DELETE, TRUNCATE); database single-use, receipt-unique, scope, expiry/window and document guards; atomic rollback; RLS; no inventory / event / ABA side effects.
+- `authorizedActionIntakePolicy.test.ts` (8), `migration-p0-5-block3e.test.ts` (8), `p0-5-block3e-intake.architecture.test.ts` (5), BO isolation guard (10 -> 16).
+- **Mutation proofs:** 31 of 31 temporary mutants detected (single-use unique, receipt unique, claim guard, three append-only triggers, RLS disabled and widened, document check, receipt FK; digest equality, scope equality, status freshness and identity, authority revoked and freshness, lifecycle checks, capability always-true, production capability claiming the type, lock removed, replay lookup, receipt without identity, claim despite refusals, fabricated status, collision mapping, contract REVOKED / SUPERSEDED / CONSUMED; isolation guard against a workflow import, an ABA table and an approval repository). Two survivors on the first run (receipt unique, claim FK) were closed with new tests and re-proved.
+
+- **Full CI-scoped suites on a freshly migrated database (through 0180):** lint, typecheck, build and `workspace:validate` pass; business-operations-runtime 85 (was 27), handoff-contracts 506, workflow 201 (+1 skipped), api 135, authentication 54, database 3295 (+26 skipped), configuration 46, observability 18, event-contracts 15, data-acquisition-runtime 94, authorization 25, onboarding 20, web 14. The fresh database holds 8 businesses after the run (the new suites add 8).
+
+### Deployment
+0180 joins the controlled deployment review with 0170-0179. Live Supabase is at 0169; 0170-0180 are unapplied. No deployment, live apply, backfill or data change is authorized or performed.
