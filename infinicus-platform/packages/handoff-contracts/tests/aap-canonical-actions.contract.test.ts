@@ -1,0 +1,66 @@
+import { describe, expect, it } from 'vitest';
+import {
+  CANONICAL_ACTION_TYPES, INVENTORY_REORDER_POLICY_UPDATE_V1, actionTypeMatchesCanonical, canonicalActionTypeRegistry,
+  checkParameterValue, requiredGovernanceDimensions, validateActionTypeContract,
+} from '../src/authorized-action-package';
+import type { ActionTypeContract } from '../src/authorized-action-package';
+
+const C = INVENTORY_REORDER_POLICY_UPDATE_V1;
+const clone = (c: ActionTypeContract): ActionTypeContract => JSON.parse(JSON.stringify(c)) as ActionTypeContract;
+
+describe('canonical action vocabulary (owner ruling 1)', () => {
+  it('defines inventory_reorder_policy_update v1 for inventory_item with two numeric params, min 0', () => {
+    expect(C.code).toBe('inventory_reorder_policy_update');
+    expect(C.schemaVersion).toBe('1');
+    expect(C.targetKinds).toEqual(['inventory_item']);
+    expect(C.parameters.reorderPoint).toEqual({ type: 'number', required: true, min: 0 });
+    expect(C.parameters.reorderQuantity).toEqual({ type: 'number', required: true, min: 0 });
+    expect(validateActionTypeContract(C)).toEqual([]);
+  });
+
+  it('declares the ruled governance impacts', () => {
+    expect([...C.governanceImpact.reorderPoint]).toEqual(['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'EXPECTED_OUTCOME']);
+    expect([...C.governanceImpact.reorderQuantity]).toEqual(['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME']);
+    const r = requiredGovernanceDimensions(C, ['reorderPoint', 'reorderQuantity']);
+    expect(r.basis).toBe('DECLARED_IMPACT');
+    expect(r.dimensions).not.toContain('SIMULATION');
+  });
+
+  it('does not automatically require Simulation, and is fail-closed on applicability', () => {
+    expect(requiredGovernanceDimensions(C, ['reorderPoint']).dimensions).not.toContain('SIMULATION');
+    expect(C.applicability).toEqual({});
+  });
+
+  it('rejects negative and non-numeric values', () => {
+    expect(checkParameterValue(C.parameters.reorderPoint, -1)).not.toEqual([]);
+    expect(checkParameterValue(C.parameters.reorderPoint, '5')).not.toEqual([]);
+    expect(checkParameterValue(C.parameters.reorderPoint, 0)).toEqual([]);
+    expect(checkParameterValue(C.parameters.reorderQuantity, 12.5)).toEqual([]);
+  });
+
+  it('is registered once in the canonical registry', () => {
+    expect(CANONICAL_ACTION_TYPES).toHaveLength(1);
+    expect(canonicalActionTypeRegistry().resolve(C.code, C.schemaVersion)).toBe(C);
+    expect(canonicalActionTypeRegistry().resolve(C.code, '2')).toBeNull();
+  });
+});
+
+describe('workspace definition vs canonical contract (ruling G-1)', () => {
+  it('matches an identical copy regardless of key and list order', () => {
+    const copy = clone(C);
+    copy.targetKinds = [...copy.targetKinds].reverse();
+    expect(actionTypeMatchesCanonical(copy, C)).toBe(true);
+  });
+
+  it.each([
+    ['a changed parameter bound', (c: ActionTypeContract) => { (c.parameters as Record<string, unknown>).reorderPoint = { type: 'number', required: true, min: 1 }; }],
+    ['a missing governance impact', (c: ActionTypeContract) => { (c.governanceImpact as Record<string, unknown>).reorderQuantity = ['COST']; }],
+    ['a loosened applicability', (c: ActionTypeContract) => { (c.applicability as Record<string, unknown>).budget = 'NOT_APPLICABLE_ALLOWED'; }],
+    ['an extra target kind', (c: ActionTypeContract) => { (c.targetKinds as string[]).push('warehouse'); }],
+    ['an extra parameter', (c: ActionTypeContract) => { (c.parameters as Record<string, unknown>).leadTimeDays = { type: 'integer', required: false }; }],
+  ])('diverges on %s', (_name, mutate) => {
+    const copy = clone(C);
+    mutate(copy);
+    expect(actionTypeMatchesCanonical(copy, C)).toBe(false);
+  });
+});

@@ -87,8 +87,8 @@ The 0176 hash above is the hash at the time of writing; it is frozen only after 
 | 3b | Repository (insert/read through the guards, derived status, revoke, expiry detection, RLS-scoped) - no issuer | no migration, **merged (#62)** |
 | 3c-1 | Structured capture (original / delta / final parameters) + accountable-owner assignment | migration 0177, **merged (#63)** |
 | 3c-2 | Governed action-type registry + automation-level policy (Level 2 enablement) | migration 0178, **merged (#65); registry ships EMPTY - vocabulary still needed from the owner** |
-| **3c-3 (this PR)** | Execution-boundary authoring (window, preconditions, rollback, budget, monitoring) + simulation reference | migration **0179**, **done, awaiting review** |
-| 3d | Issuer (single component, verifies decision/facts/authority, idempotent, atomic audit) | 3b + 3c |
+| 3c-3 | Execution-boundary authoring (window, preconditions, rollback, budget, monitoring) + simulation reference | migration 0179, **merged (#66)** |
+| **3d (this PR)** | Issuer (single component, verifies decision/facts/authority, idempotent, atomic audit) | 3b + 3c; **no migration** |
 | 3e | BO-side receipt + consumption validator + extended isolation guard | new migration number, authorization |
 
 ## 8. Block 3b - AuthorizedActionPackageRepository (no migration)
@@ -311,3 +311,68 @@ The 0179 hash is the hash at the time of writing; it is frozen only after owner 
 
 ### Deployment
 0179 joins the **controlled deployment review** with 0170-0178. Live Supabase is at **0169**; **0170-0179 are unapplied.** No deployment, live apply, backfill or data change is authorized or performed.
+
+## 12. Block 3d - the ABA package issuer (no migration)
+
+Status: implemented, draft for owner review. Authorized: "P0-5 Block 3d". **No migration (head stays 0179), no ABA->BO wiring, no `ACTION_AUTHORIZED` event, no BO consumer, no live Supabase change, no backfill, no override, no scheduler, no locked-spec edit.**
+
+**Purpose.** One ABA-owned component, `AuthorizedActionPackageIssuer` (`@infinicus/workflow`), turns an approved, captured and bounded authorized action into a sealed `aap/1` package. It accepts identifiers only (`{ actionId, correlationId? }`); every authorization fact is loaded server-side.
+
+**Owner rulings applied.**
+- Canonical action type `inventory_reorder_policy_update` v1, target kind `inventory_item`, parameters `reorderPoint` / `reorderQuantity` (numbers, min 0), impacts as ruled, no automatic Simulation requirement. **The code is snake_case (owner approved option B)** because the `aap/1` contract and migration 0178 both fix action codes to `[a-z][a-z0-9_]*`; the dotted spelling would have needed contract + migration changes. The canonical contract lives in `@infinicus/handoff-contracts` (`canonical-actions.ts`); the workspace registry row must EQUAL it (`actionTypeMatchesCanonical`) and may never redefine it.
+- Canonical applicability is fail-closed (every governed field and the validity bound are REQUIRED) because no relaxation was ruled. **Please confirm.** Consequence: a package with no `valid_until` and an open-ended execution window is refused (`NO_VALIDITY_BOUND`).
+- Level 2 only. Issuance needs an ENABLED Level 2 policy whose version `specification.actionTypes` lists `{code, schemaVersion}` of the action type (the representation of the ruled "Level 2 template"; no schema change). Level 3 / Level 4 are never issuable (0178 cannot even enable them; the seal enablement is `[2]`).
+- Capture is a separate ABA step; approved-without-capture is not issuable. NOT_APPLICABLE reason codes must already be UPPER_SNAKE (checked on the whole candidate and the sealed package; never normalized).
+
+**Architecture.**
+
+| Piece | Where | Role |
+|---|---|---|
+| `withSharedTenantTransaction` | `database/src/client.ts` | Opt-in AsyncLocalStorage scope: every `withTenantTransaction` call inside it JOINS one transaction (cross-tenant/workspace and nesting fail closed). Outside the scope nothing changes. |
+| `AuthorizedActionIssuanceRepository` | `database/.../approved_action/` | Reads upstream facts (action, decision, approval audit, assignment version and provenance as of the decision, review version, recommendation lineage, DB clock); writes only issuance/refusal audit rows. Decides nothing. |
+| `packageIssuancePolicy.ts` | `workflow/src` | Pure judgement + candidate assembly; reuses `evaluateApproval` (P0-2) and `evaluateApprovalGate` (P0-3). |
+| `AuthorizedActionPackageIssuer.ts` | `workflow/src` | Orchestration, sealing (the only caller of `sealAuthorizedActionPackage` outside the contract), idempotency, audit, one transaction. |
+
+**Authoritative sources loaded (all by id, server-side).** `approved_actions` + its latest version; `approval_decisions` + latest version; the single `approval.approved*` row in `approval_audit_events` (approval-audit/1: approver, assignment, permission used, review facts); `approver_assignments`, the `approver_assignment_versions` row in force at the decision instant, and the `approval_authority_scopes` provenance (canonical, ruling D3) as of the decision; the review version named by the audit facts (risk class, time-sensitivity, `valid_until`, Twin id) and its recommendation version; Twin freshness (`assessFreshness`); the capture (final parameters re-derived by the database); the current owner assignment; the current boundaries and simulation reference; the workspace action-type registration and its status; the enabled Level 2 policy and its version; the database clock.
+
+**Issuance / refusal matrix.**
+
+| Condition | Result |
+|---|---|
+| Approved or approved-with-modifications, audited once, authority granted before and not revoked since, risk tier passes, fresh, captured, owned, bounded, canonical type ACTIVE and equal, Level 2 policy covers it | **ISSUED** |
+| Same authoritative inputs again | **REPLAYED** (existing package; no new version, no new audit) |
+| Changed inputs, latest version still ISSUED | next version, atomically **SUPERSEDES** the previous (never an overwrite) |
+| No capture / owner / boundaries / simulation reference | `CAPTURE_MISSING` / `OWNER_MISSING` / `BOUNDARIES_MISSING` |
+| Lowercase or malformed NOT_APPLICABLE code | `NOT_APPLICABLE_REASON_CODE_INVALID` |
+| Type not canonical / not ACTIVE / registry row differs from canonical | `ACTION_TYPE_NOT_CANONICAL` / `ACTION_TYPE_NOT_ACTIVE` / `ACTION_TYPE_DIVERGES_FROM_CANONICAL` |
+| No enabled Level 2 policy, or it does not name the type | `LEVEL2_POLICY_NOT_ENABLED` |
+| No canonical grant at decision time / revoked since | `AUTHORITY_NOT_ESTABLISHED` / `AUTHORITY_REVOKED` |
+| Role below the P0-2 tier | `RISK_POLICY` |
+| Expired, stale Twin, unknown time-sensitivity | `FRESHNESS_GATE` |
+| Approval audit missing / ambiguous / disagrees with decision, assignment or review | `APPROVAL_AUDIT_*` |
+| Stored latest package fails validation (tampered) | `STORED_PACKAGE_INVALID` |
+| Identical package revoked/expired/consumed; changed inputs but latest has a terminal fact | `EXISTING_PACKAGE_NOT_REPLAYABLE` / `SUPERSESSION_BLOCKED` |
+| Contract validation of the candidate fails | `PACKAGE_INVALID` (with every contract error) |
+| Audit or package write fails | `AUDIT_FAILED` / `PERSISTENCE_FAILED` (whole issuance rolled back) |
+| Unknown action, or another tenant's | `ACTION_NOT_FOUND` |
+
+**Transaction boundary.** `lock(action)` -> load -> judge -> seal -> **issuance audit** -> **package insert (+ trigger-written ISSUED / SUPERSEDED facts)** run in ONE shared tenant transaction; any error rolls everything back (including the package header). A refusal is audited afterwards, in its own transaction, as `package.issuance_refused` with every reason code (unattributable refusals, i.e. an unknown action, have no business to attach to). P0-1..P0-4 approval transaction semantics are untouched.
+
+**Audit.** Success: `package.issued` (schema `package-issuance-audit/1`) carrying action, decision, the approval audit event id, package id/version/digest, supersession link, level and policy, action type, simulation reference and the modification delta; `trace.causationId` of the package is the approval audit event. Failure: `package.issuance_refused`. The lifecycle ISSUED fact is trigger-written (0176) and has no audit column, so the link runs audit -> package by id and digest.
+
+**Idempotency.** Compares the candidate with the stored latest package after removing only volatile facts (version, supersession link, issue time, freshness assessment time, trace correlation id, digest). A per-action advisory lock serialises concurrent issuers.
+
+**Re-validation.** The issuer re-judges every authoritative fact on every call, including replays: if authority has since been revoked, or the package would already be expired, the call is refused. Consumption-time re-validation remains the BO validator's job (Block 3e / P0-6).
+
+**Tests (all new, 5 existing files touched only by additive edits).**
+- `AuthorizedActionPackageIssuer.integration.test.ts` - 43 live PostgreSQL tests as the least-privilege role (issuance of plain and modified approvals, NOT_APPLICABLE acceptance where the canonical contract allows it, 22 refusal cases, replay, concurrency, versioning/supersession, revoked package, tampered package, caller cannot substitute facts, audit and persistence rollback).
+- `packageIssuancePolicy.test.ts` - 18; `issuer.architecture.test.ts` - 10 (only the issuer seals; not imported elsewhere; no events, no BO, no consumption path; pure policy; reader writes only audit rows).
+- `aap-canonical-actions.contract.test.ts` - 11 (handoff-contracts: 494 -> 505); `p0-5-block3d-shared-transaction.integration.test.ts` - 8 (rollback, atomic commit, scope isolation, fail-closed tenant crossing, no nesting, concurrency).
+- Extended guards: BO isolation (+1 test, +1 forbidden-pattern rule for the issuer, reader, seal and audit names) and the contract architecture test (the seal allow-list now holds exactly `packages/workflow/src/AuthorizedActionPackageIssuer.ts`).
+- **Mutation proofs:** 31 of 31 temporary mutants detected (capture, UPPER_SNAKE, ACTIVE status, canonical divergence, Level 2 policy and its action-type scope, risk policy, freshness gate, later revocation, authority at decision, owner, boundaries, approval audit, permission used, idempotency key, decidedAt, final parameters, single transaction, tamper check, supersession of a terminal version, action lock, refusal audit, replay of a non-ISSUED package, Level 3 enablement, recommendation lineage, capture/decision match, assignment version as-of decision, approval event filter, shared-transaction join / tenant check / nesting).
+- Full CI-scoped suites on a migrated database: handoff-contracts 505, workflow 195 (+1 skipped), api 135, authentication 54, BO runtime 27, event-contracts 15, database 3280 passed. The two `owner-authority` dry-run tests time out (5 s) ONLY in this sandbox's shared database, which had accumulated ~2900 businesses from repeated runs; both pass on a clean migrated database (16/16), where the new suites add about 61 businesses.
+
+**Assumptions to confirm.** (1) canonical applicability fail-closed; (2) the `specification.actionTypes` convention for the Level 2 template; (3) revoked authority since the decision blocks issuance (fail closed); (4) the package pins the latest `approved_action_versions` row.
+
+### Deployment
+No migration. The issuer is not wired to any route, job or event. Production is non-issuable until a workspace activates the action type and a Level 2 policy through a later authorized administration path (`aba:admin`).

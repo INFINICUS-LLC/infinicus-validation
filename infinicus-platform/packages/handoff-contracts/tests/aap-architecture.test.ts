@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
  * ARCHITECTURE GUARD (P0-5 Block 2; owner rulings R-8, R-9, R-10).
  *
  *  1. Package creation is restricted to the ABA issuer: `sealAuthorizedActionPackage` may be referenced only by the
- *     contract package itself and the allow-listed issuer path. There is no issuer yet, so the allow-list is empty;
- *     the persistence/issuer block adds exactly one path here, with its own tests.
+ *     contract package itself and the allow-listed issuer path. The ABA issuer (P0-5 Block 3d) is the one
+ *     allow-listed path.
  *  2. Business Operations may consume the contract (validate) but never create a package.
  *  3. The contract is PURE and portable: it imports nothing outside itself (no database, no I/O, no ABA/BO code).
  */
@@ -17,8 +17,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PLATFORM_ROOT = resolve(HERE, '..', '..', '..');
 const CONTRACT_SRC = resolve(HERE, '..', 'src', 'authorized-action-package');
 
-/** Platform-relative paths allowed to reference the seal function. Empty until the issuer exists (Block 3). */
-const SEAL_ALLOWED_OUTSIDE_CONTRACT: readonly string[] = [];
+/** Platform-relative paths allowed to reference the seal function: exactly the ABA issuer (P0-5 Block 3d). */
+const SEAL_ALLOWED_OUTSIDE_CONTRACT: readonly string[] = ['packages/workflow/src/AuthorizedActionPackageIssuer.ts'];
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.turbo', '.next', 'coverage']);
 const EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs']);

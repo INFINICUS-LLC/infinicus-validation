@@ -50,6 +50,12 @@ export type {
 } from './AuthorizedActionCaptureRepository.js';
 
 export { AuthorizedActionBoundaryRepository, toPackageBoundaryParts } from './AuthorizedActionBoundaryRepository.js';
+export {
+  AuthorizedActionIssuanceRepository, PACKAGE_ISSUED_EVENT, PACKAGE_ISSUANCE_REFUSED_EVENT, ISSUANCE_AUDIT_SCHEMA,
+} from './AuthorizedActionIssuanceRepository.js';
+export type {
+  IssuanceSources, IssuanceAction, IssuanceDecision, IssuanceApprovalAudit, IssuanceAssignment, IssuanceReview, IssuanceAuditInput,
+} from './AuthorizedActionIssuanceRepository.js';
 export type {
   RecordBoundariesInput, AuthorizedActionBoundaries, PackageBoundaryParts, ExecutionWindowValue, PreconditionValue, BudgetValue, RollbackValue, MonitoringValue,
 } from './AuthorizedActionBoundaryRepository.js';

@@ -693,6 +693,9 @@ importers:
       '@infinicus/database':
         specifier: workspace:*
         version: link:../database
+      '@infinicus/handoff-contracts':
+        specifier: workspace:*
+        version: link:../handoff-contracts
       '@infinicus/llm-client':
         specifier: workspace:*
         version: link:../llm-client

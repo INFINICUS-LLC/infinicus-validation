@@ -58,6 +58,9 @@ export const FORBIDDEN_IN_BO: readonly { readonly name: string; readonly pattern
   // P0-5 Block 3c-3: the execution boundaries (window, preconditions, budget, rollback, monitoring) are authored and owned by ABA;
   // BO sees them only inside the validated AuthorizedActionPackage and re-checks them itself before executing.
   { name: 'ABA authorized-action boundaries (ABA-owned storage)', pattern: /AuthorizedActionBoundaryRepository|authorized_action_boundaries\b/i },
+  // P0-5 Block 3d: the ABA issuer is the only component that seals and persists a package. BO never issues, seals, audits issuance or
+  // reaches the issuer's source reader; it consumes a package only through the validated contract.
+  { name: 'ABA package issuer / issuance audit (ABA-owned)', pattern: /AuthorizedActionPackageIssuer|AuthorizedActionIssuanceRepository|PackageIssuanceRefusedError|sealAuthorizedActionPackage|package-issuance-audit|package\.issued|package\.issuance_refused/i },
   { name: 'import from the ABA layer', pattern: /(?:from|require\()\s*['"][^'"]*approved-business-action[^'"]*['"]/i },
 ];
 
@@ -171,6 +174,14 @@ describe('Business Operations isolation guard — the matcher itself', () => {
     const rule = 'ABA authorized-action boundaries (ABA-owned storage)';
     expect(findViolations('x.ts', 'new AuthorizedActionBoundaryRepository();').map((v) => v.rule)).toContain(rule);
     expect(findViolations('x.ts', 'SELECT 1 FROM authorized_action_boundaries').map((v) => v.rule)).toContain(rule);
+  });
+
+  it('detects the package issuer, the issuance source reader and the seal function used from BO code', () => {
+    const rule = 'ABA package issuer / issuance audit (ABA-owned)';
+    expect(findViolations('x.ts', 'new AuthorizedActionPackageIssuer().issue(ctx, req);').map((v) => v.rule)).toContain(rule);
+    expect(findViolations('x.ts', 'new AuthorizedActionIssuanceRepository();').map((v) => v.rule)).toContain(rule);
+    expect(findViolations('x.ts', 'sealAuthorizedActionPackage(body, opts);').map((v) => v.rule)).toContain(rule);
+    expect(findViolations('x.ts', "event_type = 'package.issued'").map((v) => v.rule)).toContain(rule);
   });
 
   it('does not flag unrelated operational code or the future validated authority name', () => {
