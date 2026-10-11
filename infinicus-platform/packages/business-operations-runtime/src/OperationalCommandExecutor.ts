@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import type { TenantContext } from '@infinicus/database';
 import { OperationalMappingError } from './errors.js';
+import { UNIT_COST_MINIMUM_STORABLE, unitCostProblem } from './unitCost.js';
 import type { OperationalCommand } from './types.js';
 
 export interface CommandExecutionResult {
@@ -82,6 +83,13 @@ export class OperationalCommandExecutor {
     // Defence in depth for commands built outside the intake mapper: a cost and its currency are both present or both absent.
     if ((p.unitCost === undefined) !== (p.unitCostCurrency === undefined)) {
       throw new OperationalMappingError('unitCost and unitCostCurrency must be supplied together.');
+    }
+    // Data-capture Block B (defence in depth): a present cost must be finite, strictly positive and storable; never rounded or coerced.
+    if (p.unitCost !== undefined) {
+      const problem = unitCostProblem(p.unitCost);
+      if (problem === 'not_finite') throw new OperationalMappingError('unitCost must be a finite number.');
+      if (problem === 'not_positive') throw new OperationalMappingError('unitCost must be greater than zero.');
+      if (problem === 'below_minimum_precision') throw new OperationalMappingError(`unitCost must be at least ${UNIT_COST_MINIMUM_STORABLE} (the smallest storable positive cost).`);
     }
     if (p.unitCostCurrency !== undefined && !/^[A-Z]{3}$/.test(p.unitCostCurrency)) {
       throw new OperationalMappingError('unitCostCurrency must be a three-letter uppercase currency code.');

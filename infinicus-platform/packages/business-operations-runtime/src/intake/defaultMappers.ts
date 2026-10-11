@@ -1,4 +1,5 @@
 import type { IntakeMapper, OperationalCommand } from '../types.js';
+import { unitCostProblem } from '../unitCost.js';
 import {
   optionalFiniteNumber,
   optionalString,
@@ -88,7 +89,7 @@ const FACT_ACTIONS = ['new','return','churn','hire','fire','review'] as const;
 
 export const inventoryMovementMapper: IntakeMapper = {
   recordType: 'inventory_movement',
-  // v2 (data-capture Block C): a cost must be explicitly currency-tagged. Records without a cost are unchanged.
+  // v2 (data-capture Block C): a cost must be explicitly currency-tagged; (Block B) a present cost must be strictly positive. Records without a cost are unchanged.
   version: 2,
   validate(data) {
     const errors: string[] = [];
@@ -98,6 +99,12 @@ export const inventoryMovementMapper: IntakeMapper = {
     const quantity = requireFiniteNumber(data, 'quantity', errors);
     if (quantity === 0) errors.push('quantity_must_not_be_zero');
     const unitCost = optionalFiniteNumber(data, 'unitCost', errors);
+    // Data-capture Block B: a cost is optional, but when present it must be strictly positive and storable. Never rounded or coerced.
+    if (unitCost !== undefined) {
+      const problem = unitCostProblem(unitCost);
+      if (problem === 'not_positive') errors.push('unitCost_not_positive');
+      else if (problem === 'below_minimum_precision') errors.push('unitCost_below_minimum_precision');
+    }
     const unitCostCurrency = currencyCode(data, 'unitCostCurrency', errors, false);
     // Cost and currency travel together. Nothing is ever filled in from a default (USD, tenant, business or purchase order).
     if (unitCost !== undefined && unitCostCurrency === undefined && !errors.includes('unitCostCurrency_invalid')) errors.push('unitCostCurrency_required_with_unitCost');

@@ -637,6 +637,24 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
       expect(await onHand()).toBe(before + 4);
     });
 
+    it('a zero, negative or unstorable cost is refused end to end: nothing is written and the stock is unchanged (Block B)', async () => {
+      const rowsBefore = (await movementRows()).length; const stock = await onHand();
+      for (const [cost, reason] of [[0, /unitCost_not_positive/], [-5, /unitCost_not_positive/], [0.00001, /unitCost_below_minimum_precision/]] as const) {
+        const handoff = await createPublishedHandoff([movement({ unitCost: cost, unitCostCurrency: 'USD' })]);
+        await expect(bo.processHandoff(ctx, handoff), String(cost)).rejects.toThrow(reason);
+      }
+      expect((await movementRows()).length).toBe(rowsBefore);
+      expect(await onHand()).toBe(stock);
+    });
+
+    it('a positive cost with a currency succeeds end to end (DAL publication -> intake -> mapper -> command -> executor -> database)', async () => {
+      const rowsBefore = (await movementRows()).length;
+      const handoff = await createPublishedHandoff([movement({ unitCost: 0.0001, unitCostCurrency: 'USD' })]);
+      await bo.processHandoff(ctx, handoff);
+      expect((await movementRows()).at(-1)).toMatchObject({ unit_cost: '0.0001', unit_cost_currency: 'USD' });
+      expect((await movementRows()).length).toBe(rowsBefore + 1);
+    });
+
     it('a cost without a currency is refused: nothing is written and no currency is invented', async () => {
       const rowsBefore = (await movementRows()).length; const stock = await onHand();
       const handoff = await createPublishedHandoff([movement({ unitCost: 3 })]);
@@ -690,6 +708,18 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
         expect((await movementRows()).length).toBe(before);
         await run(movementCommand({ unitCost: 4, unitCostCurrency: 'DKK' }));
         expect((await movementRows()).at(-1)).toMatchObject({ unit_cost: '4.0000', unit_cost_currency: 'DKK' });
+      });
+
+      it('refuses a zero, negative, NaN, Infinity or unstorable cost even for commands built outside the mapper; accepts a positive one (Block B)', async () => {
+        const before = (await movementRows()).length;
+        await expect(run(movementCommand({ unitCost: 0, unitCostCurrency: 'USD' }))).rejects.toThrow(/greater than zero/);
+        await expect(run(movementCommand({ unitCost: -2, unitCostCurrency: 'USD' }))).rejects.toThrow(/greater than zero/);
+        await expect(run(movementCommand({ unitCost: Number.NaN, unitCostCurrency: 'USD' }))).rejects.toThrow(/finite number/);
+        await expect(run(movementCommand({ unitCost: Number.POSITIVE_INFINITY, unitCostCurrency: 'USD' }))).rejects.toThrow(/finite number/);
+        await expect(run(movementCommand({ unitCost: 0.00001, unitCostCurrency: 'USD' }))).rejects.toThrow(/at least 0\.0001/);
+        expect((await movementRows()).length).toBe(before);
+        await run(movementCommand({ unitCost: 0.25, unitCostCurrency: 'USD' }));
+        expect((await movementRows()).at(-1)).toMatchObject({ unit_cost: '0.2500', unit_cost_currency: 'USD' });
       });
 
       it('refuses a purchase order command without an explicit currency', async () => {
