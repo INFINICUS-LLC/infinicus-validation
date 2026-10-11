@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import {
   closePool,
   createPool,
+  withTenantTransaction,
   type TenantContext,
 } from '@infinicus/database';
 import { DataAcquisitionService } from '@infinicus/data-acquisition-runtime';
@@ -10,6 +11,8 @@ import type { DALToBOHandoff } from '@infinicus/handoff-contracts';
 import { BusinessIntakeService } from '../src/intake/BusinessIntakeService.js';
 import { OperationalPublicationService } from '../src/publication/OperationalPublicationService.js';
 import { ProcurementService } from '../src/procurement/ProcurementService.js';
+import { OperationalCommandExecutor } from '../src/OperationalCommandExecutor.js';
+import type { OperationalCommand } from '../src/types.js';
 import { BusinessIntakeRejectedError } from '../src/errors.js';
 
 const RUN = !!process.env.DATABASE_URL;
@@ -136,6 +139,9 @@ async function cleanTenant(): Promise<void> {
 
   // Canonical fixtures.
   if (businessId) {
+    await adminPool.query(`DELETE FROM business_operations.inventory_balances WHERE business_id = $1`, [businessId]);
+    await adminPool.query(`DELETE FROM platform.inventory_items WHERE business_id = $1`, [businessId]);
+    await adminPool.query(`DELETE FROM platform.warehouses WHERE business_id = $1`, [businessId]);
     await adminPool.query(`DELETE FROM platform.employees WHERE business_id = $1`, [businessId]);
     await adminPool.query(`DELETE FROM platform.suppliers WHERE business_id = $1`, [businessId]);
     await adminPool.query(`DELETE FROM platform.businesses WHERE id = $1`, [businessId]);
@@ -193,7 +199,7 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
     await closePool();
   });
 
-  async function createPublishedHandoff(): Promise<DALToBOHandoff> {
+  async function createPublishedHandoff(customRecords?: { recordType: string; data: Record<string, unknown> }[]): Promise<DALToBOHandoff> {
     const source = await da.registerSource(ctx, {
       businessId,
       name: 'BUILD-32 manual source',
@@ -207,7 +213,7 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
       businessId,
       dataSourceId: source.id,
       submissionType: 'operations',
-      records: [
+      records: customRecords ?? [
         {
           recordType: 'operational_fact',
           data: {
@@ -356,6 +362,7 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
       businessId,
       supplierId: supplier.rows[0].id,
       poNumber: unique('PO'),
+      currencyCode: 'EUR',
       totalAmount: 250,
     });
     expect(created.poStatus).toBe('draft');
@@ -599,5 +606,99 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
 
     await expect(bo.processHandoff(wrongCtx, handoff))
       .rejects.toBeInstanceOf(BusinessIntakeRejectedError);
+  });
+
+  // ── data-capture Block C: explicit currency, end to end (DAL submission -> mapper -> command -> executor -> database) ──────────
+  describe('explicit currency on cost-bearing inventory data', () => {
+    let itemId = ''; let warehouseId = ''; let supplierId = '';
+
+    beforeAll(async () => {
+      itemId = (await adminPool.query<{ id: string }>(
+        `INSERT INTO platform.inventory_items (tenant_id, workspace_id, business_id, sku, name) VALUES ($1,$2,$3,$4,'Currency Item') RETURNING id`,
+        [T1, WS1, businessId, unique('cur-sku')])).rows[0].id;
+      warehouseId = (await adminPool.query<{ id: string }>(
+        `INSERT INTO platform.warehouses (tenant_id, workspace_id, business_id, warehouse_code, name) VALUES ($1,$2,$3,$4,'Currency WH') RETURNING id`,
+        [T1, WS1, businessId, unique('cur-wh')])).rows[0].id;
+      supplierId = (await adminPool.query<{ id: string }>(
+        `INSERT INTO platform.suppliers (tenant_id, workspace_id, business_id, name, supplier_code, risk_status, status) VALUES ($1,$2,$3,'Currency Supplier',$4,'low','active') RETURNING id`,
+        [T1, WS1, businessId, unique('cur-supplier')])).rows[0].id;
+    });
+
+    const movementRows = async () => (await adminPool.query<{ unit_cost: string | null; unit_cost_currency: string | null; quantity: string }>(
+      `SELECT unit_cost, unit_cost_currency, quantity FROM business_operations.inventory_movements WHERE tenant_id = $1 AND inventory_item_id = $2 ORDER BY created_at, id`, [T1, itemId])).rows;
+    const onHand = async () => Number((await adminPool.query<{ q: string }>(
+      `SELECT quantity_on_hand AS q FROM business_operations.inventory_balances WHERE inventory_item_id = $1 AND warehouse_id = $2`, [itemId, warehouseId])).rows[0]?.q ?? 0);
+    const movement = (data: Record<string, unknown>) => ({ recordType: 'inventory_movement', data: { inventoryItemId: itemId, warehouseId, movementType: 'receipt', quantity: 4, ...data } });
+
+    it('stores exactly the supplied currency with the cost, and the stock effect is unchanged', async () => {
+      const before = await onHand();
+      const handoff = await createPublishedHandoff([movement({ unitCost: 11.25, unitCostCurrency: 'CHF' })]);
+      const result = await bo.processHandoff(ctx, handoff);
+      expect(result.results[0].commandType).toBe('record_inventory_movement');
+      expect(await movementRows()).toEqual([{ unit_cost: '11.2500', unit_cost_currency: 'CHF', quantity: '4.0000' }]);
+      expect(await onHand()).toBe(before + 4);
+    });
+
+    it('a cost without a currency is refused: nothing is written and no currency is invented', async () => {
+      const rowsBefore = (await movementRows()).length; const stock = await onHand();
+      const handoff = await createPublishedHandoff([movement({ unitCost: 3 })]);
+      await expect(bo.processHandoff(ctx, handoff)).rejects.toThrow(/unitCostCurrency_required_with_unitCost/);
+      expect((await movementRows()).length).toBe(rowsBefore);
+      expect(await onHand()).toBe(stock);
+    });
+
+    it('a movement without a cost needs no currency and none is stored', async () => {
+      const handoff = await createPublishedHandoff([movement({ movementType: 'issue', quantity: 1 })]);
+      await bo.processHandoff(ctx, handoff);
+      const last = (await movementRows()).at(-1)!;
+      expect(last).toEqual({ unit_cost: null, unit_cost_currency: null, quantity: '1.0000' });
+    });
+
+    it('a purchase order must state its currency; an omitted one is refused and an explicit one is stored exactly (never USD)', async () => {
+      const po = (extra: Record<string, unknown>) => ({ recordType: 'purchase_order', data: { supplierId, poNumber: unique('PO-CUR'), ...extra } });
+      await expect(bo.processHandoff(ctx, await createPublishedHandoff([po({})]))).rejects.toThrow(/currencyCode_required/);
+      const poNumber = unique('PO-SEK');
+      await bo.processHandoff(ctx, await createPublishedHandoff([{ recordType: 'purchase_order', data: { supplierId, poNumber, currencyCode: 'SEK' } }]));
+      const row = await adminPool.query<{ currency_code: string }>(`SELECT currency_code FROM business_operations.purchase_orders WHERE tenant_id = $1 AND po_number = $2`, [T1, poNumber]);
+      expect(row.rows).toEqual([{ currency_code: 'SEK' }]);
+    });
+
+    it('historical purchase orders are never rewritten', async () => {
+      const poNumber = unique('PO-HIST');
+      await adminPool.query(
+        `INSERT INTO business_operations.purchase_orders (tenant_id, workspace_id, business_id, supplier_id, po_number, currency_code, total_amount) VALUES ($1,$2,$3,$4,$5,'USD',1)`,
+        [T1, WS1, businessId, supplierId, poNumber]);
+      await bo.processHandoff(ctx, await createPublishedHandoff([{ recordType: 'purchase_order', data: { supplierId, poNumber: unique('PO-NEW'), currencyCode: 'NOK' } }]));
+      expect((await adminPool.query(`SELECT currency_code FROM business_operations.purchase_orders WHERE po_number = $1`, [poNumber])).rows).toEqual([{ currency_code: 'USD' }]);
+    });
+
+    describe('executor defence in depth (commands built outside the mapper)', () => {
+      const executor = new OperationalCommandExecutor();
+      const context = () => ({
+        tenantId: T1, workspaceId: WS1, businessId, correlationId: '11111111-1111-4111-8111-111111111111', sourceReference: 'direct://currency',
+        idempotencyKey: unique('direct'), actorId: UID, occurredAt: new Date().toISOString(),
+      });
+      const run = (command: OperationalCommand) => withTenantTransaction(ctx, (client) => executor.executeOn(client, ctx, command));
+      const movementCommand = (payload: Record<string, unknown>): OperationalCommand => ({
+        type: 'record_inventory_movement', context: context(),
+        payload: { inventoryItemId: itemId, warehouseId, movementType: 'receipt', quantity: 2, ...payload },
+      } as OperationalCommand);
+
+      it('refuses a cost without a currency, a currency without a cost, and a malformed currency; stores a valid one verbatim', async () => {
+        const before = (await movementRows()).length;
+        await expect(run(movementCommand({ unitCost: 4 }))).rejects.toThrow(/supplied together/);
+        await expect(run(movementCommand({ unitCostCurrency: 'EUR' }))).rejects.toThrow(/supplied together/);
+        await expect(run(movementCommand({ unitCost: 4, unitCostCurrency: 'eur' }))).rejects.toThrow(/three-letter uppercase/);
+        expect((await movementRows()).length).toBe(before);
+        await run(movementCommand({ unitCost: 4, unitCostCurrency: 'DKK' }));
+        expect((await movementRows()).at(-1)).toMatchObject({ unit_cost: '4.0000', unit_cost_currency: 'DKK' });
+      });
+
+      it('refuses a purchase order command without an explicit currency', async () => {
+        const base = { supplierId, poNumber: unique('PO-DIRECT') };
+        await expect(run({ type: 'create_purchase_order', context: context(), payload: base } as unknown as OperationalCommand)).rejects.toThrow(/currencyCode is required/);
+        await expect(run({ type: 'create_purchase_order', context: context(), payload: { ...base, currencyCode: 'usd' } } as OperationalCommand)).rejects.toThrow(/three-letter uppercase/);
+      });
+    });
   });
 });

@@ -32,7 +32,8 @@ export interface CreatePurchaseOrderInput {
   poNumber: string;
   orderDate?: Date;
   expectedDate?: Date;
-  currencyCode?: string;
+  /** Explicit ISO 4217-style code. Required: there is no default currency. */
+  currencyCode: string;
   totalAmount?: number;
   notes?: string;
   correlationId?: string;
@@ -66,6 +67,9 @@ function rowToPO(row: Record<string, unknown>): PurchaseOrder {
 
 export class PurchaseOrderRepository {
   async create(ctx: TenantContext, input: CreatePurchaseOrderInput): Promise<PurchaseOrder> {
+    if (typeof input.currencyCode !== 'string' || !/^[A-Z]{3}$/.test(input.currencyCode)) {
+      throw new Error('PurchaseOrder currencyCode is required and must be a three-letter uppercase currency code (no default currency).');
+    }
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO business_operations.purchase_orders
@@ -80,7 +84,7 @@ export class PurchaseOrderRepository {
           input.poNumber,
           input.orderDate      ?? new Date(),
           input.expectedDate   ?? null,
-          input.currencyCode   ?? 'USD',
+          input.currencyCode,
           input.totalAmount    ?? 0,
           input.notes          ?? null,
           input.correlationId  ?? randomUUID(),

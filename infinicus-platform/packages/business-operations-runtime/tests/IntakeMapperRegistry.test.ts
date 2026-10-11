@@ -58,6 +58,7 @@ describe('IntakeMapperRegistry', () => {
         movementType: 'receipt',
         quantity: 5,
         unitCost: 2.5,
+        unitCostCurrency: 'EUR',
       },
     }, context);
     const second = registry.mapRecord({
@@ -68,6 +69,7 @@ describe('IntakeMapperRegistry', () => {
         movementType: 'receipt',
         quantity: 5,
         unitCost: 2.5,
+        unitCostCurrency: 'EUR',
       },
     }, context);
     expect(first).toEqual(second);
@@ -78,6 +80,8 @@ describe('IntakeMapperRegistry', () => {
         warehouseId: 'warehouse-1',
         movementType: 'receipt',
         quantity: 5,
+        unitCost: 2.5,
+        unitCostCurrency: 'EUR',
       },
     });
   });
@@ -105,5 +109,51 @@ describe('IntakeMapperRegistry', () => {
         data: { supplierId: '', totalAmount: -4 },
       }, context)
     ).toThrow(/supplierId_required|poNumber_required|totalAmount_negative/);
+  });
+});
+
+describe('explicit currency on cost-bearing records (data-capture Block C)', () => {
+  const base = { inventoryItemId: 'item-1', warehouseId: 'warehouse-1', movementType: 'receipt', quantity: 5 };
+  const map = (data: Record<string, unknown>) => registerDefaultMappers(new IntakeMapperRegistry()).mapRecord({ recordType: 'inventory_movement', data }, context);
+  const po = { supplierId: 's-1', poNumber: 'PO-1' };
+  const mapPo = (data: Record<string, unknown>) => registerDefaultMappers(new IntakeMapperRegistry()).mapRecord({ recordType: 'purchase_order', data }, context);
+
+  it('carries the supplied currency unchanged into the command (no default, no case folding)', () => {
+    expect(map({ ...base, unitCost: 2.5, unitCostCurrency: 'JPY' })[0]).toMatchObject({ payload: { unitCost: 2.5, unitCostCurrency: 'JPY' } });
+    expect(map({ ...base, unitCost: 2.5, unitCostCurrency: 'EUR' })[0]).toMatchObject({ payload: { unitCostCurrency: 'EUR' } });
+  });
+
+  it('refuses a cost without a currency and never substitutes USD or any default', () => {
+    expect(() => map({ ...base, unitCost: 2.5 })).toThrow(/unitCostCurrency_required_with_unitCost/);
+    expect(() => map({ ...base, unitCost: 2.5, unitCostCurrency: null })).toThrow(/unitCostCurrency_required_with_unitCost/);
+  });
+
+  it('refuses a currency without a cost', () => {
+    expect(() => map({ ...base, unitCostCurrency: 'USD' })).toThrow(/unitCost_required_with_unitCostCurrency/);
+  });
+
+  it('refuses a malformed currency instead of normalising it', () => {
+    for (const bad of ['usd', 'US', 'USDX', ' USD', 'U$D', '', 123]) {
+      expect(() => map({ ...base, unitCost: 2.5, unitCostCurrency: bad }), String(bad)).toThrow(/unitCostCurrency_invalid/);
+    }
+  });
+
+  it('a movement with no cost and no currency is unchanged', () => {
+    const [command] = map(base);
+    expect(command).toMatchObject({ type: 'record_inventory_movement', payload: { quantity: 5 } });
+    expect((command as { payload: Record<string, unknown> }).payload.unitCostCurrency).toBeUndefined();
+    expect((command as { payload: Record<string, unknown> }).payload.unitCost).toBeUndefined();
+  });
+
+  it('the mapper contract versions record the change', () => {
+    expect(inventoryMovementMapper.version).toBe(2);
+    expect(purchaseOrderMapper.version).toBe(2);
+  });
+
+  it('a purchase order must state its currency; a missing one is no longer USD', () => {
+    expect(() => mapPo(po)).toThrow(/currencyCode_required/);
+    expect(() => mapPo({ ...po, currencyCode: null })).toThrow(/currencyCode_required/);
+    expect(() => mapPo({ ...po, currencyCode: 'usd' })).toThrow(/currencyCode_invalid/);
+    expect(mapPo({ ...po, currencyCode: 'GBP' })[0]).toMatchObject({ type: 'create_purchase_order', payload: { currencyCode: 'GBP' } });
   });
 });

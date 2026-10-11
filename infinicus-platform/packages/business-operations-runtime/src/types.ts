@@ -34,6 +34,8 @@ export interface RecordInventoryMovementCommand {
     movementType: 'receipt' | 'issue' | 'transfer_in' | 'transfer_out' | 'adjustment' | 'return' | 'write_off' | 'cycle_count';
     quantity: number;
     unitCost?: number;
+    /** Explicit ISO 4217-style code of `unitCost`; present exactly when `unitCost` is present. Never defaulted. */
+    unitCostCurrency?: string;
     referenceType?: 'purchase_receipt' | 'order_line' | 'transfer' | 'adjustment' | 'manual' | 'other';
     referenceId?: string;
     notes?: string;
@@ -47,7 +49,8 @@ export interface CreatePurchaseOrderCommand {
     supplierId: string;
     poNumber: string;
     expectedDate?: string;
-    currencyCode?: string;
+    /** Explicit ISO 4217-style code. Required: there is no default currency. */
+    currencyCode: string;
     totalAmount?: number;
     notes?: string;
   };

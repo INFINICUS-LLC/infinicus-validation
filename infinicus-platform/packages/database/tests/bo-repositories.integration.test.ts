@@ -425,6 +425,7 @@ describe.runIf(run)('PurchaseOrderRepository', () => {
     const po = await repo.create(ctx1, {
       businessId:   BIZ1,
       supplierId:   SUPP1,
+      currencyCode: 'EUR',
       poNumber:     uniqueCode('PO'),
       totalAmount:  10000,
     });
@@ -437,6 +438,7 @@ describe.runIf(run)('PurchaseOrderRepository', () => {
     const po = await repo.create(ctx1, {
       businessId: BIZ1,
       supplierId: SUPP1,
+      currencyCode: 'EUR',
       poNumber:   uniqueCode('PO'),
     });
     const found = await repo.findById(ctx1, po.id);
@@ -447,6 +449,7 @@ describe.runIf(run)('PurchaseOrderRepository', () => {
     const po = await repo.create(ctx1, {
       businessId: BIZ1,
       supplierId: SUPP1,
+      currencyCode: 'EUR',
       poNumber:   uniqueCode('PO'),
     });
     const submitted = await repo.transitionStatus(ctx1, po.id, 'draft', 'submitted');
@@ -462,6 +465,7 @@ describe.runIf(run)('PurchaseOrderRepository', () => {
     const po = await repo.create(ctx1, {
       businessId: BIZ1,
       supplierId: SUPP1,
+      currencyCode: 'EUR',
       poNumber:   uniqueCode('PO'),
     });
     const received = await repo.updateStatus(ctx1, po.id, 'received');
@@ -472,9 +476,22 @@ describe.runIf(run)('PurchaseOrderRepository', () => {
     const po = await repo.create(ctx1, {
       businessId: BIZ1,
       supplierId: SUPP1,
+      currencyCode: 'EUR',
       poNumber:   uniqueCode('PO'),
     });
     await expect(repo.findById(ctx2, po.id)).rejects.toThrow(NotFoundError);
+  });
+
+  it('requires an explicit currency: there is no default and a missing or malformed code is refused', async () => {
+    const base = { businessId: BIZ1, supplierId: SUPP1, poNumber: uniqueCode('PO') };
+    await expect(repo.create(ctx1, base as never)).rejects.toThrow(/currencyCode is required/);
+    await expect(repo.create(ctx1, { ...base, currencyCode: 'usd' })).rejects.toThrow(/currencyCode is required/);
+    await expect(repo.create(ctx1, { ...base, currencyCode: 'US' })).rejects.toThrow(/currencyCode is required/);
+  });
+
+  it('stores exactly the supplied currency (no USD substitution)', async () => {
+    const po = await repo.create(ctx1, { businessId: BIZ1, supplierId: SUPP1, poNumber: uniqueCode('PO'), currencyCode: 'JPY' });
+    expect(po.currencyCode).toBe('JPY');
   });
 });
 

@@ -79,6 +79,13 @@ export class OperationalCommandExecutor {
   ): Promise<CommandExecutionResult> {
     const p = command.payload;
     const businessId = command.context.businessId;
+    // Defence in depth for commands built outside the intake mapper: a cost and its currency are both present or both absent.
+    if ((p.unitCost === undefined) !== (p.unitCostCurrency === undefined)) {
+      throw new OperationalMappingError('unitCost and unitCostCurrency must be supplied together.');
+    }
+    if (p.unitCostCurrency !== undefined && !/^[A-Z]{3}$/.test(p.unitCostCurrency)) {
+      throw new OperationalMappingError('unitCostCurrency must be a three-letter uppercase currency code.');
+    }
     await requireBusinessEntity(client, 'inventory_items', p.inventoryItemId, businessId);
     await requireBusinessEntity(client, 'warehouses', p.warehouseId, businessId);
 
@@ -111,13 +118,13 @@ export class OperationalCommandExecutor {
     const movement = await client.query<{ id: string }>(
       `INSERT INTO business_operations.inventory_movements
          (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id,
-          movement_type, quantity, reference_type, reference_id, unit_cost, notes, correlation_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          movement_type, quantity, reference_type, reference_id, unit_cost, unit_cost_currency, notes, correlation_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING id`,
       [
         ctx.tenantId, ctx.workspaceId, businessId, p.inventoryItemId, p.warehouseId,
         p.movementType, p.quantity, p.referenceType ?? null, p.referenceId ?? null,
-        p.unitCost ?? null, p.notes ?? null, command.context.correlationId,
+        p.unitCost ?? null, p.unitCostCurrency ?? null, p.notes ?? null, command.context.correlationId,
       ]
     );
 
@@ -149,6 +156,10 @@ export class OperationalCommandExecutor {
   ): Promise<CommandExecutionResult> {
     const p = command.payload;
     const businessId = command.context.businessId;
+    // No default currency: a purchase order states its currency explicitly (the database default was removed in 0183).
+    if (typeof p.currencyCode !== 'string' || !/^[A-Z]{3}$/.test(p.currencyCode)) {
+      throw new OperationalMappingError('currencyCode is required and must be a three-letter uppercase currency code.');
+    }
     await requireBusinessEntity(client, 'suppliers', p.supplierId, businessId);
 
     const result = await client.query<{ id: string }>(
@@ -160,7 +171,7 @@ export class OperationalCommandExecutor {
        RETURNING id`,
       [
         ctx.tenantId, ctx.workspaceId, businessId, p.supplierId, p.poNumber,
-        p.expectedDate ?? null, p.currencyCode ?? 'USD', p.totalAmount ?? 0,
+        p.expectedDate ?? null, p.currencyCode, p.totalAmount ?? 0,
         p.notes ?? null, command.context.sourceReference,
         command.context.correlationId, ctx.userId,
       ]
