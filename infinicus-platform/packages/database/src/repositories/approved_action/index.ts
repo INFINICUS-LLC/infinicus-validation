@@ -49,6 +49,10 @@ export type {
   GovernedValue, ProposedParametersValue, ModificationValue, ModificationEvaluationValue, ParameterMap,
 } from './AuthorizedActionCaptureRepository.js';
 
+export { AuthorizedActionBoundaryRepository, toPackageBoundaryParts } from './AuthorizedActionBoundaryRepository.js';
+export type {
+  RecordBoundariesInput, AuthorizedActionBoundaries, PackageBoundaryParts, ExecutionWindowValue, PreconditionValue, BudgetValue, RollbackValue, MonitoringValue,
+} from './AuthorizedActionBoundaryRepository.js';
 export { ActionTypeRegistryRepository, toActionTypeContract } from './ActionTypeRegistryRepository.js';
 export type {
   DefineActionTypeInput, ActionTypeDefinition, ActionTypeStatus, ActionTypeStatusChange, ActionTypeWithStatus, ActionTypeContractShape,
