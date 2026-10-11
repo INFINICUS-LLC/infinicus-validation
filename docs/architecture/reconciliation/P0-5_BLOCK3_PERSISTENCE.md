@@ -86,8 +86,8 @@ The 0176 hash above is the hash at the time of writing; it is frozen only after 
 | **3a (this)** | Package storage + DB guards + proofs | done, awaiting review |
 | 3b | Repository (insert/read through the guards, derived status, revoke, expiry detection, RLS-scoped) - no issuer | no migration, **merged (#62)** |
 | 3c-1 | Structured capture (original / delta / final parameters) + accountable-owner assignment | migration 0177, **merged (#63)** |
-| **3c-2 (this PR)** | Governed action-type registry + automation-level policy (Level 2 enablement) | migration **0178**, **done, awaiting review; registry ships EMPTY - vocabulary still needed from the owner** |
-| 3c-3 | Execution-boundary authoring (window, preconditions, rollback, budget, monitoring) + simulation reference | migration 0179, authorization |
+| 3c-2 | Governed action-type registry + automation-level policy (Level 2 enablement) | migration 0178, **merged (#65); registry ships EMPTY - vocabulary still needed from the owner** |
+| **3c-3 (this PR)** | Execution-boundary authoring (window, preconditions, rollback, budget, monitoring) + simulation reference | migration **0179**, **done, awaiting review** |
 | 3d | Issuer (single component, verifies decision/facts/authority, idempotent, atomic audit) | 3b + 3c |
 | 3e | BO-side receipt + consumption validator + extended isolation guard | new migration number, authorization |
 
@@ -251,3 +251,63 @@ The 0178 hash is the hash at the time of writing; it is frozen only after owner 
 
 ### Deployment
 0178 joins the **controlled deployment review** with 0170-0177. Live Supabase is at **0169**; **0170-0178 are unapplied.** No deployment, live apply, backfill or data change is authorized or performed.
+
+## 11. Block 3c-3 - execution boundaries and simulation reference (migration 0179)
+
+Status: implemented, draft for owner review. Authorized: "3c-3 with migration 0179". **No issuer, no package/capture/owner/registry change, no events, no BO registry, no change to the approval route, no data (nothing seeded), no live apply.**
+
+**What 0179 creates** - one append-only, RLS-forced, tenant + workspace table, `approved_business_action.authorized_action_boundaries`: a **linear version chain per authorized action** holding the six governed fields the package needs, each in exactly the `aap/1` Governed shape (a real value, or a governed `NOT_APPLICABLE` with a reason; `UNAVAILABLE` is never storable): execution window `{startsAt, endsAt|null}`, preconditions `[{code, operator, operand}]`, budget `{amount, currency}`, rollback `{instructions}`, monitoring `{metrics[{metricCode, target, unit}]}`, and the simulation run reference (a uuid or a governed `NOT_APPLICABLE`, ruling D-6). Re-authoring a window, budget or plan is a **new version**, never an edit.
+
+**Guards the database enforces (second line behind the repository):**
+- The action must have its **immutable capture** (0177), and the capture's action type must be an **ACTIVE** governed definition (0178): draft, retired and undefined types cannot be authorized.
+- Every field has exactly the contract's shape (`aap_boundary_problems`, an immutable SQL function reporting every problem, in both a `CHECK` and a trigger). A shared **golden-case file** (`handoff-contracts/tests/fixtures/boundary-golden-cases.json`, 60 cases) is run by the contract package (against `validateAuthorizedActionPackage`, field by field) and by the database tests, and asserts that **whatever the database accepts, the contract also accepts**. In the current cases the two agree exactly.
+- **Applicability:** a field may be `NOT_APPLICABLE` only where the action type's `applicability` says `NOT_APPLICABLE_ALLOWED`; an unlisted or `REQUIRED` field must carry a value (fail closed). The simulation reference is not gated, as the contract does not gate it.
+- The window ends after it starts; sizes are bounded; facts are stamped with the **database clock**; `UPDATE` and `DELETE` are rejected for every role.
+
+**Repository** (`AuthorizedActionBoundaryRepository`, `@infinicus/database`): `recordBoundaries` (next version; **idempotent** for identical boundaries, even with a new correlation id or reordered keys; concurrency-safe), `getCurrent`, `getVersion`, `listVersions`, and `toPackageBoundaryParts` (the stored boundaries placed exactly where the contract puts them: five `action.*` fields and `lineage.simulationRunId`). Guard rejections surface as `ValidationError` with the database's own message. It is **not imported by any route, service, layer or other repository** (architecture-tested), and it depends on no other repository.
+**BO isolation guard extended, not loosened:** BO may not name the repository or the table.
+
+### Decisions taken in this block (please confirm or overrule)
+
+| # | Decision | Why / cost if overruled |
+|---|---|---|
+| B-1 | A **dedicated table**; the existing, never-populated tables (`action_execution_windows`, `approved_action_steps`, `approved_action_constraints`, ADI monitoring requirements) are **not reused** and are left untouched. | They hang off mutable plan headers and carry different semantics; reusing them would mix two models. Cost of overruling: a new migration to bridge or retire them. |
+| B-2 | The **simulation reference lives here** (a governed soft uuid, no foreign key, no read of the simulation layer), not on the review version. | Avoids altering the P0-3 review write path. If the owner also wants it snapshotted at review time, that is an additive nullable column later. |
+| B-3 | Boundaries are **versioned**, and re-stating an older version is a new version. | A package version can legitimately pick up new boundaries (P-1). |
+| B-4 | A **retired** action type stops NEW boundaries but never invalidates existing ones. | Retirement is about future authorization, not history. |
+| B-5 | The **boundary `NOT_APPLICABLE` reason code must be UPPER_SNAKE** (the contract's rule). | Mirrors the contract exactly so a stored value can always be issued. |
+| B-6 | **Authoring permission** (suggested `aba:admin`) is a route-layer decision, like Q-1 / G-6; the repository records only the actor id. | No route exists yet. |
+| B-7 | The window is **not** checked against the decision's `valid_until` here. | Package expiry is derived from the validity bounds at issuance (R-6); that is the issuer's computation. |
+
+**Finding for the owner (not changed here):** the 3c-1 capture stores governed `NOT_APPLICABLE` reasons checking only that the code and statement are non-blank, whereas the contract also requires an UPPER_SNAKE code. A capture with a lower-case reason code would therefore be storable but would fail contract validation at issuance. 3c-1 is merged and immutable, so the safe place to catch it is the issuer (3d), or a tightening migration if you prefer it enforced at write time.
+
+### Open owner decisions
+- The **initial action vocabulary and first Level 2 policy** (still not supplied: nothing is authorizable until then); capture placement (atomic with approval vs a separate step); 3c-2 G-1..G-6, 3c-1 C-1..C-6, 3b Q-1/Q-2, 3a P-1..P-6; and this block's B-1..B-7.
+
+### Evidence
+**Migration record (MIGRATION-ALLOCATION-POLICY):**
+
+| Item | Value |
+|---|---|
+| Predecessor final migration | `0178_create_action_governance.sql` (unchanged; 0176, 0177, 0178 hashes still match their records) |
+| New range | `0179` only |
+| Allocation check | no file, branch or open PR used 0179 on `main` `a192f8e` |
+| SHA-256 of frozen 0001-0178 (concatenated in name order) | `bd8ecb4ac9fa8aa5db9672516877059dfd6e2cfb4d88e4426fe064d086191915` |
+| SHA-256 of `0179_create_authorized_action_boundaries.sql` | `f461f7d4a98f59d2db5a0f5fb1f95ba731ca5a1f0c7dd5d3e871e8be5198739e` |
+| Empty install | 179 migrations applied to a brand-new PostgreSQL 16 database via the runner's exact logic; no error; the table is empty |
+| Re-run | runner re-run applies 0; forced re-execution of the 0179 file succeeds (idempotent DDL) |
+| Earlier migrations | none modified |
+
+The 0179 hash is the hash at the time of writing; it is frozen only after owner validation.
+
+**Tests:**
+- `migration-p0-5-block3c3.test.ts` - 8 static tests (incl. "seeds NO data"). `p0-5-block3c3-boundaries.architecture.test.ts` - 6 static tests. `aap-boundary-golden.contract.test.ts` - 62 tests in the contract package (60 golden cases).
+- `p0-5-block3c3-boundaries.integration.test.ts` - 35 live PostgreSQL tests as the least-privilege role: storage and the contract placement, idempotency and linear versioning, concurrency (repeated rounds), the capture and ACTIVE-type requirements, the applicability rule per field (fail closed, explicit `REQUIRED`, permitted), shapes, direct writes that bypass the repository, append-only, the database clock, RLS isolation and the 60 golden cases.
+- **Mutation proofs:** 17 of 17 effective migration mutants detected (capture required; ACTIVE type required; retired excluded; applicability enforced; unlisted treated as required; shape validator in the trigger; window ordering; budget amount; currency; operator; empty metrics; unknown keys; reason-code pattern; simulation uuid; version chain; RLS enabled; append-only trigger) and 3 of 3 repository mutants (idempotency, lock, UNAVAILABLE). One more repository mutant ("capture not compared on replay") is *equivalent*: the database permits exactly one capture per action, so two boundaries for one action can never differ by capture.
+- `aba-repositories.integration.test.ts`: the two table-count assertions move **56 -> 57** (the only existing test touched). BO isolation: 10 tests (1 new).
+- **Shared-database footprint:** these tests reuse two shared worlds (tenant/workspace/business) and add 2 businesses in total.
+- Full `@infinicus/database` suite on a migrated database: 3189 passed, 0 failed; `handoff-contracts`: 494 passed. In this sandbox 11 unrelated database files cannot load `@infinicus/event-contracts` (workspace build unavailable), identically to `main`.
+- During review of my own work the 3c-1 "not wired" guard correctly flagged a type import from the capture repository; the types are now defined locally so the repositories stay decoupled and no merged test was loosened.
+
+### Deployment
+0179 joins the **controlled deployment review** with 0170-0178. Live Supabase is at **0169**; **0170-0179 are unapplied.** No deployment, live apply, backfill or data change is authorized or performed.

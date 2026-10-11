@@ -55,6 +55,9 @@ export const FORBIDDEN_IN_BO: readonly { readonly name: string; readonly pattern
   // P0-5 Block 3c-2: the action-type registry and automation-level policy are ABA-governed too. "BO can execute this" is BO's own
   // capability registry; BO never reads ABA's vocabulary or policy store.
   { name: 'ABA action-type registry / automation-level policy (ABA-owned storage)', pattern: /ActionTypeRegistryRepository|AutomationLevelPolicyRepository|action_type_(?:definitions|status_events)\b|automation_level_polic(?:y|ies)\w*/i },
+  // P0-5 Block 3c-3: the execution boundaries (window, preconditions, budget, rollback, monitoring) are authored and owned by ABA;
+  // BO sees them only inside the validated AuthorizedActionPackage and re-checks them itself before executing.
+  { name: 'ABA authorized-action boundaries (ABA-owned storage)', pattern: /AuthorizedActionBoundaryRepository|authorized_action_boundaries\b/i },
   { name: 'import from the ABA layer', pattern: /(?:from|require\()\s*['"][^'"]*approved-business-action[^'"]*['"]/i },
 ];
 
@@ -162,6 +165,12 @@ describe('Business Operations isolation guard — the matcher itself', () => {
       'FROM automation_level_policy_enablement_events']) {
       expect(findViolations('x.ts', text).map((v) => v.rule)).toContain(rule);
     }
+  });
+
+  it('detects the boundary repository and the boundaries table used from BO code', () => {
+    const rule = 'ABA authorized-action boundaries (ABA-owned storage)';
+    expect(findViolations('x.ts', 'new AuthorizedActionBoundaryRepository();').map((v) => v.rule)).toContain(rule);
+    expect(findViolations('x.ts', 'SELECT 1 FROM authorized_action_boundaries').map((v) => v.rule)).toContain(rule);
   });
 
   it('does not flag unrelated operational code or the future validated authority name', () => {

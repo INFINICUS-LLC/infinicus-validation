@@ -1,0 +1,850 @@
+{
+  "description": "Golden cases for the six governed boundary fields, shared by the contract validator (validateAuthorizedActionPackage, migration 0179 mirrors it) and the database function approved_business_action.aap_boundary_problems. contractValid = no contract error at the field's path (other than the action-type applicability rule, which is checked separately); dbValid = the database function reports no problem for the field. The database may be stricter, but anything it accepts must also satisfy the contract.",
+  "cases": [
+    {
+      "field": "executionWindow",
+      "name": "window with an end",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "startsAt": "2026-12-01T09:00:00.000Z",
+          "endsAt": "2026-12-01T17:00:00.000Z"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "executionWindow",
+      "name": "open-ended window",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "startsAt": "2026-12-01T09:00:00.000Z",
+          "endsAt": null
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "executionWindow",
+      "name": "governed NOT_APPLICABLE",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "NO_WINDOW",
+          "statement": "not applicable here"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "executionWindow",
+      "name": "window ending when it starts",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "startsAt": "2026-12-01T09:00:00.000Z",
+          "endsAt": "2026-12-01T09:00:00.000Z"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "window ending before it starts",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "startsAt": "2026-12-01T17:00:00.000Z",
+          "endsAt": "2026-12-01T09:00:00.000Z"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "start without milliseconds",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "startsAt": "2026-12-01T09:00:00Z",
+          "endsAt": null
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "end that is not a timestamp",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "startsAt": "2026-12-01T09:00:00.000Z",
+          "endsAt": "tomorrow"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "missing endsAt key",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "startsAt": "2026-12-01T09:00:00.000Z"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "unknown property in the window",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "startsAt": "2026-12-01T09:00:00.000Z",
+          "endsAt": null,
+          "timezone": "UTC"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "UNAVAILABLE",
+      "value": {
+        "state": "UNAVAILABLE",
+        "source": "none"
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "NOT_APPLICABLE with a lower-case code",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "no_window",
+          "statement": "not applicable here"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "NOT_APPLICABLE without a statement",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "NO_WINDOW"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "NOT_APPLICABLE with a blank statement",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "NO_WINDOW",
+          "statement": "   "
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "executionWindow",
+      "name": "NOT_APPLICABLE with a governed basis",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "NO_WINDOW",
+          "statement": "x",
+          "basis": {
+            "kind": "POLICY",
+            "ref": "policy:p@1"
+          }
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "executionWindow",
+      "name": "NOT_APPLICABLE with an unknown basis kind",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "NO_WINDOW",
+          "statement": "x",
+          "basis": {
+            "kind": "HUNCH",
+            "ref": "r"
+          }
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "preconditions",
+      "name": "one precondition",
+      "value": {
+        "state": "VALUE",
+        "value": [
+          {
+            "code": "stock_available",
+            "operator": "gte",
+            "operand": 1
+          }
+        ]
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "preconditions",
+      "name": "several operators and operand shapes",
+      "value": {
+        "state": "VALUE",
+        "value": [
+          {
+            "code": "a",
+            "operator": "eq",
+            "operand": "x"
+          },
+          {
+            "code": "b",
+            "operator": "between",
+            "operand": [
+              1,
+              5
+            ]
+          },
+          {
+            "code": "c",
+            "operator": "in",
+            "operand": [
+              "p",
+              "q"
+            ]
+          },
+          {
+            "code": "d",
+            "operator": "neq",
+            "operand": null
+          }
+        ]
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "preconditions",
+      "name": "governed NOT_APPLICABLE",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "NO_PRECONDITIONS",
+          "statement": "not applicable here"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "preconditions",
+      "name": "empty list",
+      "value": {
+        "state": "VALUE",
+        "value": []
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "preconditions",
+      "name": "unknown operator",
+      "value": {
+        "state": "VALUE",
+        "value": [
+          {
+            "code": "a",
+            "operator": "approx",
+            "operand": 1
+          }
+        ]
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "preconditions",
+      "name": "missing operand key",
+      "value": {
+        "state": "VALUE",
+        "value": [
+          {
+            "code": "a",
+            "operator": "eq"
+          }
+        ]
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "preconditions",
+      "name": "blank code",
+      "value": {
+        "state": "VALUE",
+        "value": [
+          {
+            "code": "  ",
+            "operator": "eq",
+            "operand": 1
+          }
+        ]
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "preconditions",
+      "name": "a 201-character code",
+      "value": {
+        "state": "VALUE",
+        "value": [
+          {
+            "code": "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "operator": "eq",
+            "operand": 1
+          }
+        ]
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "preconditions",
+      "name": "not an array",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "code": "a",
+          "operator": "eq",
+          "operand": 1
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "preconditions",
+      "name": "unknown property on a precondition",
+      "value": {
+        "state": "VALUE",
+        "value": [
+          {
+            "code": "a",
+            "operator": "eq",
+            "operand": 1,
+            "note": "x"
+          }
+        ]
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "budget",
+      "name": "decimal amount",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": "12.50",
+          "currency": "USD"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "budget",
+      "name": "zero and whole amounts",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": "0",
+          "currency": "EUR"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "budget",
+      "name": "governed NOT_APPLICABLE",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "NO_SPEND",
+          "statement": "not applicable here"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "budget",
+      "name": "negative amount",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": "-1",
+          "currency": "USD"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "budget",
+      "name": "trailing decimal point",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": "12.",
+          "currency": "USD"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "budget",
+      "name": "leading decimal point",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": ".5",
+          "currency": "USD"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "budget",
+      "name": "exponent notation",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": "1e3",
+          "currency": "USD"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "budget",
+      "name": "amount as a number",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": 12.5,
+          "currency": "USD"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "budget",
+      "name": "lower-case currency",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": "1",
+          "currency": "usd"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "budget",
+      "name": "two-letter currency",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": "1",
+          "currency": "US"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "budget",
+      "name": "missing currency",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": "1"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "budget",
+      "name": "unknown property on a budget",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "amount": "1",
+          "currency": "USD",
+          "cap": "2"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "rollback",
+      "name": "instructions",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "instructions": "Restore the previous price from the history."
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "rollback",
+      "name": "governed NOT_APPLICABLE",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "IRREVERSIBLE_BY_NATURE",
+          "statement": "not applicable here"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "rollback",
+      "name": "empty instructions",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "instructions": ""
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "rollback",
+      "name": "blank instructions",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "instructions": "   "
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "rollback",
+      "name": "instructions as a list",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "instructions": [
+            "a"
+          ]
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "rollback",
+      "name": "instructions of 10001 characters",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "instructions": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "rollback",
+      "name": "unknown property on rollback",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "instructions": "x",
+          "owner": "y"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "monitoring",
+      "name": "a metric with a target and a unit",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "metrics": [
+            {
+              "metricCode": "units_sold",
+              "target": 100,
+              "unit": "units"
+            }
+          ]
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "monitoring",
+      "name": "null target and unit, object target",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "metrics": [
+            {
+              "metricCode": "a",
+              "target": null,
+              "unit": null
+            },
+            {
+              "metricCode": "b",
+              "target": {
+                "min": 1
+              },
+              "unit": "pct"
+            }
+          ]
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "monitoring",
+      "name": "governed NOT_APPLICABLE",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "NOT_MONITORABLE",
+          "statement": "not applicable here"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "monitoring",
+      "name": "no metrics",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "metrics": []
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "monitoring",
+      "name": "missing unit key",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "metrics": [
+            {
+              "metricCode": "a",
+              "target": null
+            }
+          ]
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "monitoring",
+      "name": "missing target key",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "metrics": [
+            {
+              "metricCode": "a",
+              "unit": null
+            }
+          ]
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "monitoring",
+      "name": "blank metric code",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "metrics": [
+            {
+              "metricCode": " ",
+              "target": null,
+              "unit": null
+            }
+          ]
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "monitoring",
+      "name": "a 51-character unit",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "metrics": [
+            {
+              "metricCode": "a",
+              "target": null,
+              "unit": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+            }
+          ]
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "monitoring",
+      "name": "unknown property on a metric",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "metrics": [
+            {
+              "metricCode": "a",
+              "target": null,
+              "unit": null,
+              "weight": 1
+            }
+          ]
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "monitoring",
+      "name": "metrics not an array",
+      "value": {
+        "state": "VALUE",
+        "value": {
+          "metrics": "a"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "simulationRun",
+      "name": "a run id",
+      "value": {
+        "state": "VALUE",
+        "value": "5f1c8a52-0c36-4f4d-8a3b-1f7d4a2e9b10"
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "simulationRun",
+      "name": "governed NOT_APPLICABLE",
+      "value": {
+        "state": "NOT_APPLICABLE",
+        "reason": {
+          "code": "NOT_SIMULATION_BACKED",
+          "statement": "the decision was not simulation-backed"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "field": "simulationRun",
+      "name": "not a uuid",
+      "value": {
+        "state": "VALUE",
+        "value": "run-1"
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "simulationRun",
+      "name": "upper-case uuid",
+      "value": {
+        "state": "VALUE",
+        "value": "5F1C8A52-0C36-4F4D-8A3B-1F7D4A2E9B10"
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "simulationRun",
+      "name": "UNAVAILABLE",
+      "value": {
+        "state": "UNAVAILABLE",
+        "source": "simulation"
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "field": "simulationRun",
+      "name": "a number",
+      "value": {
+        "state": "VALUE",
+        "value": 7
+      },
+      "contractValid": false,
+      "dbValid": false
+    }
+  ]
+}
