@@ -157,3 +157,39 @@ describe('explicit currency on cost-bearing records (data-capture Block C)', () 
     expect(mapPo({ ...po, currencyCode: 'GBP' })[0]).toMatchObject({ type: 'create_purchase_order', payload: { currencyCode: 'GBP' } });
   });
 });
+
+describe('a present unit cost must be positive (data-capture Block B)', () => {
+  const base = { inventoryItemId: 'item-1', warehouseId: 'warehouse-1', movementType: 'receipt', quantity: 5 };
+  const map = (data: Record<string, unknown>) => registerDefaultMappers(new IntakeMapperRegistry()).mapRecord({ recordType: 'inventory_movement', data }, context);
+
+  it('accepts positive finite costs with a currency, unchanged (no rounding, no coercion)', () => {
+    for (const cost of [0.0001, 0.5, 2.5, 123456.7891]) {
+      expect(map({ ...base, unitCost: cost, unitCostCurrency: 'EUR' })[0]).toMatchObject({ payload: { unitCost: cost, unitCostCurrency: 'EUR' } });
+    }
+  });
+
+  it('refuses zero and negative costs with an explicit reason', () => {
+    for (const cost of [0, -0, -1, -0.0001, -1000]) {
+      expect(() => map({ ...base, unitCost: cost, unitCostCurrency: 'USD' }), String(cost)).toThrow(/unitCost_not_positive/);
+    }
+  });
+
+  it('refuses a positive cost too small to store instead of rounding it to zero', () => {
+    for (const cost of [0.00001, 0.00009, 1e-9]) {
+      expect(() => map({ ...base, unitCost: cost, unitCostCurrency: 'USD' }), String(cost)).toThrow(/unitCost_below_minimum_precision/);
+    }
+  });
+
+  it('refuses NaN, Infinity, strings and other non-numbers (not coerced)', () => {
+    for (const cost of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '2.5', '0', true, {}, []]) {
+      expect(() => map({ ...base, unitCost: cost, unitCostCurrency: 'USD' }), String(cost)).toThrow(/unitCost_invalid/);
+    }
+  });
+
+  it('the Block C currency pairing still holds with a valid cost, and a missing cost stays allowed', () => {
+    expect(() => map({ ...base, unitCost: 2.5 })).toThrow(/unitCostCurrency_required_with_unitCost/);
+    expect(() => map({ ...base, unitCostCurrency: 'USD' })).toThrow(/unitCost_required_with_unitCostCurrency/);
+    expect(map(base)[0]).toMatchObject({ type: 'record_inventory_movement' });
+    expect(map({ ...base, unitCost: null, unitCostCurrency: null })[0]).toMatchObject({ type: 'record_inventory_movement' });
+  });
+});
