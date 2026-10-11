@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { loadConfig } from '@infinicus/configuration';
 import { createPool, closePool, UserRepository, MembershipRepository, type TenantContext } from '@infinicus/database';
 import { buildApp } from '../src/app.js';
+import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
 
 const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const STRONG_PASSWORD = 'Correct-Horse-9!';
@@ -101,9 +102,9 @@ describe.runIf(run)('BO inventory policy evaluation route - live PostgreSQL + Fa
         await c.query('BEGIN'); await c.query("SET LOCAL session_replication_role = 'replica'");
         await c.query('DELETE FROM audit.audit_events WHERE tenant_id = ANY($1)', [tenantIds]);
         await c.query('DELETE FROM business_operations.inventory_policy_evaluations WHERE tenant_id = ANY($1)', [tenantIds]);
-        await c.query('DELETE FROM business_operations.inventory_movements WHERE tenant_id = ANY($1)', [tenantIds]);
         await c.query('COMMIT');
       } catch (e) { await c.query('ROLLBACK').catch(() => undefined); } finally { c.release(); }
+      await deleteMovementsForTenants(adminPool, tenantIds);
     }
     await adminPool?.end(); await closePool();
   });
