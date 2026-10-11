@@ -13,3 +13,10 @@ export type { BeginOnboardingInput, BeginOnboardingResult, CreateOnboardingBusin
 
 export { OwnerApproverAuthorityService, OWNER_BOOTSTRAP_AUTHORITY } from './OwnerApproverAuthorityService.js';
 export type { OwnerBootstrapOutcome, OwnerBootstrapResult } from './OwnerApproverAuthorityService.js';
+
+export {
+  BusinessDeclaredCurrencyService, DECLARED_CURRENCY_AUDIT_ENTITY, DECLARED_CURRENCY_AUDIT_DECLARED, DECLARED_CURRENCY_AUDIT_CHANGED,
+} from './BusinessDeclaredCurrencyService.js';
+export type {
+  DeclaredCurrencyRequestContext, DeclareCurrencyRequest, DeclareCurrencyResponse, BusinessDeclaredCurrencyDependencies,
+} from './BusinessDeclaredCurrencyService.js';

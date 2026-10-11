@@ -19,6 +19,7 @@ import authRoutes from './routes/auth.js';
 import onboardingRoutes from './routes/onboarding.js';
 import businessRoutes from './routes/businesses.js';
 import abaAuthoringRoutes from './routes/abaAuthoring.js';
+import businessAdministrationRoutes from './routes/businessAdministration.js';
 import type { AbaAuthoringRouteOptions } from './routes/abaAuthoring.js';
 import observabilityRoutes from './routes/observability.js';
 import billingRoutes from './routes/billing.js';
@@ -142,6 +143,7 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(onboardingRoutes);
   await app.register(businessRoutes);
   await app.register(abaAuthoringRoutes, { dependencies: options.abaAuthoring });
+  await app.register(businessAdministrationRoutes);
   await app.register(observabilityRoutes);
   await app.register(billingRoutes);
   await app.register(incidentRoutes);
