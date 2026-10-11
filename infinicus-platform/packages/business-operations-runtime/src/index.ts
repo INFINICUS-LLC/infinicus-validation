@@ -9,6 +9,7 @@ export * from './assets/AssetService.js';
 export * from './BusinessOperationsService.js';
 export * from './intake/defaultMappers.js';
 export * from './unitCost.js';
+export * from './inventory-policy/index.js';
 export * from './intake/BusinessIntakeService.js';
 export * from './OperationalCommandExecutor.js';
 export * from './publication/OperationalPublicationService.js';

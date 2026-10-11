@@ -41,7 +41,8 @@ describe('data-capture Block B architecture (positive unit cost)', () => {
   it('the BO executor remains the ONLY writer of inventory_movements and of unit_cost (no second cost writer)', () => {
     expect(production.filter((f) => /INTO\s+business_operations\.inventory_movements/.test(f.code)).map((f) => f.rel)).toEqual([EXECUTOR]);
     const costUsers = production.filter((f) => /\bunit_cost\b/.test(f.code)).map((f) => f.rel);
-    expect(costUsers).toEqual([EXECUTOR]);
+    // B2b: the READ-ONLY policy facts repository selects unit_cost; the INTO check above proves it is not a writer.
+    expect(costUsers.sort()).toEqual([EXECUTOR, 'packages/database/src/repositories/bo/InventoryPolicyFactsRepository.ts'].sort());
   });
 
   it('the mapper and the executor both apply the one shared positivity rule (they cannot drift) and neither rounds or coerces', () => {

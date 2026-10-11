@@ -78,6 +78,8 @@ describe('business declared currency architecture (0185)', () => {
     expect(defaults).toEqual(['packages/database/src/repositories/onboarding/TenantRepository.ts']);
     expect(production.filter((f) => /declared_currency|declaredCurrency|DECLARED_CURRENCY/.test(f.code)).map((f) => f.rel).sort()).toEqual([
       'apps/api/src/routes/businessAdministration.ts', 'apps/api/src/schemas/businessAdministration.ts',
+      // B2b: the BO evaluator READS the declared currency (through the Reader); it never writes it.
+      'packages/business-operations-runtime/src/inventory-policy/InventoryPolicyEvaluationService.ts', 'packages/business-operations-runtime/src/inventory-policy/evaluate.ts',
       'packages/database/src/index.ts', 'packages/database/src/repositories/onboarding/BusinessDeclaredCurrencyRepository.ts',
       'packages/database/src/repositories/onboarding/index.ts', 'packages/onboarding/src/BusinessDeclaredCurrencyService.ts', 'packages/onboarding/src/index.ts',
     ]);
@@ -101,8 +103,8 @@ describe('business declared currency architecture (0185)', () => {
     expect(route).not.toMatch(/bo:write|aba:|da:/);
   });
 
-  it('the B2 evaluator, the ABA->BO transport and P0-6 are NOT implemented by this block', () => {
-    expect(production.filter((f) => /InventoryPolicyEvaluationService|BoGovernanceEvidenceVerifier|inventory-policy-evaluator/.test(f.code)).map((f) => f.rel)).toEqual([]);
+  it('the ABA->BO transport, the B2c verifier adapter and P0-6 are NOT implemented (the B2b evaluator exists and only READS the declaration)', () => {
+    expect(production.filter((f) => /BoGovernanceEvidenceVerifier|inventory-policy-evaluator/.test(f.code)).map((f) => f.rel)).toEqual([]);
     expect(production.filter((f) => /ACTION_AUTHORIZED/.test(f.code) && /BusinessDeclaredCurrency/.test(f.code)).map((f) => f.rel)).toEqual([]);
   });
 });
