@@ -14,7 +14,7 @@
  * NOT_ENABLED).
  */
 
-import { actionTypeKey, actionTypeMatchesCanonical, canonicalize } from '@infinicus/handoff-contracts';
+import { actionTypeKey, actionTypeMatchesCanonical, canonicalize, simulationNotApplicableProblem } from '@infinicus/handoff-contracts';
 import type {
   ActionTypeContract, ActionTypeRegistry, AuthorizedActionPackageBody, AutomationLevelValue, PackageEnablementPolicy,
 } from '@infinicus/handoff-contracts';
@@ -254,8 +254,10 @@ export function evaluateIssuance(f: IssuanceFacts): IssuanceEvaluation {
   else {
     if (capture && f.boundaries.captureId !== capture.id) refuse('CAPTURE_MISMATCH', 'the execution boundaries belong to a different capture');
     // D3D-1: absence of a simulation source is never converted to NOT_APPLICABLE unless the canonical type explicitly allows it.
-    if (capture && f.boundaries.simulationRun.state === 'NOT_APPLICABLE' && !f.simulationNotApplicableAllowed.has(actionTypeKey(capture.actionType.code, capture.actionType.schemaVersion))) {
-      refuse('SIMULATION_REQUIRED', `${capture.actionType.code}@${capture.actionType.schemaVersion} requires a simulation run reference; NOT_APPLICABLE is not permitted`);
+    if (capture && f.boundaries.simulationRun.state === 'NOT_APPLICABLE') {
+      // B2c: allowed only for the listed type AND only with the canonical reason code (NO_APPLICABLE_SIMULATION_MODEL).
+      const problem = simulationNotApplicableProblem(f.simulationNotApplicableAllowed, capture.actionType.code, capture.actionType.schemaVersion, f.boundaries.simulationRun.reason);
+      if (problem) refuse('SIMULATION_REQUIRED', problem);
     }
   }
 

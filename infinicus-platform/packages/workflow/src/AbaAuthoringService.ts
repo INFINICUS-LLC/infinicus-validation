@@ -29,7 +29,7 @@ import type {
   ActionTypeWithStatus, AuthorizedActionBoundaries, AuthorizedActionCapture, GovernedValue, OwnerAssignment, TenantContext,
 } from '@infinicus/database';
 import {
-  SIMULATION_NOT_APPLICABLE_ALLOWED, actionTypeKey, canonicalActionTypeRegistry, canonicalize, checkParameterValue, requiredGovernanceDimensions,
+  SIMULATION_NOT_APPLICABLE_ALLOWED, actionTypeKey, simulationNotApplicableProblem, canonicalActionTypeRegistry, canonicalize, checkParameterValue, requiredGovernanceDimensions,
 } from '@infinicus/handoff-contracts';
 import type { ActionTypeContract, ActionTypeRegistry, GovernanceDimension, GovernanceEvidenceVerifier, JsonValue } from '@infinicus/handoff-contracts';
 import { ApproverAuthorityNotEstablishedError } from './DecisionWorkflowService.js';
@@ -553,8 +553,9 @@ export class AbaAuthoringService {
         throw invalid(`${canonical.code}@${canonical.schemaVersion} requires ${field}; NOT_APPLICABLE is not permitted`);
       }
     }
-    if (input.simulationRun.state === 'NOT_APPLICABLE' && !SIMULATION_NOT_APPLICABLE_ALLOWED.has(actionTypeKey(canonical.code, canonical.schemaVersion))) {
-      throw invalid(`${canonical.code}@${canonical.schemaVersion} requires a simulation run reference; NOT_APPLICABLE is not permitted`);
+    if (input.simulationRun.state === 'NOT_APPLICABLE') {
+      const problem = simulationNotApplicableProblem(SIMULATION_NOT_APPLICABLE_ALLOWED, canonical.code, canonical.schemaVersion, input.simulationRun.reason);
+      if (problem) throw invalid(problem);
     }
     return withSharedTenantTransaction(ctx, async () => {
       if (input.simulationRun.state === 'VALUE') {

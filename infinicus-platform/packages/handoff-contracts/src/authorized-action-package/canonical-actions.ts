@@ -33,10 +33,34 @@ export const CANONICAL_ACTION_TYPES: readonly ActionTypeContract[] = Object.free
 
 /**
  * Owner ruling D3D-1: the simulation reference is REQUIRED for every canonical action type unless its `code@schemaVersion` is listed
- * here. The set is EMPTY: `inventory_reorder_policy_update@1` requires a simulation run. The rule is per type and version and is
- * never generalized; a future type states its own governed applicability in its canonical definition.
+ * here. The rule is per type and version and is never generalized; a future type states its own governed applicability.
+ *
+ * B2c amendment (owner ruling, 2026-10-11; docs/architecture/reconciliation/P0-5_B2c_SIMULATION_NOT_APPLICABLE_AMENDMENT.md): exactly
+ * `inventory_reorder_policy_update@1` may carry a governed NOT_APPLICABLE simulation reference, and only with the canonical reason
+ * {@link SIMULATION_NOT_APPLICABLE_REASON_CODE}, because no Simulation model evaluates inventory reorder policy. Absence of a
+ * simulation reference is never NOT_APPLICABLE; every other type keeps the D3D-1 requirement.
  */
-export const SIMULATION_NOT_APPLICABLE_ALLOWED: ReadonlySet<string> = Object.freeze(new Set<string>()) as ReadonlySet<string>;
+export const SIMULATION_NOT_APPLICABLE_REASON_CODE = 'NO_APPLICABLE_SIMULATION_MODEL';
+
+export const SIMULATION_NOT_APPLICABLE_ALLOWED: ReadonlySet<string> = Object.freeze(new Set<string>([
+  `${INVENTORY_REORDER_POLICY_UPDATE_V1.code}@${INVENTORY_REORDER_POLICY_UPDATE_V1.schemaVersion}`,
+])) as ReadonlySet<string>;
+
+/**
+ * Why a governed NOT_APPLICABLE simulation reference is refused for this action type, or null when it is permitted. Used by every
+ * writer and by the issuance policy so the rule cannot drift: the type must be listed AND the reason code must be exactly canonical.
+ */
+export function simulationNotApplicableProblem(
+  allowed: ReadonlySet<string>, actionCode: string, schemaVersion: string, reason: { code?: unknown } | undefined,
+): string | null {
+  if (!allowed.has(`${actionCode}@${schemaVersion}`)) {
+    return `${actionCode}@${schemaVersion} requires a simulation run reference; NOT_APPLICABLE is not permitted`;
+  }
+  if (!reason || reason.code !== SIMULATION_NOT_APPLICABLE_REASON_CODE) {
+    return `a NOT_APPLICABLE simulation reference for ${actionCode}@${schemaVersion} must carry the reason code ${SIMULATION_NOT_APPLICABLE_REASON_CODE}`;
+  }
+  return null;
+}
 
 export const actionTypeKey = (code: string, schemaVersion: string): string => `${code}@${schemaVersion}`;
 
