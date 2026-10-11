@@ -99,11 +99,22 @@ describe.runIf(run)('P0-5 Block 3d: ABA package issuer', () => {
       expect(p.lineage.modificationEvaluation.value.basis).toBe('DECLARED_IMPACT');
     });
 
-    it('accepts a governed NOT_APPLICABLE simulation reference (D-6)', async () => {
+    it('requires a simulation reference for this action type (D3D-1): a NOT_APPLICABLE one is refused, never accepted', async () => {
       const f = await fresh({ simulationRun: NA('NOT_SIMULATION_BACKED', 'The decision was not simulation-backed.') });
-      const r: any = await issuer.issue(f.ctx, request(f));
+      expect((await refusal(f)).codes).toEqual(['SIMULATION_REQUIRED']);
+      expect(await versions(f)).toBe(0);
+    });
+
+    it('accepts a governed NOT_APPLICABLE simulation only for a canonical type that explicitly allows it (D-6, per type)', async () => {
+      const f = await fresh({ contract: FLEXIBLE, simulationRun: NA('NOT_SIMULATION_BACKED', 'The decision was not simulation-backed.') });
+      const allowing = new AuthorizedActionPackageIssuer({
+        canonicalTypes: new InMemoryActionTypeRegistry([FLEXIBLE]), simulationNotApplicableAllowed: new Set(['inventory_reorder_policy_update@1']),
+      });
+      const r: any = await allowing.issue(f.ctx, request(f));
       expect(r.package.lineage.simulationRunId.state).toBe('NOT_APPLICABLE');
       expect(r.package.lineage.simulationRunId.reason.code).toBe('NOT_SIMULATION_BACKED');
+      // the same data is refused by an issuer whose canonical type does not allow it
+      expect((await refusal(f, flexibleIssuer)).codes).toEqual(['SIMULATION_REQUIRED']);
     });
 
     it('accepts governed NOT_APPLICABLE boundaries and an unbounded validity only where the canonical contract explicitly allows it', async () => {
@@ -130,6 +141,23 @@ describe.runIf(run)('P0-5 Block 3d: ABA package issuer', () => {
       const r: any = await issuer.issue(f.ctx, request(f));
       expect(r.package.authorization.approver.assignmentVersionId).toBe(f.assignmentVersionId);
       expect(r.package.authorization.approver.roleCode).toBe('business-owner');
+    });
+
+    it('a bound from the execution window alone is enough (one authoritative validity bound suffices)', async () => {
+      const f = await fresh({ isTimeSensitive: false, validUntil: null });
+      const r: any = await issuer.issue(f.ctx, request(f));
+      expect(r.package.validity.decisionValidUntil.state).toBe('NOT_APPLICABLE');
+      expect(r.package.validity.expiryBounds.map((b: any) => b.source)).toEqual(['EXECUTION_WINDOW_END']);
+      expect(r.package.validity.expiresAt.state).toBe('VALUE');
+    });
+
+    it('pins the action version for lineage only: its description never reaches the package and parameters come only from the capture (D3D-4)', async () => {
+      const f = await fresh({ actionDescription: 'HOSTILE-DESCRIPTION reorderPoint=99999' });
+      const r: any = await issuer.issue(f.ctx, request(f));
+      expect(JSON.stringify(r.package)).not.toContain('HOSTILE-DESCRIPTION');
+      expect(r.package.action.parameters).toEqual({ reorderPoint: 10, reorderQuantity: 50 });
+      const pinned = (await admin.query(`SELECT id FROM ${S}.approved_action_versions WHERE action_id=$1 ORDER BY version_number DESC LIMIT 1`, [f.actionId])).rows[0].id;
+      expect(r.package.action.actionVersionId).toBe(pinned);
     });
 
     it('ignores any caller-supplied authorization facts or final parameters (identifiers only)', async () => {
@@ -165,6 +193,8 @@ describe.runIf(run)('P0-5 Block 3d: ABA package issuer', () => {
       ['a stale Digital Twin snapshot', { twin: 'stale' }, 'FRESHNESS_GATE'],
       ['an expired decision', { validUntil: new Date(Date.now() - 1000) }, 'FRESHNESS_GATE'],
       ['unknown time-sensitivity', { isTimeSensitive: null }, 'FRESHNESS_GATE'],
+      ['no authoritative validity bound at all (no valid_until, open-ended window, no governed expiry) - never NOT_APPLICABLE (D3D-1)', { isTimeSensitive: false, validUntil: null, window: G({ startsAt: iso(new Date(Date.now() + HOUR)), endsAt: null }) }, 'VALIDITY_BOUND_REQUIRED'],
+      ['a policy for schema version 2 only (a v1 action is not authorized by a v2 policy, D3D-2)', { policySpecification: { actionTypes: [{ code: 'inventory_reorder_policy_update', schemaVersion: '2' }] } }, 'LEVEL2_POLICY_NOT_ENABLED'],
       ['no accountable owner', { omitOwner: true }, 'OWNER_MISSING'],
       ['no execution boundaries / simulation reference', { omitBoundaries: true }, 'BOUNDARIES_MISSING'],
       ['no approval audit event', { omitAuditEvent: true }, 'APPROVAL_AUDIT_MISSING'],

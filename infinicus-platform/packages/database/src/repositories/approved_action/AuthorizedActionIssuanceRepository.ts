@@ -30,7 +30,10 @@ export interface IssuanceAction {
   actionCode: string;
   status: string;
   sourceRecommendationId: string | null;
-  /** Latest approved_action_versions row; the package pins this version. */
+  /**
+   * Latest approved_action_versions row of the SAME action and scope; the package pins this id for lineage only (ruling D3D-4).
+   * Only the id is read: the row's description is never loaded, and executable parameters come solely from the capture.
+   */
   actionVersionId: string | null;
 }
 
@@ -119,7 +122,9 @@ export class AuthorizedActionIssuanceRepository {
       const a = await client.query<Json>(
         `SELECT a.id, a.business_id, a.action_code, a.status, a.source_recommendation_id, a.decision_id,
                 d.status AS decision_status, d.review_package_id, d.approver_assignment_id,
-                (SELECT v.id FROM ${S}.approved_action_versions v WHERE v.action_id = a.id ORDER BY v.version_number DESC LIMIT 1) AS action_version_id,
+                (SELECT v.id FROM ${S}.approved_action_versions v
+                  WHERE v.action_id = a.id AND v.tenant_id = a.tenant_id AND v.workspace_id = a.workspace_id AND v.business_id = a.business_id
+                  ORDER BY v.version_number DESC LIMIT 1) AS action_version_id,
                 (SELECT v.id FROM ${S}.approval_decision_versions v WHERE v.decision_id = d.id ORDER BY v.version_number DESC LIMIT 1) AS decision_version_id
            FROM ${S}.approved_actions a JOIN ${S}.approval_decisions d ON d.id = a.decision_id
           WHERE a.id = $1`,

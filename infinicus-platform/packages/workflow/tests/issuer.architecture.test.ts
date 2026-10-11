@@ -91,6 +91,13 @@ describe('ABA package issuer architecture', () => {
     expect(writes).toEqual(['${S}.approval_audit_events']);
   });
 
+  it('the action version is read for its id only (D3D-4): no description and no executable data from approved_action_versions', () => {
+    const text = code(SOURCE_READER);
+    expect(text).toMatch(/SELECT v\.id FROM \$\{S\}\.approved_action_versions/);
+    expect(text).not.toMatch(/approved_action_(?:steps|constraints)|description/);
+    expect(code(POLICY)).not.toMatch(/description|approved_action_versions|actionCode/);
+  });
+
   it('every issuer repository call runs through the tenant transaction (RLS-confined)', () => {
     const text = code(SOURCE_READER);
     expect(text).not.toMatch(/getPool\(|\bpool\.query\(|(?<![.\w])query\(/);

@@ -14,7 +14,7 @@
  * NOT_ENABLED).
  */
 
-import { canonicalize, actionTypeMatchesCanonical } from '@infinicus/handoff-contracts';
+import { actionTypeKey, actionTypeMatchesCanonical, canonicalize } from '@infinicus/handoff-contracts';
 import type {
   ActionTypeContract, ActionTypeRegistry, AuthorizedActionPackageBody, AutomationLevelValue, PackageEnablementPolicy,
 } from '@infinicus/handoff-contracts';
@@ -44,7 +44,7 @@ export type IssuanceRefusalCode =
   | 'CAPTURE_MISSING' | 'CAPTURE_MISMATCH' | 'ACTION_VERSION_MISSING'
   | 'ACTION_TYPE_NOT_CANONICAL' | 'ACTION_TYPE_NOT_ACTIVE' | 'ACTION_TYPE_DIVERGES_FROM_CANONICAL'
   | 'LEVEL2_POLICY_NOT_ENABLED'
-  | 'OWNER_MISSING' | 'BOUNDARIES_MISSING' | 'NOT_APPLICABLE_REASON_CODE_INVALID'
+  | 'OWNER_MISSING' | 'BOUNDARIES_MISSING' | 'SIMULATION_REQUIRED' | 'VALIDITY_BOUND_REQUIRED' | 'NOT_APPLICABLE_REASON_CODE_INVALID'
   | 'PACKAGE_INVALID' | 'STORED_PACKAGE_INVALID' | 'EXISTING_PACKAGE_NOT_REPLAYABLE' | 'SUPERSESSION_BLOCKED'
   | 'PERSISTENCE_FAILED' | 'AUDIT_FAILED';
 
@@ -68,6 +68,8 @@ export interface IssuanceFacts {
   level2Policy: { effective: EffectivePolicy; specification: Record<string, unknown> } | null;
   twin: TwinFreshness | null;
   canonicalTypes: ActionTypeRegistry;
+  /** `code@schemaVersion` keys whose simulation reference may be a governed NOT_APPLICABLE (D3D-1: none by default). */
+  simulationNotApplicableAllowed: ReadonlySet<string>;
   packageId: string;
   packageVersion: number;
   supersedes: { packageId: string; packageVersion: number } | null;
@@ -249,7 +251,13 @@ export function evaluateIssuance(f: IssuanceFacts): IssuanceEvaluation {
   // --- owner, boundaries -------------------------------------------------------------------------------------------------
   if (!f.owner || !f.ownerShape) refuse('OWNER_MISSING', 'no accountable owner is assigned to this action');
   if (!f.boundaries) refuse('BOUNDARIES_MISSING', 'no execution boundaries (window, preconditions, budget, rollback, monitoring, simulation reference) are authored for this action');
-  else if (capture && f.boundaries.captureId !== capture.id) refuse('CAPTURE_MISMATCH', 'the execution boundaries belong to a different capture');
+  else {
+    if (capture && f.boundaries.captureId !== capture.id) refuse('CAPTURE_MISMATCH', 'the execution boundaries belong to a different capture');
+    // D3D-1: absence of a simulation source is never converted to NOT_APPLICABLE unless the canonical type explicitly allows it.
+    if (capture && f.boundaries.simulationRun.state === 'NOT_APPLICABLE' && !f.simulationNotApplicableAllowed.has(actionTypeKey(capture.actionType.code, capture.actionType.schemaVersion))) {
+      refuse('SIMULATION_REQUIRED', `${capture.actionType.code}@${capture.actionType.schemaVersion} requires a simulation run reference; NOT_APPLICABLE is not permitted`);
+    }
+  }
 
   if (refusals.length > 0 || !audit || !capture || !review || !f.ownerShape || !f.boundaries || !f.level2Policy || !review.recommendation || action.actionVersionId === null) {
     return { ok: false, refusals };
@@ -262,7 +270,12 @@ export function evaluateIssuance(f: IssuanceFacts): IssuanceEvaluation {
   if (review.validUntil !== null) bounds.push({ source: 'DECISION_VALID_UNTIL', at: review.validUntil });
   if (window.state === 'VALUE' && window.value.endsAt !== null) bounds.push({ source: 'EXECUTION_WINDOW_END', at: window.value.endsAt });
   const earliest = bounds.reduce<string | null>((min, x) => (min === null || Date.parse(x.at) < Date.parse(min) ? x.at : min), null);
-  const contractTypeRef = `${capture.actionType.code}@${capture.actionType.schemaVersion}`;
+  const contractTypeRef = actionTypeKey(capture.actionType.code, capture.actionType.schemaVersion);
+  // D3D-1: no decision valid_until, no bounded window and no governed expiry => refuse, unless the canonical type explicitly allows it.
+  const canonicalContract = f.canonicalTypes.resolve(capture.actionType.code, capture.actionType.schemaVersion);
+  if (earliest === null && canonicalContract?.applicability.validityBound !== 'NOT_APPLICABLE_ALLOWED') {
+    return { ok: false, refusals: [{ code: 'VALIDITY_BOUND_REQUIRED', message: `${contractTypeRef} requires at least one authoritative validity bound (decision valid_until, bounded execution window or governed expiry); none exists` }] };
+  }
 
   const body = {
     contractVersion: 'aap/1',

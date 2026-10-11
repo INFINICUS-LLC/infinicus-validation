@@ -20,7 +20,7 @@ import {
 } from '@infinicus/database';
 import type { PackageVersionRecord, TenantContext } from '@infinicus/database';
 import {
-  AuthorizedActionPackageInvalidError, canonicalActionTypeRegistry, sealAuthorizedActionPackage, validateAuthorizedActionPackage,
+  AuthorizedActionPackageInvalidError, SIMULATION_NOT_APPLICABLE_ALLOWED, canonicalActionTypeRegistry, sealAuthorizedActionPackage, validateAuthorizedActionPackage,
 } from '@infinicus/handoff-contracts';
 import type { ActionTypeRegistry, AuthorizedActionPackageV1 } from '@infinicus/handoff-contracts';
 import {
@@ -67,6 +67,8 @@ export interface IssuerDependencies {
   twin: Pick<DigitalTwinSnapshotRepository, 'assessFreshness'>;
   /** The canonical platform vocabulary (shared-contract truth). Tests may inject extra canonical types. */
   canonicalTypes: ActionTypeRegistry;
+  /** Canonical `code@schemaVersion` keys whose simulation reference may be NOT_APPLICABLE (default: none, ruling D3D-1). */
+  simulationNotApplicableAllowed: ReadonlySet<string>;
 }
 
 const defaults = (): IssuerDependencies => ({
@@ -78,6 +80,7 @@ const defaults = (): IssuerDependencies => ({
   policies: new AutomationLevelPolicyRepository(),
   twin: new DigitalTwinSnapshotRepository(),
   canonicalTypes: canonicalActionTypeRegistry(),
+  simulationNotApplicableAllowed: SIMULATION_NOT_APPLICABLE_ALLOWED,
 });
 
 export class AuthorizedActionPackageIssuer {
@@ -146,7 +149,7 @@ export class AuthorizedActionPackageIssuer {
         ownerShape: owner ? toAccountableOwnerShape(owner) : null,
         boundaries, registered,
         level2Policy: effective && policyVersion ? { effective, specification: policyVersion.specification } : null,
-        twin, canonicalTypes: d.canonicalTypes, packageId: header.id,
+        twin, canonicalTypes: d.canonicalTypes, simulationNotApplicableAllowed: d.simulationNotApplicableAllowed, packageId: header.id,
         packageVersion: latest ? latest.packageVersion + 1 : 1,
         supersedes: latest ? { packageId: header.id, packageVersion: latest.packageVersion } : null,
         correlationId,

@@ -31,6 +31,15 @@ export const INVENTORY_REORDER_POLICY_UPDATE_V1: ActionTypeContract = Object.fre
 /** Every canonical action contract the platform defines. Adding one is a reviewed code change, never workspace data. */
 export const CANONICAL_ACTION_TYPES: readonly ActionTypeContract[] = Object.freeze([INVENTORY_REORDER_POLICY_UPDATE_V1]);
 
+/**
+ * Owner ruling D3D-1: the simulation reference is REQUIRED for every canonical action type unless its `code@schemaVersion` is listed
+ * here. The set is EMPTY: `inventory_reorder_policy_update@1` requires a simulation run. The rule is per type and version and is
+ * never generalized; a future type states its own governed applicability in its canonical definition.
+ */
+export const SIMULATION_NOT_APPLICABLE_ALLOWED: ReadonlySet<string> = Object.freeze(new Set<string>()) as ReadonlySet<string>;
+
+export const actionTypeKey = (code: string, schemaVersion: string): string => `${code}@${schemaVersion}`;
+
 export function canonicalActionTypeRegistry(contracts: readonly ActionTypeContract[] = CANONICAL_ACTION_TYPES): ActionTypeRegistry {
   return new InMemoryActionTypeRegistry(contracts);
 }

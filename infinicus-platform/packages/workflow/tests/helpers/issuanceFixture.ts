@@ -83,6 +83,8 @@ export interface FixtureOptions {
   modified?: boolean;
   /** Replace the approval audit permission field. */
   permissionUsed?: string | null;
+  /** Free-text description of the approved action version (must never reach a package). */
+  actionDescription?: string;
 }
 
 export interface IssuableFixture {
@@ -191,8 +193,8 @@ export async function makeIssuable(admin: Pool, world: World, o: FixtureOptions 
       [f.decisionVersionId, ...scopeIds, f.decisionId, decisionStatus]);
     await c.query(`INSERT INTO ${S}.approved_actions (id, tenant_id, workspace_id, business_id, decision_id, action_code, source_recommendation_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [f.actionId, ...scopeIds, f.decisionId, `a-${code}`, f.recommendationId]);
-    await c.query(`INSERT INTO ${S}.approved_action_versions (id, tenant_id, workspace_id, business_id, action_id, version_number, description) VALUES ($1,$2,$3,$4,$5,1,'fixture')`,
-      [f.actionVersionId, ...scopeIds, f.actionId]);
+    await c.query(`INSERT INTO ${S}.approved_action_versions (id, tenant_id, workspace_id, business_id, action_id, version_number, description) VALUES ($1,$2,$3,$4,$5,1,$6)`,
+      [f.actionVersionId, ...scopeIds, f.actionId, o.actionDescription ?? 'fixture']);
 
     // the approval audit event (approval-audit/1), exactly as buildApprovalAuditDetail writes it
     if (!o.omitAuditEvent) {

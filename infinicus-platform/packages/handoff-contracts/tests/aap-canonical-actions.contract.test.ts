@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CANONICAL_ACTION_TYPES, INVENTORY_REORDER_POLICY_UPDATE_V1, actionTypeMatchesCanonical, canonicalActionTypeRegistry,
+  CANONICAL_ACTION_TYPES, SIMULATION_NOT_APPLICABLE_ALLOWED, actionTypeKey, INVENTORY_REORDER_POLICY_UPDATE_V1, actionTypeMatchesCanonical, canonicalActionTypeRegistry,
   checkParameterValue, requiredGovernanceDimensions, validateActionTypeContract,
 } from '../src/authorized-action-package';
 import type { ActionTypeContract } from '../src/authorized-action-package';
@@ -29,6 +29,13 @@ describe('canonical action vocabulary (owner ruling 1)', () => {
   it('does not automatically require Simulation, and is fail-closed on applicability', () => {
     expect(requiredGovernanceDimensions(C, ['reorderPoint']).dimensions).not.toContain('SIMULATION');
     expect(C.applicability).toEqual({});
+  });
+
+  it('requires simulation, a validity bound and every governed field for this type (owner ruling D3D-1)', () => {
+    expect(SIMULATION_NOT_APPLICABLE_ALLOWED.size).toBe(0);
+    expect(SIMULATION_NOT_APPLICABLE_ALLOWED.has(actionTypeKey(C.code, C.schemaVersion))).toBe(false);
+    expect(C.applicability.validityBound).toBeUndefined();
+    for (const field of ['executionWindow', 'preconditions', 'budget', 'rollback', 'monitoring'] as const) expect(C.applicability[field]).toBeUndefined();
   });
 
   it('rejects negative and non-numeric values', () => {
