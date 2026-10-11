@@ -22,6 +22,7 @@ import {
   BusinessEventRepository,
 } from '../src/repositories/bo/index.js';
 import { NotFoundError } from '../src/repositories/bo/errors.js';
+import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
 
 const run = !!process.env.DATABASE_URL;
 
@@ -180,8 +181,7 @@ async function teardownBOIntegration(): Promise<void> {
                  WHERE tenant_id = ANY($1)`);
     await clean(`DELETE FROM business_operations.warehouse_zones
                  WHERE tenant_id = ANY($1)`);
-    await clean(`DELETE FROM business_operations.inventory_movements
-                 WHERE tenant_id = ANY($1)`);
+    await deleteMovementsForTenants(adminPool!, tenantFilter); // append-only (0184): test-only privileged cleanup
     await clean(`DELETE FROM business_operations.inventory_balances
                  WHERE tenant_id = ANY($1)`);
     await clean(`DELETE FROM business_operations.supplier_performance_scores
