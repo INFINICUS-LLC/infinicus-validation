@@ -12,9 +12,12 @@ has no effective rule set and every evaluation is `INDETERMINATE`.
 - **Dataset option C.** INFINICUS is pre-launch and no representative business dataset exists. The first production rule set is
   **policy-defined, not data-derived.** No value here is calibrated from test fixtures, sparse sandbox rows, synthetic data or silent
   database defaults. Synthetic data may be used later to test *behaviour*, never to set policy limits.
-- Every value in section 5 is **NON-DATA-DERIVED**. A "proposal" is an owner-policy proposal with its consequence and its fail-closed
-  behaviour stated. Where a number would be arbitrary (a currency amount or a stock quantity, which depend on the owner's business
-  scale), no number is proposed; a policy source is named and the parameter stays unset (fail-closed) until the owner sets it.
+- Every value in section 5 is **NON-DATA-DERIVED**: an **owner-defined pre-launch policy value**, supplied by the owner in the
+  v1.0.0 ruling. None is calibrated from data, and each is to be reconsidered once representative production data exists
+  (section 11). A value left unset stays fail-closed (`PARAMETER_UNSET`).
+- **Currency ruling:** no universal currency is written into the global rule set. `DECLARED_CURRENCY` is an explicit, authoritative,
+  **business-scoped governed input** (section 5A). The globally versioned rule set *requires* it; each evaluated business *supplies*
+  its own. A silent database default is never evidence.
 - No code may be written from a value that is not approved.
 
 ## 2. Approved principles
@@ -27,7 +30,7 @@ has no effective rule set and every evaluation is `INDETERMINATE`.
 | Q-R4 | Unit cost = the most recent qualifying receipt movement |
 | Q-R5 | One global owner-approved value set |
 | Q-R6 | Lead time is owner-declared |
-| Q-R8 | One explicitly declared business currency |
+| Q-R8 | Each business supplies one explicitly declared, business-scoped currency (`DECLARED_CURRENCY`, section 5A); the rule set holds no currency value |
 | Q-R9 | Verification accepts only the currently approved version |
 | Constants | `DEMAND_WINDOW_DAYS = 90`, `DEMAND_MOVEMENT_TYPES = issue`, `MIN_DEMAND_OBSERVATIONS = 10`, `EVIDENCE_MAX_AGE = 24 hours` (governance/methodology, already approved) |
 
@@ -49,33 +52,48 @@ has no effective rule set and every evaluation is `INDETERMINATE`.
 | Ruling | Effect in v1.0.0 |
 |---|---|
 | `unit_cost` NULL | INDETERMINATE (`UNIT_COST_MISSING`); no fallback to an older receipt |
-| Cost currency not provable equal to `DECLARED_CURRENCY` | INDETERMINATE (`CURRENCY_NOT_PROVABLE`); the database default `USD` is never proof |
+| Business `DECLARED_CURRENCY` absent or not authoritative | INDETERMINATE (`DECLARED_CURRENCY_MISSING`); database defaults (`tenants.default_currency`, `business_profile_extensions.default_currency`) are never evidence |
+| Cost currency (`inventory_movements.unit_cost_currency`, migration 0183, PR #78) differs from the business `DECLARED_CURRENCY`, or is absent | INDETERMINATE (`COST_CURRENCY_MISMATCH` / `COST_CURRENCY_MISSING`) |
 | Stored zero reorder value | not treated as a deliberate configuration; baseline 0 = unset (rule C4) |
 | `capacity_units` | never read; no physical-capacity claim |
 | Lead time | owner-declared `LEAD_TIME_DAYS`; observed lead time is never derived |
-| Currency | explicit `DECLARED_CURRENCY`; never inferred from defaults |
+| Currency | explicit business-scoped `DECLARED_CURRENCY`; never inferred from defaults and never a rule-set constant |
 
 ## 5. Rule-set values (all NON-DATA-DERIVED; none is effective until section 12 is signed)
 
 Classification: **G** = governance/methodology, **C** = commercial policy. "Business-specific later" = can become per-business under a
-future versioned configuration block (v1 is one global set, Q-R5). Confidence = my confidence that the *proposal is a sensible
-conservative starting point*, not that it is right for your business.
+future versioned configuration block (v1 is one global set, Q-R5). Values 1–8 and 10 are the **owner-supplied v1.0.0 values**
+(owner-defined pre-launch policy, not data-derived). Confidence = my confidence that the value is a sensible conservative starting
+point for a pre-launch business, not that it is right for any given business. Row 9 is not a rule-set value (see 5A).
 
-| # | Key | Proposed value | Unit | Class | Rationale | Risk if too low | Risk if too high | Behaviour if absent | Business-specific later | Confidence | Evidence basis |
+| # | Key | Owner value (v1.0.0) | Unit | Class | Rationale | Risk if too low | Risk if too high | Behaviour if absent | Business-specific later | Confidence | Evidence basis |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | `MAX_CHANGE_REORDER_POINT` | 25 | percent of current (non-zero) baseline | C | Limits one approval to a moderate move; larger shifts take staged, separately evaluated approvals | Legitimate seasonal adjustments need several approvals | One approval can swing stock thresholds sharply | Rule C5 INDETERMINATE (`PARAMETER_UNSET`) | yes | 40% | purely policy-defined |
 | 2 | `MAX_CHANGE_REORDER_QUANTITY` | 25 | percent of current (non-zero) baseline | C | Same reasoning for order size | Same as above | A large order-size jump passes in one step | Rule C5 INDETERMINATE | yes | 40% | purely policy-defined |
-| 3 | `ORDER_VALUE_CAP` | **no number proposed** | `DECLARED_CURRENCY` per order | C | An amount depends on the owner's scale. Policy source to use: the owner's existing single-purchase approval limit | A low cap blocks ordinary replenishment | A high cap stops protecting cash | Rule K3 INDETERMINATE | yes | n/a | OWNER DECISION REQUIRED; no evidence |
+| 3 | `ORDER_VALUE_CAP` | 5000 | amount in **`ORDER_VALUE_CAP_CURRENCY` (OWNER TO NAME, section 5A; unset ⇒ rule K3 INDETERMINATE)** per order | C | Owner-defined ceiling on one implied order value | A low cap blocks ordinary replenishment | A high cap stops protecting cash | Rule K3 INDETERMINATE | yes (per currency/business) | 30% | owner-defined policy; denomination unstated in the ruling |
 | 4 | `MAX_CHANGE_ORDER_VALUE` | 25 | percent of `ORDER_VALUE_CAP` (absolute increase in implied order value) | C | Expressed against the cap so it scales with the owner's cap; independent of the quantity bound (a percent-of-baseline form would only repeat rule C5) | Small value changes blocked | A big absolute jump passes if the cap is high | Rule K4 INDETERMINATE | yes | 35% | purely policy-defined; requires value 3 |
-| 5 | `MAX_IMPLIED_STOCK_UNITS` | **no number proposed** | item units (`unit_of_measure`) | C | A policy cap on `reorderPoint + reorderQuantity`. Policy source: the largest stock position the owner will hold for one item | Blocks normal stock levels | The cap stops binding | Rule R1 INDETERMINATE | yes (per item class) | n/a | OWNER DECISION REQUIRED; no evidence |
+| 5 | `MAX_IMPLIED_STOCK_UNITS` | 500 | nominal count in each item's own `unit_of_measure` | C | Policy cap on `reorderPoint + reorderQuantity`. **Risk:** the same 500 applies to an item counted in pieces and one counted in kg or litres; no unit conversion is performed | Blocks normal stock levels | The cap stops binding | Rule R1 INDETERMINATE | yes (per item class/unit) | 30% | owner-defined policy; unit-agnostic by design in v1 |
 | 6 | `LEAD_TIME_DAYS` | 14 | days, owner-declared | C | Illustrative starting declaration; replace with the slowest regular supplier's quoted lead time | Too short: the stock-out guard passes reorder points that are too low | Too long: legitimate reorder points fail | Rule E2 INDETERMINATE | yes (per supplier/item) | 25% | purely policy-defined; **not derived from purchase history** |
 | 7 | `SAFETY_FACTOR` | 1.25 | multiplier | G/C | Requires reorder point to exceed demand during lead time by 25% | A factor near 1 allows no buffer | A large factor makes the guard fail ordinary policies | Rule E2 INDETERMINATE | yes | 40% | purely policy-defined (rule of thumb, not statistical) |
 | 8 | `MAX_COVER_DAYS` | 90 | days of average demand | C | Never hold more than one demand window of cover under the policy (anchored on `DEMAND_WINDOW_DAYS`) | Normal stock policies fail the overstock guard | Overstock passes | Rule E3 INDETERMINATE | yes | 40% | purely policy-defined |
-| 9 | `DECLARED_CURRENCY` | **no proposal** | ISO 4217 code | C | A currency is a fact about the owner's business; a guess would be an inference from defaults, which is prohibited | n/a | n/a | Rules K2/K3/K4 INDETERMINATE | maybe (per business) | n/a | OWNER DECISION REQUIRED |
+| 9 | `DECLARED_CURRENCY` | **none — not a rule-set value** | ISO 4217 code, supplied per business | C | A business fact, not a global constant; see 5A | n/a | n/a | COST INDETERMINATE (`DECLARED_CURRENCY_MISSING`) | by definition per business | n/a | governed business input; not yet captured |
 | 10 | `FIRST_CONFIGURATION_OPTION` (Q-F1) | `no` | yes/no | C | Items with an unset (zero) baseline cannot be changed through a governed modification until a baseline is set | `no`: unconfigured items cannot get modified approvals | `yes`: the relative change bound is skipped for them | C4 INDETERMINATE | no | 60% | purely policy-defined |
 
 Constants (governance/methodology, already approved): `DEMAND_WINDOW_DAYS = 90`, `DEMAND_MOVEMENT_TYPES = issue`,
 `MIN_DEMAND_OBSERVATIONS = 10`, `EVIDENCE_MAX_AGE = 24 hours`.
+
+### 5A. Business-scoped governed inputs (not part of the global value set)
+
+- **`DECLARED_CURRENCY`** — ISO 4217 code (`^[A-Z]{3}$`) declared for the evaluated business. The rule set requires it; it does not
+  contain it. It must come from an **explicit, authoritative, business-scoped governed record** written by an authorised owner action.
+  Not acceptable as a source: `tenancy.tenants.default_currency` and `business_profile_extensions.default_currency` (both silent
+  `DEFAULT 'USD'` columns), `purchase_orders.currency_code` (per document), `supplier_agreements.currency_code`, or any inference from
+  movements. **No such governed source exists today**, so COST returns INDETERMINATE (`DECLARED_CURRENCY_MISSING`) for every business.
+  Capturing it is a new data-capture block (section 10, item 6); it needs its own authorization.
+- **`ORDER_VALUE_CAP_CURRENCY`** — the currency in which the owner's `ORDER_VALUE_CAP = 5000` is denominated. **The ruling did not
+  name it; the owner must.** A nominal 5000 applied across businesses in different currencies would be a silent unit equivalence, so
+  v1.0.0 applies the cap only when the business `DECLARED_CURRENCY` equals `ORDER_VALUE_CAP_CURRENCY`; otherwise K3/K4 are
+  INDETERMINATE (`CAP_CURRENCY_MISMATCH`). No exchange-rate conversion is performed. A multi-currency cap table is a later versioned change.
 
 **Fail-closed summary if the owner declines to set a value:** the dependent rule returns `INDETERMINATE`; the dimension can never reach
 `PASSED`; modified approvals for `inventory_reorder_policy_update@1` stay uncapturable. Nothing unsafe is ever approved by default.
@@ -109,15 +127,18 @@ Constants (governance/methodology, already approved): `DEMAND_WINDOW_DAYS = 90`,
   is never read and no physical-capacity claim is ever made).
 
 ### 6.4 COST
-- **Required inputs:** the most recent `receipt` movement of the item (by `occurred_at`, then id) and its `unit_cost`; proof of its
-  currency; parameters 3, 4, 9; the baseline `reorder_quantity`.
-- **PASS:** a receipt exists; `unit_cost` is non-null and > 0; its currency is **provably equal** to `DECLARED_CURRENCY`; the implied
-  order value `reorderQuantity × unit_cost` ≤ `ORDER_VALUE_CAP`; the increase over the baseline order value
-  (`baseline reorder_quantity × unit_cost`) is ≤ `MAX_CHANGE_ORDER_VALUE` % of `ORDER_VALUE_CAP`.
+- **Required inputs:** the most recent `receipt` movement of the item (by `occurred_at`, then id), its `unit_cost` and
+  `unit_cost_currency`; the business-scoped `DECLARED_CURRENCY` (5A); parameters 3, 4 and `ORDER_VALUE_CAP_CURRENCY`; the baseline
+  `reorder_quantity`.
+- **PASS:** a receipt exists; `unit_cost` is non-null and > 0; `unit_cost_currency` equals the business `DECLARED_CURRENCY`, which equals
+  `ORDER_VALUE_CAP_CURRENCY`; the implied order value `reorderQuantity × unit_cost` ≤ `ORDER_VALUE_CAP`; the increase over the baseline
+  order value (`baseline reorder_quantity × unit_cost`) is ≤ `MAX_CHANGE_ORDER_VALUE` % of `ORDER_VALUE_CAP` (25% × 5000 = 1250 in the cap currency).
 - **FAILED:** implied order value above the cap; increase above the change limit.
 - **INDETERMINATE:** no receipt (`NO_RECEIPT`); `unit_cost` NULL (`UNIT_COST_MISSING`); `unit_cost ≤ 0` (`UNIT_COST_INVALID`);
-  currency unproven or different (`CURRENCY_NOT_PROVABLE` — on current data **always**, because movements carry no currency); baseline
-  quantity 0; parameter 3, 4 or 9 unset.
+  `DECLARED_CURRENCY` absent (`DECLARED_CURRENCY_MISSING` — **always, today**, as no governed source exists); `unit_cost_currency`
+  absent (`COST_CURRENCY_MISSING`; true for every pre-0183 movement, which is never backfilled) or different from `DECLARED_CURRENCY`
+  (`COST_CURRENCY_MISMATCH`); `DECLARED_CURRENCY` different from `ORDER_VALUE_CAP_CURRENCY` or the latter unset
+  (`CAP_CURRENCY_MISMATCH`); baseline quantity 0; parameter 3 or 4 unset. Currencies are never converted or assumed equal.
 - **Supplier cap:** a supplier agreement's `max_order_value` is used only if an authoritative item-to-supplier link can be *proven*.
   None exists in the schema, so no supplier cap is applied and none is invented; the finding records `SUPPLIER_CAP_NOT_RESOLVABLE`
   (informational, never INDETERMINATE).
@@ -153,7 +174,9 @@ ids and values, window start/end, demand count and sum, source movement id and c
    schema cannot tell a deliberate zero from a default. Rule C4 treats a baseline of 0 as unset.
 2. **No receipt writer:** nothing writes `purchase_receipts`; purchase-order lines are never written.
 3. **Optional `unit_cost`:** accepted as any finite number (including zero or negative) and never required.
-4. **No currency on movements:** cost currency is unprovable; COST cannot PASS on current data.
+4. **Currency:** movements written after migration 0183 (PR #78, not yet applied to live) carry an explicit `unit_cost_currency`; earlier rows do not and are not backfilled. No governed business `DECLARED_CURRENCY` source exists, so COST cannot PASS until one is captured **and** receipts carry cost and currency.
+4a. **Cap denomination:** `ORDER_VALUE_CAP = 5000` has no named currency until the owner states `ORDER_VALUE_CAP_CURRENCY`.
+4b. **Unit-agnostic stock cap:** `MAX_IMPLIED_STOCK_UNITS = 500` is nominal across units of measure.
 5. **Weak supplier/item linkage:** agreements reference a supplier only; purchase lines reference products; the product-to-item link is optional.
 6. **No capacity-unit semantics:** `capacity_units` has no unit, dimension or compatibility with inventory units.
 7. **No observed lead-time path:** lead time is owner-declared only.
@@ -165,6 +188,8 @@ ids and values, window start/end, demand count and sum, source movement id and c
 3. Explicit currency on cost-bearing inventory movements and receipts.
 4. Reliable purchase order ↔ receipt ↔ inventory item linkage.
 5. An explicit distinction between a configured zero and an unset/default reorder value.
+6. **Business-scoped `DECLARED_CURRENCY` capture** — an explicit, authoritative, governed per-business record (owner-authorised write, auditable, no silent default), plus a read path for the BO evaluator. Not designed or authorized; required before COST can ever PASS.
+Status: item 3 is implemented in PR #78 (Block C) pending owner review; items 1, 2, 4, 5, 6 are not started.
 Constraints: preserve DAL ingestion ownership, BO operational truth, and no duplicate source of truth. Design: see
 `DATA-CAPTURE_RECONCILIATION_inventory-cost-receipts.md` (#77).
 
@@ -185,8 +210,12 @@ Status: **DRAFT** (becomes APPROVED only when completed by the owner)
 Effective date: ______
 Owner: ______
 Approval date: ______
-Approved values: key 1 ____  2 ____  3 ____  4 ____  5 ____  6 ____  7 ____  8 ____  9 ____  10 ____
+Owner-supplied values to confirm (v1.0.0 ruling): 1 = 25%  2 = 25%  3 = 5000  4 = 25% of key 3  5 = 500  6 = 14 days  7 = 1.25  8 = 90 days  10 = no
+Approved values (owner to confirm each): key 1 ____  2 ____  3 ____  4 ____  5 ____  6 ____  7 ____  8 ____  10 ____
+Key 9 `DECLARED_CURRENCY`: not a rule-set value (business-scoped governed input, section 5A)
+`ORDER_VALUE_CAP_CURRENCY` (currency of key 3): ______
 Simulation applicability ruling: `inventory_reorder_policy_update@1` ⇒ NOT_APPLICABLE, reason `NO_APPLICABLE_SIMULATION_MODEL` (recorded in section 7; confirm: yes / no)
-Currency: ______
+Currency model confirmed (no global currency; business-scoped `DECLARED_CURRENCY`): yes / no
+Values are owner-defined pre-launch policy, to be reconsidered after representative production data exists: acknowledged yes / no
 Notes: ______
 Supersedes: none
