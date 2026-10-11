@@ -6,3 +6,4 @@ export * from './canonical';
 export * from './validator';
 export * from './canonical-actions';
 export * from './status-provider';
+export * from './evidence-verifier';

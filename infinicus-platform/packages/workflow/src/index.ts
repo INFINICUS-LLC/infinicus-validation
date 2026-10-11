@@ -50,6 +50,8 @@ export {
 export type { IssuanceFacts, IssuanceEvaluation, IssuanceRefusal, IssuanceRefusalCode } from './packageIssuancePolicy.js';
 
 // ── ABA authoring / administration (P0-5) ──────────────────────────────────────
+export { SimulationRunRepositoryReferenceVerifier } from './SimulationRunReferenceVerifier.js';
+export type { SimulationRunReferenceVerifier, SimulationRunReferenceVerdict } from './SimulationRunReferenceVerifier.js';
 export { AbaAuthoringService, deriveFinalParameters } from './AbaAuthoringService.js';
 export type {
   AuthoringRequestContext, ActionTypeView, PolicyView, PolicyVersionView, EnablementView, CaptureInput, CaptureView, OwnerInput, OwnerView,

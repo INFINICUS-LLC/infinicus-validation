@@ -74,6 +74,17 @@ describe('ABA authoring architecture', () => {
     expect(captureBody).not.toMatch(/finalParameters|digest|lifecycle|tenantId|userId|basis|evaluatedAt|modifiedAt/);
   });
 
+  it('persists no caller-asserted evidence: a modification evaluation exists only as a registered verifier\'s VERIFIED answer', () => {
+    const text = code(SERVICE);
+    expect(text).toContain('this.d.evidenceVerifier');
+    expect(text).toMatch(/verifier\.verify\(/);
+    expect(text).not.toMatch(/evaluatedAt:\s*now\b/);
+    expect(text).toMatch(/evaluatedAt:\s*verdict\.evaluatedAt/);
+    // the production default registers no verifier and the simulation reference is verified before boundaries are stored
+    expect(text).toMatch(/evidenceVerifier:\s*null/);
+    expect(text).toMatch(/this\.d\.simulationRuns\.verify\(/);
+  });
+
   it('every mutating service entry point audits through the governance audit repository', () => {
     const text = code(SERVICE);
     for (const action of ['aba.action_type.defined', 'aba.action_type.activated', 'aba.action_type.retired', 'aba.policy.created', 'aba.policy.version_added',

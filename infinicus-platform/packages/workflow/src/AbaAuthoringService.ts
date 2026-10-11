@@ -19,6 +19,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { SimulationRunRepositoryReferenceVerifier, type SimulationRunReferenceVerifier } from './SimulationRunReferenceVerifier.js';
 import {
   ActionTypeRegistryRepository, ApprovalDecisionRepository, ApprovedActionRepository, ApproverAuthorityRepository, AuthorizedActionBoundaryRepository,
   AuthorizedActionCaptureRepository, AuthorizedActionPackageRepository, AutomationLevelPolicyRepository, BusinessRepository,
@@ -30,11 +31,12 @@ import type {
 import {
   SIMULATION_NOT_APPLICABLE_ALLOWED, actionTypeKey, canonicalActionTypeRegistry, canonicalize, checkParameterValue, requiredGovernanceDimensions,
 } from '@infinicus/handoff-contracts';
-import type { ActionTypeContract, ActionTypeRegistry, GovernanceDimension, JsonValue } from '@infinicus/handoff-contracts';
+import type { ActionTypeContract, ActionTypeRegistry, GovernanceDimension, GovernanceEvidenceVerifier, JsonValue } from '@infinicus/handoff-contracts';
 import { ApproverAuthorityNotEstablishedError } from './DecisionWorkflowService.js';
 import { AuthorizedActionPackageIssuer, type IssuePackageResult } from './AuthorizedActionPackageIssuer.js';
 import { POLICY_ACTION_TYPES_KEY, notApplicableCodeProblems } from './packageIssuancePolicy.js';
 
+const MS_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const BOUNDARY_FIELDS = ['executionWindow', 'preconditions', 'budget', 'rollback', 'monitoring'] as const;
 
@@ -122,6 +124,13 @@ export interface AbaAuthoringDependencies {
   issuer: AuthorizedActionPackageIssuer;
   /** The canonical platform vocabulary (shared-contract truth). */
   canonicalTypes: ActionTypeRegistry;
+  /** Proves a simulation-run reference exists, is in scope and completed. */
+  simulationRuns: SimulationRunReferenceVerifier;
+  /**
+   * The authoritative governance-evidence verifier (shared contract). NONE is registered in production today: with no verifier a
+   * modified approval cannot be captured (fail closed). A caller's evidence reference is never proof.
+   */
+  evidenceVerifier: GovernanceEvidenceVerifier | null;
 }
 
 const defaults = (): AbaAuthoringDependencies => ({
@@ -129,6 +138,7 @@ const defaults = (): AbaAuthoringDependencies => ({
   approverAuthority: new ApproverAuthorityRepository(), captures: new AuthorizedActionCaptureRepository(), boundaries: new AuthorizedActionBoundaryRepository(),
   actionTypes: new ActionTypeRegistryRepository(), policies: new AutomationLevelPolicyRepository(), packages: new AuthorizedActionPackageRepository(),
   audit: new GovernanceAuditRepository(), issuer: new AuthorizedActionPackageIssuer(), canonicalTypes: canonicalActionTypeRegistry(),
+  simulationRuns: new SimulationRunRepositoryReferenceVerifier(), evidenceVerifier: null,
 });
 
 const invalid = (message: string): ValidationError => new ValidationError('AbaAuthoring', [message]);
@@ -440,10 +450,34 @@ export class AbaAuthoringService {
           const given = new Map((input.evaluationEvidence ?? []).map((e) => [e.dimension, e.evidenceRef]));
           const missing = required.dimensions.filter((dim) => !given.has(dim));
           if (missing.length > 0) throw invalid(`evaluation evidence is required for: ${missing.join(', ')}`);
-          evaluation = {
-            state: 'VALUE',
-            value: { basis: required.basis, evidence: required.dimensions.map((dimension) => ({ dimension, evaluatedAt: now, result: 'PASSED' as const, evidenceRef: given.get(dimension)! })) },
-          };
+          // A reference is not proof. Every required dimension must be VERIFIED by the registered authoritative verifier, and the
+          // verifier's answer (not the caller's reference alone) is what is persisted. No verifier registered = fail closed.
+          const verifier = this.d.evidenceVerifier;
+          if (!verifier) {
+            throw new ConflictError('AbaAuthoring', `no authoritative governance evidence verifier is registered, so a modification touching ${required.dimensions.join(', ')} cannot be captured (an evidence reference alone is not proof)`);
+          }
+          const evidence: { dimension: GovernanceDimension; evaluatedAt: string; result: 'PASSED'; evidenceRef: { kind: string; id: string } }[] = [];
+          for (const dimension of required.dimensions) {
+            const ref = given.get(dimension)!;
+            const verdict = await verifier.verify({
+              tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, businessId, dimension, evidenceRef: { kind: ref.kind, id: ref.id },
+              subject: { actionId, actionType: { code: canonical.code, schemaVersion: canonical.schemaVersion }, target: { kind: input.target.kind, id: input.target.id }, finalParameters },
+            });
+            if (!verdict || verdict.status !== 'VERIFIED') {
+              throw new ConflictError('AbaAuthoring', `${dimension} evidence was not verified: ${verdict && verdict.status === 'REFUSED' ? verdict.reason : 'no verdict'}`);
+            }
+            if (verdict.dimension !== dimension || verdict.result !== 'PASSED' || verdict.evidenceRef.kind !== ref.kind || verdict.evidenceRef.id !== ref.id) {
+              throw new ConflictError('AbaAuthoring', `${dimension} evidence verdict does not match the requested dimension, result or reference`);
+            }
+            if (!MS_UTC.test(verdict.evaluatedAt) || Number.isNaN(Date.parse(verdict.evaluatedAt))) {
+              throw new ConflictError('AbaAuthoring', `${dimension} evidence verdict carries a malformed evaluation time`);
+            }
+            const evaluatedMs = Date.parse(verdict.evaluatedAt);
+            if (evaluatedMs < Date.parse(now)) throw new ConflictError('AbaAuthoring', `${dimension} evaluation predates the modification, so it is not fresh`);
+            if (evaluatedMs > Date.parse(await this.d.audit.databaseNow(ctx))) throw new ConflictError('AbaAuthoring', `${dimension} evaluation is dated after the database clock`);
+            evidence.push({ dimension, evaluatedAt: verdict.evaluatedAt, result: 'PASSED', evidenceRef: { kind: verdict.evidenceRef.kind, id: verdict.evidenceRef.id } });
+          }
+          evaluation = { state: 'VALUE', value: { basis: required.basis, evidence } };
         }
       } else {
         if ((input.evaluationEvidence ?? []).length > 0) throw invalid('a plain approval carries no modification evaluation');
@@ -523,6 +557,11 @@ export class AbaAuthoringService {
       throw invalid(`${canonical.code}@${canonical.schemaVersion} requires a simulation run reference; NOT_APPLICABLE is not permitted`);
     }
     return withSharedTenantTransaction(ctx, async () => {
+      if (input.simulationRun.state === 'VALUE') {
+        // The reference must be a real, in-scope, completed run of the Simulation layer (not merely a well-formed UUID).
+        const verdict = await this.d.simulationRuns.verify(ctx, { businessId, runId: input.simulationRun.value });
+        if (!verdict.ok) throw new ConflictError('AbaAuthoring', `simulation run reference refused: ${verdict.reason}`);
+      }
       const before = await this.d.boundaries.getCurrent(ctx, actionId);
       const stored: AuthorizedActionBoundaries = await this.d.boundaries.recordBoundaries(ctx, {
         businessId, actionId, captureId: capture.id, authoredByUserId: ctx.userId, correlationId: rc.correlationId,
