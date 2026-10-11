@@ -14,6 +14,7 @@ import { ProcurementService } from '../src/procurement/ProcurementService.js';
 import { OperationalCommandExecutor } from '../src/OperationalCommandExecutor.js';
 import type { OperationalCommand } from '../src/types.js';
 import { BusinessIntakeRejectedError } from '../src/errors.js';
+import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
 
 const RUN = !!process.env.DATABASE_URL;
 
@@ -54,10 +55,7 @@ async function cleanTenant(): Promise<void> {
     `DELETE FROM business_operations.business_events WHERE tenant_id = ANY($1)`,
     [tenantIds]
   );
-  await adminPool.query(
-    `DELETE FROM business_operations.inventory_movements WHERE tenant_id = ANY($1)`,
-    [tenantIds]
-  );
+  await deleteMovementsForTenants(adminPool, tenantIds); // append-only (0184): test-only privileged cleanup
   await adminPool.query(
     `DELETE FROM business_operations.inventory_balances WHERE tenant_id = ANY($1)`,
     [tenantIds]

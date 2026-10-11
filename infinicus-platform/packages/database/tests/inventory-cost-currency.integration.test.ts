@@ -112,8 +112,9 @@ describe.runIf(run)('explicit currency on inventory costs (0183) - live PostgreS
       expect((await admin.query(`SELECT convalidated FROM pg_constraint WHERE conname = 'inventory_movements_unit_cost_currency_presence'`)).rows[0].convalidated).toBe(false);
     });
 
-    it('adds no trigger or UPDATE path to the movement table and leaves RLS exactly as it was', async () => {
-      expect((await admin.query(`SELECT tgname FROM pg_trigger WHERE tgrelid = 'business_operations.inventory_movements'::regclass AND NOT tgisinternal`)).rows).toEqual([]);
+    it('adds no UPDATE path to the movement table (only the 0184 append-only guards exist) and leaves RLS exactly as it was', async () => {
+      expect((await admin.query(`SELECT tgname FROM pg_trigger WHERE tgrelid = 'business_operations.inventory_movements'::regclass AND NOT tgisinternal ORDER BY tgname`)).rows)
+        .toEqual([{ tgname: 'forbid_mutation_inventory_movements' }, { tgname: 'forbid_truncate_inventory_movements' }]);
       const f = (await admin.query(`SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'business_operations.inventory_movements'::regclass`)).rows[0];
       expect(f).toEqual({ relrowsecurity: true, relforcerowsecurity: false });
       const pol = (await admin.query(`SELECT policyname, qual FROM pg_policies WHERE schemaname='business_operations' AND tablename='inventory_movements'`)).rows;
