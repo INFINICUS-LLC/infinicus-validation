@@ -85,8 +85,8 @@ The 0176 hash above is the hash at the time of writing; it is frozen only after 
 |---|---|---|
 | **3a (this)** | Package storage + DB guards + proofs | done, awaiting review |
 | 3b | Repository (insert/read through the guards, derived status, revoke, expiry detection, RLS-scoped) - no issuer | no migration, **merged (#62)** |
-| **3c-1 (this PR)** | Structured capture (original / delta / final parameters) + accountable-owner assignment | migration **0177**, **done, awaiting review** |
-| 3c-2 | Governed action-type registry + automation-level policy (Level 2) | migration 0178, authorization, **initial vocabulary from the owner** |
+| 3c-1 | Structured capture (original / delta / final parameters) + accountable-owner assignment | migration 0177, **merged (#63)** |
+| **3c-2 (this PR)** | Governed action-type registry + automation-level policy (Level 2 enablement) | migration **0178**, **done, awaiting review; registry ships EMPTY - vocabulary still needed from the owner** |
 | 3c-3 | Execution-boundary authoring (window, preconditions, rollback, budget, monitoring) + simulation reference | migration 0179, authorization |
 | 3d | Issuer (single component, verifies decision/facts/authority, idempotent, atomic audit) | 3b + 3c |
 | 3e | BO-side receipt + consumption validator + extended isolation guard | new migration number, authorization |
@@ -185,3 +185,69 @@ The 0177 hash is the hash at the time of writing; it is frozen only after owner 
 
 ### Deployment
 0177 joins the **controlled deployment review** with 0170-0176. Live Supabase is at **0169**; **0170-0177 are unapplied.** No deployment, live apply, backfill or data change is authorized or performed.
+
+## 10. Block 3c-2 - action-type registry and automation-level policy (migration 0178)
+
+Status: implemented, draft for owner review. Authorized: "3c-2 with migration 0178". **No vocabulary and no policy are seeded. No issuer, no package/capture/owner change, no events, no BO registry, no change to the approval route, no data, no live apply.**
+
+**What 0178 creates** (`approved_business_action`, append-only, RLS forced on tenant + workspace):
+
+| Table | Role |
+|---|---|
+| `action_type_definitions` | Immutable definition of one action type at one schema version: target kinds, parameter specs, parameter -> governance-dimension impact (R-7), and which governed fields may be NOT_APPLICABLE (D-6). A change is a **new schema version**. |
+| `action_type_status_events` | `ACTIVE` once, then (optionally, with a reason) `RETIRED` once. No event = DRAFT = unusable. State is derived. |
+| `automation_level_policies` | The governed policy identity a package cites as `action.automationLevel.policy.policyId`. One automation level (2, 3 or 4) per policy. |
+| `automation_level_policy_versions` | Immutable linear versions (the `policyVersionId` a package cites). |
+| `automation_level_policy_enablement_events` | `ENABLED` / `DISABLED` facts with actor and reason. The latest event wins; none = not enabled. |
+
+**Guards the database enforces:**
+- A definition must be well formed (`aap_action_type_problems`, an immutable SQL function reporting every problem), in both a `CHECK` and a trigger. It mirrors the contract's `validateActionTypeContract` and is **stricter in 7 documented ways** (unique and non-blank target kinds, valid `maxLength`, integer bounds for integer parameters, no foreign properties on a parameter spec, a boolean `required`, a bounded code length). A shared **golden-case file** (`handoff-contracts/tests/fixtures/action-type-golden-cases.json`, 30 cases) is run by the contract package and by the database tests, and asserts that **whatever the database accepts, the contract also accepts**.
+- Status: legal transitions only (activate once; retire only an ACTIVE type, with a reason; no re-activation). Facts are stamped with the **database clock**.
+- Enablement: **Level 2 only**; only the **latest** version of a policy; **one enabled version per level and scope** (disable the other first, serialized by an advisory lock so it cannot race); only an enabled version can be disabled; a reason is required. Levels 3 and 4 can be defined but not enabled (ruling 12.1, P-5).
+- Policy versions form a linear chain tied to the policy's level. `UPDATE` and `DELETE` are rejected for every role.
+
+**Repositories** (`@infinicus/database`): `ActionTypeRegistryRepository` (`define` - idempotent, a different definition at the same version is a `ConflictError`; `activate`; `retire`; `get`; `getById`; `resolveActive` - ACTIVE only; `listActive`; `toActionTypeContract`) and `AutomationLevelPolicyRepository` (`createPolicy` with version 1, `addVersion`, `enable`, `disable`, `getEnablement` - shape-compatible with the contract's `PackageEnablementPolicy`, `getEffectivePolicy`, reads). Guard rejections surface as `ValidationError` with the database's own message. **Neither is imported by any route, service or layer** (architecture-tested). `BO isolation guard` extended, not loosened: BO may not name either repository or the five tables. "BO can execute this" remains Business Operations' own capability registry.
+
+### Decisions taken in this block (please confirm or overrule)
+
+| # | Decision | Why / cost if overruled |
+|---|---|---|
+| G-1 | The registry and policies are **workspace-scoped** (tenant + workspace), not platform-global. | The platform doctrine is tenant isolation on every persistent table; a global table needs a new RLS pattern and a privileged authoring path. If you want one platform-wide vocabulary, that is a new migration (the tables are empty, so it is cheap). |
+| G-2 | **Nothing is seeded.** Until action types are defined and activated and a Level 2 policy is enabled, nothing can be issued. | The owner has not supplied a vocabulary; none is invented. |
+| G-3 | Definitions are immutable and **activated once**; a corrected definition is a new schema version. | Keeps history auditable and stops authorized parameters changing under an active type. |
+| G-4 | **Level 2 only** can be enabled; Levels 3 and 4 can be defined. | The scope this block was authorised for; Level 3 also lacks its provenance sources (P-5). |
+| G-5 | **One enabled version per (scope, level)**, latest version only; changing policy is an explicit disable then enable. | Makes "the" governed policy for a level unambiguous. |
+| G-6 | **Who may define, activate or enable** (suggested `aba:admin`) is a route-layer decision, like Q-1: the repositories take an actor id and write it, and bind no permission. | No route exists yet. |
+
+### Open owner decisions
+- **The initial action vocabulary and parameter schemas**, and the first Level 2 policy. Without them nothing is issuable. (Still not supplied.)
+- Platform-global vs workspace-scoped registry (G-1); permission model (G-6).
+- The still-open capture-placement decision, and 3a P-1..P-6, 3b Q-1/Q-2, 3c-1 C-1..C-6.
+
+### Evidence
+**Migration record (MIGRATION-ALLOCATION-POLICY):**
+
+| Item | Value |
+|---|---|
+| Predecessor final migration | `0177_create_authorized_action_capture.sql` (unchanged; 0176 and 0177 hashes still match their records) |
+| New range | `0178` only |
+| Allocation check | no file, branch or open PR used 0178 on `main` `6f61ec8` |
+| SHA-256 of frozen 0001-0177 (concatenated in name order) | `d3b32b165f498a0cc5a7383e2c1aae049e864006341b83b902d826064b7b9bf2` |
+| SHA-256 of `0178_create_action_governance.sql` | `53f292008660ba552acecf7f5f63d79576a53d29c10ea5dc131b8f0ff6e97f48` |
+| Empty install | 178 migrations applied to a brand-new PostgreSQL 16 database via the runner's exact logic; no error; all five tables empty |
+| Re-run | runner re-run applies 0; forced re-execution of the 0178 file succeeds (idempotent DDL) |
+| Earlier migrations | none modified |
+
+The 0178 hash is the hash at the time of writing; it is frozen only after owner validation.
+
+**Tests:**
+- `migration-p0-5-block3c2.test.ts` - 10 static tests (incl. "seeds NO data"). `p0-5-block3c2-governance.architecture.test.ts` - 13 static tests (both repositories). `aap-action-type-golden.contract.test.ts` - 32 tests in the contract package.
+- `p0-5-block3c2-governance.integration.test.ts` - 36 live PostgreSQL tests as the least-privilege role: the empty start, the full DRAFT -> ACTIVE -> RETIRED lifecycle, the validator (11 invalid-definition cases, the 30 golden cases, direct writes that bypass the repository), enablement rules, concurrency (repeated rounds), append-only, RLS and tenant isolation.
+- **Mutation proofs:** 16 of 16 effective migration mutants detected (validator: code pattern, enum duplicates, empty range, impact on an undeclared parameter, unknown spec property; definition trigger; retire without ACTIVE; any level enabled; stale version enabled; several enabled per level; disable of a non-enabled version; policy chain; RLS enabled; append-only trigger). Two mutants are *equivalent by design* because two layers enforce the same rule: the validator `CHECK` (the trigger also enforces it) and the "activated once" trigger check (the unique index also enforces it).
+- A real bug was found by running the validator first: appending a bare string literal to a `text[]` is parsed as an array literal; every append now uses `array_append`.
+- `aba-repositories.integration.test.ts`: the two table-count assertions move **51 -> 56** (the only existing test touched). BO isolation: 9 tests (1 new).
+- **Shared-database footprint:** these tests create bare tenant + workspace scopes (no business rows), so they add no businesses to the table the owner-authority dry-run test scans.
+- Full `@infinicus/database` suite on a migrated database: 3140 passed, 0 failed; `handoff-contracts`: 432 passed. In this sandbox 11 unrelated database files cannot load `@infinicus/event-contracts` (workspace build unavailable), identically to `main`.
+
+### Deployment
+0178 joins the **controlled deployment review** with 0170-0177. Live Supabase is at **0169**; **0170-0178 are unapplied.** No deployment, live apply, backfill or data change is authorized or performed.

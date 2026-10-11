@@ -1,0 +1,680 @@
+{
+  "description": "Golden cases shared by the contract validator (handoff-contracts) and the database validator (migration 0178). contractValid = verdict of validateActionTypeContract; dbValid = verdict of approved_business_action.aap_action_type_problems. The database may be stricter, but anything it accepts must also satisfy the contract.",
+  "cases": [
+    {
+      "name": "minimal definition",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "name": "every parameter type, ranges, impact and applicability",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "title": {
+            "type": "string",
+            "required": true,
+            "maxLength": 80
+          },
+          "count": {
+            "type": "integer",
+            "required": false,
+            "min": 1,
+            "max": 10
+          },
+          "ratio": {
+            "type": "number",
+            "required": false,
+            "min": 0,
+            "max": 1
+          },
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "required": false
+          },
+          "channel": {
+            "type": "enum",
+            "required": true,
+            "values": [
+              "email",
+              "sms"
+            ]
+          },
+          "sku": {
+            "type": "identifier",
+            "required": true
+          }
+        },
+        "governanceImpact": {
+          "price": [
+            "COST",
+            "RISK"
+          ],
+          "channel": [
+            "SIMULATION"
+          ]
+        },
+        "applicability": {
+          "executionWindow": "NOT_APPLICABLE_ALLOWED",
+          "budget": "REQUIRED",
+          "validityBound": "NOT_APPLICABLE_ALLOWED"
+        }
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "name": "a declared empty impact list means 'influences no dimension'",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {
+          "price": []
+        },
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "name": "a version with several parts",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "2.10.3",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "name": "min equal to max is a one-value range",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "n": {
+            "type": "integer",
+            "required": true,
+            "min": 5,
+            "max": 5
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": true
+    },
+    {
+      "name": "upper-case code",
+      "definition": {
+        "code": "Adjust_Price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "code starting with a digit",
+      "definition": {
+        "code": "1adjust",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "code with a hyphen",
+      "definition": {
+        "code": "adjust-price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "non-numeric schema version",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "v1",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "schema version with a trailing dot",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "empty schema version",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "no target kinds",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "no parameters",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {},
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "parameter name starting with a digit",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "1price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "parameter name with a hyphen",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "unit-price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "enum without values",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "c": {
+            "type": "enum",
+            "required": true,
+            "values": []
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "enum with duplicate values",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "c": {
+            "type": "enum",
+            "required": true,
+            "values": [
+              "a",
+              "a"
+            ]
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "integer range with min above max",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "n": {
+            "type": "integer",
+            "required": true,
+            "min": 9,
+            "max": 1
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "number range with min above max",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "n": {
+            "type": "number",
+            "required": true,
+            "min": 2.5,
+            "max": 1.5
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "impact for an undeclared parameter",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {
+          "nope": [
+            "COST"
+          ]
+        },
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "impact with an unknown dimension",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {
+          "price": [
+            "VIBES"
+          ]
+        },
+        "applicability": {}
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "applicability for an unknown field",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {
+          "nope": "REQUIRED"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "applicability with an invalid rule",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {
+          "budget": "MAYBE"
+        }
+      },
+      "contractValid": false,
+      "dbValid": false
+    },
+    {
+      "name": "duplicate target kinds",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product",
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": false,
+      "note": "the database requires unique target kinds"
+    },
+    {
+      "name": "blank target kind",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "  "
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": false,
+      "note": "the database requires non-blank target kinds"
+    },
+    {
+      "name": "string parameter with maxLength 0",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "t": {
+            "type": "string",
+            "required": true,
+            "maxLength": 0
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": false,
+      "note": "the database requires maxLength >= 1"
+    },
+    {
+      "name": "integer parameter with a fractional bound",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "n": {
+            "type": "integer",
+            "required": true,
+            "min": 0.5
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": false,
+      "note": "the database requires integer bounds for an integer parameter"
+    },
+    {
+      "name": "parameter spec with an unknown property",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "p": {
+            "type": "boolean",
+            "required": true,
+            "values": [
+              "x"
+            ]
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": false,
+      "note": "the database rejects properties that do not belong to the parameter type"
+    },
+    {
+      "name": "parameter spec without a required flag",
+      "definition": {
+        "code": "adjust_price",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "p": {
+            "type": "boolean"
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": false,
+      "note": "the database requires a boolean required flag"
+    },
+    {
+      "name": "a 101-character code",
+      "definition": {
+        "code": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "schemaVersion": "1.0",
+        "targetKinds": [
+          "product"
+        ],
+        "parameters": {
+          "price": {
+            "type": "decimal_string",
+            "required": true
+          }
+        },
+        "governanceImpact": {},
+        "applicability": {}
+      },
+      "contractValid": true,
+      "dbValid": false,
+      "note": "the database bounds the code length"
+    }
+  ]
+}

@@ -236,3 +236,18 @@ export function ownerInput(f: CaptureFixture, over: Record<string, unknown> = {}
     ...over,
   };
 }
+
+// ── Block 3c-2: a bare tenant + workspace (no business) for registry and policy tests ──────────────────────────────
+
+export interface Scope {
+  tenantId: string;
+  workspaceId: string;
+}
+
+export async function makeScope(admin: Pool): Promise<Scope> {
+  const s: Scope = { tenantId: randomUUID(), workspaceId: randomUUID() };
+  const slug = `g${s.tenantId.slice(0, 8)}`;
+  await admin.query('INSERT INTO tenancy.tenants (id, name, slug) VALUES ($1,$2,$3)', [s.tenantId, slug, slug]);
+  await admin.query('INSERT INTO tenancy.workspaces (id, tenant_id, name, slug) VALUES ($1,$2,$3,$4)', [s.workspaceId, s.tenantId, slug, slug]);
+  return s;
+}
