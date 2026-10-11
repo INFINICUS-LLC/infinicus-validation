@@ -360,7 +360,7 @@ describe.runIf(run)('P0-5 Block 3e: BO authorized-action intake', () => {
       await expect(admin.query(
         `INSERT INTO ${S}.authorized_action_receipts (tenant_id, workspace_id, business_id, package_id, package_version, contract_version, canonical_version,
            digest_algorithm, digest, package, validated_at, status_verified_at, correlation_id)
-         VALUES ($1,$2,$3,$4,1,'aap/1','aap-canonical/1','sha256',$5,$6::jsonb,now(),now(),gen_random_uuid())`,
+         VALUES ($1,$2,$3,$4,1,'aap/1','aap-canonical/1','sha256',$5,$6::jsonb,date_trunc('milliseconds', now()),date_trunc('milliseconds', now()),gen_random_uuid())`,
         [world.tenantId, world.workspaceId, world.businessId, randomUUID(), pkg.integrity.digest, JSON.stringify(pkg)],
       )).rejects.toThrow(/document_identity/);
     });
