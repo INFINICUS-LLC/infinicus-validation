@@ -490,3 +490,32 @@ Not started:
 Next recommended task:
 - import and inventory completed layer blocks
 ```
+
+---
+
+## 17. Standing Report Rule (locked by the owner)
+
+After every build, implementation, deployment or assignment, report with a single copy-and-paste block. This rule applies from
+the day it was locked and to every session; it is not optional and is not superseded by the task-specific formats above.
+
+The report states, in this order:
+
+1. what was done and the PR or commit reference (lead with the answer);
+2. verification actually run, with real results (never claim a pass that was not run);
+3. CI status, saying plainly when it is unconfirmed;
+4. findings, stop conditions, and questions for the owner with a recommendation for each;
+5. what was deliberately not done.
+
+It always ends with this footer, then stops:
+
+```text
+Current Module:
+Completed Blocks:
+Remaining Blocks:
+Next Recommended Block:
+Estimated Remaining Blocks:
+```
+
+Standing conditions that go with the rule: Claude never merges or approves; work is delivered as a DRAFT pull request; no live
+database, Cloudflare, DNS or secret change is made without explicit authorization; and Claude stops after each authorized block
+instead of starting the next one.
