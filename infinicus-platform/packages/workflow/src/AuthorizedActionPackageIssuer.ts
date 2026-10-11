@@ -36,6 +36,8 @@ export interface IssuePackageRequest {
   actionId: string;
   /** Optional trace id only; it carries no authority. A fresh one is generated when absent. */
   correlationId?: string;
+  /** Audit-only: the permission the route authorized this request under. Recorded in the issuance audit; it carries no authority. */
+  permissionUsed?: string;
 }
 
 export interface IssuePackageResult {
@@ -93,7 +95,7 @@ export class AuthorizedActionPackageIssuer {
   async issue(ctx: TenantContext, request: IssuePackageRequest): Promise<IssuePackageResult> {
     const correlationId = request.correlationId ?? randomUUID();
     try {
-      return await withSharedTenantTransaction(ctx, () => this.issueInTransaction(ctx, request.actionId, correlationId));
+      return await withSharedTenantTransaction(ctx, () => this.issueInTransaction(ctx, request.actionId, correlationId, request.permissionUsed ?? null));
     } catch (error) {
       const refusal = error instanceof PackageIssuanceRefusedError
         ? error
@@ -123,7 +125,7 @@ export class AuthorizedActionPackageIssuer {
     }
   }
 
-  private async issueInTransaction(ctx: TenantContext, actionId: string, correlationId: string): Promise<IssuePackageResult> {
+  private async issueInTransaction(ctx: TenantContext, actionId: string, correlationId: string, permissionUsed: string | null): Promise<IssuePackageResult> {
     const d = this.deps;
     await d.issuance.lockAction(ctx, actionId);
     const sources = await d.issuance.loadSources(ctx, actionId);
@@ -206,6 +208,7 @@ export class AuthorizedActionPackageIssuer {
             supersedes: sealed.identity.supersedes, automationLevel: sealed.action.automationLevel,
             actionType: sealed.action.type, simulationRunId: sealed.lineage.simulationRunId,
             modification: sealed.lineage.modification, issuerComponent: sealed.issuance.issuerComponent, correlationId,
+            requestedBy: { userId: ctx.userId, permissionUsed },
           },
         });
       } catch (error) {

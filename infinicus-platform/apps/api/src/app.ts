@@ -18,6 +18,7 @@ import idempotencyPlugin from './plugins/idempotency.js';
 import authRoutes from './routes/auth.js';
 import onboardingRoutes from './routes/onboarding.js';
 import businessRoutes from './routes/businesses.js';
+import abaAuthoringRoutes from './routes/abaAuthoring.js';
 import observabilityRoutes from './routes/observability.js';
 import billingRoutes from './routes/billing.js';
 import incidentRoutes from './routes/incidents.js';
@@ -134,6 +135,7 @@ export async function buildApp(config: InfinicusConfig): Promise<FastifyInstance
   await app.register(authRoutes);
   await app.register(onboardingRoutes);
   await app.register(businessRoutes);
+  await app.register(abaAuthoringRoutes);
   await app.register(observabilityRoutes);
   await app.register(billingRoutes);
   await app.register(incidentRoutes);

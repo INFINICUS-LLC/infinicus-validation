@@ -48,3 +48,10 @@ export {
   evaluateIssuance, notApplicableCodeProblems, authoritativeInputsKey,
 } from './packageIssuancePolicy.js';
 export type { IssuanceFacts, IssuanceEvaluation, IssuanceRefusal, IssuanceRefusalCode } from './packageIssuancePolicy.js';
+
+// ── ABA authoring / administration (P0-5) ──────────────────────────────────────
+export { AbaAuthoringService, deriveFinalParameters } from './AbaAuthoringService.js';
+export type {
+  AuthoringRequestContext, ActionTypeView, PolicyView, PolicyVersionView, EnablementView, CaptureInput, CaptureView, OwnerInput, OwnerView,
+  BoundariesInput, BoundariesView, IssuedPackageView, AuthoringStatusView, AbaAuthoringDependencies,
+} from './AbaAuthoringService.js';

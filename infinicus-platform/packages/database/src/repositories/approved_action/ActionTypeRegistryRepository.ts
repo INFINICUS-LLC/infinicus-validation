@@ -202,6 +202,14 @@ export class ActionTypeRegistryRepository {
     return found && found.status === 'ACTIVE' ? found.definition : null;
   }
 
+  /** Every definition in the caller's scope with its derived status (DRAFT, ACTIVE or RETIRED), for administration reads. */
+  async listAll(ctx: TenantContext): Promise<ActionTypeWithStatus[]> {
+    return withTenantTransaction(ctx, async (client) => {
+      const r = await client.query<Json>(`${WITH_STATUS} ORDER BY d.code, d.schema_version`);
+      return r.rows.map((row) => ({ definition: rowToDefinition(row), status: statusOf(row) }));
+    });
+  }
+
   /** Every ACTIVE definition in the caller's scope, as contract-shaped entries for the issuer to load. */
   async listActive(ctx: TenantContext): Promise<ActionTypeDefinition[]> {
     return withTenantTransaction(ctx, async (client) => {

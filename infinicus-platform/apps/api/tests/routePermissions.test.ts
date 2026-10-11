@@ -154,6 +154,39 @@ describe('route-permission regression audit', () => {
     expect(permsOf('POST', `${base}/decision-recommendations/outcome`)).toEqual(['om:write']);
   });
 
+  it('pins the ABA authoring surface: governance mutations need aba:admin, authoring/issuance aba:write, every read aba:read', () => {
+    const AT = '/v1/aba/action-types'; const POL = '/v1/aba/automation-policies';
+    const act = '/v1/businesses/:businessId/authorized-actions/:actionId';
+    const admin: [string, string][] = [
+      ['POST', AT], ['POST', `${AT}/:code/:schemaVersion/activate`], ['POST', `${AT}/:code/:schemaVersion/retire`],
+      ['POST', POL], ['POST', `${POL}/:policyCode/versions`],
+      ['POST', `${POL}/:policyCode/versions/:versionNumber/enable`], ['POST', `${POL}/:policyCode/versions/:versionNumber/disable`],
+    ];
+    const write: [string, string][] = [['POST', `${act}/capture`], ['POST', `${act}/owner`], ['POST', `${act}/boundaries`], ['POST', `${act}/package`]];
+    const read: [string, string][] = [
+      ['GET', AT], ['GET', `${AT}/:code/:schemaVersion`], ['GET', `${POL}/:policyCode`], ['GET', '/v1/aba/automation-enablement'], ['GET', `${act}/authoring-status`],
+    ];
+    for (const [m, u] of admin) expect(permsOf(m, u), `${m} ${u}`).toEqual(['aba:admin']);
+    for (const [m, u] of write) expect(permsOf(m, u), `${m} ${u}`).toEqual(['aba:write']);
+    for (const [m, u] of read) expect(permsOf(m, u), `${m} ${u}`).toEqual(['aba:read']);
+    // every mutation is idempotent; reads are neither
+    for (const [m, u] of [...admin, ...write]) {
+      const r = routes.find((x) => x.key === `${m} ${u}`)!;
+      expect(r.steps, `${m} ${u}`).toContain('idempotency');
+    }
+    // nothing else was registered under the authoring prefixes
+    const known = new Set([...admin, ...write, ...read].map(([m, u]) => `${m} ${u}`));
+    const stray = routes.filter((r) => (r.url.startsWith('/v1/aba/') || /\/authorized-actions\//.test(r.url)) && !known.has(r.key)).map((r) => r.key);
+    expect(stray).toEqual([]);
+  });
+
+  it('no ABA authoring request body or path accepts caller-provided authority or derived values', () => {
+    const FORBIDDEN = /^(tenantId|workspaceId|userId|approverUserId|actorUserId|assignedByUserId|modifiedByUserId|createdBy|permissionUsed|finalParameters|digest|lifecycle|status|riskClass|approverTier|package|packageId|packageVersion|seal|sealed|issuedAt|expiresAt|evaluatedAt|modifiedAt|correlationId|basis|dimensions|proposalRef|originalProposal)$/;
+    const authoring = routes.filter((r) => r.url.startsWith('/v1/aba/') || /\/authorized-actions\//.test(r.url));
+    expect(authoring.length).toBeGreaterThanOrEqual(16);
+    for (const r of authoring) expect([...r.bodyKeys, ...r.paramKeys].filter((k) => FORBIDDEN.test(k)), r.key).toEqual([]);
+  });
+
   it('no route authorizes by role name: only permission codes of the form layer:action are enforced', () => {
     for (const r of routes) for (const p of r.perms) expect(p).toMatch(/^[a-z]+:[a-z_]+$/);
   });
