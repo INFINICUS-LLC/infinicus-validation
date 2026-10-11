@@ -99,6 +99,13 @@ describe('BoGovernanceEvidenceVerifier', () => {
   it('a record without the BO evaluator input envelope is refused (provenance)', async () => {
     await refused(verifierFor(evaluation({ inputs: {} as never })), request(), /BO evaluator input snapshot/);
     await refused(verifierFor(evaluation({ inputs: { schema: 'something-else/1' } as never })), request(), /BO evaluator input snapshot/);
+    // each element of the envelope is checked on its own: a complete envelope with only the schema marker wrong is still refused
+    const onlySchemaWrong = { schema: 'inventory-policy-evaluation-inputs/0', ruleSet: { id: 'inventory-reorder-policy', version: RS.version }, snapshotDigest: 'sha256:abc' };
+    await refused(verifierFor(evaluation({ inputs: onlySchemaWrong as never })), request(), /BO evaluator input snapshot/);
+    const noSnapshot = { schema: INVENTORY_POLICY_EVALUATION_INPUTS_SCHEMA, ruleSet: { id: 'inventory-reorder-policy', version: RS.version } };
+    await refused(verifierFor(evaluation({ inputs: noSnapshot as never })), request(), /BO evaluator input snapshot/);
+    const wrongRuleSetId = { schema: INVENTORY_POLICY_EVALUATION_INPUTS_SCHEMA, ruleSet: { id: 'something-else', version: RS.version }, snapshotDigest: 'sha256:abc' };
+    await refused(verifierFor(evaluation({ inputs: wrongRuleSetId as never })), request(), /BO evaluator input snapshot/);
     const wrongRuleSet = { schema: INVENTORY_POLICY_EVALUATION_INPUTS_SCHEMA, ruleSet: { id: 'inventory-reorder-policy', version: 'inventory-reorder-policy/v2.0.0' }, snapshotDigest: 'sha256:abc' };
     await refused(verifierFor(evaluation({ inputs: wrongRuleSet as never })), request(), /BO evaluator input snapshot/);
   });
