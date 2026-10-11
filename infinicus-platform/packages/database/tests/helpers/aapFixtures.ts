@@ -20,31 +20,56 @@ export interface Fixture {
   actionVersionId: string;
 }
 
-/** Builds upstream ABA rows directly. FK/trigger checks of the UPSTREAM tables are bypassed for fixture speed only. */
-export async function makeFixture(admin: Pool, decisionStatus = 'approved'): Promise<Fixture> {
-  const f: Fixture = {
-    tenantId: randomUUID(), workspaceId: randomUUID(), businessId: randomUUID(),
-    decisionId: randomUUID(), actionId: randomUUID(), actionVersionId: randomUUID(),
-  };
+/** A tenant + workspace + business. Tests that create many fixtures share one world to keep the shared database small. */
+export interface World {
+  tenantId: string;
+  workspaceId: string;
+  businessId: string;
+}
+
+export async function makeWorld(admin: Pool): Promise<World> {
+  const w: World = { tenantId: randomUUID(), workspaceId: randomUUID(), businessId: randomUUID() };
+  const slug = `t${w.tenantId.slice(0, 8)}`;
   const c = await admin.connect();
   try {
     await c.query('BEGIN');
     await c.query("SET LOCAL session_replication_role = 'replica'");
-    const slug = `t${f.tenantId.slice(0, 8)}`;
-    await c.query('INSERT INTO tenancy.tenants (id, name, slug) VALUES ($1,$2,$3)', [f.tenantId, slug, slug]);
-    await c.query('INSERT INTO tenancy.workspaces (id, tenant_id, name, slug) VALUES ($1,$2,$3,$4)', [f.workspaceId, f.tenantId, slug, slug]);
+    await c.query('INSERT INTO tenancy.tenants (id, name, slug) VALUES ($1,$2,$3)', [w.tenantId, slug, slug]);
+    await c.query('INSERT INTO tenancy.workspaces (id, tenant_id, name, slug) VALUES ($1,$2,$3,$4)', [w.workspaceId, w.tenantId, slug, slug]);
     await c.query(
       'INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code) VALUES ($1,$2,$3,$4,$5)',
-      [f.businessId, f.tenantId, f.workspaceId, slug, slug],
+      [w.businessId, w.tenantId, w.workspaceId, slug, slug],
     );
+    await c.query('COMMIT');
+  } catch (e) {
+    await c.query('ROLLBACK');
+    throw e;
+  } finally {
+    c.release();
+  }
+  return w;
+}
+
+/**
+ * Builds upstream ABA rows directly. FK/trigger checks of the UPSTREAM tables are bypassed for fixture speed only.
+ * Pass a `world` to reuse a tenant/workspace/business (each call still gets its own decision, action and action version).
+ */
+export async function makeFixture(admin: Pool, decisionStatus = 'approved', world?: World): Promise<Fixture> {
+  const w = world ?? await makeWorld(admin);
+  const f: Fixture = { ...w, decisionId: randomUUID(), actionId: randomUUID(), actionVersionId: randomUUID() };
+  const code = randomUUID().slice(0, 12);
+  const c = await admin.connect();
+  try {
+    await c.query('BEGIN');
+    await c.query("SET LOCAL session_replication_role = 'replica'");
     await c.query(
       `INSERT INTO ${S}.approval_decisions (id, tenant_id, workspace_id, business_id, review_package_id, approver_assignment_id, decision_code, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [f.decisionId, f.tenantId, f.workspaceId, f.businessId, randomUUID(), randomUUID(), `d-${slug}`, decisionStatus],
+      [f.decisionId, f.tenantId, f.workspaceId, f.businessId, randomUUID(), randomUUID(), `d-${code}`, decisionStatus],
     );
     await c.query(
       `INSERT INTO ${S}.approved_actions (id, tenant_id, workspace_id, business_id, decision_id, action_code) VALUES ($1,$2,$3,$4,$5,$6)`,
-      [f.actionId, f.tenantId, f.workspaceId, f.businessId, f.decisionId, `a-${slug}`],
+      [f.actionId, f.tenantId, f.workspaceId, f.businessId, f.decisionId, `a-${code}`],
     );
     await c.query(
       `INSERT INTO ${S}.approved_action_versions (id, tenant_id, workspace_id, business_id, action_id, version_number, description)
@@ -114,3 +139,100 @@ export function version(f: Fixture, o: VersionOpts) {
   return cols;
 }
 
+
+// ── Block 3c-1: capture and owner-assignment fixtures ─────────────────────────────────────────────────────────────
+
+export interface CaptureFixture extends Fixture {
+  decisionVersionId: string;
+  /** A real user, used as the capturing approver and as the assigner. */
+  userId: string;
+  /** A real user with an ACTIVE membership in the fixture tenant and workspace. */
+  ownerUserId: string;
+  ownerMembershipId: string;
+}
+
+export async function makeUser(admin: Pool): Promise<string> {
+  const id = randomUUID();
+  await admin.query('INSERT INTO identity.users (id, email) VALUES ($1, $2)', [id, `u-${id}@example.test`]);
+  return id;
+}
+
+export async function makeMembership(admin: Pool, tenantId: string, workspaceId: string, userId: string, status = 'active'): Promise<string> {
+  const id = randomUUID();
+  await admin.query('INSERT INTO tenancy.memberships (id, tenant_id, workspace_id, user_id, status) VALUES ($1,$2,$3,$4,$5)', [id, tenantId, workspaceId, userId, status]);
+  return id;
+}
+
+export async function makeCaptureFixture(admin: Pool, decisionStatus = 'approved', world?: World): Promise<CaptureFixture> {
+  const f = await makeFixture(admin, decisionStatus, world);
+  const decisionVersionId = randomUUID();
+  await admin.query(
+    `INSERT INTO ${S}.approval_decision_versions (id, tenant_id, workspace_id, business_id, decision_id, version_number, summary)
+     VALUES ($1,$2,$3,$4,$5,1,'fixture')`,
+    [decisionVersionId, f.tenantId, f.workspaceId, f.businessId, f.decisionId],
+  );
+  const userId = await makeUser(admin);
+  const ownerUserId = await makeUser(admin);
+  const ownerMembershipId = await makeMembership(admin, f.tenantId, f.workspaceId, ownerUserId);
+  return { ...f, decisionVersionId, userId, ownerUserId, ownerMembershipId };
+}
+
+/** A plain approval capture: the final set is exactly the proposed set. */
+export function plainCaptureInput(f: CaptureFixture): any {
+  const parameters = { price: 10, channel: 'email', tags: ['a', 'b'] };
+  return {
+    businessId: f.businessId, actionId: f.actionId, decisionId: f.decisionId, decisionVersionId: f.decisionVersionId,
+    decisionStatus: 'approved',
+    actionType: { code: 'adjust_price', schemaVersion: '1.0' },
+    target: { kind: 'product', id: 'sku-123' },
+    proposed: { state: 'VALUE', value: { source: { layer: 'ADI', recordType: 'decision_recommendation_version', recordId: randomUUID() }, parameters } },
+    modification: { state: 'NOT_APPLICABLE', reason: { code: 'PLAIN_APPROVAL', statement: 'Approved as proposed.' } },
+    modificationEvaluation: { state: 'NOT_APPLICABLE', reason: { code: 'NO_MODIFICATION', statement: 'No modification to evaluate.' } },
+    finalParameters: parameters,
+    capturedByUserId: f.userId,
+    correlationId: randomUUID(),
+  };
+}
+
+/** An approved-with-modifications capture: SET price, ADD limit, REMOVE channel. */
+export function modifiedCaptureInput(f: CaptureFixture): any {
+  const base = plainCaptureInput(f);
+  const modifiedAt = new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000);
+  return {
+    ...base,
+    decisionStatus: 'approved_with_modifications',
+    modification: {
+      state: 'VALUE',
+      value: {
+        reason: 'Reduce exposure before launch.',
+        modifiedByUserId: f.userId,
+        modifiedAt: iso(modifiedAt),
+        changes: [
+          { parameter: 'price', operation: 'SET', before: 10, after: 12 },
+          { parameter: 'limit', operation: 'ADD', after: 5 },
+          { parameter: 'channel', operation: 'REMOVE', before: 'email' },
+        ],
+      },
+    },
+    modificationEvaluation: {
+      state: 'VALUE',
+      value: {
+        basis: 'DECLARED_IMPACT',
+        evidence: [{ dimension: 'COST', evaluatedAt: iso(new Date(modifiedAt.getTime() + 1000)), result: 'PASSED', evidenceRef: { kind: 'simulation_run', id: 'run-1' } }],
+      },
+    },
+    finalParameters: { price: 12, tags: ['a', 'b'], limit: 5 },
+  };
+}
+
+export function ownerInput(f: CaptureFixture, over: Record<string, unknown> = {}): any {
+  return {
+    businessId: f.businessId, actionId: f.actionId,
+    owner: { userId: f.ownerUserId, membershipId: f.ownerMembershipId },
+    roleCode: 'operations_lead', assignedByUserId: f.userId,
+    dueAt: { state: 'VALUE', value: iso(new Date(Date.now() + 7 * 24 * HOUR)) },
+    escalationPolicy: { state: 'VALUE', value: { ref: 'policy:default-escalation' } },
+    correlationId: randomUUID(),
+    ...over,
+  };
+}
