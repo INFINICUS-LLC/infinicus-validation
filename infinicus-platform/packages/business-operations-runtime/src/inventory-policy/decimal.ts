@@ -49,7 +49,7 @@ export class Decimal {
   /** Canonical decimal text with trailing fractional zeros removed (`2.50` -> `2.5`, `-0` -> `0`). */
   toString(): string {
     const negative = this.units < 0n;
-    let digits = (negative ? -this.units : this.units).toString().padStart(this.scale + 1, '0');
+    const digits = (negative ? -this.units : this.units).toString().padStart(this.scale + 1, '0');
     let text = this.scale === 0 ? digits : `${digits.slice(0, digits.length - this.scale)}.${digits.slice(digits.length - this.scale)}`;
     if (text.includes('.')) text = text.replace(/0+$/, '').replace(/\.$/, '');
     return negative && text !== '0' ? `-${text}` : text;
