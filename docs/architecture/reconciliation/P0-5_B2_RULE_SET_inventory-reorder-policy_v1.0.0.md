@@ -1,15 +1,17 @@
-# Rule set `inventory-reorder-policy` — version v1.0.0 — STATUS: DRAFT (owner approval required)
+# Rule set `inventory-reorder-policy` — version v1.0.0 — STATUS: APPROVED (owner approval recorded 11 October 2026; effective on merge to `main`)
 
 Rule-set id: `inventory-reorder-policy`   Version: `v1.0.0`   Stored `rule_set_version` string: `inventory-reorder-policy/v1.0.0`
 Supersedes: the `0.1.0-DRAFT` working draft (kept unchanged as history). No earlier *approved* version exists.
 
 Reconciled against `main` `a082468` (migrations 0183-0186 present): explicit cost currency (0183), append-only movements (0184), the
 Business Administration declared currency (0185) and FORCE RLS on movements (0186) now exist; the wording below states what is
-implemented and what is not. Status is unchanged: **DRAFT, NON-EFFECTIVE, unsigned.**
+implemented and what is not. Owner approval was supplied on 11 October 2026 and is recorded in section 12.
 
-This document is **documentation and policy preparation only.** It is not effective, contains no code, and was not approved by its
-author. It becomes effective only when the owner completes section 12 in a reviewed commit on `main`. Until then Block B2b (evaluator)
-has no effective rule set and every evaluation is `INDETERMINATE`.
+This document is **documentation and policy only** and contains no code. It was prepared by Claude Code and **approved by the owner**
+(section 12, supplied by the owner on 11 October 2026). It is effective once the commit recording that approval is merged to `main` by the
+owner. **Approval does not mean every evaluation dimension can currently PASS.** The evaluator (Block B2b, not yet built) must remain
+fail-closed (`INDETERMINATE`) whenever required evidence is unavailable, stale, ambiguous or inconsistent, and today several inputs are
+unavailable (sections 5A and 9). The approved rule-set version string is `inventory-reorder-policy/v1.0.0` (it contains no `DRAFT`).
 
 ## 1. Decision of record
 
@@ -65,7 +67,7 @@ has no effective rule set and every evaluation is `INDETERMINATE`.
 | Lead time | owner-declared `LEAD_TIME_DAYS`; observed lead time is never derived |
 | Currency | explicit business-scoped governed `DECLARED_CURRENCY`; never inferred from defaults and never a rule-set constant |
 
-## 5. Rule-set values (all NON-DATA-DERIVED; none is effective until section 12 is signed)
+## 5. Rule-set values (all NON-DATA-DERIVED owner-defined pre-launch policy values; approved in section 12)
 
 Classification: **G** = governance/methodology, **C** = commercial policy. "Business-specific later" = can become per-business under a
 future versioned configuration block (v1 is one global set, Q-R5). Values 1-8 and 10 are the **owner-supplied v1.0.0 values**
@@ -211,24 +213,39 @@ Constraints: preserve DAL ingestion ownership, BO operational truth, and no dupl
 ## 12. Owner approval record
 Rule-set: `inventory-reorder-policy`
 Version: `v1.0.0`
-Status: **DRAFT** (becomes APPROVED only when completed by the owner)
-Effective date: ______
-Owner: ______
-Approval date: ______
-Approved values (owner-defined pre-launch policy values, NOT data-derived; owner to confirm each at signing):
-  key 1  MAX_CHANGE_REORDER_POINT_PCT    = 25   ____
-  key 2  MAX_CHANGE_REORDER_QUANTITY_PCT = 25   ____
-  key 3  ORDER_VALUE_CAP                 = 5000 ____
-  key 4  MAX_CHANGE_ORDER_VALUE          = 25% of ORDER_VALUE_CAP (1250 USD) ____
-  key 5  MAX_IMPLIED_STOCK_UNITS         = 500 (nominal, in each item's own unit_of_measure; not physical capacity) ____
-  key 6  LEAD_TIME_DAYS                  = 14   ____
-  key 7  SAFETY_FACTOR                   = 1.25 ____
-  key 8  MAX_COVER_DAYS                  = 90   ____
-  key 10 FIRST_CONFIGURATION_OPTION      = NO   ____
-  key 9  DECLARED_CURRENCY               = not a rule-set value (business-scoped governed input, section 5A)
-ORDER_VALUE_CAP_CURRENCY: USD   ____
-Currency model: business-scoped governed DECLARED_CURRENCY (platform.business_currency_declarations, migration 0185); confirm: yes / no
-Simulation applicability ruling: `inventory_reorder_policy_update@1` ⇒ NOT_APPLICABLE, reason `NO_APPLICABLE_SIMULATION_MODEL` (recorded in section 7; confirm: yes / no)
-Provisional policy acknowledgement (values to be reconsidered after representative production data exists): YES / pending owner signature
-Notes: ______
+Status: **APPROVED**
+Owner: INFINICUS LLC / Platform Owner
+Effective date: 11 October 2026
+Approval date: 11 October 2026
+
+Approved policy values (owner-defined pre-launch policy values; NOT data-derived; to be reviewed after representative production data exists):
+  MAX_CHANGE_REORDER_POINT_PCT    = 25
+  MAX_CHANGE_REORDER_QUANTITY_PCT = 25
+  ORDER_VALUE_CAP                 = 5000
+  ORDER_VALUE_CAP_CURRENCY        = USD
+  MAX_CHANGE_ORDER_VALUE          = 25% of ORDER_VALUE_CAP
+  MAX_IMPLIED_STOCK_UNITS         = 500
+  LEAD_TIME_DAYS                  = 14
+  SAFETY_FACTOR                   = 1.25
+  MAX_COVER_DAYS                  = 90
+  FIRST_CONFIGURATION_OPTION      = NO
+
+Currency model:
+  DECLARED_CURRENCY is a business-scoped governed input owned by Business Administration. Silent currency defaults are not governance evidence.
+  Inventory movement cost currency comes from `business_operations.inventory_movements.unit_cost_currency`. No FX conversion is permitted in v1.
+  - Declared currency absent                                    => COST = INDETERMINATE, `DECLARED_CURRENCY_MISSING`
+  - Cost currency absent                                        => COST = INDETERMINATE, `COST_CURRENCY_MISSING`
+  - Cost currency differs from declared currency                => COST = INDETERMINATE, `COST_CURRENCY_MISMATCH`
+  - Business declared currency differs from ORDER_VALUE_CAP_CURRENCY (USD) => COST = INDETERMINATE, `CAP_CURRENCY_MISMATCH`
+
+Resource-cap ruling:
+  MAX_IMPLIED_STOCK_UNITS = 500 is a nominal policy cap in each item's own unit_of_measure. It is NOT physical warehouse-capacity evidence.
+
+Simulation ruling: `inventory_reorder_policy_update@1` => Simulation = NOT_APPLICABLE, reason `NO_APPLICABLE_SIMULATION_MODEL` (this action type and version only; see section 7).
+
+Policy classification: owner-defined pre-launch policy values, not data-derived, to be reviewed after representative production data exists.
+
+Fail-closed statement: approval does NOT mean all evaluation dimensions can currently PASS. The evaluator must remain fail-closed when required evidence is unavailable, stale, ambiguous or inconsistent.
+
 Supersedes: none
+Notes: approval text supplied by the owner in the session of 11 October 2026 and recorded here without change of substance; the file was renamed from `...v1.0.0-DRAFT.md` to `...v1.0.0.md` in this commit. No code, migration or activation of any evaluator is part of this change.
