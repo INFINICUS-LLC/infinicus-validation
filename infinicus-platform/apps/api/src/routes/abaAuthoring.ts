@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { AbaAuthoringService } from '@infinicus/workflow';
-import type { AuthoringRequestContext } from '@infinicus/workflow';
+import type { AbaAuthoringDependencies, AuthoringRequestContext } from '@infinicus/workflow';
 import {
   actionTypeParamsSchema, policyParamsSchema, policyVersionParamsSchema, authorizedActionParamsSchema,
   defineActionTypeBodySchema, retireActionTypeBodySchema, actionTypeViewSchema, actionTypeListResponseSchema,
@@ -20,15 +20,19 @@ import { errorResponseSchema } from '../schemas/common.js';
  * This surface executes nothing. It does not import any Business Operations code, call BO, emit events, seal a package itself (the
  * single issuer does, inside AbaAuthoringService.issuePackage) or accept a package payload, final parameters, risk, authority or status.
  */
-const service = new AbaAuthoringService();
-
 const rcOf = (permissionUsed: string, correlationId: string): AuthoringRequestContext => ({ permissionUsed, correlationId });
 const errors = { 400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema, 409: errorResponseSchema };
 const ADMIN = (app: FastifyInstance) => [app.authenticate, app.resolveTenantContext, app.requirePermission('aba:admin'), app.requireActiveSubscription(), app.requireIdempotencyKey];
 const WRITE = (app: FastifyInstance) => [app.authenticate, app.resolveTenantContext, app.requirePermission('aba:write'), app.requireActiveSubscription(), app.requireIdempotencyKey];
 const READ = (app: FastifyInstance) => [app.authenticate, app.resolveTenantContext, app.requirePermission('aba:read')];
 
-export default async function abaAuthoringRoutes(app: FastifyInstance) {
+export interface AbaAuthoringRouteOptions {
+  /** Composition-root overrides (an authoritative evidence verifier, once one exists, is registered here). Production default: none. */
+  dependencies?: Partial<AbaAuthoringDependencies>;
+}
+
+export default async function abaAuthoringRoutes(app: FastifyInstance, options: AbaAuthoringRouteOptions = {}) {
+  const service = new AbaAuthoringService(options.dependencies);
   const server = app.withTypeProvider<ZodTypeProvider>();
   const A = 'aba:admin';
   const W = 'aba:write';

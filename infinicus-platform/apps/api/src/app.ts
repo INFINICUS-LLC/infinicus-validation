@@ -19,6 +19,7 @@ import authRoutes from './routes/auth.js';
 import onboardingRoutes from './routes/onboarding.js';
 import businessRoutes from './routes/businesses.js';
 import abaAuthoringRoutes from './routes/abaAuthoring.js';
+import type { AbaAuthoringRouteOptions } from './routes/abaAuthoring.js';
 import observabilityRoutes from './routes/observability.js';
 import billingRoutes from './routes/billing.js';
 import incidentRoutes from './routes/incidents.js';
@@ -35,7 +36,12 @@ import { redactUrl } from './redactUrl.js';
 import { resolveTrustProxy } from './trustProxy.js';
 import './types.js';
 
-export async function buildApp(config: InfinicusConfig): Promise<FastifyInstance> {
+export interface BuildAppOptions {
+  /** Composition-root dependency overrides for the ABA authoring surface (for example the authoritative evidence verifier). */
+  abaAuthoring?: AbaAuthoringRouteOptions['dependencies'];
+}
+
+export async function buildApp(config: InfinicusConfig, options: BuildAppOptions = {}): Promise<FastifyInstance> {
   // A separate observability-owned logger for structured audit entries
   // (below), decoupled from Fastify's own request/response logger — this
   // avoids depending on pino.Logger being structurally identical to
@@ -135,7 +141,7 @@ export async function buildApp(config: InfinicusConfig): Promise<FastifyInstance
   await app.register(authRoutes);
   await app.register(onboardingRoutes);
   await app.register(businessRoutes);
-  await app.register(abaAuthoringRoutes);
+  await app.register(abaAuthoringRoutes, { dependencies: options.abaAuthoring });
   await app.register(observabilityRoutes);
   await app.register(billingRoutes);
   await app.register(incidentRoutes);
