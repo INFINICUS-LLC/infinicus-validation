@@ -52,7 +52,38 @@ No existing field proves an explicit, governed, business-scoped selection, so no
 | SHA-256 of `0185_create_business_currency_declarations.sql` | `8a57059c708c1cd615fc8c2a533c70336ba4c187f434022515602e31bd8c45f6` |
 | Live Supabase | not applied |
 
-## 5. Caveats
+## 5. Rulings recorded (owner, this block)
+
+- **Why the existing `default_currency` fields are not governance evidence.** Both are `NOT NULL DEFAULT 'USD'`: a stored `USD` is identical
+  whether someone chose it or the database filled it in, and neither has an actor, a time of choice or a history. Using either would turn a
+  silent default into governed evidence. They are left exactly as they are and are never read by the declaration code (architecture guard).
+- **Why a separate explicit declaration.** Only a row that an authorised actor created on purpose can prove a choice; its absence is the
+  only honest representation of "not declared".
+- **Ownership.** Business Administration owns the write. The Data Acquisition layer has no write authority; Business Operations and ABA are
+  read-only consumers through `BusinessDeclaredCurrencyReader` (no write method).
+- **`platform:admin` is temporary.** It is the only existing Business Administration administration permission (owner role). A narrower
+  business-settings permission is a later decision; none is invented here.
+- **Read permission.** `GET` uses `bo:read`. Verified against the existing matrix: the business record itself (`GET /v1/businesses`,
+  `platform.businesses`) and the workflow view are already gated by `bo:read`, so a business-level fact read at the same level is consistent;
+  no layer reads the fact through the HTTP route (BO/ABA use the Reader). This does not reclassify ownership.
+- **No ISO 4217 list in v1.** Three uppercase letters only (`^[A-Z]{3}$`, database and service). No lowercase normalisation: `usd` is refused.
+- **Version/history.** Linear chain; version 1 is the first declaration; a change appends version + 1 with the prior currency and a reason;
+  nothing is updated or deleted; the current value is the latest version; the full history is readable.
+- **Idempotency.** (a) `Idempotency-Key` replays the stored HTTP response; (b) semantically, declaring the value already in force is a no-op
+  (HTTP 200, no row, no audit); (c) a different value needs `expectedVersion` = current version (else 409), so a stale writer can never revert a
+  newer declaration; concurrent writers serialise on the business row lock, with `UNIQUE (business_id, version)` as the backstop.
+- **Audit rollback.** The declaration and its `audit.audit_events` row are written on one transaction client; if the audit write fails,
+  the declaration is rolled back (tested with an injected failure and with a real database error).
+- **Tenant-erasure retention.** The history stays append-only and is never deleted or backfilled to simplify erasure. Because the table
+  uses the `forbid_mutation` convention, `delete-tenant-data.mjs` retains it and reports a partial erasure. Whether such governance
+  history may be retained after an erasure request is a future legal/privacy decision.
+- **B2 consumption boundary.** B2b/B2c read the declared currency only through the Reader: `UNDECLARED` → COST INDETERMINATE
+  (`DECLARED_CURRENCY_MISSING`); declared but not USD → `CAP_CURRENCY_MISMATCH` (`ORDER_VALUE_CAP_CURRENCY = USD`); cost currency must equal
+  the declared currency. This block implements none of that evaluator.
+- **No default promotion.** The migration inserts nothing but its own registration; no code path copies, falls back to, or infers a currency
+  from any default, locale, environment or document currency.
+
+## 6. Caveats
 
 1. Format-only validation (three uppercase letters), like Block C: a well-formed but non-ISO code such as `ZZZ` is accepted. Only `USD`
    can ever satisfy the v1 cap rule, so this does not weaken B2.
