@@ -49,6 +49,16 @@ export type {
   GovernedValue, ProposedParametersValue, ModificationValue, ModificationEvaluationValue, ParameterMap,
 } from './AuthorizedActionCaptureRepository.js';
 
+export { ActionTypeRegistryRepository, toActionTypeContract } from './ActionTypeRegistryRepository.js';
+export type {
+  DefineActionTypeInput, ActionTypeDefinition, ActionTypeStatus, ActionTypeStatusChange, ActionTypeWithStatus, ActionTypeContractShape,
+} from './ActionTypeRegistryRepository.js';
+export { AutomationLevelPolicyRepository } from './AutomationLevelPolicyRepository.js';
+export type {
+  AutomationLevel, CreatePolicyInput, AddVersionInput, AutomationLevelPolicy, AutomationLevelPolicyVersion, EnablementChange,
+  EffectivePolicy, AutomationEnablement,
+} from './AutomationLevelPolicyRepository.js';
+
 export { ActionExecutionPlanRepository } from './ActionExecutionPlanRepository.js';
 export type { ActionExecutionPlan } from './ActionExecutionPlanRepository.js';
 

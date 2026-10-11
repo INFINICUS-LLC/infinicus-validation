@@ -52,6 +52,9 @@ export const FORBIDDEN_IN_BO: readonly { readonly name: string; readonly pattern
   { name: 'AuthorizedActionPackage repository/table (ABA-owned storage)', pattern: /AuthorizedActionPackageRepository|authorized_action_package(?:s|_versions|_lifecycle_events)\b/i },
   // P0-5 Block 3c-1: the capture (original / delta / final parameters) and owner assignment are ABA-owned too; BO sees only the package.
   { name: 'ABA authorized-action capture/owner-assignment (ABA-owned storage)', pattern: /AuthorizedActionCaptureRepository|authorized_action_(?:captures|owner_assignments)\b/i },
+  // P0-5 Block 3c-2: the action-type registry and automation-level policy are ABA-governed too. "BO can execute this" is BO's own
+  // capability registry; BO never reads ABA's vocabulary or policy store.
+  { name: 'ABA action-type registry / automation-level policy (ABA-owned storage)', pattern: /ActionTypeRegistryRepository|AutomationLevelPolicyRepository|action_type_(?:definitions|status_events)\b|automation_level_polic(?:y|ies)\w*/i },
   { name: 'import from the ABA layer', pattern: /(?:from|require\()\s*['"][^'"]*approved-business-action[^'"]*['"]/i },
 ];
 
@@ -149,6 +152,15 @@ describe('Business Operations isolation guard — the matcher itself', () => {
     expect(findViolations('x.ts', 'new AuthorizedActionCaptureRepository();').map((v) => v.rule)).toContain(rule);
     for (const table of ['authorized_action_captures', 'authorized_action_owner_assignments']) {
       expect(findViolations('x.ts', `SELECT 1 FROM ${table}`).map((v) => v.rule)).toContain(rule);
+    }
+  });
+
+  it('detects the action-type registry and automation-level policy used from BO code', () => {
+    const rule = 'ABA action-type registry / automation-level policy (ABA-owned storage)';
+    for (const text of ['new ActionTypeRegistryRepository();', 'new AutomationLevelPolicyRepository();', 'SELECT 1 FROM action_type_definitions',
+      'SELECT 1 FROM action_type_status_events', 'SELECT 1 FROM automation_level_policies', 'FROM automation_level_policy_versions',
+      'FROM automation_level_policy_enablement_events']) {
+      expect(findViolations('x.ts', text).map((v) => v.rule)).toContain(rule);
     }
   });
 
