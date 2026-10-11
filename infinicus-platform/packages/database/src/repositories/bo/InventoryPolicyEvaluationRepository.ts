@@ -122,6 +122,12 @@ function validate(input: RecordInventoryPolicyEvaluationInput): void {
   if (problems.length > 0) throw new InventoryPolicyEvaluationValidationError(problems);
 }
 
+/** Audit data for the governance-relevant request that produced the rows (written atomically with them). */
+export interface InventoryPolicyEvaluationAudit {
+  /** The permission the request was authorized under (for example `bo:write`). */
+  permissionUsed: string;
+}
+
 export class InventoryPolicyEvaluationRepository {
   /**
    * Appends one evaluation fact. The database stamps `evaluated_at`, checks the item and warehouse belong to this tenant, workspace and
@@ -150,9 +156,10 @@ export class InventoryPolicyEvaluationRepository {
    * Appends several evaluation facts ATOMICALLY (one tenant transaction): all rows are written or none is. Each row is validated first and goes
    * through exactly the same INSERT as `record`; this is a batching convenience, not a second writer. Returns the rows in input order.
    */
-  async recordAll(ctx: TenantContext, inputs: RecordInventoryPolicyEvaluationInput[]): Promise<InventoryPolicyEvaluation[]> {
+  async recordAll(ctx: TenantContext, inputs: RecordInventoryPolicyEvaluationInput[], audit?: InventoryPolicyEvaluationAudit): Promise<InventoryPolicyEvaluation[]> {
     if (inputs.length === 0) throw new InventoryPolicyEvaluationValidationError(['at least one evaluation is required']);
     for (const input of inputs) validate(input);
+    if (audit !== undefined && !nonEmpty(audit.permissionUsed)) throw new InventoryPolicyEvaluationValidationError(['audit.permissionUsed is required']);
     return withTenantTransaction(ctx, async (client) => {
       const out: InventoryPolicyEvaluation[] = [];
       for (const input of inputs) {
@@ -170,7 +177,43 @@ export class InventoryPolicyEvaluationRepository {
         );
         out.push(rowToEvaluation(result.rows[0]));
       }
+      if (audit !== undefined) {
+        // The platform audit record (audit.audit_events, the same record every layer uses - not a second source of truth), written on the
+        // SAME client so the evaluation facts and their audit commit or roll back together.
+        const first = inputs[0];
+        await client.query(
+          `INSERT INTO audit.audit_events
+             (tenant_id, workspace_id, business_id, actor_type, actor_id, action, entity_type, entity_id, metadata, correlation_id)
+           VALUES ($1,$2,$3,'user',$4,'bo.inventory_policy_evaluation.requested','inventory_item',$5,$6::jsonb,$7)`,
+          [
+            ctx.tenantId, ctx.workspaceId, first.businessId, ctx.userId, first.inventoryItemId,
+            JSON.stringify({
+              permissionUsed: audit.permissionUsed, subjectDigest: first.subjectDigest, ruleSetVersion: first.ruleSetVersion, target: (first.subject as { target: unknown }).target,
+              evaluations: out.map((e) => ({ id: e.id, dimension: e.dimension, result: e.result, evaluatedAt: e.evaluatedAt })),
+            }),
+            first.correlationId,
+          ],
+        );
+      }
       return out;
+    });
+  }
+
+  /**
+   * One evaluation by id PLUS the database clock read in the same statement (millisecond UTC), for evidence verification: the
+   * freshness decision must use the database's time, not the caller's. Same scope rule as `getById`; anything else is NotFound.
+   */
+  async getByIdWithDatabaseNow(ctx: TenantContext, businessId: string, id: string): Promise<{ evaluation: InventoryPolicyEvaluation; databaseNow: string }> {
+    if (!UUID.test(businessId) || !UUID.test(id)) throw new NotFoundError(ENTITY, id);
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT ${COLUMNS}, to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS database_now
+           FROM business_operations.inventory_policy_evaluations
+          WHERE id = $1 AND tenant_id = $2 AND workspace_id = $3 AND business_id = $4`,
+        [id, ctx.tenantId, ctx.workspaceId, businessId],
+      );
+      if (result.rows.length === 0) throw new NotFoundError(ENTITY, id);
+      return { evaluation: rowToEvaluation(result.rows[0]), databaseNow: result.rows[0].database_now as string };
     });
   }
 

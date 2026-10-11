@@ -103,8 +103,7 @@ describe('business declared currency architecture (0185)', () => {
     expect(route).not.toMatch(/bo:write|aba:|da:/);
   });
 
-  it('the ABA->BO transport, the B2c verifier adapter and P0-6 are NOT implemented (the B2b evaluator exists and only READS the declaration)', () => {
-    expect(production.filter((f) => /BoGovernanceEvidenceVerifier|inventory-policy-evaluator/.test(f.code)).map((f) => f.rel)).toEqual([]);
+  it('the ABA->BO execution transport and P0-6 are NOT implemented (the BO evaluator and evidence verifier exist and only READ the declaration)', () => {
     expect(production.filter((f) => /ACTION_AUTHORIZED/.test(f.code) && /BusinessDeclaredCurrency/.test(f.code)).map((f) => f.rel)).toEqual([]);
   });
 });

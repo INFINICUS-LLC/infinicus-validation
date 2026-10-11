@@ -437,12 +437,15 @@ export class AbaAuthoringService {
     checkSet('final', finalParameters);
 
     return withSharedTenantTransaction(ctx, async () => {
-      const now = await this.d.audit.databaseNow(ctx);
       let modification: AuthorizedActionCapture['modification'];
       let evaluation: AuthorizedActionCapture['modificationEvaluation'];
       if (modified) {
         const changes = input.modification!.changes;
-        modification = { state: 'VALUE', value: { reason: input.modification!.reason, modifiedByUserId: ctx.userId, modifiedAt: now, changes } };
+        // B2c ruling: modifiedAt is the time the approved-with-modifications decision became final (approval_decisions.updated_at),
+        // never the capture time, the request, the audit log or the evaluator's clock.
+        const modifiedAt = await this.d.decisions.getModifiedDecisionFinalAt(ctx, decision.id);
+        if (modifiedAt === null) throw new ConflictError('AbaAuthoring', 'the approved-with-modifications decision time could not be established, so the modification cannot be captured');
+        modification = { state: 'VALUE', value: { reason: input.modification!.reason, modifiedByUserId: ctx.userId, modifiedAt, changes } };
         const required = requiredGovernanceDimensions(canonical, changes.map((c) => c.parameter));
         if (required.dimensions.length === 0) {
           evaluation = { state: 'NOT_APPLICABLE', reason: { code: 'NO_GOVERNANCE_IMPACT', statement: 'The modified parameters declare no governance impact.' } };
@@ -460,7 +463,7 @@ export class AbaAuthoringService {
           for (const dimension of required.dimensions) {
             const ref = given.get(dimension)!;
             const verdict = await verifier.verify({
-              tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, businessId, dimension, evidenceRef: { kind: ref.kind, id: ref.id },
+              tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, businessId, actorUserId: ctx.userId, modifiedAt, dimension, evidenceRef: { kind: ref.kind, id: ref.id },
               subject: { actionId, actionType: { code: canonical.code, schemaVersion: canonical.schemaVersion }, target: { kind: input.target.kind, id: input.target.id }, finalParameters },
             });
             if (!verdict || verdict.status !== 'VERIFIED') {
@@ -473,7 +476,7 @@ export class AbaAuthoringService {
               throw new ConflictError('AbaAuthoring', `${dimension} evidence verdict carries a malformed evaluation time`);
             }
             const evaluatedMs = Date.parse(verdict.evaluatedAt);
-            if (evaluatedMs < Date.parse(now)) throw new ConflictError('AbaAuthoring', `${dimension} evaluation predates the modification, so it is not fresh`);
+            if (evaluatedMs < Date.parse(modifiedAt)) throw new ConflictError('AbaAuthoring', `${dimension} evaluation predates the modification decision, so it does not cover it`);
             if (evaluatedMs > Date.parse(await this.d.audit.databaseNow(ctx))) throw new ConflictError('AbaAuthoring', `${dimension} evaluation is dated after the database clock`);
             evidence.push({ dimension, evaluatedAt: verdict.evaluatedAt, result: 'PASSED', evidenceRef: { kind: verdict.evidenceRef.kind, id: verdict.evidenceRef.id } });
           }

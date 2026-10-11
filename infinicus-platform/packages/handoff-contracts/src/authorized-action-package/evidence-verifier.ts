@@ -5,8 +5,9 @@
 // the verifier's answer, never a caller's assertion.
 //
 // The interface is the architecture boundary: it is OWNED here (shared contract) and IMPLEMENTED by the layer that owns the
-// evaluation (for example a Business Operations inventory-policy evaluator). ABA depends only on this interface and never reads another
-// layer's private tables. No implementation exists yet: with none registered ABA fails closed. This module is pure types.
+// evaluation (the Business Operations inventory-policy evaluator, BoGovernanceEvidenceVerifier, registered at the API composition
+// root). ABA depends only on this interface and never reads another layer's private tables. With no verifier registered ABA fails
+// closed. This module is pure types.
 
 import type { GovernanceDimension } from './types';
 
@@ -27,6 +28,13 @@ export interface GovernanceEvidenceRequest {
   tenantId: string;
   workspaceId: string;
   businessId: string;
+  /** The authenticated actor on whose behalf ABA asks (never an authority input; the verifier needs a tenant context to read). */
+  actorUserId: string;
+  /**
+   * The authoritative time (millisecond UTC) at which the approved-with-modifications decision became final, taken by ABA from
+   * `approval_decisions.updated_at` (B2c ruling). Evidence evaluated before it does not cover the modification. Never caller-supplied.
+   */
+  modifiedAt: string;
   dimension: GovernanceDimension;
   evidenceRef: GovernanceEvidenceRef;
   subject: GovernanceEvidenceSubject;
