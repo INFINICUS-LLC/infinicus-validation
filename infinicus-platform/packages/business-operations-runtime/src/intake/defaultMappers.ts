@@ -67,12 +67,29 @@ const REFERENCE_TYPES = ['purchase_receipt','order_line','transfer','adjustment'
 const WORKFORCE_ACTIONS = ['hire','fire','review'] as const;
 const INSPECTION_TYPES = ['routine','safety','regulatory','pre_use','post_use','other'] as const;
 const CONDITION_RATINGS = ['excellent','good','fair','poor','critical'] as const;
+/** ISO 4217-style code. Exact: no trimming, no case folding - a currency is accepted only as it was explicitly supplied. */
+export const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
+
+function currencyCode(data: Record<string, unknown>, key: string, errors: string[], required: boolean): string | undefined {
+  const value = data[key];
+  if (value === undefined || value === null) {
+    if (required) errors.push(`${key}_required`);
+    return undefined;
+  }
+  if (typeof value !== 'string' || !CURRENCY_CODE_PATTERN.test(value)) {
+    errors.push(`${key}_invalid`);
+    return undefined;
+  }
+  return value;
+}
+
 const FACT_TYPES = ['sale','expense','inventory','customer','team'] as const;
 const FACT_ACTIONS = ['new','return','churn','hire','fire','review'] as const;
 
 export const inventoryMovementMapper: IntakeMapper = {
   recordType: 'inventory_movement',
-  version: 1,
+  // v2 (data-capture Block C): a cost must be explicitly currency-tagged. Records without a cost are unchanged.
+  version: 2,
   validate(data) {
     const errors: string[] = [];
     requireString(data, 'inventoryItemId', errors);
@@ -80,7 +97,11 @@ export const inventoryMovementMapper: IntakeMapper = {
     enumString(data, 'movementType', INVENTORY_TYPES, errors);
     const quantity = requireFiniteNumber(data, 'quantity', errors);
     if (quantity === 0) errors.push('quantity_must_not_be_zero');
-    optionalFiniteNumber(data, 'unitCost', errors);
+    const unitCost = optionalFiniteNumber(data, 'unitCost', errors);
+    const unitCostCurrency = currencyCode(data, 'unitCostCurrency', errors, false);
+    // Cost and currency travel together. Nothing is ever filled in from a default (USD, tenant, business or purchase order).
+    if (unitCost !== undefined && unitCostCurrency === undefined && !errors.includes('unitCostCurrency_invalid')) errors.push('unitCostCurrency_required_with_unitCost');
+    if (unitCost === undefined && unitCostCurrency !== undefined && !errors.includes('unitCost_invalid')) errors.push('unitCost_required_with_unitCostCurrency');
     enumString(data, 'referenceType', REFERENCE_TYPES, errors, false);
     optionalString(data, 'referenceId', errors);
     optionalString(data, 'notes', errors);
@@ -96,6 +117,7 @@ export const inventoryMovementMapper: IntakeMapper = {
         movementType: data.movementType as typeof INVENTORY_TYPES[number],
         quantity: data.quantity as number,
         unitCost: data.unitCost as number | undefined,
+        unitCostCurrency: data.unitCostCurrency as string | undefined,
         referenceType: data.referenceType as typeof REFERENCE_TYPES[number] | undefined,
         referenceId: data.referenceId as string | undefined,
         notes: data.notes as string | undefined,
@@ -106,13 +128,14 @@ export const inventoryMovementMapper: IntakeMapper = {
 
 export const purchaseOrderMapper: IntakeMapper = {
   recordType: 'purchase_order',
-  version: 1,
+  // v2 (data-capture Block C): the currency is required and explicit; there is no default.
+  version: 2,
   validate(data) {
     const errors: string[] = [];
     requireString(data, 'supplierId', errors);
     requireString(data, 'poNumber', errors);
     dateString(data, 'expectedDate', errors, false);
-    optionalString(data, 'currencyCode', errors);
+    currencyCode(data, 'currencyCode', errors, true);
     const total = optionalFiniteNumber(data, 'totalAmount', errors);
     if (total !== undefined && total < 0) errors.push('totalAmount_negative');
     optionalString(data, 'notes', errors);
@@ -126,7 +149,7 @@ export const purchaseOrderMapper: IntakeMapper = {
         supplierId: data.supplierId as string,
         poNumber: data.poNumber as string,
         expectedDate: data.expectedDate as string | undefined,
-        currencyCode: data.currencyCode as string | undefined,
+        currencyCode: data.currencyCode as string,
         totalAmount: data.totalAmount as number | undefined,
         notes: data.notes as string | undefined,
       },
