@@ -285,7 +285,7 @@ export {
   AuthorizedActionCaptureRepository, toAccountableOwnerShape,
   ActionTypeRegistryRepository, toActionTypeContract, AutomationLevelPolicyRepository,
   AuthorizedActionBoundaryRepository, toPackageBoundaryParts,
-  AuthorizedActionIssuanceRepository, PACKAGE_ISSUED_EVENT, PACKAGE_ISSUANCE_REFUSED_EVENT, ISSUANCE_AUDIT_SCHEMA,
+  GovernanceAuditRepository, AuthorizedActionIssuanceRepository, PACKAGE_ISSUED_EVENT, PACKAGE_ISSUANCE_REFUSED_EVENT, ISSUANCE_AUDIT_SCHEMA,
   ActionExecutionPlanRepository,
   ActionControlGateRepository,
   ApprovalExceptionRepository,
@@ -295,7 +295,7 @@ export {
   ABAComponentRegistryRepository,
 } from './repositories/approved_action/index.js';
 export type {
-  IssuanceSources, IssuanceAction, IssuanceDecision, IssuanceApprovalAudit, IssuanceAssignment, IssuanceReview, IssuanceAuditInput,
+  GovernanceAuditInput, IssuanceSources, IssuanceAction, IssuanceDecision, IssuanceApprovalAudit, IssuanceAssignment, IssuanceReview, IssuanceAuditInput,
   ABAIntakePackage, ReceiveABAPackageInput,
   ActionReviewPackage, ActionReviewVersion, ReviewVersionSnapshot,
   ApprovalPolicy,
@@ -318,6 +318,7 @@ export type {
   ABAComponentRegistryEntry, ABADeployment,
 } from './repositories/approved_action/index.js';
 
+export { NotFoundError as AbaNotFoundError, ConflictError as AbaConflictError, ValidationError as AbaValidationError } from './repositories/approved_action/errors.js';
 export { ActionReviewNotFoundError, ApproverAuthorityNotFoundError, ApproverAuthorityStateConflictError } from './repositories/approved_action/errors.js';
 
 // ── Business-ownership proof and approver-authority provenance (owner bootstrap) ──

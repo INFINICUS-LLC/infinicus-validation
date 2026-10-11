@@ -218,10 +218,17 @@ function sameCapture(existing: AuthorizedActionCapture, input: RecordCaptureInpu
     && canonical(existing.finalParameters) === canonical(input.finalParameters);
 }
 
+/** A due instant is compared as an instant, not as text ("...:00Z" and "...:00.000Z" are the same replay). */
+function normaliseDue(due: AssignOwnerInput['dueAt']): AssignOwnerInput['dueAt'] {
+  if (due.state !== 'VALUE') return due;
+  const ms = Date.parse(due.value);
+  return Number.isNaN(ms) ? due : { state: 'VALUE', value: new Date(ms).toISOString() };
+}
+
 function sameOwner(existing: OwnerAssignment, input: AssignOwnerInput): boolean {
   return existing.owner.userId === input.owner.userId && existing.owner.membershipId === input.owner.membershipId
     && existing.roleCode === input.roleCode
-    && canonical(existing.dueAt) === canonical(input.dueAt)
+    && canonical(normaliseDue(existing.dueAt)) === canonical(normaliseDue(input.dueAt))
     && canonical(existing.escalationPolicy) === canonical(input.escalationPolicy);
 }
 

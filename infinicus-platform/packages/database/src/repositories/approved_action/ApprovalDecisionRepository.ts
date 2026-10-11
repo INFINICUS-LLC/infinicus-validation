@@ -158,6 +158,17 @@ export class ApprovalDecisionRepository {
     });
   }
 
+  /** The latest version row of a decision (read-only), or null. Used by ABA authoring to bind a capture to the decided version. */
+  async getLatestVersion(ctx: TenantContext, decisionId: string): Promise<ApprovalDecisionVersion | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        'SELECT * FROM approved_business_action.approval_decision_versions WHERE decision_id = $1 ORDER BY version_number DESC LIMIT 1',
+        [decisionId]
+      );
+      return result.rows[0] ? rowToVersion(result.rows[0]) : null;
+    });
+  }
+
   async getDecidedForReview(ctx: TenantContext, reviewPackageId: string): Promise<ApprovalDecision[]> {
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>(

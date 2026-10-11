@@ -54,6 +54,8 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   ApproverAuthorityNotEstablishedError: 403,
   ApprovalPolicyDeniedError: 403,
   ApprovalBlockedError: 409,
+  // P0-5 package issuance refused by the issuer (state conflict: the reasons are listed in the controlled message).
+  PackageIssuanceRefusedError: 409,
   MembershipNotActiveError: 403,
   InvitationTokenInvalidError: 400,
   InvitationExpiredError: 400,

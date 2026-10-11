@@ -12,6 +12,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PLATFORM = resolve(HERE, '..', '..', '..');
 const ISSUER = 'packages/workflow/src/AuthorizedActionPackageIssuer.ts';
 const POLICY = 'packages/workflow/src/packageIssuancePolicy.ts';
+const AUTHORING = 'packages/workflow/src/AbaAuthoringService.ts';
 const SOURCE_READER = 'packages/database/src/repositories/approved_action/AuthorizedActionIssuanceRepository.ts';
 
 const SKIP = new Set(['node_modules', 'dist', '.turbo', '.next', 'coverage']);
@@ -44,17 +45,17 @@ describe('ABA package issuer architecture', () => {
     expect(production.filter((f) => /sealAuthorizedActionPackage\(/.test(f.text) && !f.rel.startsWith('packages/handoff-contracts/')).map((f) => f.rel)).toEqual([ISSUER]);
   });
 
-  it('nothing but the workflow package index and tests reference the issuer, and no app, layer or BO code does', () => {
+  it('nothing but the workflow package index, the authoring service (identifiers only) and tests reference the issuer, and no app, layer or BO code does', () => {
     const users = production
       .filter((f) => /AuthorizedActionPackageIssuer/.test(f.text))
       .map((f) => f.rel)
-      .filter((rel) => rel !== ISSUER && rel !== 'packages/workflow/src/index.ts');
+      .filter((rel) => rel !== ISSUER && rel !== AUTHORING && rel !== 'packages/workflow/src/index.ts');
     expect(users).toEqual([]);
   });
 
-  it('the shared transaction is used only by the issuer', () => {
+  it('the shared transaction is used only by the issuer and the authoring service (which never nests it around the issuer)', () => {
     const users = production.filter((f) => /withSharedTenantTransaction/.test(f.text.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'))).map((f) => f.rel).sort();
-    expect(users).toEqual([ISSUER, 'packages/database/src/client.ts', 'packages/database/src/index.ts'].sort());
+    expect(users).toEqual([ISSUER, AUTHORING, 'packages/database/src/client.ts', 'packages/database/src/index.ts'].sort());
   });
 
   it('emits no event: no ACTION_AUTHORIZED, outbox, event ledger or publisher', () => {

@@ -50,6 +50,8 @@ export type {
 } from './AuthorizedActionCaptureRepository.js';
 
 export { AuthorizedActionBoundaryRepository, toPackageBoundaryParts } from './AuthorizedActionBoundaryRepository.js';
+export { GovernanceAuditRepository } from './GovernanceAuditRepository.js';
+export type { GovernanceAuditInput } from './GovernanceAuditRepository.js';
 export {
   AuthorizedActionIssuanceRepository, PACKAGE_ISSUED_EVENT, PACKAGE_ISSUANCE_REFUSED_EVENT, ISSUANCE_AUDIT_SCHEMA,
 } from './AuthorizedActionIssuanceRepository.js';

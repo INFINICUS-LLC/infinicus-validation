@@ -60,7 +60,7 @@ describe.each(FILES)('%s architecture', (name) => {
 describe('governance repositories are not wired in yet (storage only)', () => {
   it('no route, service, layer or other repository imports them', () => {
     const importers = [...listTs(SRC), ...listTs(resolve(__dirname, '../../../apps')), ...listTs(resolve(__dirname, '../../../layers'))]
-      .filter((file) => !file.includes('node_modules') && !FILES.some((f) => file.endsWith(f)) && !file.endsWith('index.ts'))
+      .filter((file) => !file.includes('node_modules') && !/\/tests?\//.test(file) && !FILES.some((f) => file.endsWith(f)) && !file.endsWith('index.ts'))
       .filter((file) => /ActionTypeRegistryRepository|AutomationLevelPolicyRepository|toActionTypeContract/.test(readFileSync(file, 'utf8')));
     expect(importers).toEqual([]);
   });
