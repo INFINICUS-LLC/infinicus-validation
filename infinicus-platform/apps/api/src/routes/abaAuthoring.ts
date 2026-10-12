@@ -27,7 +27,7 @@ const WRITE = (app: FastifyInstance) => [app.authenticate, app.resolveTenantCont
 const READ = (app: FastifyInstance) => [app.authenticate, app.resolveTenantContext, app.requirePermission('aba:read')];
 
 export interface AbaAuthoringRouteOptions {
-  /** Composition-root overrides (an authoritative evidence verifier, once one exists, is registered here). Production default: none. */
+  /** Composition-root overrides (a test may inject a verifier). Production default: none here - the API composition root (app.ts) registers the BO evidence adapter. */
   dependencies?: Partial<AbaAuthoringDependencies>;
 }
 

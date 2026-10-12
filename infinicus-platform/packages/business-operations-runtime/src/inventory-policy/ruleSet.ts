@@ -9,6 +9,13 @@
  * version but can never supply thresholds. A parameter that is `undefined` means "unset" and makes its rule INDETERMINATE (`PARAMETER_UNSET`);
  * nothing here falls back to a default.
  */
+/**
+ * EVIDENCE_MAX_AGE of rule set `inventory-reorder-policy/v1.0.0` (owner-approved: 24 hours; B2c ruling 3): the oldest a BO evaluation may be
+ * (measured on the database clock) and still be verified as evidence. This is the ONE definition; the verifier reads it through the
+ * resolved rule set's `maxEvidenceAgeMs`. It is policy for this rule-set version only - not a global default for any other action type.
+ */
+export const INVENTORY_REORDER_POLICY_V1_MAX_EVIDENCE_AGE_MS = 24 * 60 * 60 * 1000;
+
 export interface InventoryReorderRuleSet {
   readonly version: string;
   /** Percent of the current non-zero baseline (MAX_CHANGE_REORDER_POINT_PCT). */
@@ -30,6 +37,8 @@ export interface InventoryReorderRuleSet {
   readonly demandWindowDays: number;
   readonly demandMovementTypes: readonly string[];
   readonly minDemandObservations: number;
+  /** Oldest evaluation (database clock) that still verifies as evidence, in milliseconds (EVIDENCE_MAX_AGE). */
+  readonly maxEvidenceAgeMs: number;
 }
 
 export const INVENTORY_REORDER_POLICY_RULE_SET_ID = 'inventory-reorder-policy';
@@ -49,6 +58,7 @@ export const INVENTORY_REORDER_POLICY_V1_0_0: InventoryReorderRuleSet = Object.f
   demandWindowDays: 90,
   demandMovementTypes: Object.freeze(['issue']),
   minDemandObservations: 10,
+  maxEvidenceAgeMs: INVENTORY_REORDER_POLICY_V1_MAX_EVIDENCE_AGE_MS,
 });
 
 /** Every approved version, keyed by its stored `rule_set_version` string. The registry is closed: nothing registers at runtime. */

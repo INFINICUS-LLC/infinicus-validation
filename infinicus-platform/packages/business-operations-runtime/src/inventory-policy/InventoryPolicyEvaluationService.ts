@@ -12,6 +12,8 @@
  *  - cannot supply: a result, a dimension, thresholds, findings, inputs, a digest, a time. Any such property is refused. `evaluated_at` is
  *    stamped by the database; the subject digest is computed here with the shared contract helper over exactly the persisted subject.
  *
+ * Audit: the rows and one platform audit event (bo.inventory_policy_evaluation.requested) commit atomically in the B2a repository.
+ *
  * Idempotency model (documented decision): the evaluation is a PURE function of (subject, rule-set version, BO fact snapshot, declared
  * currency). Each call APPENDS four new facts with their own database time; rows are never merged, updated or overwritten, so a later call
  * after the facts changed naturally produces new records. Every row carries `inputs.snapshotDigest` (a digest of the facts, excluding
@@ -83,7 +85,12 @@ export class InventoryPolicyEvaluationService {
     };
   }
 
-  async evaluate(ctx: TenantContext, request: EvaluateInventoryReorderPolicyRequest): Promise<InventoryPolicyEvaluationOutcome> {
+  /**
+   * `permissionUsed` is the permission the request was authorized under (for the platform audit record written atomically with the
+   * evaluation rows); it is supplied by the authenticated route, never by the caller's body.
+   */
+  async evaluate(ctx: TenantContext, request: EvaluateInventoryReorderPolicyRequest, permissionUsed: string): Promise<InventoryPolicyEvaluationOutcome> {
+    if (typeof permissionUsed !== 'string' || permissionUsed.length === 0) throw new InventoryPolicyEvaluationRefusedError('INVALID_REQUEST', 'the authorizing permission is required for the audit record');
     const { subject, ruleSet, businessId, correlationId } = this.validate(request);
     // The digest is computed once, from exactly the subject that is persisted and evaluated.
     let subjectDigest: string;
@@ -117,7 +124,7 @@ export class InventoryPolicyEvaluationService {
       findings: d.findings as unknown as EvaluationJson[],
       requestedByUserId: ctx.userId,
       correlationId,
-    })));
+    })), { permissionUsed });
     return {
       subjectDigest, ruleSetVersion: ruleSet.version, snapshotDigest, warehouseId: output.warehouseId, evaluations,
       references: evaluations.map((e) => ({ kind: INVENTORY_POLICY_EVALUATION_REFERENCE_KIND, id: e.id, dimension: e.dimension as EvaluationReference['dimension'] })),
@@ -163,6 +170,7 @@ export class InventoryPolicyEvaluationService {
       orderValueCapCurrency: ruleSet.orderValueCapCurrency, maxChangeOrderValuePctOfCap: ruleSet.maxChangeOrderValuePctOfCap, maxImpliedStockUnits: ruleSet.maxImpliedStockUnits,
       leadTimeDays: ruleSet.leadTimeDays, safetyFactor: ruleSet.safetyFactor, maxCoverDays: ruleSet.maxCoverDays, firstConfigurationAllowed: ruleSet.firstConfigurationAllowed,
       demandWindowDays: ruleSet.demandWindowDays, demandMovementTypes: [...ruleSet.demandMovementTypes], minDemandObservations: ruleSet.minDemandObservations,
+      maxEvidenceAgeMs: ruleSet.maxEvidenceAgeMs,
     });
     const facts: { [key: string]: EvaluationJson } = {
       item: snapshot.item === null ? null : { id: snapshot.item.id, status: snapshot.item.status, unitOfMeasure: snapshot.item.unitOfMeasure },

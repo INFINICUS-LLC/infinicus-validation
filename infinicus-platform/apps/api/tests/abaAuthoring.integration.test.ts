@@ -439,10 +439,16 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
       // boundaries: lowercase code refused outright
       expect((await post(s, `${base}/boundaries`, boundariesBody(s, { budget: lower }))).statusCode).toBe(400);
       // boundaries: a well-formed NOT_APPLICABLE is refused for every field this canonical type requires (fail closed)
-      for (const field of ['executionWindow', 'preconditions', 'budget', 'rollback', 'monitoring', 'simulationRun']) {
+      for (const field of ['executionWindow', 'preconditions', 'budget', 'rollback', 'monitoring']) {
         const res = await post(s, `${base}/boundaries`, boundariesBody(s, { [field]: { state: 'NOT_APPLICABLE', reason: { code: 'NOT_NEEDED', statement: 'n/a' } } }));
         expect(res.statusCode, field).toBe(400);
         expect(res.json().error.message, field).toContain('NOT_APPLICABLE is not permitted');
+      }
+      // B2c amendment: simulationRun is the ONE field with a governed exemption for this type, and only with the exact canonical reason
+      for (const code of ['NOT_NEEDED', 'NOT_SIMULATION_BACKED', 'NO_APPLICABLE_SIMULATION_MODE']) {
+        const res = await post(s, `${base}/boundaries`, boundariesBody(s, { simulationRun: { state: 'NOT_APPLICABLE', reason: { code, statement: 'n/a' } } }));
+        expect(res.statusCode, code).toBe(400);
+        expect(res.json().error.message, code).toContain('NO_APPLICABLE_SIMULATION_MODEL');
       }
       expect(await countOf(`SELECT count(*) n FROM approved_business_action.authorized_action_boundaries WHERE business_id=$1`, [s.bizId])).toBe(0);
     });
@@ -760,11 +766,12 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
   describe('B1. governance evidence is verified, never asserted', () => {
     const capturesFor = (s: Session) => countOf(`SELECT count(*) n FROM approved_business_action.authorized_action_captures WHERE business_id=$1`, [s.bizId]);
 
-    it('with NO verifier registered (the production default) a modified approval cannot be captured, and nothing is stored', async () => {
+    it('with NO verifier registered (the service default) a modified approval cannot be captured, and nothing is stored', async () => {
       const s = await setup('owner');
       await governance(s);
       const a = await approvedAction(s, 'approve_with_modifications');
-      const bare = await buildApp(loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '5000' }));
+      // The service default is fail-closed; only the API composition root registers the BO adapter, so a bare service has none.
+      const bare = await buildApp(loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '5000' }), { abaAuthoring: { evidenceVerifier: null } });
       await bare.ready();
       try {
         const res = await bare.inject({ method: 'POST', url: `${actionBase(s, a.actionId)}/capture`, headers: keyed(s), payload: modifiedBody() as any });
@@ -871,6 +878,207 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
       expect((await post(s, `${base}/package`)).statusCode).toBe(201);
       const pkg = (await adminPool.query(`SELECT package #>> '{lineage,simulationRunId,value}' r FROM approved_business_action.authorized_action_package_versions WHERE business_id=$1`, [s.bizId])).rows[0];
       expect(pkg.r).toBe(s.simRunId);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // B2c: the REAL Business Operations evidence verifier (the production composition-root default), end to end through ABA.
+  describe('B2c. modified approvals are captured only on authoritative BO evaluation evidence (real verifier, no fake)', () => {
+    let realApp: FastifyInstance;
+    let fakeApp: FastifyInstance;
+    const DAY = 86_400_000;
+    const NA_SIM = { state: 'NOT_APPLICABLE', reason: { code: 'NO_APPLICABLE_SIMULATION_MODEL', statement: 'No Simulation model evaluates inventory reorder policy.' } };
+    const DIMS = ['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME'];
+    interface Bo { itemId: string; warehouseId: string }
+
+    beforeAll(async () => {
+      // The real default app: its evidence verifier is the Business Operations adapter registered at the composition root.
+      realApp = await buildApp(loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '5000' }));
+      await realApp.ready();
+      fakeApp = app; app = realApp; // the shared helpers use the module-level app
+    });
+    afterAll(async () => { app = fakeApp; await realApp?.close(); });
+
+    /** BO facts for the session's business: baseline 170/190, USD declared (unless null), USD receipt at 10, 12 issues of 75. */
+    async function seedBo(s: Session, o: { declared?: string | null } = {}): Promise<Bo> {
+      const itemId = randomUUID(); const warehouseId = randomUUID(); const { tenantId, workspaceId } = s.ctx;
+      await adminPool.query(`INSERT INTO platform.inventory_items (id, tenant_id, workspace_id, business_id, sku, name) VALUES ($1,$2,$3,$4,$5,'Item')`, [itemId, tenantId, workspaceId, s.bizId, `sku-${itemId}`]);
+      await adminPool.query(`INSERT INTO platform.warehouses (id, tenant_id, workspace_id, business_id, warehouse_code, name) VALUES ($1,$2,$3,$4,$5,'WH')`, [warehouseId, tenantId, workspaceId, s.bizId, `wh-${warehouseId}`]);
+      await adminPool.query(`INSERT INTO business_operations.inventory_balances (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, reorder_point, reorder_quantity) VALUES ($1,$2,$3,$4,$5,170,190)`, [tenantId, workspaceId, s.bizId, itemId, warehouseId]);
+      if (o.declared !== null) {
+        await adminPool.query(`INSERT INTO platform.business_currency_declarations (tenant_id, workspace_id, business_id, version, declared_currency, provenance, declared_by_user_id, permission_used, correlation_id) VALUES ($1,$2,$3,1,$4,'EXPLICIT_DECLARATION',$5,'platform:admin',$6)`,
+          [tenantId, workspaceId, s.bizId, o.declared ?? 'USD', s.ctx.userId, randomUUID()]);
+      }
+      const mv = (type: string, qty: number, cost: string | null, cur: string | null, at: Date) => adminPool.query(
+        `INSERT INTO business_operations.inventory_movements (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, movement_type, quantity, unit_cost, unit_cost_currency, occurred_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [tenantId, workspaceId, s.bizId, itemId, warehouseId, type, qty, cost, cur, at]);
+      await mv('receipt', 500, '10', 'USD', new Date(Date.now() - 5 * DAY));
+      for (let i = 0; i < 12; i += 1) await mv('issue', -75, null, null, new Date(Date.now() - (i + 1) * DAY));
+      return { itemId, warehouseId };
+    }
+    const evaluateVia = (s: Session, bo: Bo, finalParameters: Record<string, number> = { reorderPoint: 180, reorderQuantity: 200 }) => post(s, `/v1/businesses/${s.bizId}/inventory-policy-evaluations`, {
+      actionType: { code: CODE, schemaVersion: '1' }, target: { kind: 'inventory_item', id: bo.itemId }, finalParameters, ruleSetVersion: 'inventory-reorder-policy/v1.0.0',
+    });
+    const refsOf = (res: { json(): any }): { dimension: string; evidenceRef: { kind: string; id: string } }[] => res.json().evidence.map((e: any) => ({ dimension: e.dimension, evidenceRef: { kind: e.kind, id: e.id } }));
+    const modified = (bo: Bo, evaluationEvidence: unknown, after = { reorderPoint: 180, reorderQuantity: 200 }) => ({
+      actionType: { code: CODE, schemaVersion: '1' }, target: { kind: 'inventory_item', id: bo.itemId }, proposedParameters: { reorderPoint: 170, reorderQuantity: 190 },
+      modification: { reason: 'Raise the reorder policy.', changes: [
+        { parameter: 'reorderPoint', operation: 'SET', before: 170, after: after.reorderPoint }, { parameter: 'reorderQuantity', operation: 'SET', before: 190, after: after.reorderQuantity }] },
+      evaluationEvidence,
+    });
+    const captureCount = (s: Session) => countOf(`SELECT count(*) n FROM approved_business_action.authorized_action_captures WHERE business_id=$1`, [s.bizId]);
+
+    /** A decided approve_with_modifications action (the decision becomes final NOW), then BO facts. Evaluation happens AFTER, as the chronology requires. */
+    async function ready(o: { declared?: string | null } = {}) {
+      const s = await setup('owner');
+      await governance(s);
+      const a = await approvedAction(s, 'approve_with_modifications');
+      const bo = await seedBo(s, o);
+      return { s, a, bo, base: actionBase(s, a.actionId) };
+    }
+
+    it('end to end: BO evaluates, ABA verifies all four through the port, captures, and the package issues with Simulation NOT_APPLICABLE (NO_APPLICABLE_SIMULATION_MODEL)', async () => {
+      const { s, a, bo, base } = await ready();
+      const ev = await evaluateVia(s, bo);
+      expect(ev.statusCode).toBe(201);
+      expect(ev.json().evidence.map((e: any) => e.result)).toEqual(['PASSED', 'PASSED', 'PASSED', 'PASSED']);
+      const cap = await post(s, `${base}/capture`, modified(bo, refsOf(ev)));
+      expect(cap.statusCode).toBe(201);
+      expect(cap.json().finalParameters).toEqual({ reorderPoint: 180, reorderQuantity: 200 });
+      expect((await post(s, `${base}/owner`, ownerBody(s))).statusCode).toBe(201);
+      expect((await post(s, `${base}/boundaries`, boundariesBody(s, { simulationRun: NA_SIM }))).statusCode).toBe(201);
+      const issued = await post(s, `${base}/package`);
+      expect(issued.statusCode).toBe(201);
+      expect(issued.json()).toMatchObject({ outcome: 'ISSUED', status: 'ISSUED' });
+      const pkg = (await adminPool.query(`SELECT package #>> '{lineage,simulationRunId}' sim, package #>> '{lineage,modificationEvaluation}' evals FROM approved_business_action.authorized_action_package_versions WHERE business_id=$1`, [s.bizId])).rows[0];
+      expect(JSON.parse(pkg.sim)).toMatchObject({ state: 'NOT_APPLICABLE', reason: { code: 'NO_APPLICABLE_SIMULATION_MODEL' } });
+      const stored = JSON.parse(pkg.evals).value.evidence;
+      expect(stored.map((e: any) => e.dimension).sort()).toEqual([...DIMS].sort());
+      for (const e of stored) expect(e).toMatchObject({ result: 'PASSED', evidenceRef: { kind: 'bo_inventory_policy_evaluation' } });
+      void a;
+    });
+
+    it('modifiedAt is the decision-final time (approval_decisions.updated_at) - not the capture time - and no approval_decision_modifications row is needed', async () => {
+      const { s, a, bo, base } = await ready();
+      const decisionAt = (await adminPool.query(`SELECT to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') t FROM approved_business_action.approval_decisions WHERE id=$1`, [a.decisionId])).rows[0].t;
+      const modRows = () => countOf(`SELECT count(*) n FROM approved_business_action.approval_decision_modifications WHERE business_id=$1`, [s.bizId]);
+      expect(await modRows()).toBe(0); // the live flow never writes it
+      await new Promise((r) => setTimeout(r, 25));
+      const ev = await evaluateVia(s, bo);
+      const cap = await post(s, `${base}/capture`, modified(bo, refsOf(ev)));
+      expect(cap.statusCode).toBe(201);
+      expect(await modRows()).toBe(0);
+      const row = (await adminPool.query(`SELECT modification #>> '{value,modifiedAt}' mod_at, to_char(captured_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') cap_at FROM approved_business_action.authorized_action_captures WHERE business_id=$1`, [s.bizId])).rows[0];
+      expect(row.mod_at).toBe(decisionAt);
+      expect(Date.parse(row.mod_at)).toBeLessThan(Date.parse(row.cap_at));
+      const evaluatedAt = ev.json().evidence[0].evaluatedAt;
+      expect(Date.parse(evaluatedAt)).toBeGreaterThanOrEqual(Date.parse(row.mod_at));
+      expect(Date.parse(evaluatedAt)).toBeLessThanOrEqual(Date.parse(row.cap_at));
+    });
+
+    it('a decided approve_with_modifications decision cannot change status, so its final time is not re-decidable', async () => {
+      const { a } = await ready();
+      await expect(adminPool.query(`UPDATE approved_business_action.approval_decisions SET status='approved' WHERE id=$1`, [a.decisionId])).rejects.toThrow(/decided decisions are immutable/);
+    });
+
+    it('evidence created BEFORE the modification decision became final is rejected (it cannot cover the modification)', async () => {
+      const s = await setup('owner');
+      await governance(s);
+      const bo = await seedBo(s);
+      const early = await evaluateVia(s, bo); // evaluated first ...
+      expect(early.statusCode).toBe(201);
+      await new Promise((r) => setTimeout(r, 15));
+      const a = await approvedAction(s, 'approve_with_modifications'); // ... decision becomes final afterwards
+      const res = await post(s, `${actionBase(s, a.actionId)}/capture`, modified(bo, refsOf(early)));
+      expect(res.statusCode).toBe(409);
+      expect(res3Message(res)).toMatch(/predates the modification decision/);
+      expect(await captureCount(s)).toBe(0);
+    });
+
+    it('a FAILED dimension blocks the capture', async () => {
+      const { s, bo, base } = await ready();
+      const ev = await evaluateVia(s, bo, { reorderPoint: 400, reorderQuantity: 600 });
+      expect(ev.json().evidence.map((e: any) => e.result)).toEqual(['FAILED', 'FAILED', 'FAILED', 'FAILED']);
+      const res = await post(s, `${base}/capture`, modified(bo, refsOf(ev), { reorderPoint: 400, reorderQuantity: 600 }));
+      expect(res.statusCode).toBe(409);
+      expect(res3Message(res)).toMatch(/was not verified: .*result is FAILED/);
+      expect(await captureCount(s)).toBe(0);
+    });
+
+    it('an INDETERMINATE dimension blocks the capture even when the other dimensions PASSED (no declared currency => COST)', async () => {
+      const { s, bo, base } = await ready({ declared: null });
+      const ev = await evaluateVia(s, bo);
+      expect(Object.fromEntries(ev.json().evidence.map((e: any) => [e.dimension, e.result]))).toMatchObject({ CONSTRAINTS: 'PASSED', COST: 'INDETERMINATE' });
+      const res = await post(s, `${base}/capture`, modified(bo, refsOf(ev)));
+      expect(res.statusCode).toBe(409);
+      expect(res3Message(res)).toMatch(/COST evidence was not verified: .*INDETERMINATE/);
+      expect(await captureCount(s)).toBe(0);
+    });
+
+    it('a STALE dimension (older than 24 hours on the database clock) blocks the capture', async () => {
+      const { s, bo, base } = await ready();
+      const ev = await evaluateVia(s, bo);
+      const evidence = refsOf(ev);
+      const costId = evidence.find((e) => e.dimension === 'COST')!.evidenceRef.id;
+      const c = await adminPool.connect();
+      let staleId: string;
+      try {
+        await c.query('BEGIN'); await c.query("SET LOCAL session_replication_role = 'replica'");
+        staleId = (await c.query(`INSERT INTO business_operations.inventory_policy_evaluations (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, dimension, result, subject, subject_digest, rule_set_version, inputs, findings, requested_by_user_id, correlation_id, evaluated_at)
+          SELECT tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, dimension, result, subject, subject_digest, rule_set_version, inputs, findings, requested_by_user_id, correlation_id, date_trunc('milliseconds', clock_timestamp()) - interval '24 hours 1 minute'
+            FROM business_operations.inventory_policy_evaluations WHERE id = $1 RETURNING id`, [costId])).rows[0].id;
+        await c.query('COMMIT');
+      } catch (e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
+      const res = await post(s, `${base}/capture`, modified(bo, evidence.map((e) => (e.dimension === 'COST' ? { ...e, evidenceRef: { kind: e.evidenceRef.kind, id: staleId } } : e))));
+      expect(res.statusCode).toBe(409);
+      // a 24h+ old row also predates the decision made moments ago: either way it cannot be evidence (the freshness boundary itself is proven in the verifier tests)
+      expect(res3Message(res)).toMatch(/COST evidence was not verified: .*(older than the maximum evidence age|predates the modification decision)/);
+      expect(await captureCount(s)).toBe(0);
+    });
+
+    it('a missing dimension, a reference under the wrong dimension, evidence for other parameters, and a non-BO reference are all rejected', async () => {
+      const { s, bo, base } = await ready();
+      const ev = await evaluateVia(s, bo);
+      const good = refsOf(ev);
+      const missing = await post(s, `${base}/capture`, modified(bo, good.filter((e) => e.dimension !== 'COST')));
+      expect(missing.statusCode).toBe(400);
+      expect(res3Message(missing)).toMatch(/evaluation evidence is required for: COST/);
+      const swapped = good.map((e) => (e.dimension === 'COST' ? { ...e, evidenceRef: good.find((x) => x.dimension === 'CONSTRAINTS')!.evidenceRef } : e));
+      const wrongDim = await post(s, `${base}/capture`, modified(bo, swapped));
+      expect(wrongDim.statusCode).toBe(409);
+      expect(res3Message(wrongDim)).toMatch(/evaluates CONSTRAINTS, not COST/);
+      const other = await evaluateVia(s, bo, { reorderPoint: 175, reorderQuantity: 200 });
+      const wrongParams = await post(s, `${base}/capture`, modified(bo, refsOf(other))); // evidence for 175/200, capture says 180/200
+      expect(wrongParams.statusCode).toBe(409);
+      expect(res3Message(wrongParams)).toMatch(/subject digest mismatch/);
+      const nonBo = await post(s, `${base}/capture`, modified(bo, good.map((e) => ({ ...e, evidenceRef: { kind: 'simulation_run', id: s.simRunId } }))));
+      expect(nonBo.statusCode).toBe(409);
+      expect(res3Message(nonBo)).toMatch(/unsupported evidence kind/);
+      expect(await captureCount(s)).toBe(0);
+    });
+
+    it('evidence of another business (same tenant) or another tenant is rejected', async () => {
+      const { s, bo, base } = await ready();
+      const stranger = await setup('owner');
+      const sbo = await seedBo(stranger);
+      const foreign = await evaluateVia(stranger, sbo);
+      const res = await post(s, `${base}/capture`, modified(bo, refsOf(foreign)));
+      expect(res.statusCode).toBe(409);
+      expect(res3Message(res)).toMatch(/no such evaluation record/);
+      expect(await captureCount(s)).toBe(0);
+    });
+
+    it('Simulation NOT_APPLICABLE needs the exact canonical reason for this type; a wrong reason is refused and absence is not NOT_APPLICABLE', async () => {
+      const { s, bo, base } = await ready();
+      const ev = await evaluateVia(s, bo);
+      expect((await post(s, `${base}/capture`, modified(bo, refsOf(ev)))).statusCode).toBe(201);
+      expect((await post(s, `${base}/owner`, ownerBody(s))).statusCode).toBe(201);
+      const wrong = await post(s, `${base}/boundaries`, boundariesBody(s, { simulationRun: { state: 'NOT_APPLICABLE', reason: { code: 'NOT_SIMULATION_BACKED', statement: 'x' } } }));
+      expect(wrong.statusCode).toBe(400);
+      const absent = await post(s, `${base}/boundaries`, (() => { const b: any = boundariesBody(s); delete b.simulationRun; return b; })());
+      expect(absent.statusCode).toBe(400);
+      // an unrelated completed run is still a valid VALUE (existing behaviour) but is never required
+      expect((await post(s, `${base}/boundaries`, boundariesBody(s, { simulationRun: NA_SIM }))).statusCode).toBe(201);
     });
   });
 });

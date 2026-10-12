@@ -38,14 +38,14 @@ describe('InventoryPolicyEvaluationRepository architecture', () => {
     expect(code).not.toMatch(/OperationalCommandExecutor|ExecutionEvidence|reorder_point|reorder_quantity|capacity|threshold|daysOfCover|maxOrderValue/i);
   });
 
-  it('every query runs inside a tenant transaction (RLS-confined) and only the five documented methods exist', () => {
+  it('every query runs inside a tenant transaction (RLS-confined) and only the six documented methods exist', () => {
     expect(code).not.toMatch(/getPool\(|\bpool\.query\(|(?<![.\w])query\(/);
     const methods = [...code.matchAll(/^ {2}async (\w+)\(/gm)].map((m) => m[1]).sort();
-    expect(methods).toEqual(['findForSubject', 'getById', 'listForBusiness', 'record', 'recordAll']);
+    expect(methods).toEqual(['findForSubject', 'getById', 'getByIdWithDatabaseNow', 'listForBusiness', 'record', 'recordAll']);
     expect((code.match(/withTenantTransaction\(/g) ?? []).length).toBe(methods.length);
   });
 
-  it('is wired ONLY to the BO-owned evaluator (B2b): no route, layer, workflow, ABA or other code references the repository or the table', () => {
+  it('is wired ONLY to the BO-owned evaluator and evidence verifier (B2b/B2c): no route, layer, workflow, ABA or other code references the repository or the table', () => {
     const users: string[] = [];
     for (const root of ['apps', 'packages', 'layers']) {
       for (const file of walk(join(PLATFORM, root))) {
@@ -54,7 +54,10 @@ describe('InventoryPolicyEvaluationRepository architecture', () => {
         if (/InventoryPolicyEvaluationRepository|inventory_policy_evaluations|InventoryPolicyEvaluation\b/.test(readFileSync(file, 'utf8'))) users.push(rel);
       }
     }
-    expect(users).toEqual(['packages/business-operations-runtime/src/inventory-policy/InventoryPolicyEvaluationService.ts']);
+    expect(users).toEqual([
+      'packages/business-operations-runtime/src/inventory-policy/BoGovernanceEvidenceVerifier.ts',
+      'packages/business-operations-runtime/src/inventory-policy/InventoryPolicyEvaluationService.ts',
+    ]);
   });
 
   it('the shared subject-digest helper lives in the contract package, not in the repository', () => {

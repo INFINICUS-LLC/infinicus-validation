@@ -99,22 +99,30 @@ describe.runIf(run)('P0-5 Block 3d: ABA package issuer', () => {
       expect(p.lineage.modificationEvaluation.value.basis).toBe('DECLARED_IMPACT');
     });
 
-    it('requires a simulation reference for this action type (D3D-1): a NOT_APPLICABLE one is refused, never accepted', async () => {
+    it('B2c: a NOT_APPLICABLE simulation for this type is accepted ONLY with the exact canonical reason NO_APPLICABLE_SIMULATION_MODEL', async () => {
+      const ok = await fresh({ simulationRun: NA('NO_APPLICABLE_SIMULATION_MODEL', 'No Simulation model evaluates inventory reorder policy.') });
+      const r: any = await new AuthorizedActionPackageIssuer().issue(ok.ctx, request(ok));
+      expect(r.package.lineage.simulationRunId.state).toBe('NOT_APPLICABLE');
+      expect(r.package.lineage.simulationRunId.reason.code).toBe('NO_APPLICABLE_SIMULATION_MODEL');
+    });
+
+    it('B2c: any other NOT_APPLICABLE reason for this type is refused (SIMULATION_REQUIRED), nothing is written', async () => {
       const f = await fresh({ simulationRun: NA('NOT_SIMULATION_BACKED', 'The decision was not simulation-backed.') });
       expect((await refusal(f)).codes).toEqual(['SIMULATION_REQUIRED']);
       expect(await versions(f)).toBe(0);
     });
 
     it('accepts a governed NOT_APPLICABLE simulation only for a canonical type that explicitly allows it (D-6, per type)', async () => {
-      const f = await fresh({ contract: FLEXIBLE, simulationRun: NA('NOT_SIMULATION_BACKED', 'The decision was not simulation-backed.') });
+      const f = await fresh({ contract: FLEXIBLE, simulationRun: NA('NO_APPLICABLE_SIMULATION_MODEL', 'No Simulation model applies.') });
       const allowing = new AuthorizedActionPackageIssuer({
         canonicalTypes: new InMemoryActionTypeRegistry([FLEXIBLE]), simulationNotApplicableAllowed: new Set(['inventory_reorder_policy_update@1']),
       });
       const r: any = await allowing.issue(f.ctx, request(f));
       expect(r.package.lineage.simulationRunId.state).toBe('NOT_APPLICABLE');
-      expect(r.package.lineage.simulationRunId.reason.code).toBe('NOT_SIMULATION_BACKED');
+      expect(r.package.lineage.simulationRunId.reason.code).toBe('NO_APPLICABLE_SIMULATION_MODEL');
       // the same data is refused by an issuer whose canonical type does not allow it
-      expect((await refusal(f, flexibleIssuer)).codes).toEqual(['SIMULATION_REQUIRED']);
+      const notAllowing = new AuthorizedActionPackageIssuer({ canonicalTypes: new InMemoryActionTypeRegistry([FLEXIBLE]), simulationNotApplicableAllowed: new Set() });
+      expect((await refusal(f, notAllowing)).codes).toEqual(['SIMULATION_REQUIRED']);
     });
 
     it('accepts governed NOT_APPLICABLE boundaries and an unbounded validity only where the canonical contract explicitly allows it', async () => {

@@ -87,6 +87,26 @@ export class ApprovalDecisionRepository {
     });
   }
 
+  /**
+   * B2c: the authoritative time (millisecond UTC) at which an APPROVED-WITH-MODIFICATIONS decision became final, i.e.
+   * `approval_decisions.updated_at` of the decided row (database-stamped by the single status transition). Returns null when the
+   * decision does not exist in scope or is in any other state; never consults `approval_decision_modifications` (not written by the
+   * live flow) or the audit log. A decided row's STATUS is immutable by trigger; a later non-status UPDATE (none exists in production)
+   * could only move `updated_at` FORWARD (set_updated_at stamps now()), which makes the chronology check stricter, never laxer.
+   */
+  async getModifiedDecisionFinalAt(ctx: TenantContext, decisionId: string): Promise<string | null> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(decisionId)) return null;
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<{ final_at: string }>(
+        `SELECT to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS final_at
+           FROM approved_business_action.approval_decisions
+          WHERE id = $1 AND tenant_id = $2 AND workspace_id = $3 AND status = 'approved_with_modifications'`,
+        [decisionId, ctx.tenantId, ctx.workspaceId],
+      );
+      return result.rows.length === 0 ? null : result.rows[0].final_at;
+    });
+  }
+
   async addModification(ctx: TenantContext, decisionVersionId: string, businessId: string, modificationCode: string, description: string): Promise<void> {
     return withTenantTransaction(ctx, async (client) => {
       await client.query(

@@ -12,9 +12,11 @@ import {
   INVENTORY_POLICY_EVALUATION_INPUTS_SCHEMA,
 } from '../src/index.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
+import { makePolicyWorld, type W, type WorldOptions } from './helpers/policyWorld.js';
 
 const RUN = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const V = RS.version;
+const PERM = 'bo:write';
 const DAY = 86_400_000;
 
 describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => {
@@ -23,35 +25,7 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
   const service = new InventoryPolicyEvaluationService();
   const repo = new InventoryPolicyEvaluationRepository();
 
-  interface W { ctx: TenantContext; businessId: string; itemId: string; warehouseId: string }
-
-  async function world(o: { baseline?: [number, number] | null; declared?: string | null; receipt?: { cost: string | null; currency: string | null } | null; issues?: number; issueQty?: number; status?: string } = {}): Promise<W> {
-    const tenantId = randomUUID(); const workspaceId = randomUUID(); const businessId = randomUUID(); const itemId = randomUUID(); const warehouseId = randomUUID();
-    tenantIds.push(tenantId);
-    const slug = `b2b${tenantId.slice(0, 8)}`;
-    await admin.query('INSERT INTO tenancy.tenants (id, name, slug) VALUES ($1,$2,$3)', [tenantId, slug, slug]);
-    await admin.query('INSERT INTO tenancy.workspaces (id, tenant_id, name, slug) VALUES ($1,$2,$3,$4)', [workspaceId, tenantId, slug, slug]);
-    await admin.query('INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code) VALUES ($1,$2,$3,$4,$5)', [businessId, tenantId, workspaceId, slug, slug]);
-    await admin.query(`INSERT INTO platform.inventory_items (id, tenant_id, workspace_id, business_id, sku, name, status) VALUES ($1,$2,$3,$4,$5,'Item',$6)`, [itemId, tenantId, workspaceId, businessId, `sku-${itemId}`, o.status ?? 'active']);
-    await admin.query(`INSERT INTO platform.warehouses (id, tenant_id, workspace_id, business_id, warehouse_code, name) VALUES ($1,$2,$3,$4,$5,'WH')`, [warehouseId, tenantId, workspaceId, businessId, `wh-${warehouseId}`]);
-    const baseline = o.baseline === undefined ? [100, 200] : o.baseline;
-    if (baseline !== null) {
-      await admin.query(`INSERT INTO business_operations.inventory_balances (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, reorder_point, reorder_quantity) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [tenantId, workspaceId, businessId, itemId, warehouseId, baseline[0], baseline[1]]);
-    }
-    const declared = o.declared === undefined ? 'USD' : o.declared;
-    if (declared !== null) {
-      await admin.query(`INSERT INTO platform.business_currency_declarations (tenant_id, workspace_id, business_id, version, declared_currency, provenance, declared_by_user_id, permission_used, correlation_id)
-        VALUES ($1,$2,$3,1,$4,'EXPLICIT_DECLARATION',$5,'platform:admin',$6)`, [tenantId, workspaceId, businessId, declared, randomUUID(), randomUUID()]);
-    }
-    const receipt = o.receipt === undefined ? { cost: '10', currency: 'USD' } : o.receipt;
-    const mv = (type: string, qty: number, cost: string | null, currency: string | null, at: Date) => admin.query(
-      `INSERT INTO business_operations.inventory_movements (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, movement_type, quantity, unit_cost, unit_cost_currency, occurred_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [tenantId, workspaceId, businessId, itemId, warehouseId, type, qty, cost, currency, at]);
-    if (receipt !== null) await mv('receipt', 500, receipt.cost, receipt.currency, new Date(Date.now() - 5 * DAY));
-    for (let i = 0; i < (o.issues ?? 12); i += 1) await mv('issue', -(o.issueQty ?? 75), null, null, new Date(Date.now() - (i + 1) * DAY));
-    return { ctx: { tenantId, workspaceId, userId: randomUUID() }, businessId, itemId, warehouseId };
-  }
+  const world = (o: WorldOptions = {}) => makePolicyWorld(admin, tenantIds, o);
 
   const request = (w: W, params: Record<string, number> = { reorderPoint: 180, reorderQuantity: 200 }, over: Record<string, unknown> = {}) => ({
     businessId: w.businessId, actionType: { code: 'inventory_reorder_policy_update', schemaVersion: '1' }, target: { kind: 'inventory_item', id: w.itemId },
@@ -72,6 +46,7 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
         for (const t of ['business_operations.inventory_policy_evaluations', 'platform.business_currency_declarations', 'business_operations.inventory_balances', 'platform.inventory_items', 'platform.warehouses', 'platform.businesses', 'tenancy.workspaces', 'tenancy.tenants']) {
           await c.query(`DELETE FROM ${t} WHERE ${t === 'tenancy.tenants' ? 'id' : 'tenant_id'} = ANY($1)`, [tenantIds]);
         }
+        await c.query('DELETE FROM audit.audit_events WHERE tenant_id = ANY($1)', [tenantIds]);
         await c.query('COMMIT');
       } catch (e) { await c.query('ROLLBACK').catch(() => undefined); throw e; } finally { c.release(); }
       await deleteMovementsForTenants(admin, tenantIds);
@@ -83,7 +58,7 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
   it('PASSED across all four dimensions for a healthy item; one append-only row per dimension bound to the exact digest', async () => {
     const w = await world({ baseline: [170, 190] });
     const req = request(w, { reorderPoint: 180, reorderQuantity: 200 });
-    const out = await service.evaluate(w.ctx, req);
+    const out = await service.evaluate(w.ctx, req, PERM);
     expect(results(out)).toEqual({ CONSTRAINTS: 'PASSED', RESOURCE_REQUIREMENTS: 'PASSED', COST: 'PASSED', EXPECTED_OUTCOME: 'PASSED' });
     expect(out.references.map((r) => r.dimension)).toEqual(['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME']);
     expect(out.warehouseId).toBe(w.warehouseId);
@@ -103,9 +78,25 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
     }
   });
 
+  it('writes one atomic platform audit event per request (actor, permission, scope, target, correlation, per-dimension results)', async () => {
+    const w = await world({ baseline: [170, 190] });
+    const req = request(w);
+    const out = await service.evaluate(w.ctx, req, 'bo:write');
+    const rows = (await admin.query(`SELECT * FROM audit.audit_events WHERE tenant_id = $1 AND action = 'bo.inventory_policy_evaluation.requested'`, [w.ctx.tenantId])).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ workspace_id: w.ctx.workspaceId, business_id: w.businessId, actor_type: 'user', actor_id: w.ctx.userId, entity_type: 'inventory_item', entity_id: w.itemId, correlation_id: req.correlationId });
+    expect(rows[0].metadata).toMatchObject({ permissionUsed: 'bo:write', subjectDigest: out.subjectDigest, ruleSetVersion: RS.version, target: { kind: 'inventory_item', id: w.itemId } });
+    expect(rows[0].metadata.evaluations.map((e: { dimension: string }) => e.dimension)).toEqual(['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME']);
+    // a refused request writes neither evaluation rows nor audit
+    await expect(service.evaluate(w.ctx, request(w, undefined, { ruleSetVersion: 'nope' }), 'bo:write')).rejects.toMatchObject({ code: 'RULE_SET_NOT_APPROVED' });
+    expect(Number((await admin.query(`SELECT count(*) FROM audit.audit_events WHERE tenant_id = $1 AND action = 'bo.inventory_policy_evaluation.requested'`, [w.ctx.tenantId])).rows[0].count)).toBe(1);
+    // the authorizing permission is mandatory
+    await expect(service.evaluate(w.ctx, request(w), '')).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+  });
+
   it('persists the exact input snapshot: schema, rule-set parameters, window on the database clock, facts and a snapshot digest', async () => {
     const w = await world({ baseline: [170, 190] });
-    const out = await service.evaluate(w.ctx, request(w));
+    const out = await service.evaluate(w.ctx, request(w), PERM);
     const inputs = out.evaluations[0].inputs as Record<string, any>;
     expect(inputs.schema).toBe(INVENTORY_POLICY_EVALUATION_INPUTS_SCHEMA);
     expect(inputs.ruleSet).toMatchObject({ id: 'inventory-reorder-policy', version: V, parameters: { orderValueCap: 5000, orderValueCapCurrency: 'USD', demandWindowDays: 90 } });
@@ -123,7 +114,7 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
 
   it('FAILED is reported and persisted distinctly (change over limit, cap, order value, stock-out)', async () => {
     const w = await world({ baseline: [170, 190] });
-    const out = await service.evaluate(w.ctx, request(w, { reorderPoint: 400, reorderQuantity: 600 }));
+    const out = await service.evaluate(w.ctx, request(w, { reorderPoint: 400, reorderQuantity: 600 }), PERM);
     expect(results(out)).toEqual({ CONSTRAINTS: 'FAILED', RESOURCE_REQUIREMENTS: 'FAILED', COST: 'FAILED', EXPECTED_OUTCOME: 'FAILED' });
     const stored = await repo.getById(w.ctx, w.businessId, out.evaluations[0].id);
     expect(stored!.result).toBe('FAILED');
@@ -131,8 +122,8 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
 
   it('is deterministic over an unchanged fact set: same results, same snapshot digest, new append-only rows each call', async () => {
     const w = await world({ baseline: [170, 190] });
-    const a = await service.evaluate(w.ctx, request(w));
-    const b = await service.evaluate(w.ctx, request(w));
+    const a = await service.evaluate(w.ctx, request(w), PERM);
+    const b = await service.evaluate(w.ctx, request(w), PERM);
     expect(b.snapshotDigest).toBe(a.snapshotDigest);
     expect(results(b)).toEqual(results(a));
     expect(b.evaluations.map((e) => e.id).some((id) => a.evaluations.map((x) => x.id).includes(id))).toBe(false);
@@ -143,33 +134,33 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
 
   it('a change in BO facts changes the snapshot digest and is a new record, never an update', async () => {
     const w = await world({ baseline: [170, 190] });
-    const a = await service.evaluate(w.ctx, request(w));
+    const a = await service.evaluate(w.ctx, request(w), PERM);
     await admin.query(`INSERT INTO business_operations.inventory_movements (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, movement_type, quantity, occurred_at)
       VALUES ($1,$2,$3,$4,$5,'issue',-5,now() - interval '1 hour')`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, w.itemId, w.warehouseId]);
-    const b = await service.evaluate(w.ctx, request(w));
+    const b = await service.evaluate(w.ctx, request(w), PERM);
     expect(b.snapshotDigest).not.toBe(a.snapshotDigest);
   });
 
   describe('INDETERMINATE fails closed', () => {
     it('no declared currency => COST INDETERMINATE (DECLARED_CURRENCY_MISSING); other dimensions unaffected', async () => {
       const w = await world({ baseline: [170, 190], declared: null });
-      const out = await service.evaluate(w.ctx, request(w));
+      const out = await service.evaluate(w.ctx, request(w), PERM);
       expect(results(out).COST).toBe('INDETERMINATE');
       expect(results(out).CONSTRAINTS).toBe('PASSED');
       expect(JSON.stringify(out.evaluations.find((e) => e.dimension === 'COST')!.findings)).toContain('DECLARED_CURRENCY_MISSING');
     });
     it('declared currency differing from the cap currency => CAP_CURRENCY_MISMATCH; cost currency mismatch => COST_CURRENCY_MISMATCH', async () => {
       const eur = await world({ baseline: [170, 190], declared: 'EUR', receipt: { cost: '10', currency: 'EUR' } });
-      expect(JSON.stringify((await service.evaluate(eur.ctx, request(eur))).evaluations.find((e) => e.dimension === 'COST')!.findings)).toContain('CAP_CURRENCY_MISMATCH');
+      expect(JSON.stringify((await service.evaluate(eur.ctx, request(eur), PERM)).evaluations.find((e) => e.dimension === 'COST')!.findings)).toContain('CAP_CURRENCY_MISMATCH');
       const mismatch = await world({ baseline: [170, 190], receipt: { cost: '10', currency: 'EUR' } });
-      expect(JSON.stringify((await service.evaluate(mismatch.ctx, request(mismatch))).evaluations.find((e) => e.dimension === 'COST')!.findings)).toContain('COST_CURRENCY_MISMATCH');
+      expect(JSON.stringify((await service.evaluate(mismatch.ctx, request(mismatch), PERM)).evaluations.find((e) => e.dimension === 'COST')!.findings)).toContain('COST_CURRENCY_MISMATCH');
     });
     it.each([
       ['no receipt', null, 'NO_RECEIPT'],
       ['receipt without cost', { cost: null, currency: null }, 'UNIT_COST_MISSING'],
     ])('%s => COST INDETERMINATE', async (_n, receipt, reason) => {
       const w = await world({ baseline: [170, 190], receipt });
-      const out = await service.evaluate(w.ctx, request(w));
+      const out = await service.evaluate(w.ctx, request(w), PERM);
       expect(results(out).COST).toBe('INDETERMINATE');
       expect(JSON.stringify(out.evaluations.find((e) => e.dimension === 'COST')!.findings)).toContain(reason);
     });
@@ -187,7 +178,7 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
         await c.query(`ALTER TABLE business_operations.inventory_movements ADD CONSTRAINT inventory_movements_unit_cost_positive ${def.replace(/ NOT VALID$/, '')} NOT VALID`);
         await c.query('COMMIT');
       } catch (e) { await c.query('ROLLBACK').catch(() => undefined); throw e; } finally { c.release(); }
-      const out = await service.evaluate(w.ctx, request(w));
+      const out = await service.evaluate(w.ctx, request(w), PERM);
       expect(results(out).COST).toBe('INDETERMINATE');
       expect(JSON.stringify(out.evaluations.find((e) => e.dimension === 'COST')!.findings)).toContain('UNIT_COST_INVALID');
     });
@@ -195,13 +186,13 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
       const w = await world({ baseline: [170, 190] });
       await admin.query(`INSERT INTO business_operations.inventory_movements (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, movement_type, quantity, unit_cost, unit_cost_currency, occurred_at)
         VALUES ($1,$2,$3,$4,$5,'receipt',10,3,'EUR',now() - interval '30 days')`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, w.itemId, w.warehouseId]);
-      expect(results(await service.evaluate(w.ctx, request(w))).COST).toBe('PASSED');
+      expect(results(await service.evaluate(w.ctx, request(w), PERM), PERM).COST).toBe('PASSED');
     });
     it('fewer than 10 issues, or none, => EXPECTED_OUTCOME INDETERMINATE (no Simulation substitute)', async () => {
       const few = await world({ baseline: [170, 190], issues: 9 });
-      expect(results(await service.evaluate(few.ctx, request(few))).EXPECTED_OUTCOME).toBe('INDETERMINATE');
+      expect(results(await service.evaluate(few.ctx, request(few), PERM)).EXPECTED_OUTCOME).toBe('INDETERMINATE');
       const none = await world({ baseline: [170, 190], issues: 0 });
-      expect(results(await service.evaluate(none.ctx, request(none))).EXPECTED_OUTCOME).toBe('INDETERMINATE');
+      expect(results(await service.evaluate(none.ctx, request(none), PERM)).EXPECTED_OUTCOME).toBe('INDETERMINATE');
     });
     it('demand outside the 90-day window or of a non-qualifying movement type is not counted', async () => {
       const w = await world({ baseline: [170, 190], issues: 9 });
@@ -209,31 +200,31 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
         `INSERT INTO business_operations.inventory_movements (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, movement_type, quantity, occurred_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7, now() - ($8 || ' days')::interval)`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, w.itemId, w.warehouseId, type, qty, String(ageDays)]);
       await ins('issue', -75, 91); await ins('issue', -75, 120); await admin.query(`INSERT INTO business_operations.inventory_movements (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, movement_type, quantity, occurred_at) VALUES ($1,$2,$3,$4,$5,'issue',-75, now() - interval '90 days 1 hour')`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, w.itemId, w.warehouseId]); await ins('adjustment', -75, 1); await ins('transfer_out', -75, 2);
-      const out = await service.evaluate(w.ctx, request(w));
+      const out = await service.evaluate(w.ctx, request(w), PERM);
       const demand = (out.evaluations[0].inputs as any).facts.demand;
       expect(demand.count).toBe(9);
       expect(results(out).EXPECTED_OUTCOME).toBe('INDETERMINATE');
     });
     it('zero baseline (FIRST_CONFIGURATION=NO) => CONSTRAINTS INDETERMINATE; no balance => all INDETERMINATE and the row has no warehouse', async () => {
       const zero = await world({ baseline: [0, 0] });
-      expect(results(await service.evaluate(zero.ctx, request(zero))).CONSTRAINTS).toBe('INDETERMINATE');
+      expect(results(await service.evaluate(zero.ctx, request(zero), PERM)).CONSTRAINTS).toBe('INDETERMINATE');
       const none = await world({ baseline: null });
-      const out = await service.evaluate(none.ctx, request(none));
+      const out = await service.evaluate(none.ctx, request(none), PERM);
       expect(Object.values(results(out))).toEqual(['INDETERMINATE', 'INDETERMINATE', 'INDETERMINATE', 'INDETERMINATE']);
       expect(out.warehouseId).toBeNull();
       expect(out.evaluations[0].warehouseId).toBeNull();
     });
     it('inactive item => CONSTRAINTS FAILED', async () => {
       const w = await world({ baseline: [170, 190], status: 'archived' });
-      expect(results(await service.evaluate(w.ctx, request(w))).CONSTRAINTS).toBe('FAILED');
+      expect(results(await service.evaluate(w.ctx, request(w), PERM), PERM).CONSTRAINTS).toBe('FAILED');
     });
   });
 
   describe('refusals (nothing is persisted)', () => {
     const refused = async (w: W, req: any, code: string) => {
       const before = await count(w);
-      await expect(service.evaluate(w.ctx, req)).rejects.toMatchObject({ name: 'ValidationError', code });
-      await expect(service.evaluate(w.ctx, req)).rejects.toBeInstanceOf(InventoryPolicyEvaluationRefusedError);
+      await expect(service.evaluate(w.ctx, req, PERM)).rejects.toMatchObject({ name: 'ValidationError', code });
+      await expect(service.evaluate(w.ctx, req, PERM)).rejects.toBeInstanceOf(InventoryPolicyEvaluationRefusedError);
       expect(await count(w)).toBe(before);
     };
     it.each([
@@ -265,14 +256,14 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
     await admin.query('INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code) VALUES ($1,$2,$3,$4,$5)', [otherBusiness, w.ctx.tenantId, w.ctx.workspaceId, `o${otherBusiness.slice(0, 8)}`, `o${otherBusiness.slice(0, 8)}`]);
     await admin.query(`INSERT INTO platform.inventory_items (id, tenant_id, workspace_id, business_id, sku, name) VALUES ($1,$2,$3,$4,$5,'Other')`, [otherItem, w.ctx.tenantId, w.ctx.workspaceId, otherBusiness, `sku-${otherItem}`]);
     const before = await count(w);
-    await expect(service.evaluate(w.ctx, request(w, undefined, { target: { kind: 'inventory_item', id: otherItem } }))).rejects.toMatchObject({ code: 'TARGET_UNRESOLVED' });
+    await expect(service.evaluate(w.ctx, request(w, undefined, { target: { kind: 'inventory_item', id: otherItem } }), PERM)).rejects.toMatchObject({ code: 'TARGET_UNRESOLVED' });
     expect(await count(w)).toBe(before);
   });
 
   it('tenant isolation: another tenant cannot evaluate this tenant\'s item, and its rows are invisible', async () => {
     const a = await world({ baseline: [170, 190] }); const b = await world({ baseline: [170, 190] });
-    const out = await service.evaluate(a.ctx, request(a));
-    await expect(service.evaluate(b.ctx, request(a))).rejects.toMatchObject({ code: 'TARGET_UNRESOLVED' });
+    const out = await service.evaluate(a.ctx, request(a), PERM);
+    await expect(service.evaluate(b.ctx, request(a), PERM), PERM).rejects.toMatchObject({ code: 'TARGET_UNRESOLVED' });
     await expect(repo.getById(b.ctx, a.businessId, out.evaluations[0].id)).rejects.toThrow(/not found/i);
   });
 
@@ -284,13 +275,13 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
       (await admin.query('SELECT * FROM business_operations.inventory_movements WHERE tenant_id=$1 ORDER BY id', [w.ctx.tenantId])).rows,
     ]);
     const before = await snap();
-    await service.evaluate(w.ctx, request(w)); await service.evaluate(w.ctx, request(w, { reorderPoint: 999, reorderQuantity: 999 }));
+    await service.evaluate(w.ctx, request(w), PERM); await service.evaluate(w.ctx, request(w, { reorderPoint: 999, reorderQuantity: 999 }), PERM);
     expect(await snap()).toBe(before);
   });
 
   it('evaluation rows cannot be updated or deleted afterwards (B2a append-only guard)', async () => {
     const w = await world({ baseline: [170, 190] });
-    const out = await service.evaluate(w.ctx, request(w));
+    const out = await service.evaluate(w.ctx, request(w), PERM);
     await expect(admin.query(`UPDATE business_operations.inventory_policy_evaluations SET result='PASSED' WHERE id=$1`, [out.evaluations[0].id])).rejects.toThrow(/append-only/);
     await expect(admin.query('DELETE FROM business_operations.inventory_policy_evaluations WHERE id=$1', [out.evaluations[0].id])).rejects.toThrow(/append-only/);
   });
@@ -300,7 +291,7 @@ describe.runIf(RUN)('InventoryPolicyEvaluationService - live PostgreSQL', () => 
     const failing = new InventoryPolicyEvaluationService({
       evaluations: { recordAll: async (ctx: TenantContext, inputs: any[]) => repo.recordAll(ctx, [...inputs.slice(0, 3), { ...inputs[3], dimension: 'NOT_A_DIMENSION' }]) },
     });
-    await expect(failing.evaluate(w.ctx, request(w))).rejects.toThrow();
+    await expect(failing.evaluate(w.ctx, request(w), PERM)).rejects.toThrow();
     expect(await count(w)).toBe(0);
   });
 });

@@ -35,12 +35,13 @@ const EVALUATE = `${DIR}evaluate.ts`;
 const FACTS = 'packages/database/src/repositories/bo/InventoryPolicyFactsRepository.ts';
 const EVAL_REPO = 'packages/database/src/repositories/bo/InventoryPolicyEvaluationRepository.ts';
 const evaluatorFiles = production.filter((f) => f.rel.startsWith(DIR));
+const ROUTE = 'apps/api/src/routes/inventoryPolicyEvaluations.ts';
 const pure = [`${DIR}decimal.ts`, `${DIR}ruleSet.ts`, EVALUATE];
 
 describe('B2b evaluator architecture', () => {
   it('scans the real tree (not vacuous) and the evaluator files exist inside Business Operations', () => {
     expect(production.length).toBeGreaterThan(200);
-    expect(evaluatorFiles.map((f) => f.rel).sort()).toEqual([`${DIR}InventoryPolicyEvaluationService.ts`, `${DIR}decimal.ts`, `${DIR}evaluate.ts`, `${DIR}index.ts`, `${DIR}ruleSet.ts`].sort());
+    expect(evaluatorFiles.map((f) => f.rel).sort()).toEqual([`${DIR}BoGovernanceEvidenceVerifier.ts`, `${DIR}InventoryPolicyEvaluationService.ts`, `${DIR}decimal.ts`, `${DIR}evaluate.ts`, `${DIR}index.ts`, `${DIR}ruleSet.ts`].sort());
     expect(read(FACTS).length).toBeGreaterThan(500);
   });
 
@@ -59,7 +60,7 @@ describe('B2b evaluator architecture', () => {
   });
 
   it('ABA, workflow, handoff contracts, DAL, apps and layers do not reference the evaluator, its records or its repositories (ABA is not the evaluation source of truth)', () => {
-    const users = production.filter((f) => !f.rel.startsWith(DIR) && ![FACTS, EVAL_REPO, 'packages/database/src/index.ts', 'packages/database/src/repositories/bo/index.ts', 'packages/business-operations-runtime/src/index.ts'].includes(f.rel)
+    const users = production.filter((f) => !f.rel.startsWith(DIR) && ![FACTS, EVAL_REPO, 'packages/database/src/index.ts', 'packages/database/src/repositories/bo/index.ts', 'packages/business-operations-runtime/src/index.ts', ROUTE].includes(f.rel)
       && /InventoryPolicyEvaluationService|InventoryPolicyEvaluationRepository|InventoryPolicyFactsRepository|inventory_policy_evaluations|evaluateInventoryReorderPolicy/.test(f.code)).map((f) => f.rel);
     expect(users).toEqual([]);
   });
@@ -110,14 +111,16 @@ describe('B2b evaluator architecture', () => {
 
   it('the production capability registry is unchanged (no executable action type) and nothing wires the evaluator into intake, routes or execution (P0-6 stays disabled)', () => {
     expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
-    for (const f of production.filter((p) => p.rel.startsWith('packages/business-operations-runtime/src/authorized-action/') || p.rel.startsWith('apps/api/src/'))) {
+    for (const f of production.filter((p) => p.rel.startsWith('packages/business-operations-runtime/src/authorized-action/') || (p.rel.startsWith('apps/api/src/') && p.rel !== ROUTE && p.rel !== 'apps/api/src/app.ts'))) {
       expect(f.code, f.rel).not.toMatch(/InventoryPolicyEvaluationService|inventory-policy\//);
     }
     expect(production.filter((f) => /configure_inventory_reorder_policy|reorder_policy_state/.test(f.code)).map((f) => f.rel)).toEqual([]);
   });
 
-  it('does not implement B2c (verifier adapter / route / modifiedAt correction) or B2d', () => {
-    expect(production.filter((f) => /BoGovernanceEvidenceVerifier|GovernanceEvidenceVerifier\b|modifiedAt/.test(f.code) && f.rel.startsWith(DIR)).map((f) => f.rel)).toEqual([]);
-    expect(production.filter((f) => /\/inventory-policy[-/]evaluat/.test(f.code) && f.rel.startsWith('apps/')).map((f) => f.rel)).toEqual([]);
+  it('B2c is wired only at the composition root and the BO route; B2d is not implemented', () => {
+    expect(production.filter((f) => /BoGovernanceEvidenceVerifier/.test(f.code)).map((f) => f.rel).sort()).toEqual([
+      'apps/api/src/app.ts', `${DIR}BoGovernanceEvidenceVerifier.ts`, `${DIR}index.ts`,
+    ].sort());
+    expect(production.filter((f) => /InventoryPolicyEvaluationService/.test(f.code) && f.rel.startsWith('apps/')).map((f) => f.rel)).toEqual([ROUTE]);
   });
 });

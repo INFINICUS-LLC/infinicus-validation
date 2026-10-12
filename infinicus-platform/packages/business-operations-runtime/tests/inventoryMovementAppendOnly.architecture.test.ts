@@ -67,6 +67,7 @@ describe('inventory_movements append-only architecture (0184)', () => {
     for (const rel of users) expect(isTest(rel)).toBe(true);
     const cleanup = tests.filter((f) => !f.rel.endsWith('inventoryMovementAppendOnly.architecture.test.ts') && /export async function deleteMovementsForTenants/.test(f.code)).map((f) => f.rel).sort();
     expect(cleanup).toEqual([
+      'apps/api/tests/helpers/movementCleanup.ts',
       'packages/business-operations-runtime/tests/helpers/movementCleanup.ts',
       'packages/database/tests/helpers/movementCleanup.ts',
     ]);
