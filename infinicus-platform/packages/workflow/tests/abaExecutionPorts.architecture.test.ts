@@ -38,11 +38,11 @@ describe('P0-6a architecture', () => {
     expect(read(AUTH).length).toBeGreaterThan(500);
   });
 
-  it('the ABA port implementations are unwired: only their own file and the workflow package index name them', () => {
+  it('the ABA port implementations are wired only in the event worker composition root (P0-6b)', () => {
     const users = production.filter((f) => CLASSES.test(f.code)).map((f) => f.rel).sort();
-    expect(users).toEqual(['packages/workflow/src/abaExecutionPorts.ts', 'packages/workflow/src/index.ts']);
-    // ... and nothing outside the workflow package imports them through its public entry either (no app, route or BO code).
-    const importers = production.filter((f) => !f.rel.startsWith('packages/workflow/') && /AbaPackageStatusProvider|AbaPackageConsumptionRecorder|AbaAuthorizedActionPackageSource/.test(f.code));
+    // P0-6b wires them in exactly one place: the event worker's composition root. No app, route or BO code names them.
+    expect(users).toEqual(['packages/event-worker/src/compose.ts', 'packages/workflow/src/abaExecutionPorts.ts', 'packages/workflow/src/index.ts']);
+    const importers = production.filter((f) => !f.rel.startsWith('packages/workflow/') && !f.rel.startsWith('packages/event-worker/') && /AbaPackageStatusProvider|AbaPackageConsumptionRecorder|AbaAuthorizedActionPackageSource/.test(f.code));
     expect(importers).toEqual([]);
   });
 
@@ -83,9 +83,9 @@ describe('P0-6a architecture', () => {
     expect(code).toMatch(/record\.digest === digest/);
   });
 
-  it('the capability registry stays empty and no activation, event or worker was introduced', () => {
+  it('the capability registry stays empty and no activation or execution event exists (P0-6b adds only the authorized notification)', () => {
     expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES[^=]*=\s*Object\.freeze\(\s*\[\s*\]\s*\)/);
-    expect(production.filter((f) => /control_loop\.action\.authorized|ACTION_AUTHORIZED|operations\.action\.executed|ACTION_EXECUTED/.test(f.code)).map((f) => f.rel)).toEqual([]);
+    expect(production.filter((f) => /operations\.action\.executed|ACTION_EXECUTED/.test(f.code)).map((f) => f.rel)).toEqual([]);
   });
 
   it('legacy ABA blocks 17/19/20/21 stay unimported', () => {

@@ -63,3 +63,7 @@ export { AbaPackageStatusProvider, AbaAuthorizedActionPackageSource, AbaPackageC
 export type { AbaPackageStatusProviderDependencies } from './abaExecutionPorts.js';
 export { evaluateApproverAuthority, evaluateExecutionAuthority, policyCoversActionType } from './executionAuthority.js';
 export type { AuthorityState, ApproverAuthority, ExecutionAuthorityFacts, ExecutionAuthorityVerdict } from './executionAuthority.js';
+
+// P0-6b: the ABA producer of control_loop.action.authorized@1 (reference-only; gated; closed by default).
+export { ActionAuthorizedAnnouncer, actionAuthorizedPayloadFor } from './ActionAuthorizedAnnouncer.js';
+export type { PackageAnnouncer, AnnouncementOutcome, PackageAnnouncementTrace, ActionAuthorizedAnnouncerDependencies } from './ActionAuthorizedAnnouncer.js';

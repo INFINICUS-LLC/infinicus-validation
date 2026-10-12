@@ -72,3 +72,16 @@ export type RecordConsumedResult =
 export interface PackageConsumptionRecorder {
   recordConsumed(request: RecordConsumedRequest): Promise<RecordConsumedResult>;
 }
+
+/**
+ * The runtime activation control for the authorized-action pipeline (planning decision 16; ruling O-11). The producer (ABA) asks it before
+ * announcing a package and the consumer (BO) asks it before claiming one, so both sides are governed by the SAME control: with it OFF no
+ * notification is emitted and no claim is made. The governed implementation (per-business activation record + global kill switch) arrives
+ * with P0-6e; until then the only implementation is {@link DENY_ALL_EXECUTION_GATE}. Safety never depends on a variable being absent: an
+ * unwired gate is a closed gate. A gate that throws is treated as closed.
+ */
+export interface ExecutionCapabilityGate {
+  isEnabled(scope: PackageScope, actionType: { code: string; schemaVersion: string }): Promise<boolean>;
+}
+
+export const DENY_ALL_EXECUTION_GATE: ExecutionCapabilityGate = Object.freeze({ isEnabled: async () => false });

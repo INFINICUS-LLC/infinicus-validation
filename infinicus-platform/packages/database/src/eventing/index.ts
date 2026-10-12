@@ -19,6 +19,8 @@ export { EventLedgerRepository } from './EventLedgerRepository.js';
 export type { StoredBusinessEvent } from './EventLedgerRepository.js';
 
 export { OutboxRepository } from './OutboxRepository.js';
+export { OutboxDispatcher, DeliveryError, backoffFor, IN_PROCESS_DESTINATION, DEFAULT_MAX_ATTEMPTS, DEFAULT_BACKOFF_SECONDS } from './OutboxDispatcher.js';
+export type { EventConsumer, OutboxDispatcherDependencies, DispatchSummary } from './OutboxDispatcher.js';
 export { InboxRepository } from './InboxRepository.js';
 export { DeadLetterRepository } from './DeadLetterRepository.js';
 export { EventSubscriptionRepository } from './EventSubscriptionRepository.js';

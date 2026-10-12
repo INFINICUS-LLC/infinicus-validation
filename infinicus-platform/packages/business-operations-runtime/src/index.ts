@@ -18,3 +18,4 @@ export * from './events/OperationalEventService.js';
 export * from './authorized-action/boActionCapabilities.js';
 export * from './authorized-action/authorizedActionIntakePolicy.js';
 export * from './authorized-action/AuthorizedActionIntakeService.js';
+export * from './authorized-action/AuthorizedActionNotificationConsumer.js';

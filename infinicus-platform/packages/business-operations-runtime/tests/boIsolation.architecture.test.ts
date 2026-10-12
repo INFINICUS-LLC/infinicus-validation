@@ -203,7 +203,8 @@ describe('Business Operations isolation guard — the matcher itself', () => {
 });
 
 describe('Business Operations isolation guard - BO may import only the shared contract, its own database repositories and Node/pg', () => {
-  const ALLOWED = new Set(['@infinicus/database', '@infinicus/handoff-contracts', 'pg']);
+  // P0-6b: BO's notification consumer also imports the shared event contract (reference-only payload); still nothing ABA-owned.
+  const ALLOWED = new Set(['@infinicus/database', '@infinicus/handoff-contracts', '@infinicus/event-contracts', 'pg']);
   const isAllowed = (spec: string): boolean => spec.startsWith('.') || spec.startsWith('node:') || ['crypto'].includes(spec) || ALLOWED.has(spec);
 
   it('every non-relative import in Business Operations source is on the allow-list (extended in 3e; nothing ABA-owned is reachable)', () => {

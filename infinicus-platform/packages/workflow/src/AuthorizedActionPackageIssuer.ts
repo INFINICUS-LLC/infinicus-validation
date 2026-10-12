@@ -7,8 +7,8 @@
  * the package version. Any failure rolls the whole issuance back; a refusal is audited afterwards in its own transaction so
  * the reason is preserved.
  *
- * It does NOT emit ACTION_AUTHORIZED, call Business Operations, expose a consumption path, or touch P0-1..P0-4 approval
- * behaviour. Idempotent: the same authoritative inputs return the existing package; changed inputs issue the next version,
+ * It never calls Business Operations, exposes no consumption path and does not touch P0-1..P0-4 approval behaviour. It can announce a
+ * package only through an injected, gated announcer (P0-6b; none by default), inside the issuance transaction. Idempotent: the same authoritative inputs return the existing package; changed inputs issue the next version,
  * which atomically supersedes the previous one (never an overwrite).
  */
 
@@ -28,6 +28,7 @@ import {
 } from './packageIssuancePolicy.js';
 import type { IssuanceFacts, IssuanceRefusal, IssuanceRefusalCode } from './packageIssuancePolicy.js';
 import type { TwinFreshness } from './approvalGate.js';
+import type { PackageAnnouncer } from './ActionAuthorizedAnnouncer.js';
 
 const LEVEL_2 = 2 as const;
 
@@ -71,6 +72,11 @@ export interface IssuerDependencies {
   canonicalTypes: ActionTypeRegistry;
   /** Canonical `code@schemaVersion` keys whose simulation reference may be NOT_APPLICABLE (default: none, ruling D3D-1). */
   simulationNotApplicableAllowed: ReadonlySet<string>;
+  /**
+   * Optional producer of the package notification (P0-6b). When present it runs INSIDE the issuance transaction, for a newly issued
+   * package and for an identical replay, so a package is never left unannounced by a crash between the two. Absent = no notification.
+   */
+  announcer?: PackageAnnouncer;
 }
 
 const defaults = (): IssuerDependencies => ({
@@ -125,6 +131,19 @@ export class AuthorizedActionPackageIssuer {
     }
   }
 
+  /** Runs the optional announcer on the issuance transaction; a failed announcement refuses (and rolls back) the whole issuance. */
+  private async announce(
+    ctx: TenantContext, pkg: AuthorizedActionPackageV1, correlationId: string, causationId: string | null,
+    refused: (refusals: IssuanceRefusal[], cause?: unknown) => PackageIssuanceRefusedError,
+  ): Promise<void> {
+    if (!this.deps.announcer) return;
+    try {
+      await this.deps.announcer.announce(ctx, pkg, { correlationId, causationId });
+    } catch (error) {
+      throw refused([{ code: 'ANNOUNCEMENT_FAILED', message: error instanceof Error ? error.message : 'announcement failed' }], error);
+    }
+  }
+
   private async issueInTransaction(ctx: TenantContext, actionId: string, correlationId: string, permissionUsed: string | null): Promise<IssuePackageResult> {
     const d = this.deps;
     await d.issuance.lockAction(ctx, actionId);
@@ -176,6 +195,7 @@ export class AuthorizedActionPackageIssuer {
         if (status?.lifecycle !== 'ISSUED') {
           throw refused([{ code: 'EXISTING_PACKAGE_NOT_REPLAYABLE', message: `the identical package v${latest.packageVersion} is ${status?.lifecycle ?? 'unknown'}; it is not re-issued` }]);
         }
+        await this.announce(ctx, existing, correlationId, existing.trace.causationId, refused);
         return { outcome: 'REPLAYED', package: existing, record: latest, issuanceAuditEventId: null };
       }
 
@@ -220,6 +240,7 @@ export class AuthorizedActionPackageIssuer {
       } catch (error) {
         throw refused([{ code: 'PERSISTENCE_FAILED', message: error instanceof Error ? error.message : 'package persistence failed' }], error);
       }
+      await this.announce(ctx, sealed, correlationId, sealed.trace.causationId, refused);
       return { outcome: 'ISSUED', package: sealed, record, issuanceAuditEventId: auditId };
     } catch (error) {
       if (error instanceof PackageIssuanceRefusedError) throw error;
