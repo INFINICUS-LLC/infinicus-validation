@@ -3,6 +3,7 @@
  * Requires DATABASE_URL (app role, RLS enforced) and ADMIN_DATABASE_URL (superuser), migrated through 0185.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -209,11 +210,11 @@ describe.runIf(run)('business currency declarations (0185) - live PostgreSQL', (
     it('UPDATE, DELETE and TRUNCATE are refused for the admin and the application role', async () => {
       await expect(admin.query(`UPDATE ${T} SET declared_currency = 'EUR' WHERE business_id = $1`, [a.biz])).rejects.toThrow(APPEND_ONLY('UPDATE'));
       await expect(admin.query(`DELETE FROM ${T} WHERE business_id = $1`, [a.biz])).rejects.toThrow(APPEND_ONLY('DELETE'));
-      await expect(admin.query(`TRUNCATE ${T}`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
-      await expect(admin.query(`TRUNCATE ${T} CASCADE`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
+      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
+      await expect(truncateRefusal(admin, `TRUNCATE ${T} CASCADE`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
       await asApp(a, async (q) => { await expect(q(`UPDATE ${T} SET declared_currency = 'EUR' WHERE business_id = $1`, [a.biz])).rejects.toThrow(APPEND_ONLY('UPDATE')); });
       await asApp(a, async (q) => { await expect(q(`DELETE FROM ${T} WHERE business_id = $1`, [a.biz])).rejects.toThrow(APPEND_ONLY('DELETE')); });
-      await expect(app.query(`TRUNCATE ${T}`)).rejects.toThrow();
+      await expect(truncateRefusal(app, `TRUNCATE ${T}`)).rejects.toThrow();
     });
 
     it('exactly the three expected triggers exist, all enabled', async () => {

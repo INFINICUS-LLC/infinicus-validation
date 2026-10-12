@@ -3,6 +3,7 @@
  * Requires DATABASE_URL (app role, RLS enforced) and ADMIN_DATABASE_URL (superuser), migrated through 0184.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -96,17 +97,17 @@ describe.runIf(run)('inventory_movements is append-only (0184) - live PostgreSQL
     });
 
     it('TRUNCATE (plain and CASCADE) is refused for the admin role and the application role', async () => {
-      await expect(admin.query(`TRUNCATE ${T}`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
-      await expect(admin.query(`TRUNCATE ${T} CASCADE`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
-      await expect(admin.query(`TRUNCATE ${T} RESTART IDENTITY`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
-      await asApp(t, ws, async (q) => { await expect(q(`TRUNCATE ${T}`)).rejects.toThrow(); });
+      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
+      await expect(truncateRefusal(admin, `TRUNCATE ${T} CASCADE`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
+      await expect(truncateRefusal(admin, `TRUNCATE ${T} RESTART IDENTITY`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
+      await expect(truncateRefusal(app, `TRUNCATE ${T}`)).rejects.toThrow();
     });
 
     it('historical rows are byte-for-byte unchanged after every refused attempt', async () => {
       const before = await snapshot();
       await admin.query(`UPDATE ${T} SET quantity = 0 WHERE id = $1`, [rowId]).catch(() => undefined);
       await admin.query(`DELETE FROM ${T} WHERE id = $1`, [rowId]).catch(() => undefined);
-      await admin.query(`TRUNCATE ${T}`).catch(() => undefined);
+      await truncateRefusal(admin, `TRUNCATE ${T}`).catch(() => undefined);
       expect(await snapshot()).toBe(before);
       const r = (await admin.query(`SELECT quantity::text q, movement_type, notes FROM ${T} WHERE id = $1`, [rowId])).rows[0];
       expect(r).toEqual({ q: '3.0000', movement_type: 'issue', notes: 'historic' });

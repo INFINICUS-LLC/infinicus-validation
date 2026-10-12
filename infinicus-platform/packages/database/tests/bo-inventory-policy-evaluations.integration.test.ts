@@ -3,6 +3,7 @@
  * Requires DATABASE_URL (app_test_user, RLS enforced) and ADMIN_DATABASE_URL (BYPASSRLS), migrated through 0182.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -164,9 +165,9 @@ describe.runIf(run)('BO inventory policy evaluations (0182) - live PostgreSQL', 
     });
 
     it('TRUNCATE (plain and CASCADE) is refused for the admin and the application role', async () => {
-      await expect(admin.query(`TRUNCATE business_operations.inventory_policy_evaluations`)).rejects.toThrow(APPEND_ONLY);
-      await expect(admin.query(`TRUNCATE business_operations.inventory_policy_evaluations CASCADE`)).rejects.toThrow(APPEND_ONLY);
-      await expect(app.query(`TRUNCATE business_operations.inventory_policy_evaluations`)).rejects.toThrow();
+      await expect(truncateRefusal(admin, `TRUNCATE business_operations.inventory_policy_evaluations`)).rejects.toThrow(APPEND_ONLY);
+      await expect(truncateRefusal(admin, `TRUNCATE business_operations.inventory_policy_evaluations CASCADE`)).rejects.toThrow(APPEND_ONLY);
+      await expect(truncateRefusal(app, `TRUNCATE business_operations.inventory_policy_evaluations`)).rejects.toThrow();
       await unchanged();
     });
 

@@ -5,6 +5,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any -- tests read arbitrary rows */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { AuthorizedActionExecutionRepository, closePool, createPool } from '@infinicus/database';
@@ -338,7 +339,10 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
       expect(attempts).toHaveLength(1);
       expect(attempts[0]).toMatchObject({ outcome: 'RETRYABLE_FAILURE', reason_code: 'OPERATIONAL_ERROR' });
       // and the next healthy attempt succeeds exactly once
-      expect(terminal(await engine(c.provider).executeClaim(c.ctx, c.claimId))).toMatchObject({ outcome: 'SUCCEEDED', attemptCount: 2 });
+      const healthy = await engine(c.provider).executeClaim(c.ctx, c.claimId);
+      // Diagnosability (P0-6f CI): an unexpected RETRY must say WHY. The attempt log records the operational error; CI output otherwise shows only the code.
+      if (healthy.state !== 'TERMINAL') throw new Error(`the healthy attempt did not complete: ${JSON.stringify(healthy)}; attempts: ${JSON.stringify((await attemptRows(c)).map((a) => ({ n: a.attempt_number, reason: a.reason_code, detail: a.detail })))}`);
+      expect(healthy.execution).toMatchObject({ outcome: 'SUCCEEDED', attemptCount: 2 });
     });
 
     it('operational failures exhaust into a terminal FAILED(RETRIES_EXHAUSTED) with the balance untouched', async () => {
@@ -418,7 +422,7 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
       const e = terminal(await engine(c.provider).executeClaim(c.ctx, c.claimId));
       for (const sql of [`UPDATE ${S}.authorized_action_executions SET detail='x' WHERE id='${e.id}'`, `DELETE FROM ${S}.authorized_action_executions WHERE id='${e.id}'`, `TRUNCATE ${S}.authorized_action_executions`,
         `TRUNCATE ${S}.authorized_action_execution_attempts`]) {
-        await expect(admin.query(sql), sql).rejects.toThrow(/append-only/);
+        await expect(sql.startsWith('TRUNCATE') ? truncateRefusal(admin, sql) : admin.query(sql), sql).rejects.toThrow(/append-only/);
       }
     });
 
