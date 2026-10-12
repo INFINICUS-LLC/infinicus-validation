@@ -1,7 +1,8 @@
 # P0-6 planning — ABA → BO execution boundary for `inventory_reorder_policy_update@1`
 
-Status: **PLANNING / RECONCILIATION ONLY.** No code, no migration, no production behaviour. P0-6 is NOT started and stays OFF. Nothing here
-authorizes an implementation block; each block in §21 needs its own owner authorization.
+Status: **PLANNING / RECONCILIATION — owner rulings recorded (§25).** No code, no migration, no production behaviour in this record. P0-6 stays OFF.
+The blocks in §21 are authorized by the owner's high-autonomy programme mandate (rulings O-1..O-15 below); production activation, live
+migrations and merges remain owner-only gates.
 
 Baseline surveyed (read-only): `main` = `3942be6` (#89), migration head **0187**, open PRs none, main CI green. **Live Supabase head was not
 re-checked**: the Supabase connector available to this session lists no projects, so the last verified programme state (0169) is carried
@@ -124,7 +125,7 @@ Mandatory and not satisfiable by intake-time, claim-time or cached answers. Sequ
 
 Anything other than `CURRENT` — `REVOKED`, `UNVERIFIABLE`, stale, malformed, `null`, a rejected promise — fails closed. Lock wait therefore cannot age the answer: the answer is requested after the locks are held.
 
-**Maximum gap [OWNER DECISION O-2].** No ruled number exists (`statusMaxAgeMs` has no default and intake never received one). The bound that matters is *answer age at judgement* (steps 2→3), because the commit follows within milliseconds. Recommendation: a dedicated `executionStatusMaxAgeMs`, separate from and much smaller than the intake value, of the order of seconds; the provider is in-process on the same database, so a larger value buys nothing and only widens the race. The owner sets the number; the code must refuse to start without it (no default, as for `statusMaxAgeMs`).
+**Maximum gap [RULED, O-2].** `executionStatusMaxAgeMs = 5000 ms` for v1. The bound that matters is *answer age at judgement* (steps 2→3), because the commit follows within milliseconds. It is a dedicated parameter, separate from the intake `statusMaxAgeMs`; the code still takes it as a required argument with no hidden default, and the composition root supplies 5000.
 
 **New contract piece [PROPOSAL, O-5]:** `validateForExecution` refuses lifecycle `CONSUMED` (correct *before* a claim). After the claim the check must accept `CONSUMED` only for this BO receipt. This needs an additive optional field `consumptionReceiptId` on `AuthoritativePackageStatus` and a sibling pure function `validateForExecutionAfterClaim` (same rules, same codes, plus the receipt match). Packages and digests are unaffected.
 
@@ -274,7 +275,7 @@ P0-6 stays OFF. Safety must not depend on an environment variable being *absent*
 **Survey.** Status of a decided row is immutable by trigger; `updated_at` is not (a non-status `UPDATE` re-stamps it with `now()` — forward only). No production code updates a decided row (only status updates exist).
 - **A (current fail-closed behaviour):** sufficient for *execution* authority, because the sealed package copies `modifiedAt` into its lineage and execution re-checks the package, not the live decision row; drift can only make a later *capture* chronology stricter.
 - **B (small migration):** extend `enforce_decision_immutability` so any `UPDATE` of a decided row is rejected (not only status changes).
-**Recommendation: B**, because the timestamp is authoring-chronology authority and the guard is cheap, but it is not a P0-6 execution blocker; it can ship as its own tiny block (P0-6.0). No historical-data impact (affects future updates only); an existing B2c test that demonstrates drift must be updated. **Not created here.**
+**Recommendation: B — RULED (O-14), P0-6.0**, because the timestamp is authoring-chronology authority and the guard is cheap, but it is not a P0-6 execution blocker; it can ship as its own tiny block (P0-6.0). No historical-data impact (affects future updates only); an existing B2c test that demonstrates drift must be updated. **Not created here.**
 
 ## 18. Accepted limitations carried forward (not "fixed" by P0-6)
 BO facts and declared currency are read separately, not under one cross-domain PostgreSQL snapshot; `approval_decision_modifications` remains unused; unit-of-measure explicit-vs-default is unresolved; no FX; ISO 4217 membership deferred; the accepted residual race in §7.
@@ -285,7 +286,7 @@ BO facts and declared currency are read separately, not under one cross-domain P
 |---|---|---|
 | **A** purchase receipt write path | **INDEPENDENT** | It adds cost/receipt *data* that improves the COST evidence (K1). Execution safety depends on the sealed package, the final authority check and the compare-and-set — none read receipts. |
 | **D** PO/receipt/item linkage | **INDEPENDENT** | Same: enriches evaluation context; nothing in the execution path reads PO lines. |
-| **E** `reorder_policy_state` + a BO configure command | **INDEPENDENT for safety; coupled by design** | v1.0.0 sets `FIRST_CONFIGURATION_OPTION = NO`, so the evaluator already makes a zero baseline INDETERMINATE: any executable package has a non-zero baseline, and compare-and-set on exact values does not need an UNSET/CONFIGURED flag. But the data-capture record planned that "the future authorized P0-6 execution would use that same command" and set `CONFIGURED`. Sequencing choice **O-10**: fold `reorder_policy_state` into the P0-6c writer (one touch), or land E first. Not required to be safe. |
+| **E** `reorder_policy_state` + a BO configure command | **INDEPENDENT for safety; coupled by design** | v1.0.0 sets `FIRST_CONFIGURATION_OPTION = NO`, so the evaluator already makes a zero baseline INDETERMINATE: any executable package has a non-zero baseline, and compare-and-set on exact values does not need an UNSET/CONFIGURED flag. But the data-capture record planned that "the future authorized P0-6 execution would use that same command" and set `CONFIGURED`. Sequencing is **ruled (O-10): E lands before P0-6c.** Not required to be safe. |
 (Already done: B, positive cost, 0187; C, currency, 0183.) I hold ~85 % confidence in the E classification because it rests on the evaluator's zero-baseline rule staying as ruled.
 
 ## 20. Migration needs (none allocated; numbers are discovered at implementation time per the allocation policy)
@@ -295,9 +296,9 @@ BO facts and declared currency are read separately, not under one cross-domain P
 | M0 | approved_business_action | freeze decided decisions (§17 B) | replace `enforce_decision_immutability` (and the version guard) | none | existing | none |
 | M1 | business_operations | `authorized_action_executions` (one terminal row per claim, `UNIQUE(claim_id)`; FK to the claim/receipt scope key; outcome, codes, before/requested/after state, authority/status facts, timing, evidence document + digest, correlation) and `authorized_action_execution_attempts` (transient refusals) | tables, CHECKs, DB-clock stamping triggers (the 0180 pattern), indexes | none (new tables) | tenant+workspace RLS forced; `forbid_mutation` for UPDATE/DELETE/TRUNCATE | claims table (0180) |
 | M2 | business_operations | `execution_capability_activations` (§16) | version-chained append-only table | none | RLS forced, append-only | none |
-| M3 (optional, O-11) | business_operations | `CHECK (reorder_point >= 0 AND reorder_quantity >= 0) NOT VALID` and a trigger that rejects reorder-field changes unless the adapter's transaction-local marker is set | trigger + check | `NOT VALID`, no backfill | existing | M1 |
-| M4 (optional, O-10) | business_operations | Block E `reorder_policy_state` | column + CHECK | none; **no backfill without a ruling** | existing | E decision |
-Expected total: **3 required** (M1, M2, M0 if accepted) and up to **2 optional**. ABA needs **no** migration for the consumption mirror (the existing `CONSUMED` + `consumption_receipt_id` fact suffices); the event contract and registry entries are code, not schema. The migration count is "several"; each is a separately reviewed block.
+| M3 (approved, O-11) | business_operations | `CHECK (reorder_point >= 0 AND reorder_quantity >= 0) NOT VALID` and a trigger that rejects reorder-field changes unless the adapter's transaction-local marker is set | trigger + check | `NOT VALID`, no backfill | existing | M1 |
+| M4 (ruled O-10: before P0-6c) | business_operations | Block E `reorder_policy_state` | column + CHECK | none; **no backfill without a ruling** | existing | E decision |
+Expected total: **5** (M0, M4 (Block E), M1, M3, M2), landing in the order P0-6.0, Block E, P0-6c (M1 + M3), P0-6e (M2). ABA needs **no** migration for the consumption mirror (the existing `CONSUMED` + `consumption_receipt_id` fact suffices); the event contract and registry entries are code, not schema. The migration count is "several"; each is a separately reviewed block.
 
 ## 21. Implementation split (smallest safe sequence; each its own owner authorization)
 
@@ -306,7 +307,8 @@ Expected total: **3 required** (M1, M2, M0 if accepted) and up to **2 optional**
 | **P0-6.0** | `updated_at` freeze (M0) + test update | M0 | none |
 | **P0-6a** | ABA side only: `AbaPackageStatusProvider`, `AuthorizedActionPackageSource`, `PackageConsumptionRecorder`, shared authority-currentness function (issuer refactor), additive `consumptionReceiptId` + `validateForExecutionAfterClaim` in the contract | none | none (unwired) |
 | **P0-6b** | `control_loop.action.authorized@1` contract + registry + gated issuer emission; BO consumer + dispatcher worker (host per O-1); intake wired to the real ports. Capability still empty ⇒ received, refused `ACTION_TYPE_UNSUPPORTED_BY_EXECUTOR`, **never claimed** | none | emission gated OFF |
-| **P0-6c** | M1 (+M3 if accepted); adapter + executor command + transaction + execution/attempt writers; recovery runner; tests inject a test capability | M1(,M3) | none (capability absent) |
+| **Block E** (data-capture; ruled O-10: lands **before** P0-6c, not folded into it) | `reorder_policy_state` and the canonical BO configuration path per the existing Block E specification | M4 | none |
+| **P0-6c** | M1 + M3 (approved, O-11); adapter + executor command + transaction + execution/attempt writers; recovery runner; tests inject a test capability | M1(,M3) | none (capability absent) |
 | **P0-6d** | `ExecutionEvidence` contract (handoff-contracts, sealed/digest), `operations.action.executed@1`, BO→OM handoff + OM intake adapter verifying evidence and writing `action_execution_observations`; ABA mirror at claim | none | none |
 | **P0-6e** | M2 activation table + the three-key gate + kill switch; full E2E (issue → event → intake → claim → final check → mutate → evidence → OM) on a staging profile; the one-line registry change; activation runbook | M2 | **capability exists but OFF** |
 The ExecutionEvidence *contract* can be pulled forward into P0-6c if the owner prefers one schema review. **Production activation is never part of a block**; it is an explicit owner action.
@@ -332,25 +334,29 @@ skip the final authority check · treat `REVOKED` as `CURRENT` · treat `UNVERIF
 8. **Reorder fields have no guard today**; until M3 (or equivalent) the "single writer" is a convention.
 9. **Stale builds:** apps consume other packages' `dist`; CI builds first, local runs must too.
 
-## 25. Owner decisions required (each with a recommendation)
+## 25. Owner rulings (recorded; all decisions O-1..O-15 are RULED)
 
-| # | Decision | Recommendation |
-|---|---|---|
-| O-1 | Where does the BO execution/dispatcher worker run (in the API process on an interval, a separate process under `infrastructure/deployment`, or an external scheduler)? | a separate process, started only when activation is ON; the API stays request-only |
-| O-2 | The number for `executionStatusMaxAgeMs` (no ruled value exists) | seconds-scale and much smaller than the intake value; you set the number |
-| O-3 | Retry policy: maximum attempts, backoff, "claimed without outcome" recovery threshold; and whether a terminal `FAILED`/`REFUSED` may ever be re-driven without a new authorization | no re-drive without new authorization; numbers are yours |
-| O-4 | Plain (unmodified) approvals have no provable baseline: option A (require evaluation evidence for all), B (baseline preconditions), or C (refuse in v1) | C for v1, revisit A later |
-| O-5 | Approve the additive contract change (`consumptionReceiptId`, `validateForExecutionAfterClaim`) and mirroring `CONSUMED` at claim | approve |
-| O-6 | Is an explicit package-level stop after claim needed beyond approver-authority revocation? | not in P0-6 |
-| O-7 | Does disabling the Level 2 policy after issuance block execution (authority `REVOKED`/`UNVERIFIABLE`)? | yes, fail closed |
-| O-8 | Budget is record-only for a policy-field update | confirm |
-| O-9 | Names: `control_loop.action.authorized@1` / `ACTION_AUTHORIZED`; outcomes `SUCCEEDED/FAILED/REFUSED`; event `operations.action.executed@1` / `ACTION_EXECUTED` | confirm |
-| O-10 | Sequencing of data-capture Block E relative to P0-6c | fold the state column into P0-6c's writer migration, or land E first — your call |
-| O-11 | Activation scope and permission (per business vs per tenant; which permission; who may flip the kill switch) and whether to add the balance write-guard migration (M3) | per business; reuse the existing admin permission; yes to M3 |
-| O-12 | A no-op mutation still consumes the claim and records `NO_CHANGE` | confirm |
-| O-13 | Whether OM findings may ever *propose* a reversal action (learning loop) | defer |
-| O-14 | `updated_at` freeze (M0) | yes, as P0-6.0 |
-| O-15 | Live Supabase head: this session cannot read it | tell me the verified head if it matters before an implementation block |
+Source: the owner's high-autonomy programme completion mandate (12 October 2026). The plan above is unchanged except where noted.
+
+| # | Ruling |
+|---|---|
+| O-1 | The worker runs as a **separate process under deployment/infrastructure**. The API stays request-only (no polling loop in the API process). |
+| O-2 | `executionStatusMaxAgeMs = 5000 ms` for v1. |
+| O-3 | Transient execution retries: **maximum 3 attempts, backoff 1 s / 5 s / 15 s**; claimed-without-outcome recovery threshold **60 s**. A terminal `FAILED` or deterministic `REFUSED` is never re-driven; a **new authorization** is required after a terminal outcome. |
+| O-4 | Plain approvals without an authoritative baseline are **refused in v1** (`REFUSED(NO_BASELINE_EVIDENCE)`); modified approvals use their immutable BO evaluation evidence as the baseline; a changed live state is `REFUSED(BASELINE_CHANGED)`. |
+| O-5 | Approved: the additive `consumptionReceiptId` on the status contract, `validateForExecutionAfterClaim`, and the ABA `CONSUMED` mirror at BO claim. **The BO claim remains the canonical consumption truth.** |
+| O-6 | No separate package-level stop after claim in v1 (approver-authority revocation is the stop). |
+| O-7 | Disabling the applicable Level 2 policy after issuance **blocks execution** (fail closed). |
+| O-8 | Budget is **record-only** for `inventory_reorder_policy_update@1`. |
+| O-9 | Names approved: `control_loop.action.authorized@1` (alias `ACTION_AUTHORIZED`); outcomes `SUCCEEDED` / `FAILED` / `REFUSED`; `operations.action.executed@1` (alias `ACTION_EXECUTED`). |
+| O-10 | Data-capture **Block E lands before P0-6c** and is not folded into it. |
+| O-11 | Activation is **per business**, reuses the appropriate existing admin permission; the global kill switch is controlled by platform administration; the **M3 reorder-field database write guard is approved**. |
+| O-12 | A no-op **consumes the claim** and records `SUCCEEDED / NO_CHANGE`: no `UPDATE`, no `version` bump. |
+| O-13 | OM reversal proposals are **deferred**. |
+| O-14 | The hard freeze of finalized `approval_decisions` (any `UPDATE` of a decided row rejected) is approved as **P0-6.0**. |
+| O-15 | The live Supabase head is **re-checked before any live/migration deployment decision**; 0169 is never assumed. |
+
+Programme gates that remain with the owner (unchanged by these rulings): merging any PR, production activation, any live Supabase migration, any destructive migration/backfill, new business-policy thresholds without an approved value.
 
 ## 26. Not done / not changed
 No code, migration, route, event contract, capability or flag was created or changed. The production capability registry is empty and unchanged. P0-6 is not started and is not enabled. Live Supabase was not touched.
