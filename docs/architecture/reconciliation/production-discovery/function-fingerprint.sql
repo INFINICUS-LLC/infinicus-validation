@@ -1,0 +1,4 @@
+select n.nspname sch, count(*) n, md5(string_agg(p.proname||'('||pg_get_function_identity_arguments(p.oid)||'):'||p.prosecdef, '|' order by p.proname||'('||pg_get_function_identity_arguments(p.oid)||')')) sig_h, md5(string_agg(md5(regexp_replace(p.prosrc,'\s+','','g')), '|' order by p.proname||'('||pg_get_function_identity_arguments(p.oid)||')')) src_h, md5(string_agg(coalesce(p.proconfig::text,''), '|' order by p.proname||'('||pg_get_function_identity_arguments(p.oid)||')')) cfg_h
+from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+where n.nspname in ('ai_decision_intelligence','approved_business_action','billing','business_digital_twin','business_intelligence','business_operations','continuous_learning','data_acquisition','onboarding','outcome_monitoring','platform','simulation')
+ and not exists (select 1 from pg_depend d where d.objid=p.oid and d.deptype='e') group by 1 order by 1
