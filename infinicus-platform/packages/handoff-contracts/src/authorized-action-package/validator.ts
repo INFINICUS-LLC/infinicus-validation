@@ -931,6 +931,30 @@ export interface ExecutionContext {
  * approval; it is BO execution evidence (D-3).
  */
 export function validateForExecution(input: unknown, ctx: ExecutionContext): AapValidationResult {
+  return validateExecution(input, ctx, null);
+}
+
+/** The context of the final pre-execution check, made AFTER Business Operations claimed the package (owner ruling O-5). */
+export interface AfterClaimExecutionContext extends ExecutionContext {
+  /** The BO receipt that holds the claim. ABA may report CONSUMED only for exactly this receipt. */
+  consumptionReceiptId: string;
+}
+
+/**
+ * The same checks and codes as {@link validateForExecution}, for the final authority check that runs after BO's own claim. The only
+ * difference: lifecycle CONSUMED is acceptable when - and only when - the status answer names THIS claim's receipt. CONSUMED without a
+ * receipt, or for another receipt, is still PACKAGE_ALREADY_CONSUMED. A claim is not authority; every other check still applies.
+ */
+export function validateForExecutionAfterClaim(input: unknown, ctx: AfterClaimExecutionContext): AapValidationResult {
+  if (typeof ctx.consumptionReceiptId !== 'string' || !UUID.test(ctx.consumptionReceiptId)) {
+    const c = new Collector();
+    c.add('CONTEXT_INVALID', '$ctx.consumptionReceiptId', 'the claim receipt id (a lowercase UUID) is required');
+    return result(c);
+  }
+  return validateExecution(input, ctx, ctx.consumptionReceiptId);
+}
+
+function validateExecution(input: unknown, ctx: ExecutionContext, claimReceiptId: string | null): AapValidationResult {
   const c = new Collector();
 
   if (!isValidTimestamp(ctx.now)) c.add('CONTEXT_INVALID', '$ctx.now', 'must be a UTC timestamp in YYYY-MM-DDTHH:mm:ss.sssZ form');
@@ -961,11 +985,11 @@ export function validateForExecution(input: unknown, ctx: ExecutionContext): Aap
   if (w.state === 'VALUE' && nowMs < toMs(w.value.startsAt)) c.add('EXECUTION_WINDOW_NOT_OPEN', '$.action.executionWindow.startsAt', 'execution window has not opened');
 
   // Authoritative status (R-10): fail closed when it cannot be verified.
-  checkStatus(c, pkg, ctx, nowMs);
+  checkStatus(c, pkg, ctx, nowMs, claimReceiptId);
   return result(c);
 }
 
-function checkStatus(c: Collector, pkg: AuthorizedActionPackageV1, ctx: ExecutionContext, nowMs: number): void {
+function checkStatus(c: Collector, pkg: AuthorizedActionPackageV1, ctx: ExecutionContext, nowMs: number, claimReceiptId: string | null): void {
   const s = ctx.status;
   if (!isRec(s)) { c.add('STATUS_UNVERIFIED', '$ctx.status', 'the authoritative package status could not be obtained; execution is refused'); return; }
   const st = s as unknown as Rec;
@@ -989,7 +1013,10 @@ function checkStatus(c: Collector, pkg: AuthorizedActionPackageV1, ctx: Executio
     case 'REVOKED': c.add('PACKAGE_REVOKED', '$ctx.status.lifecycle', 'package has been revoked'); break;
     case 'SUPERSEDED': c.add('PACKAGE_SUPERSEDED', '$ctx.status.lifecycle', 'package has been superseded'); break;
     case 'EXPIRED': c.add('PACKAGE_EXPIRED', '$ctx.status.lifecycle', 'package has expired'); break;
-    case 'CONSUMED': c.add('PACKAGE_ALREADY_CONSUMED', '$ctx.status.lifecycle', 'package is single-use and has already been claimed'); break;
+    case 'CONSUMED':
+      // Before BO's claim CONSUMED is always a refusal; after it, only for this claim's own receipt (O-5).
+      if (claimReceiptId === null || status.consumptionReceiptId !== claimReceiptId) c.add('PACKAGE_ALREADY_CONSUMED', '$ctx.status.lifecycle', 'package is single-use and has already been claimed');
+      break;
     case 'ISSUED': break;
   }
   if (status.lifecycle === 'ISSUED' && status.latestPackageVersion > pkg.identity.packageVersion) c.add('PACKAGE_NOT_CURRENT_VERSION', '$ctx.status.latestPackageVersion', 'a newer package version exists');

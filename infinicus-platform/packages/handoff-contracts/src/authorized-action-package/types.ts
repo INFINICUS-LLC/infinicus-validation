@@ -352,4 +352,9 @@ export interface AuthoritativePackageStatus {
   latestPackageVersion: number;
   /** Database time at which ABA answered. */
   verifiedAt: string;
+  /**
+   * Additive (P0-6a, owner ruling O-5): present exactly when `lifecycle` is CONSUMED - the Business Operations receipt that claimed this
+   * version. It lets BO accept CONSUMED after ITS OWN claim (`validateForExecutionAfterClaim`) and nowhere else. Absent/null otherwise.
+   */
+  consumptionReceiptId?: string | null;
 }

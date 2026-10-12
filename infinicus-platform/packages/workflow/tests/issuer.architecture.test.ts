@@ -53,9 +53,9 @@ describe('ABA package issuer architecture', () => {
     expect(users).toEqual([]);
   });
 
-  it('the shared transaction is used only by the issuer and the authoring service (which never nests it around the issuer)', () => {
+  it('the shared transaction is used only by the issuer, the authoring service and the read-only P0-6a status provider (none nests it around the issuer)', () => {
     const users = production.filter((f) => /withSharedTenantTransaction/.test(f.text.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'))).map((f) => f.rel).sort();
-    expect(users).toEqual([ISSUER, AUTHORING, 'packages/database/src/client.ts', 'packages/database/src/index.ts'].sort());
+    expect(users).toEqual([ISSUER, AUTHORING, 'packages/workflow/src/abaExecutionPorts.ts', 'packages/database/src/client.ts', 'packages/database/src/index.ts'].sort());
   });
 
   it('emits no event: no ACTION_AUTHORIZED, outbox, event ledger or publisher', () => {
