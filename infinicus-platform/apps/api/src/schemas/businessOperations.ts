@@ -20,6 +20,7 @@ export const operationsIntakeResponseSchema = z.object({
     commandType: z.enum([
       'record_inventory_movement',
       'create_purchase_order',
+      'record_purchase_receipt',
       'record_supplier_performance',
       'record_workforce_event',
       'record_asset_inspection',

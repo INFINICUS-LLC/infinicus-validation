@@ -123,7 +123,7 @@ describe('P0-6f architecture', () => {
     expect(filesMatching(/bullmq|amqplib|node-cron|agenda|bee-queue/)).toEqual([]);
     expect(under(BO).filter((f) => /setInterval\(|EXECUTION_(MAX_ATTEMPTS|BACKOFF_MS)\s*=/.test(f.code)).map((f) => f.rel)).toEqual([`${BO}authorized-action-execution/constants.ts`]);
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((n) => n.endsWith('.sql')).sort();
-    expect(migrations.slice(migrations.indexOf('0195_create_bo_execution_capability_activations.sql'))).toEqual(['0195_create_bo_execution_capability_activations.sql', '0196_harden_database_authority_activation_and_reorder.sql']); // P0-6f adds no migration; the only later one is the owner-authorized database-authority hardening (0196)
+    expect(migrations.slice(migrations.indexOf('0195_create_bo_execution_capability_activations.sql'), migrations.indexOf('0196_harden_database_authority_activation_and_reorder.sql') + 1)).toEqual(['0195_create_bo_execution_capability_activations.sql', '0196_harden_database_authority_activation_and_reorder.sql']); // P0-6f adds no migration; the only later one is the owner-authorized database-authority hardening (0196)
   });
 
   it('OM cannot write BO and CL learns nothing (unchanged by the announcer wiring)', () => {

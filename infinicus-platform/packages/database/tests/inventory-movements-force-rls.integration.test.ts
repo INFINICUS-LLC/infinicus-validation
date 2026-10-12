@@ -162,7 +162,9 @@ describe.runIf(run)('inventory_movements FORCE RLS (0186) - live PostgreSQL', ()
     it('UPDATE, DELETE and TRUNCATE are still refused for the admin and the application role', async () => {
       await expect(admin.query(`UPDATE ${T} SET quantity = 99 WHERE id = $1`, [rowId])).rejects.toThrow(APPEND_ONLY('UPDATE'));
       await expect(admin.query(`DELETE FROM ${T} WHERE id = $1`, [rowId])).rejects.toThrow(APPEND_ONLY('DELETE'));
-      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
+      // Data-capture Block A (0197): a plain TRUNCATE is now also refused by the foreign key from purchase_receipt_lines; the CASCADE form still hits the append-only trigger.
+      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(/append-only table - TRUNCATE is not permitted|cannot truncate a table referenced in a foreign key constraint/);
+      await expect(truncateRefusal(admin, `TRUNCATE ${T} CASCADE`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
       await asApp({ t, ws }, async (q) => { await expect(q(`UPDATE ${T} SET quantity = 99 WHERE id = $1`, [rowId])).rejects.toThrow(APPEND_ONLY('UPDATE')); });
       await asApp({ t, ws }, async (q) => { await expect(q(`DELETE FROM ${T} WHERE id = $1`, [rowId])).rejects.toThrow(APPEND_ONLY('DELETE')); });
       const trg = (await admin.query(`SELECT tgname FROM pg_trigger WHERE tgrelid = '${T}'::regclass AND NOT tgisinternal ORDER BY tgname`)).rows;

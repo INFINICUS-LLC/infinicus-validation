@@ -1,6 +1,7 @@
 export type OperationalRecordType =
   | 'inventory_movement'
   | 'purchase_order'
+  | 'purchase_receipt'
   | 'supplier_performance'
   | 'workforce_event'
   | 'asset_inspection'
@@ -53,6 +54,34 @@ export interface CreatePurchaseOrderCommand {
     currencyCode: string;
     totalAmount?: number;
     notes?: string;
+  };
+}
+
+/**
+ * Data-capture Block A: a purchase receipt. BO records the receipt header, its lines and the `receipt` inventory movement of each line in ONE transaction
+ * (the movement ledger stays the one source for stock and cost). Scope (tenant, workspace, business) comes only from the command context.
+ */
+export interface RecordPurchaseReceiptCommand {
+  type: 'record_purchase_receipt';
+  context: OperationalCommandContext;
+  payload: {
+    purchaseOrderId: string;
+    warehouseId: string;
+    /** The business receipt number: unique per business, and the identity of the receipt for replay. */
+    receiptNumber: string;
+    /** RFC 3339 with an explicit offset: the instant the goods were received. */
+    receivedAt: string;
+    notes?: string;
+    lines: {
+      /** Optional: purchase-order lines have no write path yet (their item linkage is Block D). Validated against the receipt's purchase order when given. */
+      purchaseOrderLineId?: string;
+      inventoryItemId: string;
+      /** Strictly positive, at most 4 decimal places. */
+      quantity: number;
+      unitCost?: number;
+      /** Explicit ISO 4217-style code of `unitCost`; present exactly when `unitCost` is present. Never defaulted. */
+      unitCostCurrency?: string;
+    }[];
   };
 }
 
@@ -139,6 +168,7 @@ export interface ConfigureInventoryReorderPolicyCommand {
 export type OperationalCommand =
   | RecordInventoryMovementCommand
   | CreatePurchaseOrderCommand
+  | RecordPurchaseReceiptCommand
   | RecordSupplierPerformanceCommand
   | RecordWorkforceEventCommand
   | RecordAssetInspectionCommand
