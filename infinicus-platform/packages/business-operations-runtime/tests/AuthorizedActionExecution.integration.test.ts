@@ -139,7 +139,7 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
       c.provider.set(() => consumedAnswer(c.pkg, c.receiptId, { authority: { state: 'REVOKED' } }));
       const before = await balance(c);
       const e = terminal(await engine(c.provider).executeClaim(c.ctx, c.claimId));
-      expect(e).toMatchObject({ outcome: 'REFUSED', reasonCode: 'AUTHORITY_REVOKED', mutationResult: 'NOT_APPLIED', authorityVerdict: 'REVOKED', afterState: null });
+      expect(e).toMatchObject({ outcome: 'REFUSED', reasonCode: 'AUTHORITY_REVOKED', mutationResult: 'NOT_APPLICABLE', authorityVerdict: 'REVOKED', afterState: null });
       expect(await balance(c)).toEqual(before);
       // never re-driven: a later call returns the same refusal even if ABA would now say CURRENT
       c.provider.set(() => consumedAnswer(c.pkg, c.receiptId));
@@ -157,7 +157,7 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
       const c = await claimed();
       c.provider.set(() => answerFor(c.pkg, { status: { ...over.status } as any }));
       const e = terminal(await engine(c.provider).executeClaim(c.ctx, c.claimId));
-      expect([e.outcome, e.reasonCode, e.mutationResult]).toEqual(['REFUSED', code, 'NOT_APPLIED']);
+      expect([e.outcome, e.reasonCode, e.mutationResult]).toEqual(['REFUSED', code, 'NOT_APPLICABLE']);
       expect((await balance(c)).version).toBe(1);
     });
 
@@ -203,7 +203,7 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
       const r1 = await svc.executeClaim(c.ctx, c.claimId); const r2 = await svc.executeClaim(c.ctx, c.claimId);
       expect([r1, r2].map((r) => r.state === 'RETRY' && r.retryAfterMs)).toEqual([1000, 5000]);
       const e = terminal(await svc.executeClaim(c.ctx, c.claimId));
-      expect(e).toMatchObject({ outcome: 'REFUSED', reasonCode: 'RETRIES_EXHAUSTED', attemptCount: 3, mutationResult: 'NOT_APPLIED' });
+      expect(e).toMatchObject({ outcome: 'REFUSED', reasonCode: 'RETRIES_EXHAUSTED', attemptCount: 3, mutationResult: 'NOT_APPLICABLE' });
       expect(e.detail).toContain('STATUS_UNAVAILABLE');
       expect(await attemptRows(c)).toHaveLength(2);
     });
@@ -351,7 +351,7 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
       const svc = engine(c.provider, { repository: broken });
       await svc.executeClaim(c.ctx, c.claimId); await svc.executeClaim(c.ctx, c.claimId);
       const e = terminal(await svc.executeClaim(c.ctx, c.claimId));
-      expect(e).toMatchObject({ outcome: 'FAILED', reasonCode: 'RETRIES_EXHAUSTED', mutationResult: 'NOT_APPLIED', attemptCount: 3 });
+      expect(e).toMatchObject({ outcome: 'FAILED', reasonCode: 'RETRIES_EXHAUSTED', mutationResult: 'NOT_APPLICABLE', attemptCount: 3 });
       expect((await balance(c)).version).toBe(1);
     });
 
@@ -361,7 +361,7 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
         override async apply(): Promise<never> { const e: any = new Error('check constraint'); e.code = '23514'; throw e; }
       })();
       const e = terminal(await engine(c.provider, { adapter }).executeClaim(c.ctx, c.claimId));
-      expect([e.outcome, e.reasonCode, e.mutationResult]).toEqual(['FAILED', 'MUTATION_REJECTED', 'NOT_APPLIED']);
+      expect([e.outcome, e.reasonCode, e.mutationResult]).toEqual(['FAILED', 'MUTATION_REJECTED', 'NOT_APPLICABLE']);
       expect(await balance(c)).toMatchObject({ rp: 100, version: 1 });
     });
 
@@ -436,7 +436,7 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
         const cl = (await admin.query(`SELECT * FROM ${S}.authorized_action_claims WHERE id=$1`, [c.claimId])).rows[0];
         const cols = { tenant_id: cl.tenant_id, workspace_id: cl.workspace_id, business_id: cl.business_id, claim_id: cl.id, receipt_id: cl.receipt_id, package_id: cl.package_id, package_version: cl.package_version,
           digest: cl.digest, action_type_code: 'inventory_reorder_policy_update', action_type_schema_version: '1', target_kind: 'inventory_item', target_id: c.ew.itemId, outcome: 'REFUSED', reason_code: 'X',
-          mutation_result: 'NOT_APPLIED', authority_verdict: 'NOT_CHECKED', attempt_count: 1, claimed_at: cl.claimed_at, execution_started_at: new Date(), execution_completed_at: new Date(),
+          mutation_result: 'NOT_APPLICABLE', authority_verdict: 'NOT_CHECKED', attempt_count: 1, claimed_at: cl.claimed_at, execution_started_at: new Date(), execution_completed_at: new Date(),
           evidence: JSON.stringify({}), evidence_digest: `sha256:${'a'.repeat(64)}`, correlation_id: randomUUID(), ...over };
         const keys = Object.keys(cols);
         return admin.query(`INSERT INTO ${S}.authorized_action_executions (${keys.join(',')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(',')})`, keys.map((k) => (cols as any)[k]));

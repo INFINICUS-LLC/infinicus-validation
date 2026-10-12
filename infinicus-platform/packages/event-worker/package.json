@@ -32,6 +32,7 @@
     "@infinicus/event-contracts": "workspace:*",
     "@infinicus/handoff-contracts": "workspace:*",
     "@infinicus/business-operations-runtime": "workspace:*",
+    "@infinicus/outcome-monitoring-runtime": "workspace:*",
     "@infinicus/workflow": "workspace:*"
   },
   "bin": {

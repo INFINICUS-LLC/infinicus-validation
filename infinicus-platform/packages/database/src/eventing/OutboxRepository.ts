@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import type { TenantContext } from '../client.js';
 import { withTenantTransaction } from '../client.js';
 import type { ClaimBatchOptions, EventFailure, OutboxEventInput } from './types.js';
@@ -45,33 +46,40 @@ export class OutboxRepository {
    * with the fact it announces.
    */
   async enqueueIfAbsent(ctx: TenantContext, input: OutboxEventInput): Promise<{ id: string; inserted: boolean }> {
+    return withTenantTransaction(ctx, (client) => this.enqueueIfAbsentOnClient(client, ctx, input));
+  }
+
+  /**
+   * The same idempotent enqueue on the CALLER'S client. A producer whose fact is written through its own transaction client (Business
+   * Operations' execution engine) uses this so the event row commits or rolls back with that fact: an event can never be lost after the
+   * fact commits, nor announce a fact that rolled back.
+   */
+  async enqueueIfAbsentOnClient(client: PoolClient, ctx: TenantContext, input: OutboxEventInput): Promise<{ id: string; inserted: boolean }> {
     const e = input.event;
     if (e.tenantId !== ctx.tenantId || e.workspaceId !== ctx.workspaceId) {
       throw new Error('EVENTING_SCOPE_MISMATCH');
     }
-    return withTenantTransaction(ctx, async (client) => {
-      const headers = {
-        ...(input.headers ?? {}),
-        businessEvent: {
-          sourceDomain: e.sourceDomain, sourceService: e.sourceService, metadata: e.metadata, provenance: e.provenance,
-          schemaName: e.schemaName, schemaVersion: e.schemaVersion, sensitivity: e.sensitivity, actor: e.actor, idempotencyKey: e.idempotencyKey,
-        },
-      };
-      const result = await client.query<{ id: string }>(
-        `INSERT INTO events.outbox_events
-          (id,event_type,event_version,tenant_id,workspace_id,business_id,correlation_id,causation_id,
-           aggregate_type,aggregate_id,payload,headers,available_at,occurred_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14)
-         ON CONFLICT (id) DO NOTHING
-         RETURNING id`,
-        [
-          e.eventId,e.eventType,e.eventVersion,e.tenantId,e.workspaceId,e.businessId,e.correlationId,
-          e.causationId,e.aggregateType,e.aggregateId,JSON.stringify(e.payload),
-          JSON.stringify(headers),input.availableAt ?? new Date(),e.occurredAt,
-        ],
-      );
-      return { id: e.eventId, inserted: result.rows.length === 1 };
-    });
+    const headers = {
+      ...(input.headers ?? {}),
+      businessEvent: {
+        sourceDomain: e.sourceDomain, sourceService: e.sourceService, metadata: e.metadata, provenance: e.provenance,
+        schemaName: e.schemaName, schemaVersion: e.schemaVersion, sensitivity: e.sensitivity, actor: e.actor, idempotencyKey: e.idempotencyKey,
+      },
+    };
+    const result = await client.query<{ id: string }>(
+      `INSERT INTO events.outbox_events
+        (id,event_type,event_version,tenant_id,workspace_id,business_id,correlation_id,causation_id,
+         aggregate_type,aggregate_id,payload,headers,available_at,occurred_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14)
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id`,
+      [
+        e.eventId,e.eventType,e.eventVersion,e.tenantId,e.workspaceId,e.businessId,e.correlationId,
+        e.causationId,e.aggregateType,e.aggregateId,JSON.stringify(e.payload),
+        JSON.stringify(headers),input.availableAt ?? new Date(),e.occurredAt,
+      ],
+    );
+    return { id: e.eventId, inserted: result.rows.length === 1 };
   }
 
   async claimBatch(ctx: TenantContext, options: ClaimBatchOptions) {

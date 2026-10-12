@@ -14,7 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 type Json = Record<string, unknown>;
 export type ExecutionOutcome = 'SUCCEEDED' | 'FAILED' | 'REFUSED';
-export type MutationResult = 'APPLIED' | 'NO_CHANGE' | 'NOT_APPLIED';
+export type MutationResult = 'APPLIED' | 'NO_CHANGE' | 'NOT_APPLICABLE';
 export type AuthorityVerdictRecord = 'CURRENT' | 'REVOKED' | 'UNVERIFIABLE' | 'NOT_CHECKED';
 export type AttemptOutcome = 'RETRYABLE_REFUSAL' | 'RETRYABLE_FAILURE';
 
@@ -35,12 +35,16 @@ export interface ClaimForExecution {
 
 export interface ExecutionRecord {
   id: string;
+  tenantId: string;
+  workspaceId: string;
   claimId: string;
   receiptId: string;
   businessId: string;
   packageId: string;
   packageVersion: number;
   digest: string;
+  actionType: { code: string; schemaVersion: string };
+  target: { kind: string; id: string };
   outcome: ExecutionOutcome;
   reasonCode: string | null;
   detail: string | null;
@@ -118,8 +122,10 @@ const isoOrNull = (v: unknown): string | null => (v === null || v === undefined 
 
 function rowToExecution(r: Json): ExecutionRecord {
   return {
-    id: r.id as string, claimId: r.claim_id as string, receiptId: r.receipt_id as string, businessId: r.business_id as string,
-    packageId: r.package_id as string, packageVersion: r.package_version as number, digest: r.digest as string,
+    id: r.id as string, tenantId: r.tenant_id as string, workspaceId: r.workspace_id as string, claimId: r.claim_id as string, receiptId: r.receipt_id as string,
+    businessId: r.business_id as string, packageId: r.package_id as string, packageVersion: r.package_version as number, digest: r.digest as string,
+    actionType: { code: r.action_type_code as string, schemaVersion: r.action_type_schema_version as string },
+    target: { kind: r.target_kind as string, id: r.target_id as string },
     outcome: r.outcome as ExecutionOutcome, reasonCode: (r.reason_code as string | null) ?? null, detail: (r.detail as string | null) ?? null,
     mutationResult: r.mutation_result as MutationResult, balanceId: (r.balance_id as string | null) ?? null,
     beforeState: (r.before_state as Json | null) ?? null, requestedState: (r.requested_state as Json | null) ?? null, afterState: (r.after_state as Json | null) ?? null,
@@ -220,6 +226,15 @@ export class AuthorizedActionExecutionRepository {
 
   async getByClaim(ctx: TenantContext, claimId: string): Promise<ExecutionRecord | null> {
     return withTenantTransaction(ctx, (client) => this.getExecutionByClaim(client, claimId));
+  }
+
+  /** An execution fact by id, within the caller's scope (RLS). Null when it does not exist there. */
+  async getById(ctx: TenantContext, executionId: string): Promise<ExecutionRecord | null> {
+    if (!UUID.test(executionId)) return null;
+    return withTenantTransaction(ctx, async (client) => {
+      const r = await client.query<Json>(`SELECT * FROM ${S}.authorized_action_executions WHERE id = $1`, [executionId]);
+      return r.rows[0] ? rowToExecution(r.rows[0]) : null;
+    });
   }
 
   async getByPackage(ctx: TenantContext, packageId: string, packageVersion: number): Promise<ExecutionRecord | null> {

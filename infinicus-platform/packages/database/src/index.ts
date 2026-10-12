@@ -364,6 +364,7 @@ export {
   LearningFeedbackPackageRepository,
   OMPublicationRepository,
   OMComponentRegistryRepository,
+  ActionExecutionVerificationRepository, ActionExecutionVerificationConflictError,
 } from './repositories/om/index.js';
 export type {
   OMIntakePackage, ReceiveOMPackageInput,
@@ -379,6 +380,7 @@ export type {
   LearningFeedbackPackage,
   OMPublicationPackage,
   OMComponentRegistryEntry, OMDeployment,
+  ActionExecutionVerification, RecordExecutionVerificationInput,
 } from './repositories/om/index.js';
 
 // ── Continuous Learning repositories (Stage 2J) ─────────────────────────────────

@@ -17,6 +17,7 @@ export {
   OMPayloadTooLargeError, OMCredentialContentError, OMEvidenceMissingError, OMLineageInvalidError,
 } from './errors.js';
 
+export { ActionExecutionVerificationConflictError } from './ActionExecutionVerificationRepository.js';
 export { OMIntakeRepository } from './OMIntakeRepository.js';
 export type { OMIntakePackage, ReceiveOMPackageInput } from './OMIntakeRepository.js';
 
@@ -55,3 +56,6 @@ export type { OMPublicationPackage } from './OMPublicationRepository.js';
 
 export { OMComponentRegistryRepository } from './OMComponentRegistryRepository.js';
 export type { OMComponentRegistryEntry, OMDeployment } from './OMComponentRegistryRepository.js';
+
+export { ActionExecutionVerificationRepository } from './ActionExecutionVerificationRepository.js';
+export type { ActionExecutionVerification, RecordExecutionVerificationInput } from './ActionExecutionVerificationRepository.js';

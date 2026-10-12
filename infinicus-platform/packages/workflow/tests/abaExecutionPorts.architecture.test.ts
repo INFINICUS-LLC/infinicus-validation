@@ -83,9 +83,10 @@ describe('P0-6a architecture', () => {
     expect(code).toMatch(/record\.digest === digest/);
   });
 
-  it('the capability registry stays empty and no activation or execution event exists (P0-6b adds only the authorized notification)', () => {
+  it('the capability registry stays empty and no activation or execution event exists in ABA (P0-6b adds only the authorized notification)', () => {
     expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES[^=]*=\s*Object\.freeze\(\s*\[\s*\]\s*\)/);
-    expect(production.filter((f) => /operations\.action\.executed|ACTION_EXECUTED/.test(f.code)).map((f) => f.rel)).toEqual([]);
+    // P0-6d added the BO -> OM executed event; Approved Business Action must still never see it.
+    expect(production.filter((f) => (f.rel.startsWith('packages/workflow/') || f.rel.startsWith('layers/approved-business-action/')) && /operations\.action\.executed|ACTION_EXECUTED/.test(f.code)).map((f) => f.rel)).toEqual([]);
   });
 
   it('legacy ABA blocks 17/19/20/21 stay unimported', () => {

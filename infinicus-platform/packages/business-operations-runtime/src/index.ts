@@ -24,3 +24,5 @@ export * from './authorized-action-execution/InventoryReorderPolicyExecutionAdap
 export * from './authorized-action-execution/constants.js';
 export * from './authorized-action-execution/preconditions.js';
 export * from './authorized-action-execution/executionEvidence.js';
+export * from './authorized-action-execution/ExecutionEventPublisher.js';
+export * from './authorized-action-execution/BoExecutionEvidenceReader.js';

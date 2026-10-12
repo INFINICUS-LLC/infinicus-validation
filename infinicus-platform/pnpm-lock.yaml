@@ -590,6 +590,9 @@ importers:
       '@infinicus/handoff-contracts':
         specifier: workspace:*
         version: link:../handoff-contracts
+      '@infinicus/outcome-monitoring-runtime':
+        specifier: workspace:*
+        version: link:../outcome-monitoring-runtime
       '@infinicus/workflow':
         specifier: workspace:*
         version: link:../workflow
@@ -668,6 +671,31 @@ importers:
       '@infinicus/shared-types':
         specifier: workspace:*
         version: link:../shared-types
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.6
+        version: 8.20.0
+      pg:
+        specifier: ^8.12.0
+        version: 8.22.0
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@26.1.1)(lightningcss@1.33.0)
+
+  packages/outcome-monitoring-runtime:
+    dependencies:
+      '@infinicus/database':
+        specifier: workspace:*
+        version: link:../database
+      '@infinicus/event-contracts':
+        specifier: workspace:*
+        version: link:../event-contracts
+      '@infinicus/handoff-contracts':
+        specifier: workspace:*
+        version: link:../handoff-contracts
     devDependencies:
       '@types/pg':
         specifier: ^8.11.6

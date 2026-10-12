@@ -31,6 +31,7 @@ import { canonicalActionTypeRegistry, validateAuthorizedActionPackage, validateF
 import type {
   ActionCapabilityRegistry, ActionTypeRegistry, AuthoritativePackageStatusProvider, AuthoritativeStatusAnswer, AuthorizedActionPackageV1, ExecutionCapabilityGate, JsonValue,
 } from '@infinicus/handoff-contracts';
+import { OutboxExecutionEventPublisher, type ExecutionEventPublisher } from './ExecutionEventPublisher.js';
 import { PRODUCTION_BO_CAPABILITIES } from '../authorized-action/boActionCapabilities.js';
 import {
   EXECUTION_AUDIT_ACTIONS, EXECUTION_BACKOFF_MS, EXECUTION_CLAIM_RECOVERY_MS, EXECUTION_MAX_ATTEMPTS, EXECUTOR_COMPONENT, STATUS_PROVIDER_COMPONENT,
@@ -58,6 +59,8 @@ export interface ExecutionServiceDependencies {
   actionTypes?: ActionTypeRegistry;
   repository?: AuthorizedActionExecutionRepository;
   adapter?: InventoryReorderPolicyExecutionAdapter;
+  /** Publishes `operations.action.executed@1` on the execution transaction. Defaults to the BUILD-33 outbox; there is no way to run without one. */
+  eventPublisher?: ExecutionEventPublisher;
   maxAttempts?: number;
   backoffMs?: readonly number[];
   claimRecoveryMs?: number;
@@ -74,7 +77,7 @@ type Decision =
   | { kind: 'RETRY'; reasonCode: string; detail: string; verdict: 'CURRENT' | 'REVOKED' | 'UNVERIFIABLE' | null; statusVerifiedAt: string | null; operational: boolean };
 
 const refusedFields = (reason: string, detail: string, extra: Partial<Fields> = {}): Fields => ({
-  outcome: 'REFUSED', reasonCode: reason, detail: detail.slice(0, 1000), mutationResult: 'NOT_APPLIED', balanceId: null, beforeState: null, requestedState: null, afterState: null,
+  outcome: 'REFUSED', reasonCode: reason, detail: detail.slice(0, 1000), mutationResult: 'NOT_APPLICABLE', balanceId: null, beforeState: null, requestedState: null, afterState: null,
   preconditions: null, authorityVerdict: 'NOT_CHECKED', statusVerifiedAt: null, authorityVerifiedAt: null, statusAnswerDigest: null, providerComponent: null, ...extra,
 });
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -83,6 +86,7 @@ const snap = (v: { reorderPoint: Decimal; reorderQuantity: Decimal }): ReorderVa
 export class AuthorizedActionExecutionService {
   private readonly repo: AuthorizedActionExecutionRepository;
   private readonly adapter: InventoryReorderPolicyExecutionAdapter;
+  private readonly publisher: ExecutionEventPublisher;
   private readonly capabilities: ActionCapabilityRegistry;
   private readonly actionTypes: ActionTypeRegistry;
   private readonly maxAttempts: number;
@@ -96,6 +100,7 @@ export class AuthorizedActionExecutionService {
     }
     this.repo = deps.repository ?? new AuthorizedActionExecutionRepository();
     this.adapter = deps.adapter ?? new InventoryReorderPolicyExecutionAdapter();
+    this.publisher = deps.eventPublisher ?? new OutboxExecutionEventPublisher();
     this.capabilities = deps.capabilities ?? PRODUCTION_BO_CAPABILITIES;
     this.actionTypes = deps.actionTypes ?? canonicalActionTypeRegistry();
     this.maxAttempts = deps.maxAttempts ?? EXECUTION_MAX_ATTEMPTS;
@@ -199,7 +204,7 @@ export class AuthorizedActionExecutionService {
         executionWindow: (doc.action?.executionWindow ?? null) as unknown as JsonValue, budget: (doc.action?.budget ?? null) as unknown as JsonValue,
         rollback: (doc.action?.rollback ?? null) as unknown as JsonValue, monitoring: (doc.action?.monitoring ?? null) as unknown as JsonValue,
       },
-      lineage: { decisionId: doc.lineage?.decision?.decisionId ?? null, decisionVersionId: doc.lineage?.decision?.decisionVersionId ?? null, evaluationRefs: decision.evidence.evaluationRefs, causationId },
+      lineage: { actionId: doc.action?.actionId ?? null, decisionId: doc.lineage?.decision?.decisionId ?? null, decisionVersionId: doc.lineage?.decision?.decisionVersionId ?? null, evaluationRefs: decision.evidence.evaluationRefs, causationId },
       executor: { type: 'system', id: EXECUTOR_COMPONENT },
     });
     const execution = await this.repo.insertExecution(client, ctx, {
@@ -211,6 +216,8 @@ export class AuthorizedActionExecutionService {
       action: f.outcome === 'SUCCEEDED' ? EXECUTION_AUDIT_ACTIONS.executed : f.outcome === 'FAILED' ? EXECUTION_AUDIT_ACTIONS.failed : EXECUTION_AUDIT_ACTIONS.refused,
       metadata: { executionId, packageId: claim.packageId, packageVersion: claim.packageVersion, digest: claim.digest, outcome: f.outcome, reasonCode: f.reasonCode, mutationResult: f.mutationResult, evidenceDigest: sealed.digest, statusVerifiedAt: f.statusVerifiedAt },
     });
+    // The announcement is part of the fact: same transaction, so a committed execution always has its event and a rollback leaves none.
+    await this.publisher.publish(client, ctx, execution);
     return { state: 'TERMINAL', execution, replayed: false };
   }
 

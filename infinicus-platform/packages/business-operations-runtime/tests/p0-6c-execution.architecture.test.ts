@@ -97,7 +97,8 @@ describe('P0-6c architecture', () => {
     expect(users).toEqual([ADAPTER, SERVICE, 'packages/business-operations-runtime/src/index.ts'].sort());
     expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
     for (const rel of [SERVICE, ADAPTER, REPO]) expect(read(rel), rel).not.toMatch(/OutboxRepository|enqueue|operations\.action\.executed|ACTION_EXECUTED|execution_capability_activations/);
-    expect(production.filter((f) => f.rel.startsWith('packages/handoff-contracts/') && /\bExecutionEvidence\b|execution-evidence\/1/.test(f.code))).toEqual([]);
+    // P0-6d formalised the contract: it may live only in its own handoff-contracts directory (plus the package index export).
+    expect(production.filter((f) => f.rel.startsWith('packages/handoff-contracts/') && !f.rel.startsWith('packages/handoff-contracts/src/execution-evidence/') && f.rel !== 'packages/handoff-contracts/src/index.ts' && /\bExecutionEvidence\b|execution-evidence\/1/.test(f.code))).toEqual([]);
   });
 
   it('migrations 0191 and 0192 are contiguous after 0190 and carry no data change, backfill or role statement', () => {
