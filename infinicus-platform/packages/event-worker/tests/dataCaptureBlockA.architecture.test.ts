@@ -127,7 +127,8 @@ describe('Data-capture Block A architecture (purchase receipt write path)', () =
 
   it('exactly one migration follows 0196 (0197) and no activation, seed or default-enabled path was added', () => {
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
-    expect(migrations.slice(migrations.findIndex((m) => m.startsWith('0196_')))).toEqual([migrations.find((m) => m.startsWith('0196_')), '0197_create_purchase_receipt_lines.sql']);
+    const from = migrations.findIndex((m) => m.startsWith('0196_'));
+    expect(migrations.slice(from, from + 2)).toEqual([migrations[from], '0197_create_purchase_receipt_lines.sql']); // later migrations (Block D, 0198) are separately authorized
     expect(filesMatching(/state:\s*'ENABLED'/).filter((rel) => rel.startsWith('apps/') || rel.startsWith('packages/event-worker/src/'))).toEqual([]);
   });
 });

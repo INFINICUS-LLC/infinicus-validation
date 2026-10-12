@@ -231,11 +231,17 @@ export class OperationalCommandExecutor {
     await requireBusinessEntity(client, 'warehouses', p.warehouseId, businessId);
     for (const itemId of new Set(p.lines.map((l) => l.inventoryItemId))) await requireBusinessEntity(client, 'inventory_items', itemId, businessId);
     for (const lineId of new Set(p.lines.map((l) => l.purchaseOrderLineId).filter((id): id is string => id !== undefined))) {
-      const line = await client.query(
-        `SELECT id FROM business_operations.purchase_order_line_items WHERE id = $1 AND purchase_order_id = $2 AND business_id = $3 AND tenant_id = $4 AND workspace_id = $5`,
+      const line = await client.query<{ inventory_item_id: string | null }>(
+        `SELECT inventory_item_id FROM business_operations.purchase_order_line_items WHERE id = $1 AND purchase_order_id = $2 AND business_id = $3 AND tenant_id = $4 AND workspace_id = $5`,
         [lineId, p.purchaseOrderId, businessId, ctx.tenantId, ctx.workspaceId]
       );
       if (line.rowCount !== 1) throw new OperationalMappingError(`purchase_order_line_items entity is not a line of this purchase order in business scope: ${lineId}`);
+      // Data-capture Block D: when the purchase-order line carries an inventory item, every receipt line against it must record that same item
+      // (the database enforces the same rule; this names the problem early). A line without an item link is accepted as before - never inferred or written back.
+      const linkedItem = line.rows[0].inventory_item_id;
+      if (linkedItem !== null && p.lines.some((l) => l.purchaseOrderLineId === lineId && l.inventoryItemId !== linkedItem)) {
+        throw new OperationalMappingError(`receipt line records a different inventory item than purchase-order line ${lineId}`);
+      }
     }
     const clock = await client.query<{ future: boolean }>(`SELECT $1::timestamptz > clock_timestamp() AS future`, [p.receivedAt]);
     if (clock.rows[0].future) throw new OperationalMappingError('receivedAt is in the future; a receipt records goods that have already been received.');
