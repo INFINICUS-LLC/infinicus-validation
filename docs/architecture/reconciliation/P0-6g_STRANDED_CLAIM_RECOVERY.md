@@ -66,7 +66,7 @@ None new. It uses the existing outbox, dispatcher, worker, inbox, subscriptions 
    `CAPABILITY_DISABLED` (correct: nothing executes), and the claim stays held without a terminal outcome until an operator acts. No dead-letter replay executor
    exists, so this needs the **interim operator control** below. This is deliberate (an owner-closed gate must not be bypassed) but it is the one remaining
    path to a held claim.
-2. **Interim operator control (Alternative A) - documented, NOT built here.** The scoped primitive already exists: `AuthorizedActionExecutionService.runDue(ctx, { limit })`
+2. **Interim operator control (Alternative A) - built in P0-6h, see `P0-6h_OPERATOR_CLAIM_RECOVERY.md`.** (Originally documented here as not built.) The scoped primitive already exists: `AuthorizedActionExecutionService.runDue(ctx, { limit })`
    for ONE explicit tenant/workspace, `bo:admin`-authorised, with a fresh authority check and the terminal-never-re-driven rule. A command/route that wraps it
    (explicit scope argument, audited operator action, no cross-tenant listing) was approved only as an interim control; building it is a separate small block.
    Until then a stranded claim after a long gate closure is recovered by an engineer running `runDue` for that scope.

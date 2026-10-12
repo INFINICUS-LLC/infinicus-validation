@@ -114,7 +114,7 @@ describe('P0-6f architecture', () => {
   });
 
   it('no stranded-claim recovery service was invented: nothing drives runDue, the worker discovers scopes only from outbox rows, no new scheduler, queue, retry policy, outbox or migration', () => {
-    expect(filesMatching(/\.runDue\(/)).toEqual([]);
+    expect(filesMatching(/\.runDue\(/)).toEqual([`${BO}authorized-action/ClaimRecoveryOperatorService.ts`]); // only the interim operator control (P0-6h)
     expect(read('packages/event-worker/src/ScopeDiscovery.ts')).toMatch(/FROM events\.outbox_events/);
     expect(read('packages/event-worker/src/ScopeDiscovery.ts')).not.toMatch(/authorized_action_claims|dead_letter/);
     expect(under('packages/event-worker/src/').filter((f) => /authorized_action_claims|claimsAwaitingExecution/.test(f.code)).map((f) => f.rel)).toEqual([]);

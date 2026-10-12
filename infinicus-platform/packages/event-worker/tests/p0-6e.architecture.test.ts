@@ -54,13 +54,14 @@ describe('P0-6e architecture', () => {
 
   it('ONE executor, TWO declared drivers: the engine is invoked only by the BO notification consumer and the BO claim-recovery consumer (P0-6g), and nothing drives it from a timer, route, queue or cron', () => {
     expect(filesMatching(/\.executeClaim\(/).filter((rel) => rel !== ENGINE).sort()).toEqual([CONSUMER, `${BO}authorized-action/ClaimRecoveryConsumer.ts`].sort()); // the engine's own runDue is unreferenced (below); the second driver is the claim's own durable recovery signal (P0-6g)
-    expect(filesMatching(/\.runDue\(/)).toEqual([]); // no second (polling) trigger exists
-    expect(filesMatching(/new AuthorizedActionExecutionService\(/)).toEqual([COMPOSE]); // one construction, in the composition root
+    expect(filesMatching(/\.runDue\(/)).toEqual([`${BO}authorized-action/ClaimRecoveryOperatorService.ts`]); // no polling trigger exists; the ONLY caller is the interim operator control (P0-6h: bo:admin, audited, gate-checked), never the worker
+    expect(filesMatching(/new AuthorizedActionExecutionService\(/).sort()).toEqual(['apps/api/src/claimRecoveryComposition.ts', COMPOSE].sort()); // constructed only in composition roots: the worker and (P0-6h) the API operator control
     for (const f of production) {
       if (!/AuthorizedActionExecutionService|executeClaim/.test(f.code) || f.rel === ENGINE) continue;
       expect(f.code, f.rel).not.toMatch(/setInterval|setTimeout|node-cron|cron\.|schedule\(/);
     }
-    expect(under('apps/api/src/').filter((f) => /AuthorizedActionExecutionService|executeClaim/.test(f.code)).map((f) => f.rel)).toEqual([]); // no request route executes
+    expect(under('apps/api/src/').filter((f) => /AuthorizedActionExecutionService|executeClaim/.test(f.code)).map((f) => f.rel)).toEqual(['apps/api/src/claimRecoveryComposition.ts']); // the API names the engine only in its operator composition root (P0-6h) ...
+    expect(under('apps/api/src/routes/').filter((f) => /AuthorizedActionExecutionService|executeClaim|runDue/.test(f.code)).map((f) => f.rel)).toEqual([]); // ... and no request route executes: the route calls the BO operator service only
   });
 
   it('claim != execution: the consumer hands over only after intake claimed and the ABA mirror was attempted; it never writes inventory itself', () => {
