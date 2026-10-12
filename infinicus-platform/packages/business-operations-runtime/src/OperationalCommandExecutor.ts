@@ -2,7 +2,12 @@ import type { PoolClient } from 'pg';
 import type { TenantContext } from '@infinicus/database';
 import { OperationalMappingError } from './errors.js';
 import { UNIT_COST_MINIMUM_STORABLE, unitCostProblem } from './unitCost.js';
-import type { OperationalCommand } from './types.js';
+import { Decimal } from './inventory-policy/decimal.js';
+import type { ConfigureInventoryReorderPolicyCommand, OperationalCommand } from './types.js';
+
+/** inventory_balances.reorder_point / reorder_quantity are numeric(18,4). */
+const REORDER_VALUE_MAX_DECIMALS = 4;
+const REORDER_VALUE_EXCLUSIVE_MAX = Decimal.of(10n ** 14n);
 
 export interface CommandExecutionResult {
   commandType: OperationalCommand['type'];
@@ -44,18 +49,24 @@ async function requireBusinessEntity(
   }
 }
 
+function assertCommandScope(ctx: TenantContext, command: { context: { tenantId: string; workspaceId: string } }): void {
+  if (command.context.tenantId !== ctx.tenantId || command.context.workspaceId !== ctx.workspaceId) {
+    throw new OperationalMappingError('Command tenant/workspace scope does not match active context.');
+  }
+}
+
+export interface ReorderPolicyConfigurationResult {
+  commandType: 'configure_inventory_reorder_policy';
+  recordId: string;
+}
+
 export class OperationalCommandExecutor {
   async executeOn(
     client: PoolClient,
     ctx: TenantContext,
     command: OperationalCommand
   ): Promise<CommandExecutionResult> {
-    if (
-      command.context.tenantId !== ctx.tenantId ||
-      command.context.workspaceId !== ctx.workspaceId
-    ) {
-      throw new OperationalMappingError('Command tenant/workspace scope does not match active context.');
-    }
+    assertCommandScope(ctx, command);
 
     switch (command.type) {
       case 'record_inventory_movement':
@@ -155,6 +166,64 @@ export class OperationalCommandExecutor {
     );
 
     return { commandType: command.type, recordId: movement.rows[0].id };
+  }
+
+  /**
+   * Data-capture Block E: the single writer of `reorder_policy_state`. Marks an existing balance CONFIGURED with the given reorder values,
+   * the database time and the source. Not reachable from intake (its command is outside `OperationalCommand`). Values must be finite, non-negative and storable (numeric(18,4)) without rounding. Re-sending the
+   * values a balance is already configured with is a no-op: no UPDATE, no version bump. Nothing here backfills or repairs history.
+   */
+  async configureInventoryReorderPolicy(
+    client: PoolClient,
+    ctx: TenantContext,
+    command: ConfigureInventoryReorderPolicyCommand
+  ): Promise<ReorderPolicyConfigurationResult> {
+    assertCommandScope(ctx, command);
+    const p = command.payload;
+    const businessId = command.context.businessId;
+    const source = p.configurationSource ?? 'BO_COMMAND';
+    if (source !== 'BO_COMMAND' && source !== 'AUTHORIZED_ACTION_PACKAGE') {
+      throw new OperationalMappingError('configurationSource must be BO_COMMAND or AUTHORIZED_ACTION_PACKAGE.');
+    }
+    for (const [name, value] of [['reorderPoint', p.reorderPoint], ['reorderQuantity', p.reorderQuantity]] as const) {
+      const d = Decimal.fromNumber(value);
+      if (d === null) throw new OperationalMappingError(`${name} must be a finite number.`);
+      if (d.isNegative()) throw new OperationalMappingError(`${name} must not be negative.`);
+      if (d.scale > REORDER_VALUE_MAX_DECIMALS) throw new OperationalMappingError(`${name} must have at most ${REORDER_VALUE_MAX_DECIMALS} decimal places (it is never rounded).`);
+      if (d.gte(REORDER_VALUE_EXCLUSIVE_MAX)) throw new OperationalMappingError(`${name} exceeds the storable range.`);
+    }
+    await requireBusinessEntity(client, 'inventory_items', p.inventoryItemId, businessId);
+    await requireBusinessEntity(client, 'warehouses', p.warehouseId, businessId);
+
+    const locked = await client.query<{ id: string; reorder_point: string; reorder_quantity: string; reorder_policy_state: string }>(
+      `SELECT id, reorder_point, reorder_quantity, reorder_policy_state
+       FROM business_operations.inventory_balances
+       WHERE business_id = $1 AND inventory_item_id = $2 AND warehouse_id = $3
+       FOR UPDATE`,
+      [businessId, p.inventoryItemId, p.warehouseId]
+    );
+    if (locked.rowCount !== 1) throw new OperationalMappingError('No inventory balance exists for this item and warehouse; a reorder policy cannot be configured without one.');
+    const row = locked.rows[0];
+
+    const unchanged = row.reorder_policy_state === 'CONFIGURED'
+      && Decimal.parse(String(row.reorder_point))?.cmp(Decimal.fromNumber(p.reorderPoint) as Decimal) === 0
+      && Decimal.parse(String(row.reorder_quantity))?.cmp(Decimal.fromNumber(p.reorderQuantity) as Decimal) === 0;
+    if (unchanged) return { commandType: 'configure_inventory_reorder_policy', recordId: row.id };
+
+    // Transaction-local: the guard trigger accepts a state/value change only from this command (see migration 0189).
+    await client.query(`SELECT set_config('app.bo_reorder_policy_writer', 'configure_inventory_reorder_policy', true)`);
+    try {
+      await client.query(
+        `UPDATE business_operations.inventory_balances
+         SET reorder_point = $2, reorder_quantity = $3, reorder_policy_state = 'CONFIGURED',
+             reorder_policy_configured_at = now(), reorder_policy_configured_source = $4, version = version + 1
+         WHERE id = $1`,
+        [row.id, p.reorderPoint, p.reorderQuantity, source]
+      );
+    } finally {
+      await client.query(`SELECT set_config('app.bo_reorder_policy_writer', '', true)`);
+    }
+    return { commandType: 'configure_inventory_reorder_policy', recordId: row.id };
   }
 
   private async createPurchaseOrder(

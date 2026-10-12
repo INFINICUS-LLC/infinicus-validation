@@ -82,7 +82,8 @@ describe('data-capture Block C architecture', () => {
   });
 
   it('introduces no Block A, B, D or E structure, no evaluator, no transport and no execution capability', () => {
-    expect(production.filter((f) => /record_purchase_receipt|purchase_receipt_lines|reorder_policy_state|configure_inventory_reorder_policy/.test(f.code)).map((f) => f.rel)).toEqual([]);
+    // Data-capture Block E (O-10) is authorized: exactly the BO executor and the BO command types may carry the configure command / state; nothing else.
+    expect(production.filter((f) => /record_purchase_receipt|purchase_receipt_lines|reorder_policy_state|configure_inventory_reorder_policy/.test(f.code)).map((f) => f.rel).sort()).toEqual(['packages/business-operations-runtime/src/OperationalCommandExecutor.ts', 'packages/business-operations-runtime/src/types.ts']);
     expect(read(EXECUTOR)).not.toMatch(/ExecutionEvidence|ACTION_AUTHORIZED|AuthorizedActionPackage/);
     expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
   });

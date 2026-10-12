@@ -101,7 +101,8 @@ describe('B2d architecture: the authoring chain ends at the sealed package', () 
     expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
     expect(production.filter((f) => /ACTION_AUTHORIZED/.test(f.code)).map((f) => f.rel)).toEqual([]);
     expect(production.filter((f) => /\bExecutionEvidence\b/.test(f.code) && !f.rel.startsWith('packages/handoff-contracts/')).map((f) => f.rel)).toEqual([]);
-    expect(production.filter((f) => /configure_inventory_reorder_policy|reorder_policy_state|executeAuthorizedAction|InventoryPolicyExecutionAdapter/.test(f.code)).map((f) => f.rel)).toEqual([]);
+    // Data-capture Block E (O-10) is authorized: exactly the BO executor and the BO command types may carry the configure command / state; nothing else.
+    expect(production.filter((f) => /configure_inventory_reorder_policy|reorder_policy_state|executeAuthorizedAction|InventoryPolicyExecutionAdapter/.test(f.code)).map((f) => f.rel).sort()).toEqual(['packages/business-operations-runtime/src/OperationalCommandExecutor.ts', 'packages/business-operations-runtime/src/types.ts']);
     // the authoring surface and the issuer never reach Business Operations execution or intake
     for (const rel of [ISSUER, AUTHORING, POLICY, 'apps/api/src/routes/abaAuthoring.ts']) {
       expect(read(rel), rel).not.toMatch(/OperationalCommandExecutor|AuthorizedActionIntakeService|authorized_action_receipts|PRODUCTION_BO_CAPABILITIES|markConsumed|CONSUMED/);
