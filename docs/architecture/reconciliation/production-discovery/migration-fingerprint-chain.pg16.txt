@@ -1,0 +1,31 @@
+# Combined fingerprint (sha256-16, production-readonly-discovery.sh algorithm) of a CLEAN PostgreSQL 16.15 database after each repository migration 0170..0198.
+# Use it to verify a staged production apply file by file, or to detect a partial state. Columns: migration-number combined-sha256-16
+0170 38eabb12fde135b5
+0171 aedba05116c49429
+0172 be419652da2a65d1
+0173 9e9931d079148dea
+0174 cfc4ae7a0ba4d296
+0175 189663135f6a7a9b
+0176 8532c72f72f1e5d2
+0177 1fa441f7e64fe3b3
+0178 d2e15e4b64a54639
+0179 5f5ae17d88d77c51
+0180 317dbdc8e3c27f12
+0181 b25de5b81335f91a
+0182 3cbe7f6e6b02ff70
+0183 69b8184a27f12d47
+0184 3cb4ef472ab03a2f
+0185 89fbb2bb533526c2
+0186 7c59026f7483c9eb
+0187 8bf5a4bf7953f5a3
+0188 87fa8eaa2d496a61
+0189 2ba87055e154d599
+0190 a8bc4922f02c4980
+0191 d82c791ba24ec91f
+0192 014504dfae3d6e67
+0193 dd23a4cc7c898bab
+0194 79c6f20b81d1b3ca
+0195 2db9cc0c11ba725e
+0196 544735a0af7d5a61
+0197 6c55ed5f165bb67e
+0198 7fd4c419d738de8a
