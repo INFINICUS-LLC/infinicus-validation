@@ -14,3 +14,6 @@ export * from './cl-feedback';
 
 // Authorized Action Package (P0-5): ABA -> BO authorization contract
 export * from './authorized-action-package';
+
+// Execution evidence (P0-6d): BO -> OM execution fact contract, reader port and OM state vocabulary / learning gate.
+export * from './execution-evidence';

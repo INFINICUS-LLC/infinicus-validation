@@ -1,16 +1,18 @@
 /**
- * The sealed evidence document of one execution outcome (P0-6c; planning section 11A). Business Operations OWNS and writes it; it is the
- * projection of the `authorized_action_executions` fact that Outcome Monitoring will later verify (P0-6d standardizes the shared
- * contract type and validator for exactly this shape). Tamper evidence only - never authorization: the digest is SHA-256 over the
- * canonical JSON of everything except `integrity`.
+ * Business Operations' builder of the sealed `execution-evidence/1` document of one execution outcome (P0-6c; contract formalized in
+ * P0-6d). BO OWNS and writes it; it is the projection of the `authorized_action_executions` fact that Outcome Monitoring verifies. The
+ * shared contract (types, closed-shape validator, digest) lives in handoff-contracts; this module only maps the engine's facts onto it.
+ * It states what BO DID - never whether it helped. Tamper evidence only - never authorization.
  *
  * Pure: no I/O, no clock (every time is a value the engine read from the database clock). No stack traces, secrets or payload bodies:
  * the package parameters appear only as the `requested` before/after values of the one balance.
  */
-import { AAP_CANONICAL_VERSION, canonicalize, sha256HexOfText } from '@infinicus/handoff-contracts';
-import type { JsonValue } from '@infinicus/handoff-contracts';
+import {
+  EXECUTION_EVIDENCE_CONTRACT_VERSION, EXECUTION_EVIDENCE_KIND, computeExecutionEvidenceDigest, sealExecutionEvidence as sealContractEvidence,
+} from '@infinicus/handoff-contracts';
+import type { EvidenceJson, EvidenceJsonObject, ExecutionEvidenceBody, JsonValue } from '@infinicus/handoff-contracts';
 
-export const EXECUTION_EVIDENCE_CONTRACT_VERSION = 'execution-evidence/1';
+export { EXECUTION_EVIDENCE_CONTRACT_VERSION };
 
 export interface ReorderValues {
   reorderPoint: string;
@@ -37,7 +39,7 @@ export interface ExecutionEvidenceInput {
     judgedAt: string | null;
   };
   mutation: {
-    result: 'APPLIED' | 'NO_CHANGE' | 'NOT_APPLIED';
+    result: 'APPLIED' | 'NO_CHANGE' | 'NOT_APPLICABLE';
     balanceId: string | null;
     balanceVersionBefore: number | null;
     balanceVersionAfter: number | null;
@@ -48,7 +50,7 @@ export interface ExecutionEvidenceInput {
   };
   preconditions: JsonValue;
   boundaries: { executionWindow: JsonValue; budget: JsonValue; rollback: JsonValue; monitoring: JsonValue };
-  lineage: { decisionId: string | null; decisionVersionId: string | null; evaluationRefs: JsonValue; causationId: string | null };
+  lineage: { actionId: string | null; decisionId: string | null; decisionVersionId: string | null; evaluationRefs: JsonValue; causationId: string | null };
   executor: { type: 'system'; id: string };
 }
 
@@ -57,10 +59,13 @@ export interface SealedExecutionEvidence {
   digest: string;
 }
 
-/** Builds the evidence document and its digest. Deterministic: the same input always yields the same bytes. */
+const asObject = (v: ReorderValues | null): EvidenceJsonObject | null => (v === null ? null : { reorderPoint: v.reorderPoint, reorderQuantity: v.reorderQuantity });
+
+/** Maps the engine's facts onto the shared contract body (closed shape, no effectiveness vocabulary) and seals it. */
 export function sealExecutionEvidence(i: ExecutionEvidenceInput): SealedExecutionEvidence {
-  const body = {
+  const body: ExecutionEvidenceBody = {
     contractVersion: EXECUTION_EVIDENCE_CONTRACT_VERSION,
+    evidenceKind: EXECUTION_EVIDENCE_KIND,
     identity: {
       executionId: i.executionId, packageId: i.claim.packageId, packageVersion: i.claim.packageVersion, packageDigest: i.claim.digest,
       claimId: i.claim.claimId, receiptId: i.claim.receiptId, scope: i.scope, actionType: i.actionType, target: i.target,
@@ -70,18 +75,24 @@ export function sealExecutionEvidence(i: ExecutionEvidenceInput): SealedExecutio
       verdict: i.authority.verdict, statusVerifiedAt: i.authority.statusVerifiedAt, authorityVerifiedAt: i.authority.authorityVerifiedAt,
       statusAnswerDigest: i.authority.statusAnswerDigest, provider: i.authority.provider,
     },
-    mutation: i.mutation,
-    preconditions: i.preconditions,
-    boundaries: i.boundaries,
+    mutation: {
+      result: i.mutation.result, balanceId: i.mutation.balanceId, balanceVersionBefore: i.mutation.balanceVersionBefore, balanceVersionAfter: i.mutation.balanceVersionAfter,
+      before: asObject(i.mutation.before), requested: asObject(i.mutation.requested), after: asObject(i.mutation.after), baselineSource: i.mutation.baselineSource,
+    },
+    preconditions: i.preconditions as unknown as readonly EvidenceJsonObject[],
+    boundaries: i.boundaries as unknown as { executionWindow: EvidenceJson; budget: EvidenceJson; rollback: EvidenceJson; monitoring: EvidenceJson },
     outcome: { outcome: i.outcome, reasonCode: i.reasonCode, detail: i.detail, attemptCount: i.attemptCount },
-    lineage: { correlationId: i.claim.correlationId, causationId: i.lineage.causationId, executor: i.executor, authorization: { decisionId: i.lineage.decisionId, decisionVersionId: i.lineage.decisionVersionId, evaluationRefs: i.lineage.evaluationRefs } },
-  } as unknown as { [key: string]: JsonValue };
-  const digest = `sha256:${sha256HexOfText(canonicalize(body as JsonValue))}`;
-  return { document: { ...body, integrity: { algorithm: 'sha256', canonicalVersion: AAP_CANONICAL_VERSION, digest } }, digest };
+    lineage: {
+      correlationId: i.claim.correlationId, causationId: i.lineage.causationId, executor: i.executor,
+      authorization: { actionId: i.lineage.actionId, decisionId: i.lineage.decisionId, decisionVersionId: i.lineage.decisionVersionId, evaluationRefs: i.lineage.evaluationRefs as unknown as readonly EvidenceJson[] },
+    },
+  };
+  const sealed = sealContractEvidence(body);
+  return { document: sealed as unknown as { [key: string]: JsonValue }, digest: sealed.integrity.digest };
 }
 
 /** Re-derives the digest of a stored evidence document (tamper check). */
 export function evidenceDigestOf(document: { [key: string]: unknown }): string {
   const { integrity: _integrity, ...rest } = document;
-  return `sha256:${sha256HexOfText(canonicalize(rest as JsonValue))}`;
+  return computeExecutionEvidenceDigest(rest);
 }

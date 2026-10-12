@@ -130,3 +130,11 @@ export {
   isActionAuthorizedPayload, actionAuthorizedIdempotencyKey, actionAuthorizedEventId, registerActionAuthorizedContract, buildActionAuthorizedEvent,
 } from './action-authorized.js';
 export type { ActionAuthorizedPayload, BuildActionAuthorizedEventInput } from './action-authorized.js';
+
+// P0-6d: operations.action.executed@1 (alias ACTION_EXECUTED) - reference-only notification that an authorized-action claim reached a terminal execution outcome.
+export {
+  ACTION_EXECUTED_EVENT_TYPE, ACTION_EXECUTED_EVENT_VERSION, ACTION_EXECUTED_ALIAS, ACTION_EXECUTED_SOURCE_SERVICE, ACTION_EXECUTED_AGGREGATE_TYPE,
+  ACTION_EXECUTED_CONSUMER, ACTION_EXECUTED_EVIDENCE_CONTRACT, ACTION_EXECUTED_OUTCOMES, ACTION_EXECUTED_MUTATION_RESULTS, ACTION_EXECUTED_CONTRACT,
+  isActionExecutedPayload, actionExecutedIdempotencyKey, actionExecutedEventId, registerActionExecutedContract, buildActionExecutedEvent,
+} from './action-executed.js';
+export type { ActionExecutedPayload, BuildActionExecutedEventInput } from './action-executed.js';

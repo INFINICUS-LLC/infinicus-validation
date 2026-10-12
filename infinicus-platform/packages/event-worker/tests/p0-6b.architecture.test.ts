@@ -51,10 +51,10 @@ describe('P0-6b architecture', () => {
     expect(production.filter((f) => f.rel.startsWith('apps/api/src/') && /setInterval|setTimeout\(.*dispatch|claimBatch|dispatchScope/.test(f.code)).map((f) => f.rel)).toEqual([]);
   });
 
-  it('the dispatcher cannot sweep unrelated outbox rows: the event types are mandatory and the worker passes only control_loop.action.authorized', () => {
+  it('the dispatcher cannot sweep unrelated outbox rows: the event types are mandatory and the worker passes only the two declared types (authorized: P0-6b; executed: P0-6d)', () => {
     expect(read(DISPATCHER)).toMatch(/requires an explicit, non-empty list of event types/);
     expect(read(DISPATCHER)).toMatch(/eventTypes: \[\.\.\.d\.eventTypes\]/);
-    expect(read(COMPOSE)).toMatch(/const eventTypes = \[ACTION_AUTHORIZED_EVENT_TYPE\]/);
+    expect(read(COMPOSE)).toMatch(/const eventTypes = \[ACTION_AUTHORIZED_EVENT_TYPE, ACTION_EXECUTED_EVENT_TYPE\]/);
   });
 
   it('everything defaults closed: no announcer by default, deny-all gate in producer, consumer composition and worker, empty BO registry', () => {
@@ -72,7 +72,10 @@ describe('P0-6b architecture', () => {
 
   it('the pipeline ends at claim + mirror: no execution, inventory write, evidence or activation anywhere in the P0-6b files', () => {
     for (const rel of [DISPATCHER, ANNOUNCER, CONSUMER, COMPOSE, 'packages/event-worker/src/EventWorker.ts', 'packages/event-worker/src/main.ts']) {
-      expect(read(rel), rel).not.toMatch(/OperationalCommandExecutor|inventory_balances|inventory_movements|reorder_point|ExecutionEvidence|operations\.action\.executed|ACTION_EXECUTED|execution_capability_activations/);
+      // P0-6d: only the composition root may name the executed event (to register OM's verifier); every other file stays free of it.
+      const executedAllowed = rel === COMPOSE ? /ACTION_EXECUTED_EVENT_TYPE|registerActionExecutedContract|ActionExecutedConsumer|BoExecutionEvidenceReader/g : null;
+      const code = executedAllowed ? read(rel).replace(executedAllowed, '') : read(rel);
+      expect(code, rel).not.toMatch(/OperationalCommandExecutor|inventory_balances|inventory_movements|reorder_point|ExecutionEvidence|operations\.action\.executed|ACTION_EXECUTED|execution_capability_activations/);
       expect(read(rel), rel).not.toMatch(/UPDATE\s+business_operations|INSERT\s+INTO\s+business_operations/i);
     }
   });
