@@ -185,6 +185,7 @@ const storedPackage = async (s: Session) => (await adminPool.query(`SELECT packa
 const operationalSnapshot = async (s: Session) => JSON.stringify(await Promise.all([
   'business_operations.inventory_balances', 'platform.inventory_items', 'business_operations.inventory_movements',
 ].map(async (t) => (await adminPool.query(`SELECT * FROM ${t} WHERE tenant_id = $1 ORDER BY id`, [s.ctx.tenantId])).rows)));
+const storedBoundaryBudget = async (s: Session) => (await adminPool.query(`SELECT budget #> '{value}' b FROM approved_business_action.authorized_action_boundaries WHERE business_id=$1 ORDER BY boundary_version DESC LIMIT 1`, [s.bizId])).rows[0].b as { amount: string };
 const validatePackage = (pkg: unknown) => validateAuthorizedActionPackage(pkg, { actionTypes: canonicalActionTypeRegistry() });
 
 /** The authoring chain up to (not including) issuance, returning every intermediate fact. */
@@ -544,6 +545,21 @@ describe.runIf(run)('P0-5 B2d - end-to-end modified-approval authoring proof (re
       }
       const blocked = await post(c.s, `${c.base}/package`);
       expect(blocked.statusCode).toBe(409); expect(message(blocked)).toContain('BOUNDARIES_MISSING');
+      await expectNoPackage(c);
+    });
+
+    it('only the decision\'s own, still-active approver can author the chain: another authorized member cannot capture or author boundaries', async () => {
+      const c = await begin();
+      const ev = await evaluate(c.s, c.bo);
+      const { userId, token } = await registerActiveUser();
+      const colleague: Session = { ctx: { ...c.s.ctx, userId }, token, bizId: c.s.bizId, membershipId: await grantOwner({ ...c.s.ctx, userId }, userId) };
+      const res = await post(colleague, `${c.base}/capture`, captureBody(c.bo, refs(ev)));
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+      expect(await captures(c.s)).toBe(0);
+      await authorThroughBoundaries(c);
+      const bounds = await post(colleague, `${c.base}/boundaries`, boundariesBody({ budget: { state: 'VALUE', value: { amount: '1.00', currency: 'USD' } } }));
+      expect(bounds.statusCode).toBeGreaterThanOrEqual(400);
+      expect((await storedBoundaryBudget(c.s)).amount).toBe('250.00'); // the approver's boundaries stand
       await expectNoPackage(c);
     });
 
