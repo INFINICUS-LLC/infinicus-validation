@@ -52,7 +52,9 @@ describe('P0-6c architecture', () => {
   });
 
   it('the single writer of reorder_point / reorder_quantity remains the BO executor (the engine and adapter write no balance SQL)', () => {
-    expect(production.filter((f) => /SET\s+reorder_point\s*=/i.test(f.code)).map((f) => f.rel)).toEqual([EXECUTOR]);
+    // migration 0196: no application SQL assigns the reorder columns at all; the only writer is the governed database function, called by the executor alone
+    expect(production.filter((f) => /SET\s+reorder_point\s*=/i.test(f.code)).map((f) => f.rel)).toEqual([]);
+    expect(production.filter((f) => /apply_inventory_reorder_policy\(/.test(f.code)).map((f) => f.rel)).toEqual([EXECUTOR]);
     for (const rel of [SERVICE, ADAPTER, REPO]) {
       expect(read(rel), rel).not.toMatch(/UPDATE\s+business_operations|INSERT\s+INTO\s+business_operations\.inventory|inventory_movements|app\.bo_reorder_policy_writer/i);
     }

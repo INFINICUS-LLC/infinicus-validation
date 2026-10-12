@@ -79,7 +79,8 @@ describe('P0-6e architecture', () => {
   });
 
   it('BO is the sole operational executor and the only writer of the reorder fields: exactly one file carries the writer marker', () => {
-    expect(filesMatching(/bo_reorder_policy_writer/)).toEqual([`${BO}OperationalCommandExecutor.ts`]);
+    expect(filesMatching(/bo_reorder_policy_writer/)).toEqual([]); // migration 0196: the session-variable convention is gone from application code
+    expect(filesMatching(/apply_inventory_reorder_policy\(/)).toEqual([`${BO}OperationalCommandExecutor.ts`]);
     // nothing outside BO and its repositories updates the reorder columns
     for (const f of production) {
       if (f.rel.startsWith(BO) || f.rel.startsWith('packages/database/')) continue;

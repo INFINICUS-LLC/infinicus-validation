@@ -26,6 +26,7 @@ import {
 } from '@infinicus/business-operations-runtime';
 import { actionAuthorizedPayloadFor } from '@infinicus/workflow';
 import { ScriptedProvider, buildPackage, makeExecWorld, type ExecWorld } from '../../business-operations-runtime/tests/helpers/executionWorld.js';
+import { seedAdminUser } from '../../business-operations-runtime/tests/helpers/activationAdmin.js';
 import { answerFor } from '../../business-operations-runtime/tests/helpers/intakeFixture.js';
 import { deleteMovementsForTenants } from '../../business-operations-runtime/tests/helpers/movementCleanup.js';
 import { buildEventWorker } from '../src/index.js';
@@ -63,7 +64,7 @@ describe.runIf(run)('P0-6g: durable stranded-claim recovery (real components, sc
   async function scenario(announce = true): Promise<Scenario> {
     const ew = await makeExecWorld(admin, tenantIds, {});
     const pkg = await buildPackage(ew, { reorderPoint: 150, reorderQuantity: 250, modified: { baseline: [100, 200] } });
-    const ctx: TenantContext = { tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: randomUUID() };
+    const ctx: TenantContext = { tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: await seedAdminUser(admin, ew.w.tenantId, ew.w.workspaceId) };
     const s = { ew, pkg, ctx, businessId: ew.ctx.businessId, mirrors: [], sourceAvailable: true, statusDown: false, revoked: false } as Scenario;
     s.provider = new ScriptedProvider(async () => {
       const claimed = Number((await admin.query(`SELECT count(*) n FROM ${BO}.authorized_action_claims WHERE package_id=$1`, [pkg.identity.packageId])).rows[0].n) > 0;

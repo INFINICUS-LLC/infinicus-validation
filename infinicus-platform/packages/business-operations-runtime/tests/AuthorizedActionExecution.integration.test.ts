@@ -15,6 +15,7 @@ import { AuthorizedActionExecutionService, ClaimNotFoundError, PRODUCTION_BO_CAP
 import { iso, MIN, answerFor } from './helpers/intakeFixture.js';
 import { ScriptedProvider, SUPPORTED, buildPackage, claimPackage, consumedAnswer, makeExecWorld, type ExecWorld, type PackageSpec } from './helpers/executionWorld.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
+import { fixtureSetReorder } from './helpers/reorderFixture.js';
 
 const run = Boolean(process.env.DATABASE_URL && process.env.ADMIN_DATABASE_URL);
 const S = 'business_operations';
@@ -220,13 +221,7 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
 
     it('a changed balance is never overwritten: REFUSED(BASELINE_CHANGED)', async () => {
       const c = await claimed();
-      const w = await admin.connect();
-      try {
-        await w.query('BEGIN');
-        await w.query(`SELECT set_config('app.bo_reorder_policy_writer','configure_inventory_reorder_policy', true)`);
-        await w.query(`UPDATE ${S}.inventory_balances SET reorder_point = 120 WHERE id=$1`, [c.ew.balanceId]);
-        await w.query('COMMIT');
-      } finally { w.release(); }
+      await fixtureSetReorder(admin, c.ew.balanceId, 'reorder_point = 120');
       const e = terminal(await engine(c.provider).executeClaim(c.ctx, c.claimId));
       expect([e.outcome, e.reasonCode]).toEqual(['REFUSED', 'BASELINE_CHANGED']);
       expect((await balance(c)).rp).toBe(120);
@@ -467,15 +462,15 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
       expect(forced.map((r: any) => r.relforcerowsecurity)).toEqual([true, true]);
     });
 
-    it('M3: the reorder fields can be changed only by the BO configure command, even on an UNSET balance; negative values are refused', async () => {
+    it('M3: the reorder fields can be changed only through apply_inventory_reorder_policy(), even by the operator role and even on an UNSET balance; negative values are refused', async () => {
       const ew = await makeExecWorld(admin, tenantIds);
-      await expect(admin.query(`UPDATE ${S}.inventory_balances SET reorder_point = 1 WHERE id=$1`, [ew.balanceId])).rejects.toThrow(/configure_inventory_reorder_policy/);
-      await expect(admin.query(`UPDATE ${S}.inventory_balances SET reorder_quantity = 1 WHERE id=$1`, [ew.balanceId])).rejects.toThrow(/configure_inventory_reorder_policy/);
+      await expect(admin.query(`UPDATE ${S}.inventory_balances SET reorder_point = 1 WHERE id=$1`, [ew.balanceId])).rejects.toThrow(/apply_inventory_reorder_policy/);
+      await expect(admin.query(`UPDATE ${S}.inventory_balances SET reorder_quantity = 1 WHERE id=$1`, [ew.balanceId])).rejects.toThrow(/apply_inventory_reorder_policy/);
       const c = await admin.connect();
       try {
         await c.query('BEGIN');
-        await c.query(`SELECT set_config('app.bo_reorder_policy_writer','configure_inventory_reorder_policy', true)`);
-        await expect(c.query(`UPDATE ${S}.inventory_balances SET reorder_point = -1 WHERE id=$1`, [ew.balanceId])).rejects.toThrow(/reorder_non_negative/);
+        await c.query(`SELECT set_config('app.tenant_id', $1, true), set_config('app.workspace_id', $2, true)`, [ew.w.tenantId, ew.w.workspaceId]);
+        await expect(c.query(`SELECT * FROM ${S}.apply_inventory_reorder_policy($1,$2,$3,$4,-1,5,'BO_COMMAND',100,200)`, [ew.w.tenantId, ew.w.workspaceId, ew.ctx.businessId, ew.balanceId])).rejects.toThrow(/must not be negative/);
       } finally { await c.query('ROLLBACK'); c.release(); }
       // quantity movements are unaffected by the guard
       await admin.query(`UPDATE ${S}.inventory_balances SET quantity_on_hand = 60, last_movement_at = now() WHERE id=$1`, [ew.balanceId]);

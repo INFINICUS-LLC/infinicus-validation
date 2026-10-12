@@ -14,6 +14,7 @@ import {
   explicitCapabilities, killSwitchEngagedFrom,
 } from '../src/index.js';
 import { makeExecWorld, type ExecWorld } from './helpers/executionWorld.js';
+import { seedAdminUser } from './helpers/activationAdmin.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
 
 const run = Boolean(process.env.DATABASE_URL && process.env.ADMIN_DATABASE_URL);
@@ -42,7 +43,7 @@ describe.runIf(run)('P0-6e: governed activation (real PostgreSQL)', () => {
 
   async function world(): Promise<{ ew: ExecWorld; ctx: TenantContext; businessId: string }> {
     const ew = await makeExecWorld(admin, tenantIds, {});
-    return { ew, ctx: { tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: randomUUID() }, businessId: ew.ctx.businessId };
+    return { ew, ctx: { tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: await seedAdminUser(admin, ew.w.tenantId, ew.w.workspaceId) }, businessId: ew.ctx.businessId };
   }
   const set = (w: { ctx: TenantContext; businessId: string }, state: 'ENABLED' | 'DISABLED', over: Record<string, unknown> = {}) =>
     service.setActivation(w.ctx, EXECUTION_ACTIVATION_PERMISSION, { businessId: w.businessId, actionType: ACTION, state, reason: 'test', correlationId: randomUUID(), ...over } as any);
@@ -94,8 +95,19 @@ describe.runIf(run)('P0-6e: governed activation (real PostgreSQL)', () => {
     await expect(admin.query(`DELETE FROM ${BO}.execution_capability_activations WHERE business_id=$1`, [w.businessId])).rejects.toThrow(/append-only/);
     await expect(truncateRefusal(admin, `TRUNCATE ${BO}.execution_capability_activations`)).rejects.toThrow(/append-only/);
     // the chain cannot be forged: a skipped version, and a business outside the stated scope, are refused by the database
-    await expect(admin.query(`INSERT INTO ${BO}.execution_capability_activations (tenant_id, workspace_id, business_id, action_type_code, action_type_schema_version, version, state, actor_user_id, permission_code, reason) VALUES ($1,$2,$3,$4,$5,9,'ENABLED',$6,'bo:admin','x')`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, ACTION.code, ACTION.schemaVersion, randomUUID()])).rejects.toThrow(/does not follow/);
-    await expect(admin.query(`INSERT INTO ${BO}.execution_capability_activations (tenant_id, workspace_id, business_id, action_type_code, action_type_schema_version, version, state, actor_user_id, permission_code, reason) VALUES ($1,$2,$3,$4,$5,1,'ENABLED',$6,'bo:admin','x')`, [w.ctx.tenantId, w.ctx.workspaceId, randomUUID(), ACTION.code, ACTION.schemaVersion, randomUUID()])).rejects.toThrow();
+    // Even the operator connection (the function owner) cannot append outside the governed entry point ...
+    await expect(admin.query(`INSERT INTO ${BO}.execution_capability_activations (tenant_id, workspace_id, business_id, action_type_code, action_type_schema_version, version, state, actor_user_id, permission_code, reason) VALUES ($1,$2,$3,$4,$5,2,'DISABLED',$6,'bo:admin','x')`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, ACTION.code, ACTION.schemaVersion, randomUUID()])).rejects.toThrow(/record_execution_capability_activation/);
+    // ... and, independently of that guard, the version chain and the business scope are still enforced by the table trigger (reached here only as the owner holding the governed marker).
+    const owner = async (sql: string, args: unknown[]) => {
+      const c = await admin.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query(`SELECT set_config('app.bo_activation_writer','record_execution_capability_activation', true)`);
+        await c.query(sql, args);
+      } finally { await c.query('ROLLBACK'); c.release(); }
+    };
+    await expect(owner(`INSERT INTO ${BO}.execution_capability_activations (tenant_id, workspace_id, business_id, action_type_code, action_type_schema_version, version, state, actor_user_id, permission_code, reason) VALUES ($1,$2,$3,$4,$5,9,'ENABLED',$6,'bo:admin','x')`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, ACTION.code, ACTION.schemaVersion, randomUUID()])).rejects.toThrow(/does not follow/);
+    await expect(owner(`INSERT INTO ${BO}.execution_capability_activations (tenant_id, workspace_id, business_id, action_type_code, action_type_schema_version, version, state, actor_user_id, permission_code, reason) VALUES ($1,$2,$3,$4,$5,1,'ENABLED',$6,'bo:admin','x')`, [w.ctx.tenantId, w.ctx.workspaceId, randomUUID(), ACTION.code, ACTION.schemaVersion, randomUUID()])).rejects.toThrow();
   });
 
   it('records who, under which permission, when (database clock) and why; every change is audited with the same facts', async () => {

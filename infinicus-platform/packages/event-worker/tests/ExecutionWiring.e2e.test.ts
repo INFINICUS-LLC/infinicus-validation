@@ -23,6 +23,8 @@ import type { AuthorizedActionPackageV1 } from '@infinicus/handoff-contracts';
 import { ExecutionActivationService, explicitCapabilities } from '@infinicus/business-operations-runtime';
 import { actionAuthorizedPayloadFor } from '@infinicus/workflow';
 import { ScriptedProvider, buildPackage, makeExecWorld, type ExecWorld } from '../../business-operations-runtime/tests/helpers/executionWorld.js';
+import { fixtureSetReorder } from '../../business-operations-runtime/tests/helpers/reorderFixture.js';
+import { seedAdminUser } from '../../business-operations-runtime/tests/helpers/activationAdmin.js';
 import { answerFor } from '../../business-operations-runtime/tests/helpers/intakeFixture.js';
 import { deleteMovementsForTenants } from '../../business-operations-runtime/tests/helpers/movementCleanup.js';
 import { buildEventWorker } from '../src/index.js';
@@ -54,7 +56,7 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
   async function scenario(): Promise<Scenario> {
     const ew = await makeExecWorld(admin, tenantIds, {});
     const pkg = await buildPackage(ew, { reorderPoint: 150, reorderQuantity: 250, modified: { baseline: [100, 200] } });
-    const ctx: TenantContext = { tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: randomUUID() };
+    const ctx: TenantContext = { tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: await seedAdminUser(admin, ew.w.tenantId, ew.w.workspaceId) };
     const s = { ew, pkg, ctx, businessId: ew.ctx.businessId, mirrors: [], revoked: false, stale: false, sourceAvailable: true } as Scenario;
     // ABA's answer: CURRENT until revoked. The revocation (or staleness) applies only AFTER BO holds the claim, i.e. at the final check.
     s.provider = new ScriptedProvider(async () => {
@@ -261,13 +263,7 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
     it('a baseline that changed after authorization is never overwritten: REFUSED(BASELINE_CHANGED)', async () => {
       const s = await scenario();
       await enable(s);
-      const w = await admin.connect();
-      try {
-        await w.query('BEGIN');
-        await w.query(`SELECT set_config('app.bo_reorder_policy_writer','configure_inventory_reorder_policy', true)`);
-        await w.query(`UPDATE ${BO}.inventory_balances SET reorder_point = 120 WHERE id=$1`, [s.ew.balanceId]);
-        await w.query('COMMIT');
-      } finally { w.release(); }
+      await fixtureSetReorder(admin, s.ew.balanceId, 'reorder_point = 120');
       await drain(worker(s));
       expect((await executions(s))[0]).toMatchObject({ outcome: 'REFUSED', reason_code: 'BASELINE_CHANGED' });
       expect(await balance(s)).toMatchObject({ rp: 120, rq: 200 }); // the newer value survives

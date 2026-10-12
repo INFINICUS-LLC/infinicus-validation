@@ -80,33 +80,23 @@ export class ExecutionCapabilityActivationRepository {
   }
 
   /**
-   * Appends the next version on the CALLER'S transaction (so the audit row can share it). Recording the state the business is already in
-   * returns the existing latest row with `changed: false` and writes nothing. Concurrent callers are serialized per (business, action type).
+   * Appends the next version on the CALLER'S transaction through the ONLY governed database entry point,
+   * `business_operations.record_execution_capability_activation` (migration 0196). The function re-verifies, in the database, the transaction
+   * scope, `bo:admin`, the actor's active membership and role and the business; appends the version-chained row; and writes the audit row in the same
+   * transaction. Recording the state the business is already in returns the existing latest row with `changed: false` and writes nothing.
+   * Concurrent callers are serialized per (business, action type) inside the function. A direct INSERT by the application role is refused.
    */
   async recordOnClient(client: PoolClient, ctx: TenantContext, input: RecordActivationInput): Promise<{ activation: ExecutionCapabilityActivation; changed: boolean }> {
     if (!UUID.test(input.businessId)) throw new ExecutionCapabilityActivationInvalidError('businessId must be a lowercase UUID');
     if (!UUID.test(ctx.userId)) throw new ExecutionCapabilityActivationInvalidError('the actor must be a user id (lowercase UUID)');
+    if (!UUID.test(input.correlationId)) throw new ExecutionCapabilityActivationInvalidError('correlationId must be a lowercase UUID');
     if (input.state !== 'ENABLED' && input.state !== 'DISABLED') throw new ExecutionCapabilityActivationInvalidError('state must be ENABLED or DISABLED');
-    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`execution_capability_activations:${input.businessId}:${input.actionType.code}@${input.actionType.schemaVersion}`]);
-    const current = await this.latest(client, input.businessId, input.actionType);
-    if (current && current.state === input.state) return { activation: current, changed: false };
-    const r = await client.query<Json>(
-      `INSERT INTO ${S}.execution_capability_activations
-         (tenant_id, workspace_id, business_id, action_type_code, action_type_schema_version, version, state, actor_user_id, permission_code, reason)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [ctx.tenantId, ctx.workspaceId, input.businessId, input.actionType.code, input.actionType.schemaVersion, (current?.version ?? 0) + 1, input.state, ctx.userId, input.permissionCode, input.reason],
+    const governed = await client.query<{ out_activation_id: string; out_changed: boolean }>(
+      `SELECT out_activation_id, out_changed FROM ${S}.record_execution_capability_activation($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [ctx.tenantId, ctx.workspaceId, input.businessId, input.actionType.code, input.actionType.schemaVersion, input.state, ctx.userId, input.permissionCode, input.reason, input.correlationId],
     );
-    return { activation: rowToActivation(r.rows[0]), changed: true };
-  }
-
-  /** Platform audit row on the SAME client as the activation it describes (one record, no second source of truth). */
-  async recordAudit(client: PoolClient, ctx: TenantContext, a: { businessId: string; action: string; entityId: string; correlationId: string; metadata: Json }): Promise<void> {
-    await client.query(
-      `INSERT INTO audit.audit_events
-         (tenant_id, workspace_id, business_id, actor_type, actor_id, action, entity_type, entity_id, metadata, correlation_id)
-       VALUES ($1,$2,$3,'user',$4,$5,'execution_capability_activation',$6,$7::jsonb,$8)`,
-      [ctx.tenantId, ctx.workspaceId, a.businessId, ctx.userId, a.action, a.entityId, JSON.stringify(a.metadata), a.correlationId],
-    );
+    const row = await client.query<Json>(`SELECT * FROM ${S}.execution_capability_activations WHERE id = $1`, [governed.rows[0].out_activation_id]);
+    return { activation: rowToActivation(row.rows[0]), changed: governed.rows[0].out_changed };
   }
 
   private async latest(client: PoolClient, businessId: string, actionType: { code: string; schemaVersion: string }): Promise<ExecutionCapabilityActivation | null> {

@@ -42,9 +42,9 @@ describe('data-capture Block E architecture (reorder policy state)', () => {
     expect(production.find((f) => f.rel.endsWith('InventoryReorderPolicyExecutionAdapter.ts'))!.code).not.toMatch(/(?<!FOR )\bUPDATE\b|\bINSERT\b|set_config/);
   });
 
-  it('only the executor sets the transaction-local writer setting', () => {
-    const setters = production.filter((f) => f.code.includes('app.bo_reorder_policy_writer')).map((f) => f.rel);
-    expect(setters).toEqual([EXECUTOR]);
+  it('no application code sets any session variable to write the reorder policy: the writer marker lives only inside the governed database function (migration 0196), and the executor calls it', () => {
+    expect(production.filter((f) => f.code.includes('app.bo_reorder_policy_writer')).map((f) => f.rel)).toEqual([]);
+    expect(production.filter((f) => f.code.includes('apply_inventory_reorder_policy(')).map((f) => f.rel)).toEqual([EXECUTOR]);
   });
 
   it('the command literal lives only in the executor and the BO types; its service is used by no other layer', () => {
