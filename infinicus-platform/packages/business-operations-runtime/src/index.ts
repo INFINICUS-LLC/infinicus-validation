@@ -2,6 +2,7 @@ export * from './errors.js';
 export * from './types.js';
 export * from './intake/IntakeMapperRegistry.js';
 export * from './inventory/InventoryService.js';
+export * from './inventory/InventoryReorderPolicyService.js';
 export * from './procurement/ProcurementService.js';
 export * from './suppliers/SupplierService.js';
 export * from './workforce/WorkforceService.js';

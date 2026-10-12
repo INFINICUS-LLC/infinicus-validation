@@ -112,6 +112,24 @@ export interface RecordOperationalFactCommand {
   };
 }
 
+/**
+ * Data-capture Block E: the BO-owned command that deliberately configures a balance's reorder policy (state UNSET -> CONFIGURED).
+ * Deliberately NOT part of `OperationalCommand`: intake mappers cannot produce it and the intake path cannot run it. */
+export type ReorderPolicyConfigurationSource = 'BO_COMMAND' | 'AUTHORIZED_ACTION_PACKAGE';
+
+export interface ConfigureInventoryReorderPolicyCommand {
+  type: 'configure_inventory_reorder_policy';
+  context: OperationalCommandContext;
+  payload: {
+    inventoryItemId: string;
+    warehouseId: string;
+    reorderPoint: number;
+    reorderQuantity: number;
+    /** Who requested the configuration. Defaults to BO_COMMAND; the authorized-package path (P0-6c) sets AUTHORIZED_ACTION_PACKAGE. */
+    configurationSource?: ReorderPolicyConfigurationSource;
+  };
+}
+
 export type OperationalCommand =
   | RecordInventoryMovementCommand
   | CreatePurchaseOrderCommand

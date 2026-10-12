@@ -114,7 +114,8 @@ describe('B2b evaluator architecture', () => {
     for (const f of production.filter((p) => p.rel.startsWith('packages/business-operations-runtime/src/authorized-action/') || (p.rel.startsWith('apps/api/src/') && p.rel !== ROUTE && p.rel !== 'apps/api/src/app.ts'))) {
       expect(f.code, f.rel).not.toMatch(/InventoryPolicyEvaluationService|inventory-policy\//);
     }
-    expect(production.filter((f) => /configure_inventory_reorder_policy|reorder_policy_state/.test(f.code)).map((f) => f.rel)).toEqual([]);
+    // Data-capture Block E (O-10) is authorized: exactly the BO executor and the BO command types may carry the configure command / state; nothing else.
+    expect(production.filter((f) => /configure_inventory_reorder_policy|reorder_policy_state/.test(f.code)).map((f) => f.rel).sort()).toEqual(['packages/business-operations-runtime/src/OperationalCommandExecutor.ts', 'packages/business-operations-runtime/src/types.ts']);
   });
 
   it('B2c is wired only at the composition root and the BO route; B2d is not implemented', () => {
