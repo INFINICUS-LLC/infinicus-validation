@@ -25,3 +25,11 @@ export class OperationalStateTransitionError extends Error {
     this.name = 'OperationalStateTransitionError';
   }
 }
+
+/** The compare-and-set guard of the reorder configuration refused: the balance no longer holds the expected baseline. Nothing was changed. */
+export class ReorderBaselineChangedError extends OperationalMappingError {
+  constructor() {
+    super('The inventory balance no longer holds the expected baseline reorder values; nothing was changed.');
+    this.name = 'ReorderBaselineChangedError';
+  }
+}

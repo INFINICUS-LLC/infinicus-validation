@@ -55,6 +55,8 @@ describe('InventoryPolicyEvaluationRepository architecture', () => {
       }
     }
     expect(users).toEqual([
+      // P0-6c: the BO execution adapter READS the immutable records a package references (its compare-and-set baseline); it writes none.
+      'packages/business-operations-runtime/src/authorized-action-execution/InventoryReorderPolicyExecutionAdapter.ts',
       'packages/business-operations-runtime/src/inventory-policy/BoGovernanceEvidenceVerifier.ts',
       'packages/business-operations-runtime/src/inventory-policy/InventoryPolicyEvaluationService.ts',
     ]);

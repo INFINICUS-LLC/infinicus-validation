@@ -49,3 +49,9 @@ export type {
   InventoryPolicyEvaluation, InventoryPolicyEvaluationSubject, InventoryPolicyEvaluationDimension, InventoryPolicyEvaluationResult,
   RecordInventoryPolicyEvaluationInput, EvaluationJson,
 } from './InventoryPolicyEvaluationRepository.js';
+
+export { AuthorizedActionExecutionRepository } from './AuthorizedActionExecutionRepository.js';
+export type {
+  ClaimForExecution, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
+  ExecutionOutcome, MutationResult, AuthorityVerdictRecord, AttemptOutcome,
+} from './AuthorizedActionExecutionRepository.js';

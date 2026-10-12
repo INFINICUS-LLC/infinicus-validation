@@ -110,6 +110,21 @@ describe.runIf(RUN)('reorder policy state - live PostgreSQL', () => {
     expect(Number(second.version)).toBe(Number(first.version) + 1);
   });
 
+  it('P0-6c compare-and-set: expectedBaseline applies only to the exact locked values; a mismatch changes nothing', async () => {
+    const w = await world(); // balance holds 100 / 200
+    const before = await row(w);
+    await expect(service.configure(w.ctx, cmd(w, { expectedBaseline: { reorderPoint: 101, reorderQuantity: 200 } }))).rejects.toThrow(/no longer holds the expected baseline/);
+    await expect(service.configure(w.ctx, cmd(w, { expectedBaseline: { reorderPoint: 100, reorderQuantity: 201 } }))).rejects.toThrow(/no longer holds the expected baseline/);
+    expect(await row(w)).toEqual(before);
+    const done = await service.configure(w.ctx, cmd(w, { expectedBaseline: { reorderPoint: 100, reorderQuantity: 200 }, configurationSource: 'AUTHORIZED_ACTION_PACKAGE' }));
+    expect(done).toMatchObject({ applied: true, before: { reorderPoint: '100', reorderQuantity: '200', state: 'UNSET' }, after: { reorderPoint: '150', reorderQuantity: '250', state: 'CONFIGURED' } });
+    expect((await row(w)).reorder_policy_configured_source).toBe('AUTHORIZED_ACTION_PACKAGE');
+    // an identical re-send reports applied=false and bumps nothing
+    const again = await service.configure(w.ctx, cmd(w));
+    expect(again.applied).toBe(false);
+    expect(again.before).toEqual(again.after);
+  });
+
   it('refuses invalid values explicitly (negative, NaN, Infinity, over 4 decimals, out of range) and changes nothing', async () => {
     const w = await world();
     const before = await row(w);

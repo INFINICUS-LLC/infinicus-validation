@@ -47,6 +47,9 @@ export interface BodyOptions {
   windowEndOffset?: number;
   parameters?: Record<string, number>;
   supersedes?: { packageId: string; packageVersion: number };
+  /** P0-6c: the action target id (default 'sku-123', which is not a UUID) and a hook that edits the unsealed body before it is sealed. */
+  targetId?: string;
+  mutate?: (body: any) => void;
 }
 
 /** A sealed Level 2 package for the canonical inventory_reorder_policy_update@1 type. */
@@ -65,7 +68,7 @@ export function sealedPackage(world: World, o: BodyOptions = {}): AuthorizedActi
     action: {
       actionId: randomUUID(), actionVersionId: randomUUID(),
       type: { code: 'inventory_reorder_policy_update', schemaVersion: '1' },
-      target: { kind: 'inventory_item', id: 'sku-123' },
+      target: { kind: 'inventory_item', id: o.targetId ?? 'sku-123' },
       parameters,
       automationLevel: { level: 2, policy: { policyId: randomUUID(), policyVersionId: randomUUID() } },
       executionWindow: val({ startsAt: at(windowStart), endsAt: at(windowEnd) }),
@@ -105,6 +108,7 @@ export function sealedPackage(world: World, o: BodyOptions = {}): AuthorizedActi
     consumption: { mode: 'SINGLE_USE' },
     trace: { correlationId: randomUUID(), causationId: randomUUID() },
   };
+  o.mutate?.(body);
   return sealAuthorizedActionPackage(body, { actionTypes: canonicalActionTypeRegistry() });
 }
 
