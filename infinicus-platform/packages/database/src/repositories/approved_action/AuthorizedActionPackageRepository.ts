@@ -90,6 +90,8 @@ export interface AuthoritativePackageStatus {
   latestPackageVersion: number;
   /** Database time at which ABA answered (millisecond UTC). */
   verifiedAt: string;
+  /** The Business Operations receipt that claimed this version; non-null exactly when `lifecycle` is CONSUMED. */
+  consumptionReceiptId: string | null;
 }
 
 export interface RevokeInput {
@@ -103,6 +105,19 @@ export interface RevokeInput {
 export type RecordExpiryResult =
   | { recorded: true; event: PackageLifecycleEvent }
   | { recorded: false; reason: 'NOT_DUE' | 'NOT_APPLICABLE' | 'ALREADY_TERMINAL' };
+
+export interface RecordConsumedInput {
+  packageId: string;
+  packageVersion: number;
+  digest: string;
+  receiptId: string;
+  correlationId: string;
+  causationId?: string | null;
+}
+
+export type RecordConsumedOutcome =
+  | { outcome: 'RECORDED' | 'ALREADY_RECORDED'; recordedAt: string }
+  | { outcome: 'NOT_RECORDABLE'; reason: 'NOT_FOUND' | 'DIGEST_MISMATCH' | 'OTHER_TERMINAL_STATE' | 'EXPIRED' | 'OTHER_RECEIPT' };
 
 export interface RecordExpiryInput {
   correlationId: string;
@@ -400,6 +415,8 @@ export class AuthorizedActionPackageRepository {
                 (v.expires_at IS NOT NULL AND v.expires_at <= clock_timestamp()) AS past_expiry,
                 (SELECT e.state FROM ${EVENTS} e
                   WHERE e.package_id = v.package_id AND e.package_version = v.package_version AND e.state <> 'ISSUED') AS terminal,
+                (SELECT e.consumption_receipt_id FROM ${EVENTS} e
+                  WHERE e.package_id = v.package_id AND e.package_version = v.package_version AND e.state = 'CONSUMED') AS consumption_receipt_id,
                 (SELECT max(x.package_version) FROM ${VERSIONS} x WHERE x.package_id = v.package_id) AS latest,
                 to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS verified_at
            FROM ${VERSIONS} v WHERE v.package_id = $1 AND v.package_version = $2`,
@@ -411,6 +428,7 @@ export class AuthorizedActionPackageRepository {
       return {
         packageId: row.package_id as string, packageVersion: row.package_version as number, digest: row.digest as string,
         lifecycle, latestPackageVersion: row.latest as number, verifiedAt: row.verified_at as string,
+        consumptionReceiptId: lifecycle === 'CONSUMED' ? ((row.consumption_receipt_id as string | null) ?? null) : null,
       };
     });
   }
@@ -443,6 +461,44 @@ export class AuthorizedActionPackageRepository {
           input.correlationId, input.causationId ?? null, input.auditEventId ?? null],
       );
       return rowToEvent(r.rows[0]);
+    });
+  }
+
+  /**
+   * Records ABA's CONSUMED mirror of a Business Operations claim (owner ruling R-5; P0-6a). BO's claim is canonical - this only reflects
+   * it - so a mirror that cannot be written is a result, not an error: unknown package/digest, another terminal fact (for example a
+   * revocation that won the race), an expired package (the database refuses to consume past expiry) or a different receipt.
+   * Idempotent: the same receipt again returns ALREADY_RECORDED. Never touches the sealed document.
+   */
+  async recordConsumed(ctx: TenantContext, input: RecordConsumedInput): Promise<RecordConsumedOutcome> {
+    requireUuid('packageId', input.packageId);
+    requireVersion(input.packageVersion);
+    requireUuid('receiptId', input.receiptId);
+    requireUuid('correlationId', input.correlationId);
+    if (input.causationId != null) requireUuid('causationId', input.causationId);
+    return withTenantTransaction(ctx, async (client) => {
+      await lockPackage(client, input.packageId);
+      const version = await loadVersionRow(client, input.packageId, input.packageVersion);
+      if (!version) return { outcome: 'NOT_RECORDABLE', reason: 'NOT_FOUND' } as const;
+      if (version.digest !== input.digest) return { outcome: 'NOT_RECORDABLE', reason: 'DIGEST_MISMATCH' } as const;
+      const terminal = await loadTerminal(client, input.packageId, input.packageVersion);
+      if (terminal) {
+        if (terminal.state === 'CONSUMED') {
+          return terminal.consumption_receipt_id === input.receiptId
+            ? ({ outcome: 'ALREADY_RECORDED', recordedAt: iso(terminal.occurred_at) } as const)
+            : ({ outcome: 'NOT_RECORDABLE', reason: 'OTHER_RECEIPT' } as const);
+        }
+        return { outcome: 'NOT_RECORDABLE', reason: 'OTHER_TERMINAL_STATE' } as const;
+      }
+      const expired = await client.query<{ past: boolean }>('SELECT ($1::timestamptz IS NOT NULL AND $1::timestamptz <= clock_timestamp()) AS past', [version.expires_at]);
+      if (expired.rows[0].past) return { outcome: 'NOT_RECORDABLE', reason: 'EXPIRED' } as const;
+      const r = await client.query<Json>(
+        `INSERT INTO ${EVENTS}
+           (tenant_id, workspace_id, business_id, package_id, package_version, state, actor_type, actor_id, reason, correlation_id, causation_id, consumption_receipt_id)
+         VALUES ($1,$2,$3,$4,$5,'CONSUMED','system','aba.consumption-recorder','mirror of the Business Operations claim',$6,$7,$8) RETURNING *`,
+        [ctx.tenantId, ctx.workspaceId, version.business_id, input.packageId, input.packageVersion, input.correlationId, input.causationId ?? null, input.receiptId],
+      );
+      return { outcome: 'RECORDED', recordedAt: iso(r.rows[0].occurred_at) } as const;
     });
   }
 

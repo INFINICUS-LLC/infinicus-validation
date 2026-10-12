@@ -25,6 +25,7 @@ import type {
 import { evaluateApprovalGate } from './approvalGate.js';
 import type { TwinFreshness } from './approvalGate.js';
 import { approverTier, evaluateApproval, isRiskClass } from './approvalRiskPolicy.js';
+import { evaluateApproverAuthority, policyCoversActionType } from './executionAuthority.js';
 
 /** The single component allowed to issue packages (the contract's architecture test allow-lists exactly this issuer). */
 export const ISSUER_COMPONENT = 'aba.package-issuer';
@@ -159,24 +160,22 @@ export function evaluateIssuance(f: IssuanceFacts): IssuanceEvaluation {
   let roleCode = '';
   let scopeId = '';
   if (audit && assignment) {
-    if (assignment.versionAtDecision === null) {
+    // The authority facts come from the shared rule that the execution-time status provider also uses (P0-6a: one rule, not two).
+    const authority = evaluateApproverAuthority(assignment, audit.occurredAt);
+    if (authority.versionAtDecision === null) {
       refuse('AUTHORITY_NOT_ESTABLISHED', 'the approver assignment had no version at the decision time');
     } else {
-      assignmentVersionId = assignment.versionAtDecision.id;
-      roleCode = assignment.versionAtDecision.roleCode;
+      assignmentVersionId = authority.versionAtDecision.id;
+      roleCode = authority.versionAtDecision.roleCode;
       if (approver.roleCode !== roleCode) refuse('APPROVAL_AUDIT_MISMATCH', 'the role recorded at approval differs from the assignment version in force at that time');
     }
     if (approverUserId !== null && assignment.userId !== approverUserId) refuse('APPROVAL_AUDIT_MISMATCH', 'the approver recorded at approval is not the assignment holder');
-    const decidedMs = Date.parse(audit.occurredAt);
-    const upToDecision = assignment.provenance.filter((p) => Date.parse(p.createdAt) <= decidedMs);
-    const last = upToDecision[upToDecision.length - 1];
-    if (!last || last.entry.action !== 'grant' || last.entry.state !== 'active') {
+    if (authority.grantScopeId === null) {
       refuse('AUTHORITY_NOT_ESTABLISHED', 'no active canonical authority grant existed at the decision time');
     } else {
-      scopeId = last.scopeId;
+      scopeId = authority.grantScopeId;
     }
-    const latest = assignment.provenance[assignment.provenance.length - 1];
-    if (assignment.status !== 'active' || (latest && latest.entry.action === 'revoke')) {
+    if (authority.revokedSince) {
       refuse('AUTHORITY_REVOKED', 'the approver authority has been revoked since the decision; a package is not issued from revoked authority');
     }
   } else if (audit) {
@@ -243,8 +242,7 @@ export function evaluateIssuance(f: IssuanceFacts): IssuanceEvaluation {
   if (!f.level2Policy) {
     refuse('LEVEL2_POLICY_NOT_ENABLED', 'no enabled Level 2 automation policy exists for this workspace');
   } else if (capture) {
-    const listed = f.level2Policy.specification[POLICY_ACTION_TYPES_KEY];
-    const names = Array.isArray(listed) && listed.some((e) => isObject(e) && e.code === capture.actionType.code && e.schemaVersion === capture.actionType.schemaVersion);
+    const names = policyCoversActionType(f.level2Policy.specification, POLICY_ACTION_TYPES_KEY, capture.actionType.code, capture.actionType.schemaVersion);
     if (!names) refuse('LEVEL2_POLICY_NOT_ENABLED', `the enabled Level 2 policy does not cover ${capture.actionType.code}@${capture.actionType.schemaVersion}`);
   }
 

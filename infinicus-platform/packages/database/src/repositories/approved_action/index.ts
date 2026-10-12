@@ -40,7 +40,7 @@ export {
 } from './AuthorizedActionPackageRepository.js';
 export type {
   PackageHeader, EnsureHeaderInput, PackageVersionRecord, PackageLifecycleEvent, PackageLifecycleState,
-  AuthoritativePackageStatus, RevokeInput, RecordExpiryInput, RecordExpiryResult,
+  AuthoritativePackageStatus, RevokeInput, RecordExpiryInput, RecordExpiryResult, RecordConsumedInput, RecordConsumedOutcome,
 } from './AuthorizedActionPackageRepository.js';
 
 export { AuthorizedActionCaptureRepository, toAccountableOwnerShape } from './AuthorizedActionCaptureRepository.js';

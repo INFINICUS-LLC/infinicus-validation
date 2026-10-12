@@ -311,7 +311,7 @@ export type {
   ApprovalDecision, ApprovalDecisionVersion, DecisionAudit,
   ApprovedAction,
   PackageHeader, EnsureHeaderInput, PackageVersionRecord, PackageLifecycleEvent, PackageLifecycleState,
-  AuthoritativePackageStatus, RevokeInput, RecordExpiryInput, RecordExpiryResult,
+  AuthoritativePackageStatus, RevokeInput, RecordExpiryInput, RecordExpiryResult, RecordConsumedInput, RecordConsumedOutcome,
   AuthorizedActionCapture, RecordCaptureInput, OwnerAssignment, AssignOwnerInput, AccountableOwnerShape,
   GovernedValue, ProposedParametersValue, ModificationValue, ModificationEvaluationValue,
   DefineActionTypeInput, ActionTypeDefinition, ActionTypeStatus, ActionTypeStatusChange, ActionTypeWithStatus, ActionTypeContractShape,

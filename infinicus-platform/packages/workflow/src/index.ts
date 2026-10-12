@@ -57,3 +57,9 @@ export type {
   AuthoringRequestContext, ActionTypeView, PolicyView, PolicyVersionView, EnablementView, CaptureInput, CaptureView, OwnerInput, OwnerView,
   BoundariesInput, BoundariesView, IssuedPackageView, AuthoringStatusView, AbaAuthoringDependencies,
 } from './AbaAuthoringService.js';
+
+// P0-6a: ABA-owned implementations of the shared execution-boundary ports. Unwired until P0-6b/c.
+export { AbaPackageStatusProvider, AbaAuthorizedActionPackageSource, AbaPackageConsumptionRecorder } from './abaExecutionPorts.js';
+export type { AbaPackageStatusProviderDependencies } from './abaExecutionPorts.js';
+export { evaluateApproverAuthority, evaluateExecutionAuthority, policyCoversActionType } from './executionAuthority.js';
+export type { AuthorityState, ApproverAuthority, ExecutionAuthorityFacts, ExecutionAuthorityVerdict } from './executionAuthority.js';
