@@ -98,6 +98,6 @@ describe('P0-6h architecture', () => {
 
   it('no migration, schema or grant change: P0-6h added none (the only migration after 0195 is the separately authorized 0196 hardening)', () => {
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
-    expect(migrations.slice(migrations.findIndex((m) => m.startsWith('0195_')) + 1)).toEqual(['0196_harden_database_authority_activation_and_reorder.sql']);
+    expect(migrations.slice(migrations.findIndex((m) => m.startsWith('0195_')) + 1, migrations.findIndex((m) => m.startsWith('0196_')) + 1)).toEqual(['0196_harden_database_authority_activation_and_reorder.sql']);
   });
 });

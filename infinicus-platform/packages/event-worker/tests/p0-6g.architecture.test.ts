@@ -58,7 +58,7 @@ describe('P0-6g architecture', () => {
     expect(filesMatching(/\.claimsAwaitingExecution\(/)).toEqual([ENGINE]); // only the engine's own (unreferenced) runDue
     for (const rel of RECOVERY_FILES) expect(read(rel), rel).not.toMatch(/FROM business_operations\.|SELECT[^;]*authorized_action_claims|GRANT |CREATE POLICY|SECURITY DEFINER|pg_advisory/i);
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
-    expect(migrations.slice(migrations.findIndex((m) => m.startsWith('0195_')))).toEqual([migrations.find((m) => m.startsWith('0195_')), '0196_harden_database_authority_activation_and_reorder.sql']); // P0-6g adds the signal to the EXISTING outbox: no schema, role or grant change (0196 is the later, separately authorized hardening)
+    expect(migrations.slice(migrations.findIndex((m) => m.startsWith('0195_')), migrations.findIndex((m) => m.startsWith('0196_')) + 1)).toEqual([migrations.find((m) => m.startsWith('0195_')), '0196_harden_database_authority_activation_and_reorder.sql']); // P0-6g adds the signal to the EXISTING outbox: no schema, role or grant change (0196 is the later, separately authorized hardening)
   });
 
   it('ONE executor: no second engine, no direct inventory write, and the recovery files never touch an inventory or execution table', () => {

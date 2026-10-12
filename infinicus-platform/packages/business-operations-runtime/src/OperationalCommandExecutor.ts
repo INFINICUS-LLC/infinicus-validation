@@ -4,6 +4,7 @@ import { OperationalMappingError, ReorderBaselineChangedError } from './errors.j
 import { UNIT_COST_MINIMUM_STORABLE, unitCostProblem } from './unitCost.js';
 import { Decimal } from './inventory-policy/decimal.js';
 import type { ConfigureInventoryReorderPolicyCommand, OperationalCommand } from './types.js';
+import { canonicalJson, canonicalReceiptContent, purchaseReceiptProblems } from './procurement/purchaseReceipt.js';
 
 /** inventory_balances.reorder_point / reorder_quantity are numeric(18,4). */
 const REORDER_VALUE_MAX_DECIMALS = 4;
@@ -88,6 +89,8 @@ export class OperationalCommandExecutor {
         return this.recordInventoryMovement(client, ctx, command);
       case 'create_purchase_order':
         return this.createPurchaseOrder(client, ctx, command);
+      case 'record_purchase_receipt':
+        return this.recordPurchaseReceipt(client, ctx, command);
       case 'record_supplier_performance':
         return this.recordSupplierPerformance(client, ctx, command);
       case 'record_workforce_event':
@@ -104,6 +107,21 @@ export class OperationalCommandExecutor {
     ctx: TenantContext,
     command: Extract<OperationalCommand, { type: 'record_inventory_movement' }>
   ): Promise<CommandExecutionResult> {
+    const movementId = await this.applyInventoryMovement(client, ctx, command);
+    return { commandType: command.type, recordId: movementId };
+  }
+
+  /**
+   * THE one writer of an inventory movement and its balance effect (validation, balance lock, ledger INSERT, balance UPDATE, event). A plain movement and
+   * the per-line movements of a purchase receipt (Data-capture Block A) both go through here, so there is no second movement writer. `occurredAt`, when
+   * given, is the business instant of the movement (a receipt's `received_at`); otherwise the database default (now) applies, as before.
+   */
+  private async applyInventoryMovement(
+    client: PoolClient,
+    ctx: TenantContext,
+    command: Extract<OperationalCommand, { type: 'record_inventory_movement' }>,
+    occurredAt?: string
+  ): Promise<string> {
     const p = command.payload;
     const businessId = command.context.businessId;
     // Defence in depth for commands built outside the intake mapper: a cost and its currency are both present or both absent.
@@ -152,13 +170,13 @@ export class OperationalCommandExecutor {
     const movement = await client.query<{ id: string }>(
       `INSERT INTO business_operations.inventory_movements
          (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id,
-          movement_type, quantity, reference_type, reference_id, unit_cost, unit_cost_currency, notes, correlation_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          movement_type, quantity, reference_type, reference_id, unit_cost, unit_cost_currency, notes, correlation_id, occurred_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,coalesce($14::timestamptz, now()))
        RETURNING id`,
       [
         ctx.tenantId, ctx.workspaceId, businessId, p.inventoryItemId, p.warehouseId,
         p.movementType, p.quantity, p.referenceType ?? null, p.referenceId ?? null,
-        p.unitCost ?? null, p.unitCostCurrency ?? null, p.notes ?? null, command.context.correlationId,
+        p.unitCost ?? null, p.unitCostCurrency ?? null, p.notes ?? null, command.context.correlationId, occurredAt ?? null,
       ]
     );
 
@@ -180,7 +198,105 @@ export class OperationalCommandExecutor {
       ]
     );
 
-    return { commandType: command.type, recordId: movement.rows[0].id };
+    return movement.rows[0].id;
+  }
+
+  /**
+   * Data-capture Block A: records a purchase receipt - the header, its lines and the `receipt` inventory movement of each line - in the caller's ONE
+   * transaction. The movement ledger stays the one source for stock and cost: the receipt keeps no balance of its own. The receipt number is the business
+   * identity of the receipt: replaying EXACTLY the same content is a safe no-op (no second movement, no second line), replaying different content under
+   * the same number is refused, and a different number is a different receipt. Fails closed without provenance. Does not touch the purchase order, its
+   * lines or any reorder policy (purchase-order linkage and status are Data-capture Block D; reorder policy is a separate BO command).
+   */
+  private async recordPurchaseReceipt(
+    client: PoolClient,
+    ctx: TenantContext,
+    command: Extract<OperationalCommand, { type: 'record_purchase_receipt' }>
+  ): Promise<CommandExecutionResult> {
+    const p = command.payload;
+    const c = command.context;
+    const businessId = c.businessId;
+    for (const [name, value] of [['sourceReference', c.sourceReference], ['provenanceReference', c.provenanceReference], ['idempotencyKey', c.idempotencyKey]] as const) {
+      if (typeof value !== 'string' || value.trim().length === 0) throw new OperationalMappingError(`A purchase receipt requires ${name} (provenance is never fabricated).`);
+    }
+    const problems = purchaseReceiptProblems(p); // the SAME rule set as the intake mapper
+    if (problems.length > 0) throw new OperationalMappingError(`Invalid purchase receipt: ${problems.join(', ')}`);
+
+    // Scope: every referenced entity must be in THIS business (tenant and workspace are the transaction's, enforced again by row-level security).
+    const po = await client.query<{ id: string }>(
+      `SELECT id FROM business_operations.purchase_orders WHERE id = $1 AND business_id = $2 AND tenant_id = $3 AND workspace_id = $4`,
+      [p.purchaseOrderId, businessId, ctx.tenantId, ctx.workspaceId]
+    );
+    if (po.rowCount !== 1) throw new OperationalMappingError(`purchase_orders entity not found in business scope: ${p.purchaseOrderId}`);
+    await requireBusinessEntity(client, 'warehouses', p.warehouseId, businessId);
+    for (const itemId of new Set(p.lines.map((l) => l.inventoryItemId))) await requireBusinessEntity(client, 'inventory_items', itemId, businessId);
+    for (const lineId of new Set(p.lines.map((l) => l.purchaseOrderLineId).filter((id): id is string => id !== undefined))) {
+      const line = await client.query(
+        `SELECT id FROM business_operations.purchase_order_line_items WHERE id = $1 AND purchase_order_id = $2 AND business_id = $3 AND tenant_id = $4 AND workspace_id = $5`,
+        [lineId, p.purchaseOrderId, businessId, ctx.tenantId, ctx.workspaceId]
+      );
+      if (line.rowCount !== 1) throw new OperationalMappingError(`purchase_order_line_items entity is not a line of this purchase order in business scope: ${lineId}`);
+    }
+    const clock = await client.query<{ future: boolean }>(`SELECT $1::timestamptz > clock_timestamp() AS future`, [p.receivedAt]);
+    if (clock.rows[0].future) throw new OperationalMappingError('receivedAt is in the future; a receipt records goods that have already been received.');
+
+    // Serialize concurrent writers of the same receipt number, then decide: create, safe replay, or conflict.
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`purchase_receipt:${businessId}:${p.receiptNumber}`]);
+    const content = canonicalReceiptContent(p);
+    const existing = await client.query<{ id: string; payload: { content?: unknown } }>(
+      `SELECT id, payload FROM business_operations.purchase_receipts WHERE business_id = $1 AND receipt_number = $2`,
+      [businessId, p.receiptNumber]
+    );
+    if (existing.rowCount === 1) {
+      if (canonicalJson(existing.rows[0].payload?.content) !== canonicalJson(content)) {
+        throw new OperationalMappingError(`Purchase receipt ${p.receiptNumber} already exists with different content; a conflicting replay is refused and nothing was changed.`);
+      }
+      return { commandType: command.type, recordId: existing.rows[0].id }; // the exact same receipt: nothing is written twice
+    }
+
+    const header = await client.query<{ id: string }>(
+      `INSERT INTO business_operations.purchase_receipts
+         (tenant_id, workspace_id, business_id, purchase_order_id, receipt_number, received_at, warehouse_id, notes, payload, correlation_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)
+       RETURNING id`,
+      [
+        ctx.tenantId, ctx.workspaceId, businessId, p.purchaseOrderId, p.receiptNumber, content.receivedAt, p.warehouseId, p.notes ?? null,
+        JSON.stringify({
+          content,
+          provenance: { sourceReference: c.sourceReference, provenanceReference: c.provenanceReference, idempotencyKey: c.idempotencyKey, actorId: c.actorId, occurredAt: c.occurredAt },
+        }),
+        c.correlationId,
+      ]
+    );
+    const receiptId = header.rows[0].id;
+
+    for (let i = 0; i < p.lines.length; i++) {
+      const line = p.lines[i];
+      const movementId = await this.applyInventoryMovement(client, ctx, {
+        type: 'record_inventory_movement',
+        context: c,
+        payload: {
+          inventoryItemId: line.inventoryItemId,
+          warehouseId: p.warehouseId,
+          movementType: 'receipt',
+          quantity: line.quantity,
+          ...(line.unitCost !== undefined ? { unitCost: line.unitCost, unitCostCurrency: line.unitCostCurrency } : {}),
+          referenceType: 'purchase_receipt',
+          referenceId: receiptId,
+        },
+      }, content.receivedAt);
+      await client.query(
+        `INSERT INTO business_operations.purchase_receipt_lines
+           (tenant_id, workspace_id, business_id, purchase_receipt_id, line_number, purchase_order_line_id, inventory_item_id, inventory_movement_id,
+            quantity, unit_cost, unit_cost_currency, correlation_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [
+          ctx.tenantId, ctx.workspaceId, businessId, receiptId, i + 1, line.purchaseOrderLineId ?? null, line.inventoryItemId, movementId,
+          line.quantity, line.unitCost ?? null, line.unitCostCurrency ?? null, c.correlationId,
+        ]
+      );
+    }
+    return { commandType: command.type, recordId: receiptId };
   }
 
   /**

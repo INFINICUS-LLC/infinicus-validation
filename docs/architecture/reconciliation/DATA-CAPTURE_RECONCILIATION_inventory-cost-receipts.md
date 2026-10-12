@@ -111,3 +111,6 @@ rules on Q-D1..Q-D4 and authorizes the specific block.
 | Q-D3 | Is supplier-to-item linkage in scope? | Not in this program; a separate ruling |
 | Q-D4 | Backfill `CONFIGURED` for existing non-zero reorder values? | No backfill; mark explicitly through the BO command |
 | Q-D5 | Authorize implementation order C → B → A → D → E, one block at a time? | Yes, each separately |
+
+
+> **Status update:** proposals C, B, E are implemented (migrations 0183, 0187, 0189/0192) and **A is implemented by `DATA-CAPTURE_BLOCK_A_PURCHASE_RECEIPT.md` (migration 0197)**. D remains unstarted.

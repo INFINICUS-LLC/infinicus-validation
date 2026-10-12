@@ -1,5 +1,6 @@
 import type { IntakeMapper, OperationalCommand } from '../types.js';
 import { unitCostProblem } from '../unitCost.js';
+import { purchaseReceiptProblems } from '../procurement/purchaseReceipt.js';
 import {
   optionalFiniteNumber,
   optionalString,
@@ -164,6 +165,39 @@ export const purchaseOrderMapper: IntakeMapper = {
   },
 };
 
+/**
+ * Data-capture Block A: `purchase_receipt` v1. The record's `data` has exactly the shape of the command payload; the rule set is the SAME function the
+ * executor applies (purchaseReceiptProblems), so mapper and executor cannot drift. Scope is never read from the record.
+ */
+export const purchaseReceiptMapper: IntakeMapper = {
+  recordType: 'purchase_receipt',
+  version: 1,
+  validate(data) {
+    return purchaseReceiptProblems(data);
+  },
+  map(data, context) {
+    const lines = (data.lines as Record<string, unknown>[]).map((line) => ({
+      ...(line.purchaseOrderLineId != null ? { purchaseOrderLineId: line.purchaseOrderLineId as string } : {}),
+      inventoryItemId: line.inventoryItemId as string,
+      quantity: line.quantity as number,
+      ...(line.unitCost != null ? { unitCost: line.unitCost as number } : {}),
+      ...(line.unitCostCurrency != null ? { unitCostCurrency: line.unitCostCurrency as string } : {}),
+    }));
+    return [{
+      type: 'record_purchase_receipt',
+      context,
+      payload: {
+        purchaseOrderId: data.purchaseOrderId as string,
+        warehouseId: data.warehouseId as string,
+        receiptNumber: data.receiptNumber as string,
+        receivedAt: data.receivedAt as string,
+        ...(data.notes != null ? { notes: data.notes as string } : {}),
+        lines,
+      },
+    }];
+  },
+};
+
 export const supplierPerformanceMapper: IntakeMapper = {
   recordType: 'supplier_performance',
   version: 1,
@@ -295,6 +329,7 @@ export const operationalFactMapper: IntakeMapper = {
 export const DEFAULT_INTAKE_MAPPERS: readonly IntakeMapper[] = Object.freeze([
   inventoryMovementMapper,
   purchaseOrderMapper,
+  purchaseReceiptMapper,
   supplierPerformanceMapper,
   workforceEventMapper,
   assetInspectionMapper,

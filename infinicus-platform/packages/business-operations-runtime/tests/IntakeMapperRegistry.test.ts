@@ -24,13 +24,14 @@ const context = {
 };
 
 describe('IntakeMapperRegistry', () => {
-  it('registers the six frozen BUILD-32 record types', () => {
+  it('registers the BUILD-32 record types plus the Data-capture Block A purchase_receipt (seven)', () => {
     const registry = registerDefaultMappers(new IntakeMapperRegistry());
     expect(registry.supportedRecordTypes()).toEqual([
       'asset_inspection',
       'inventory_movement',
       'operational_fact',
       'purchase_order',
+      'purchase_receipt',
       'supplier_performance',
       'workforce_event',
     ]);

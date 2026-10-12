@@ -97,9 +97,10 @@ describe.runIf(run)('inventory_movements is append-only (0184) - live PostgreSQL
     });
 
     it('TRUNCATE (plain and CASCADE) is refused for the admin role and the application role', async () => {
-      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
+      const PLAIN_REFUSED = /append-only table - TRUNCATE is not permitted|cannot truncate a table referenced in a foreign key constraint/; // see Block A note
+      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(PLAIN_REFUSED);
       await expect(truncateRefusal(admin, `TRUNCATE ${T} CASCADE`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
-      await expect(truncateRefusal(admin, `TRUNCATE ${T} RESTART IDENTITY`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
+      await expect(truncateRefusal(admin, `TRUNCATE ${T} RESTART IDENTITY`)).rejects.toThrow(PLAIN_REFUSED);
       await expect(truncateRefusal(app, `TRUNCATE ${T}`)).rejects.toThrow();
     });
 

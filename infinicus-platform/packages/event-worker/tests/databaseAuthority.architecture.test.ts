@@ -97,9 +97,9 @@ describe('database authority architecture (migration 0196)', () => {
     expect(g).not.toMatch(/CREATE\s+ROLE|ALTER\s+ROLE|BYPASSRLS|SUPERUSER/i);
   });
 
-  it('exactly one migration follows 0195 (0196); production activation stays OFF - no activation row is created by any migration or script', () => {
+  it('exactly one migration follows 0195 up to 0196; production activation stays OFF - no activation row is created by any migration or script', () => {
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
-    expect(migrations.slice(migrations.findIndex((m) => m.startsWith('0195_')))).toEqual([migrations.find((m) => m.startsWith('0195_')), '0196_harden_database_authority_activation_and_reorder.sql']);
+    expect(migrations.slice(migrations.findIndex((m) => m.startsWith('0195_')), migrations.findIndex((m) => m.startsWith('0196_')) + 1)).toEqual([migrations.find((m) => m.startsWith('0195_')), '0196_harden_database_authority_activation_and_reorder.sql']); // later data-capture migrations (0197+) are separately authorized blocks
     for (const f of migrations) {
       const t = sql(`infrastructure/database/migrations/${f}`);
       if (f.startsWith('0195_') || f.startsWith('0196_')) expect(t, f).not.toMatch(/INSERT\s+INTO\s+business_operations\.execution_capability_activations\s*\(?[^;]*?(SELECT|VALUES\s*\(\s*'[0-9a-f-]{36}')/i);

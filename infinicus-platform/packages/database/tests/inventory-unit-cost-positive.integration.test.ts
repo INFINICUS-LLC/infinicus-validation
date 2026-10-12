@@ -150,7 +150,9 @@ describe.runIf(run)('positive unit cost when present (0187) - live PostgreSQL', 
       const id = (await insert({ unit_cost: 4, unit_cost_currency: 'USD' })).rows[0].id;
       await expect(admin.query(`UPDATE ${T} SET unit_cost = 5 WHERE id = $1`, [id])).rejects.toThrow(/append-only table - UPDATE is not permitted/);
       await expect(admin.query(`DELETE FROM ${T} WHERE id = $1`, [id])).rejects.toThrow(/append-only table - DELETE is not permitted/);
-      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(/append-only table - TRUNCATE is not permitted/);
+      // Data-capture Block A (0197): a plain TRUNCATE is also refused by the foreign key from purchase_receipt_lines; CASCADE still reaches the append-only trigger.
+      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(/append-only table - TRUNCATE is not permitted|cannot truncate a table referenced in a foreign key constraint/);
+      await expect(truncateRefusal(admin, `TRUNCATE ${T} CASCADE`)).rejects.toThrow(/append-only table - TRUNCATE is not permitted/);
     });
 
     it('0186 FORCE RLS is still on, the policy is unchanged and another tenant sees nothing', async () => {
