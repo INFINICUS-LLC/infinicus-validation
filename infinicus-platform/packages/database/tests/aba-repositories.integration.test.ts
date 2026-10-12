@@ -639,15 +639,32 @@ describe.runIf(run)('Stage 2H Approved Business Action — live PostgreSQL', () 
         expect(await repo.getModifiedDecisionFinalAt(ctx1, '00000000-0000-0000-0000-000000000000')).toBeNull();
       });
 
-      it('the decided STATUS is immutable; a later non-status touch could only move updated_at FORWARD (stricter, never laxer)', async () => {
+      it('P0-6.0: a decided decision is frozen in EVERY column - status, updated_at and anything else - even for a privileged role', async () => {
         const { repo, decision, version } = await createDecision(ctx1, BIZ1);
         await repo.approveWithModifications(ctx1, decision.id, version.id);
         const first = (await repo.getModifiedDecisionFinalAt(ctx1, decision.id))!;
-        await expect(adminPool!.query(`UPDATE approved_business_action.approval_decisions SET status='approved' WHERE id=$1`, [decision.id])).rejects.toThrow(/decided decisions are immutable/);
-        await new Promise((r) => setTimeout(r, 5));
-        await adminPool!.query(`UPDATE approved_business_action.approval_decisions SET latest_version = latest_version, updated_at = '1999-01-01' WHERE id=$1`, [decision.id]);
-        const later = (await repo.getModifiedDecisionFinalAt(ctx1, decision.id))!;
-        expect(Date.parse(later)).toBeGreaterThanOrEqual(Date.parse(first)); // set_updated_at stamps now(): an explicit earlier value is overridden
+        const frozen = /decided decisions are immutable/;
+        await expect(adminPool!.query(`UPDATE approved_business_action.approval_decisions SET status='approved' WHERE id=$1`, [decision.id])).rejects.toThrow(frozen);
+        await expect(adminPool!.query(`UPDATE approved_business_action.approval_decisions SET latest_version = latest_version WHERE id=$1`, [decision.id])).rejects.toThrow(frozen);
+        await expect(adminPool!.query(`UPDATE approved_business_action.approval_decisions SET updated_at = '1999-01-01' WHERE id=$1`, [decision.id])).rejects.toThrow(frozen);
+        await expect(adminPool!.query(`UPDATE approved_business_action.approval_decisions SET decision_code = decision_code || 'x' WHERE id=$1`, [decision.id])).rejects.toThrow(frozen);
+        await expect(adminPool!.query(`UPDATE approved_business_action.approval_decision_versions SET status = status WHERE id=$1`, [version.id])).rejects.toThrow(/decided decision versions are immutable/);
+        expect(await repo.getModifiedDecisionFinalAt(ctx1, decision.id)).toBe(first); // the authoritative decision time did not move
+      });
+
+      it('P0-6.0: every decided state is frozen (approved, approved_with_modifications, rejected) and the transition INTO a decided state still works', async () => {
+        for (const outcome of ['approve', 'approveWithModifications', 'reject'] as const) {
+          const { repo, decision, version } = await createDecision(ctx1, BIZ1);
+          // a draft decision remains updatable by the normal flow (the valid transition)
+          const decided = await repo[outcome](ctx1, decision.id, version.id);
+          expect(['approved', 'approved_with_modifications', 'rejected']).toContain(decided.status);
+          await expect(adminPool!.query(`UPDATE approved_business_action.approval_decisions SET latest_version = latest_version WHERE id=$1`, [decision.id])).rejects.toThrow(/decided decisions are immutable/);
+        }
+      });
+
+      it('P0-6.0: a still-draft decision is not frozen (only the decided state is)', async () => {
+        const { decision } = await createDecision(ctx1, BIZ1);
+        await expect(adminPool!.query(`UPDATE approved_business_action.approval_decisions SET latest_version = latest_version WHERE id=$1`, [decision.id])).resolves.toBeDefined();
       });
     });
 

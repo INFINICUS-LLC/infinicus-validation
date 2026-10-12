@@ -51,8 +51,8 @@ approved-with-modifications decision became final".
   (equality is accepted); anything earlier is refused.
 - **Finding (reported):** the immutability guard protects the *status* of a decided row, not `updated_at`. A later non-status UPDATE (none
   exists in production code) would re-stamp `updated_at` with `now()` — it can only move *forward* (an explicit earlier value is overridden by
-  `set_updated_at`; tested). A later `modifiedAt` can only make the chronology check stricter, never laxer, so this fails closed. A future
-  hardening (a guard that also freezes `updated_at` on decided rows) would need a migration and is not part of B2c.
+  `set_updated_at`; tested). A later `modifiedAt` can only make the chronology check stricter, never laxer, so this fails closed. A
+  hardening that freezes decided rows in every column was ruled (O-14) and delivered as P0-6.0 (migration 0188); it is not part of B2c.
 
 ## 5. Evaluation route
 `POST /v1/businesses/:businessId/inventory-policy-evaluations` — `bo:write` (existing permission), `Idempotency-Key` required.
