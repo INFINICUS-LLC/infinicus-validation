@@ -476,6 +476,15 @@ describe.runIf(run)('P0-5 B2d - end-to-end modified-approval authoring proof (re
       const foreign = await evaluate(stranger, sbo);
       const r1 = await post(c.s, `${c.base}/capture`, captureBody(c.bo, refs(foreign)));
       expect(r1.statusCode).toBe(409); expect(message(r1)).toMatch(/no such evaluation record/);
+      // another business in the SAME tenant and workspace (not merely another tenant)
+      const sibling = randomUUID();
+      await adminPool.query(`INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'ZZ Sibling',$4,'active')`, [sibling, c.s.ctx.tenantId, c.s.ctx.workspaceId, uc('b2d-sib')]);
+      const siblingSession: Session = { ...c.s, bizId: sibling };
+      const siblingBo = await seedBo(siblingSession);
+      const evSibling = await evaluate(siblingSession, siblingBo);
+      expect(evSibling.statusCode).toBe(201);
+      const rSibling = await post(c.s, `${c.base}/capture`, captureBody(c.bo, refs(evSibling)));
+      expect(rSibling.statusCode).toBe(409); expect(message(rSibling)).toMatch(/no such evaluation record/);
       // another target in the SAME business
       const other = await seedBo(c.s, { declare: false });
       const evOther = await evaluate(c.s, other);
@@ -501,15 +510,22 @@ describe.runIf(run)('P0-5 B2d - end-to-end modified-approval authoring proof (re
       expect(await captures(s)).toBe(0); expect(await packages(s)).toBe(0);
     });
 
-    it('the evidence is stale (older than 24 hours) or references an unsupported rule-set version', async () => {
+    it('the evidence is stale (older than 24 hours) even though it postdates the decision, or references an unsupported rule-set version', async () => {
       const c = await begin();
+      // Fixture: the decision became final three days ago, so a 25-hour-old evaluation is AFTER the decision and ONLY the freshness rule can refuse it.
+      const fx = await adminPool.connect();
+      try {
+        await fx.query('BEGIN'); await fx.query("SET LOCAL session_replication_role = 'replica'");
+        await fx.query(`UPDATE approved_business_action.approval_decisions SET updated_at = now() - interval '3 days' WHERE id = $1`, [c.decisionId]);
+        await fx.query('COMMIT');
+      } catch (e) { await fx.query('ROLLBACK').catch(() => undefined); throw e; } finally { fx.release(); }
       const ev = await evaluate(c.s, c.bo);
       const good = refs(ev);
       const costId = good.find((e) => e.dimension === 'COST')!.evidenceRef.id;
       const swap = (id: string) => good.map((e) => (e.dimension === 'COST' ? { ...e, evidenceRef: { kind: e.evidenceRef.kind, id } } : e));
       const stale = await cloneEvaluation(costId, { evaluatedAtSql: "date_trunc('milliseconds', clock_timestamp()) - interval '25 hours'" });
       const r1 = await post(c.s, `${c.base}/capture`, captureBody(c.bo, swap(stale)));
-      expect(r1.statusCode).toBe(409); expect(message(r1)).toMatch(/COST evidence was not verified: .*(older than the maximum evidence age|predates the modification decision)/);
+      expect(r1.statusCode).toBe(409); expect(message(r1)).toMatch(/COST evidence was not verified: .*older than the maximum evidence age/);
       const bad = await cloneEvaluation(costId, { ruleSetVersion: 'inventory-reorder-policy/v9.9.9' });
       const r2 = await post(c.s, `${c.base}/capture`, captureBody(c.bo, swap(bad)));
       expect(r2.statusCode).toBe(409); expect(message(r2)).toMatch(/not approved and effective/);
@@ -542,6 +558,7 @@ describe.runIf(run)('P0-5 B2d - end-to-end modified-approval authoring proof (re
         expect((await post(c.s, `${c.base}/boundaries`, missing)).statusCode, `missing ${field}`).toBe(400);
         const na = await post(c.s, `${c.base}/boundaries`, boundariesBody({ [field]: { state: 'NOT_APPLICABLE', reason: { code: 'NOT_NEEDED', statement: 'n/a' } } }));
         expect(na.statusCode, `NA ${field}`).toBe(400);
+        expect(message(na), `NA ${field}`).toContain('NOT_APPLICABLE is not permitted'); // the authoring gate, ahead of the database backstop
       }
       const blocked = await post(c.s, `${c.base}/package`);
       expect(blocked.statusCode).toBe(409); expect(message(blocked)).toContain('BOUNDARIES_MISSING');
