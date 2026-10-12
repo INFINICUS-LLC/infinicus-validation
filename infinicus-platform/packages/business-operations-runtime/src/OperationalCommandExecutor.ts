@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { TenantContext } from '@infinicus/database';
-import { OperationalMappingError } from './errors.js';
+import { OperationalMappingError, ReorderBaselineChangedError } from './errors.js';
 import { UNIT_COST_MINIMUM_STORABLE, unitCostProblem } from './unitCost.js';
 import { Decimal } from './inventory-policy/decimal.js';
 import type { ConfigureInventoryReorderPolicyCommand, OperationalCommand } from './types.js';
@@ -55,10 +55,25 @@ function assertCommandScope(ctx: TenantContext, command: { context: { tenantId: 
   }
 }
 
+/** The reorder values of a balance as exact decimal text (never a float). */
+export interface ReorderValuesSnapshot {
+  reorderPoint: string;
+  reorderQuantity: string;
+  state: 'UNSET' | 'CONFIGURED';
+  version: number;
+}
+
 export interface ReorderPolicyConfigurationResult {
   commandType: 'configure_inventory_reorder_policy';
   recordId: string;
+  /** False when nothing was written (the balance was already configured with exactly these values). */
+  applied: boolean;
+  before: ReorderValuesSnapshot;
+  /** The balance after the command (equal to `before` when nothing was applied). */
+  after: ReorderValuesSnapshot;
 }
+
+const exact = (v: unknown): string => Decimal.parse(String(v))?.toString() ?? String(v);
 
 export class OperationalCommandExecutor {
   async executeOn(
@@ -195,8 +210,8 @@ export class OperationalCommandExecutor {
     await requireBusinessEntity(client, 'inventory_items', p.inventoryItemId, businessId);
     await requireBusinessEntity(client, 'warehouses', p.warehouseId, businessId);
 
-    const locked = await client.query<{ id: string; reorder_point: string; reorder_quantity: string; reorder_policy_state: string }>(
-      `SELECT id, reorder_point, reorder_quantity, reorder_policy_state
+    const locked = await client.query<{ id: string; reorder_point: string; reorder_quantity: string; reorder_policy_state: 'UNSET' | 'CONFIGURED'; version: number }>(
+      `SELECT id, reorder_point, reorder_quantity, reorder_policy_state, version
        FROM business_operations.inventory_balances
        WHERE business_id = $1 AND inventory_item_id = $2 AND warehouse_id = $3
        FOR UPDATE`,
@@ -204,26 +219,40 @@ export class OperationalCommandExecutor {
     );
     if (locked.rowCount !== 1) throw new OperationalMappingError('No inventory balance exists for this item and warehouse; a reorder policy cannot be configured without one.');
     const row = locked.rows[0];
+    const before: ReorderValuesSnapshot = { reorderPoint: exact(row.reorder_point), reorderQuantity: exact(row.reorder_quantity), state: row.reorder_policy_state, version: Number(row.version) };
+
+    if (p.expectedBaseline !== undefined) {
+      const bp = Decimal.fromNumber(p.expectedBaseline.reorderPoint);
+      const bq = Decimal.fromNumber(p.expectedBaseline.reorderQuantity);
+      if (bp === null || bq === null || bp.cmp(Decimal.parse(before.reorderPoint) as Decimal) !== 0 || bq.cmp(Decimal.parse(before.reorderQuantity) as Decimal) !== 0) {
+        throw new ReorderBaselineChangedError();
+      }
+    }
 
     const unchanged = row.reorder_policy_state === 'CONFIGURED'
-      && Decimal.parse(String(row.reorder_point))?.cmp(Decimal.fromNumber(p.reorderPoint) as Decimal) === 0
-      && Decimal.parse(String(row.reorder_quantity))?.cmp(Decimal.fromNumber(p.reorderQuantity) as Decimal) === 0;
-    if (unchanged) return { commandType: 'configure_inventory_reorder_policy', recordId: row.id };
+      && Decimal.parse(before.reorderPoint)?.cmp(Decimal.fromNumber(p.reorderPoint) as Decimal) === 0
+      && Decimal.parse(before.reorderQuantity)?.cmp(Decimal.fromNumber(p.reorderQuantity) as Decimal) === 0;
+    if (unchanged) return { commandType: 'configure_inventory_reorder_policy', recordId: row.id, applied: false, before, after: before };
 
-    // Transaction-local: the guard trigger accepts a state/value change only from this command (see migration 0189).
+    // Transaction-local: the guard trigger accepts a state/value change only from this command (see migrations 0189 and 0192).
     await client.query(`SELECT set_config('app.bo_reorder_policy_writer', 'configure_inventory_reorder_policy', true)`);
+    let updated;
     try {
-      await client.query(
+      updated = await client.query<{ reorder_point: string; reorder_quantity: string; reorder_policy_state: 'UNSET' | 'CONFIGURED'; version: number }>(
         `UPDATE business_operations.inventory_balances
          SET reorder_point = $2, reorder_quantity = $3, reorder_policy_state = 'CONFIGURED',
              reorder_policy_configured_at = now(), reorder_policy_configured_source = $4, version = version + 1
-         WHERE id = $1`,
-        [row.id, p.reorderPoint, p.reorderQuantity, source]
+         WHERE id = $1 AND reorder_point = $5::numeric AND reorder_quantity = $6::numeric
+         RETURNING reorder_point, reorder_quantity, reorder_policy_state, version`,
+        [row.id, p.reorderPoint, p.reorderQuantity, source, before.reorderPoint, before.reorderQuantity]
       );
     } finally {
       await client.query(`SELECT set_config('app.bo_reorder_policy_writer', '', true)`);
     }
-    return { commandType: 'configure_inventory_reorder_policy', recordId: row.id };
+    if (updated.rowCount !== 1) throw new ReorderBaselineChangedError(); // second line of defence behind the row lock
+    const u = updated.rows[0];
+    const after: ReorderValuesSnapshot = { reorderPoint: exact(u.reorder_point), reorderQuantity: exact(u.reorder_quantity), state: u.reorder_policy_state, version: Number(u.version) };
+    return { commandType: 'configure_inventory_reorder_policy', recordId: row.id, applied: true, before, after };
   }
 
   private async createPurchaseOrder(

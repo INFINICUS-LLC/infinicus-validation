@@ -36,8 +36,10 @@ describe('data-capture Block E architecture (reorder policy state)', () => {
   });
 
   it('only the BO executor writes reorder_policy_state', () => {
-    const writers = production.filter((f) => /reorder_policy_state|reorder_policy_configured/.test(f.code)).map((f) => f.rel);
-    expect(writers).toEqual([EXECUTOR]);
+    const writers = production.filter((f) => /reorder_policy_state|reorder_policy_configured/.test(f.code)).map((f) => f.rel).sort();
+    // P0-6c: the execution adapter READS reorder_policy_state (to lock/judge the target balance); it writes nothing - the executor does.
+    expect(writers).toEqual([EXECUTOR, 'packages/business-operations-runtime/src/authorized-action-execution/InventoryReorderPolicyExecutionAdapter.ts']);
+    expect(production.find((f) => f.rel.endsWith('InventoryReorderPolicyExecutionAdapter.ts'))!.code).not.toMatch(/(?<!FOR )\bUPDATE\b|\bINSERT\b|set_config/);
   });
 
   it('only the executor sets the transaction-local writer setting', () => {
@@ -49,6 +51,7 @@ describe('data-capture Block E architecture (reorder policy state)', () => {
     const literal = production.filter((f) => f.code.includes('configure_inventory_reorder_policy')).map((f) => f.rel).sort();
     expect(literal).toEqual([
       'packages/business-operations-runtime/src/OperationalCommandExecutor.ts',
+      'packages/business-operations-runtime/src/authorized-action-execution/InventoryReorderPolicyExecutionAdapter.ts', // P0-6c: the authorized path calls the same command
       'packages/business-operations-runtime/src/types.ts',
     ]);
     const outside = production.filter((f) => /ConfigureInventoryReorderPolicyCommand|InventoryReorderPolicyService/.test(f.code)

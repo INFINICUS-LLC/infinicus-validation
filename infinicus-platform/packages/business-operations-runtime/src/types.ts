@@ -127,6 +127,12 @@ export interface ConfigureInventoryReorderPolicyCommand {
     reorderQuantity: number;
     /** Who requested the configuration. Defaults to BO_COMMAND; the authorized-package path (P0-6c) sets AUTHORIZED_ACTION_PACKAGE. */
     configurationSource?: ReorderPolicyConfigurationSource;
+    /**
+     * Compare-and-set (P0-6c): when present, the update applies only if the locked balance still holds exactly these values; otherwise it
+     * is refused with {@link ReorderBaselineChangedError} and nothing changes. Used by the authorized-action path so it never overwrites a
+     * newer state; absent for a plain BO configuration.
+     */
+    expectedBaseline?: { reorderPoint: number; reorderQuantity: number };
   };
 }
 
