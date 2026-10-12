@@ -33,6 +33,12 @@ export interface ClaimForExecution {
   document: Record<string, unknown>;
 }
 
+/** Narrowing of the awaiting-claims list to one business and/or one action type. */
+export interface ClaimAwaitingFilter {
+  businessId?: string;
+  actionType?: { code: string; schemaVersion: string };
+}
+
 /** A claim's identity and whether it already has a terminal execution: the recovery signal's read (no package body, no lock, no write). */
 export interface ClaimState {
   claimId: string;
@@ -276,21 +282,39 @@ export class AuthorizedActionExecutionRepository {
     });
   }
 
-  /** Claims in this scope that have no terminal execution row yet (the recovery runner's work list), oldest first. */
-  async claimsAwaitingExecution(ctx: TenantContext, limit: number): Promise<ClaimAwaitingExecution[]> {
+  /**
+   * Claims in this scope that have no terminal execution row yet (the recovery runner's work list), oldest first. The optional filter narrows
+   * the list to ONE business and/or ONE action type (P0-6h operator recovery); without it the whole caller scope is listed, as before.
+   */
+  async claimsAwaitingExecution(ctx: TenantContext, limit: number, filter: ClaimAwaitingFilter = {}): Promise<ClaimAwaitingExecution[]> {
     const bounded = Math.max(1, Math.min(200, Math.trunc(limit)));
+    if (filter.businessId !== undefined && !UUID.test(filter.businessId)) return [];
     return withTenantTransaction(ctx, async (client) => {
       const r = await client.query<Json>(
         `SELECT c.id, c.business_id,
                 to_char(date_trunc('milliseconds', c.claimed_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS claimed_at,
                 (SELECT count(*)::int FROM ${S}.authorized_action_execution_attempts a WHERE a.claim_id = c.id) AS attempts,
                 (SELECT max(a.attempted_at) FROM ${S}.authorized_action_execution_attempts a WHERE a.claim_id = c.id) AS last_attempted_at
-           FROM ${S}.authorized_action_claims c
+           FROM ${S}.authorized_action_claims c JOIN ${S}.authorized_action_receipts r ON r.id = c.receipt_id
           WHERE NOT EXISTS (SELECT 1 FROM ${S}.authorized_action_executions e WHERE e.claim_id = c.id)
+            AND ($2::uuid IS NULL OR c.business_id = $2::uuid)
+            AND ($3::text IS NULL OR (r.package #>> '{action,type,code}' = $3::text AND r.package #>> '{action,type,schemaVersion}' = $4::text))
           ORDER BY c.claimed_at ASC LIMIT $1`,
-        [bounded],
+        [bounded, filter.businessId ?? null, filter.actionType?.code ?? null, filter.actionType?.schemaVersion ?? null],
       );
       return r.rows.map((x) => ({ claimId: x.id as string, businessId: x.business_id as string, claimedAt: x.claimed_at as string, attempts: x.attempts as number, lastAttemptedAt: isoOrNull(x.last_attempted_at) }));
+    });
+  }
+
+  /** Appends the audit row of an operator recovery request (a USER action, unlike the engine's own system rows), in its own transaction. */
+  async recordOperatorAudit(ctx: TenantContext, a: { businessId: string; action: string; entityId: string; correlationId: string; metadata: Json }): Promise<void> {
+    await withTenantTransaction(ctx, async (client) => {
+      await client.query(
+        `INSERT INTO audit.audit_events
+           (tenant_id, workspace_id, business_id, actor_type, actor_id, action, entity_type, entity_id, metadata, correlation_id)
+         VALUES ($1,$2,$3,'user',$4,$5,'authorized_action_recovery_request',$6,$7::jsonb,$8)`,
+        [ctx.tenantId, ctx.workspaceId, a.businessId, ctx.userId, a.action, a.entityId, JSON.stringify(a.metadata), a.correlationId],
+      );
     });
   }
 }

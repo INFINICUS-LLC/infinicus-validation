@@ -124,10 +124,11 @@ export class AuthorizedActionExecutionService {
   /**
    * Re-drives claims that have no outcome: a claim never attempted is recovered `claimRecoveryMs` after it was claimed (ruling O-3: 60 s);
    * a claim with attempts waits the backoff for its attempt count. Terminal claims are never selected. Returns the claims it attempted.
+   * The optional `businessId` / `actionType` narrow the list (P0-6h operator recovery drives one business and one action type; the worker never calls this).
    */
-  async runDue(ctx: TenantContext, options: { limit: number }): Promise<{ claimId: string; result: ExecutionResult }[]> {
+  async runDue(ctx: TenantContext, options: { limit: number; businessId?: string; actionType?: { code: string; schemaVersion: string } }): Promise<{ claimId: string; result: ExecutionResult }[]> {
     const now = this.clock().getTime();
-    const waiting = await this.repo.claimsAwaitingExecution(ctx, options.limit);
+    const waiting = await this.repo.claimsAwaitingExecution(ctx, options.limit, { ...(options.businessId ? { businessId: options.businessId } : {}), ...(options.actionType ? { actionType: options.actionType } : {}) });
     const out: { claimId: string; result: ExecutionResult }[] = [];
     for (const w of waiting) {
       const dueAt = w.attempts === 0

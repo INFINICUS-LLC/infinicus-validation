@@ -21,6 +21,7 @@ export * from './authorized-action/AuthorizedActionIntakeService.js';
 export * from './authorized-action/AuthorizedActionNotificationConsumer.js';
 export * from './authorized-action/ClaimRecoveryScheduler.js';
 export * from './authorized-action/ClaimRecoveryConsumer.js';
+export * from './authorized-action/ClaimRecoveryOperatorService.js';
 export * from './authorized-action-execution/AuthorizedActionExecutionService.js';
 export * from './authorized-action-execution/InventoryReorderPolicyExecutionAdapter.js';
 export * from './authorized-action-execution/constants.js';

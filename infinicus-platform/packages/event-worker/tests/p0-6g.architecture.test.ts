@@ -34,6 +34,7 @@ const filesMatching = (re: RegExp) => production.filter((f) => re.test(f.code)).
 const BO = 'packages/business-operations-runtime/src/';
 const SCHEDULER = `${BO}authorized-action/ClaimRecoveryScheduler.ts`;
 const CONSUMER = `${BO}authorized-action/ClaimRecoveryConsumer.ts`;
+const OPERATOR = `${BO}authorized-action/ClaimRecoveryOperatorService.ts`;
 const INTAKE = `${BO}authorized-action/AuthorizedActionIntakeService.ts`;
 const INTAKE_REPO = 'packages/database/src/repositories/bo/AuthorizedActionIntakeRepository.ts';
 const ENGINE = `${BO}authorized-action-execution/AuthorizedActionExecutionService.ts`;
@@ -53,7 +54,7 @@ describe('P0-6g architecture', () => {
     expect(filesMatching(/implements ScopeDiscovery/)).toEqual([DISCOVERY]);
     expect(read(DISCOVERY)).toMatch(/FROM events\.outbox_events/);
     expect(read(DISCOVERY)).not.toMatch(/authorized_action_claims|authorized_action_executions|business_operations\./);
-    expect(filesMatching(/\.runDue\(/)).toEqual([]);
+    expect(filesMatching(/\.runDue\(/)).toEqual([OPERATOR]); // only the interim operator control (P0-6h); no scanner and no worker caller
     expect(filesMatching(/\.claimsAwaitingExecution\(/)).toEqual([ENGINE]); // only the engine's own (unreferenced) runDue
     for (const rel of RECOVERY_FILES) expect(read(rel), rel).not.toMatch(/FROM business_operations\.|SELECT[^;]*authorized_action_claims|GRANT |CREATE POLICY|SECURITY DEFINER|pg_advisory/i);
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
@@ -61,7 +62,7 @@ describe('P0-6g architecture', () => {
   });
 
   it('ONE executor: no second engine, no direct inventory write, and the recovery files never touch an inventory or execution table', () => {
-    expect(filesMatching(/new AuthorizedActionExecutionService\(/)).toEqual([COMPOSE]);
+    expect(filesMatching(/new AuthorizedActionExecutionService\(/).sort()).toEqual(['apps/api/src/claimRecoveryComposition.ts', COMPOSE].sort());
     expect(filesMatching(/\.executeClaim\(/).filter((rel) => rel !== ENGINE).sort()).toEqual([`${BO}authorized-action/AuthorizedActionNotificationConsumer.ts`, CONSUMER].sort());
     for (const rel of [SCHEDULER, CONSUMER]) {
       expect(read(rel), rel).not.toMatch(/inventory_|InventoryReorderPolicyExecutionAdapter|OperationalCommandExecutor|authorized_action_executions|insertExecution|sealExecutionEvidence|UPDATE |DELETE FROM/);

@@ -22,6 +22,9 @@ import abaAuthoringRoutes from './routes/abaAuthoring.js';
 import businessAdministrationRoutes from './routes/businessAdministration.js';
 import inventoryPolicyEvaluationRoutes from './routes/inventoryPolicyEvaluations.js';
 import executionActivationRoutes from './routes/executionActivations.js';
+import claimRecoveryRoutes from './routes/claimRecovery.js';
+import { buildClaimRecoveryOperator } from './claimRecoveryComposition.js';
+import type { ClaimRecoveryCompositionOptions } from './claimRecoveryComposition.js';
 import { BoGovernanceEvidenceVerifier } from '@infinicus/business-operations-runtime';
 import { buildAbaPackageIssuer } from './abaPackageAnnouncement.js';
 import type { AbaAnnouncementCompositionOptions } from './abaPackageAnnouncement.js';
@@ -47,6 +50,8 @@ export interface BuildAppOptions {
   abaAuthoring?: AbaAuthoringRouteOptions['dependencies'];
   /** Composition-root overrides for the ABA announcement edge (registry, kill switch). Production leaves it unset. */
   abaAnnouncement?: AbaAnnouncementCompositionOptions;
+  /** Composition-root overrides for the interim operator recovery control (registry, kill switch, scripted ABA status port). Production leaves it unset. */
+  claimRecovery?: ClaimRecoveryCompositionOptions;
 }
 
 export async function buildApp(config: InfinicusConfig, options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -155,6 +160,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(abaAuthoringRoutes, { dependencies: { evidenceVerifier: new BoGovernanceEvidenceVerifier(), issuer: buildAbaPackageIssuer(options.abaAnnouncement), ...options.abaAuthoring } });
   await app.register(inventoryPolicyEvaluationRoutes);
   await app.register(executionActivationRoutes);
+  // P0-6h: the interim operator recovery control; the engine is joined to the ABA status provider in claimRecoveryComposition.ts only.
+  await app.register(claimRecoveryRoutes, { operator: buildClaimRecoveryOperator(options.claimRecovery) });
   await app.register(businessAdministrationRoutes);
   await app.register(observabilityRoutes);
   await app.register(billingRoutes);

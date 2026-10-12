@@ -38,12 +38,14 @@ describe('P0-6a architecture', () => {
     expect(read(AUTH).length).toBeGreaterThan(500);
   });
 
-  it('the ABA port implementations are wired only in the event worker composition root (P0-6b)', () => {
+  it('the ABA port implementations are wired only in composition roots: the event worker (P0-6b) and, for the status provider alone, the API operator recovery root (P0-6h)', () => {
     const users = production.filter((f) => CLASSES.test(f.code)).map((f) => f.rel).sort();
     // P0-6b wires them in exactly one place: the event worker's composition root. No app, route or BO code names them.
-    expect(users).toEqual(['packages/event-worker/src/compose.ts', 'packages/workflow/src/abaExecutionPorts.ts', 'packages/workflow/src/index.ts']);
+    expect(users).toEqual(['apps/api/src/claimRecoveryComposition.ts', 'packages/event-worker/src/compose.ts', 'packages/workflow/src/abaExecutionPorts.ts', 'packages/workflow/src/index.ts']);
     const importers = production.filter((f) => !f.rel.startsWith('packages/workflow/') && !f.rel.startsWith('packages/event-worker/') && /AbaPackageStatusProvider|AbaPackageConsumptionRecorder|AbaAuthorizedActionPackageSource/.test(f.code));
-    expect(importers).toEqual([]);
+    // P0-6h: the interim operator recovery control joins ONLY the status provider to the engine, in the API composition root (no route, no BO code).
+    expect(importers.map((f) => f.rel)).toEqual(['apps/api/src/claimRecoveryComposition.ts']);
+    expect(importers[0].code).not.toMatch(/AbaPackageConsumptionRecorder|AbaAuthorizedActionPackageSource/);
   });
 
   it('Business Operations imports only shared port types: no workflow package, no ABA repository, no ABA table', () => {
