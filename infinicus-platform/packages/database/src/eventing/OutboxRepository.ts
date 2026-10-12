@@ -39,6 +39,41 @@ export class OutboxRepository {
     });
   }
 
+  /**
+   * Idempotent enqueue for events whose id is deterministic (for example one notification per package version): a second enqueue of the
+   * same event id inserts nothing. Joins the caller's shared tenant transaction when one is open, so the event commits or rolls back
+   * with the fact it announces.
+   */
+  async enqueueIfAbsent(ctx: TenantContext, input: OutboxEventInput): Promise<{ id: string; inserted: boolean }> {
+    const e = input.event;
+    if (e.tenantId !== ctx.tenantId || e.workspaceId !== ctx.workspaceId) {
+      throw new Error('EVENTING_SCOPE_MISMATCH');
+    }
+    return withTenantTransaction(ctx, async (client) => {
+      const headers = {
+        ...(input.headers ?? {}),
+        businessEvent: {
+          sourceDomain: e.sourceDomain, sourceService: e.sourceService, metadata: e.metadata, provenance: e.provenance,
+          schemaName: e.schemaName, schemaVersion: e.schemaVersion, sensitivity: e.sensitivity, actor: e.actor, idempotencyKey: e.idempotencyKey,
+        },
+      };
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO events.outbox_events
+          (id,event_type,event_version,tenant_id,workspace_id,business_id,correlation_id,causation_id,
+           aggregate_type,aggregate_id,payload,headers,available_at,occurred_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14)
+         ON CONFLICT (id) DO NOTHING
+         RETURNING id`,
+        [
+          e.eventId,e.eventType,e.eventVersion,e.tenantId,e.workspaceId,e.businessId,e.correlationId,
+          e.causationId,e.aggregateType,e.aggregateId,JSON.stringify(e.payload),
+          JSON.stringify(headers),input.availableAt ?? new Date(),e.occurredAt,
+        ],
+      );
+      return { id: e.eventId, inserted: result.rows.length === 1 };
+    });
+  }
+
   async claimBatch(ctx: TenantContext, options: ClaimBatchOptions) {
     const size = Math.max(1, Math.min(100, Math.trunc(options.batchSize)));
     return withTenantTransaction(ctx, async (client) => {
@@ -59,13 +94,30 @@ export class OutboxRepository {
             LIMIT $2
          )
          UPDATE events.outbox_events o
-            SET status='processing', attempt_count=o.attempt_count+1
+            SET status='processing', attempt_count=o.attempt_count+1, claimed_at=$1
            FROM claimed
           WHERE o.id=claimed.id
           RETURNING o.*`,
         params,
       );
       return result.rows;
+    });
+  }
+
+  /**
+   * Returns rows that have been 'processing' since before `staleBefore` (a worker crashed or hung mid-delivery) to 'failed', so the normal
+   * retry path re-delivers them. Rows without a claim time (historic) are never touched. Delivery is at-least-once; consumers dedupe.
+   */
+  async recoverStaleClaims(ctx: TenantContext, staleBefore: Date): Promise<number> {
+    return withTenantTransaction(ctx, async (client) => {
+      const r = await client.query(
+        `UPDATE events.outbox_events
+            SET status='failed',
+                headers = headers || jsonb_build_object('lastFailure', jsonb_build_object('code','CLAIM_TIMEOUT','message','claimed by a worker that did not finish','retryable',true))
+          WHERE status='processing' AND claimed_at IS NOT NULL AND claimed_at < $1`,
+        [staleBefore],
+      );
+      return r.rowCount ?? 0;
     });
   }
 

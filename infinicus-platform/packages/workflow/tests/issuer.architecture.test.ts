@@ -58,7 +58,7 @@ describe('ABA package issuer architecture', () => {
     expect(users).toEqual([ISSUER, AUTHORING, 'packages/workflow/src/abaExecutionPorts.ts', 'packages/database/src/client.ts', 'packages/database/src/index.ts'].sort());
   });
 
-  it('emits no event: no ACTION_AUTHORIZED, outbox, event ledger or publisher', () => {
+  it('the issuer, its policy and the source reader name no event, outbox, ledger or publisher (any announcement is an injected collaborator)', () => {
     for (const rel of [ISSUER, POLICY, SOURCE_READER]) {
       expect(code(rel), rel).not.toMatch(/ACTION_AUTHORIZED|aba\.action\.authorized|outbox|business_event_ledger|CanonicalEventPublisher|EventLedger/i);
     }

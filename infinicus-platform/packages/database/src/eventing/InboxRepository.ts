@@ -41,6 +41,18 @@ export class InboxRepository {
     });
   }
 
+  /** Records that processing failed so the same event can be retried (the next `beginProcessing` returns `retry_allowed`). */
+  async markFailed(ctx: TenantContext, eventId: string, consumerName: string, reason: string): Promise<void> {
+    await withTenantTransaction(ctx, async (client) => {
+      const r = await client.query(
+        `UPDATE events.inbox_events SET status='failed', failed_at=now(), failure_reason=$3
+          WHERE event_id=$1 AND consumer_name=$2 AND status='processing'`,
+        [eventId, consumerName, reason.slice(0, 500)],
+      );
+      if (r.rowCount !== 1) throw new Error('INVALID_INBOX_TRANSITION');
+    });
+  }
+
   async hasProcessed(ctx: TenantContext, eventId: string, consumerName: string): Promise<boolean> {
     return withTenantTransaction(ctx, async (client) => {
       const r=await client.query<{ ok: boolean }>(

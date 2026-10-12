@@ -1,0 +1,27 @@
+# P0-6b - OPTIONAL overlay that adds the event worker next to the existing stack. It is behind a compose profile, so a plain
+# `docker compose up` NEVER starts it; start it deliberately with `--profile event-worker`. Starting it does not enable the
+# authorized-action pipeline (the execution capability gate is separate and closed until P0-6e).
+#
+#   docker compose -f ../hetzner/docker-compose.yml -f docker-compose.event-worker.yml --profile event-worker up -d event-worker
+services:
+  event-worker:
+    profiles: ["event-worker"]
+    build:
+      context: ../../..
+      dockerfile: infrastructure/deployment/event-worker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://app_role:${POSTGRES_APP_PASSWORD:?set POSTGRES_APP_PASSWORD in .env}@postgres:5432/infinicus
+      INFINICUS_EVENT_WORKER_DISCOVERY_DATABASE_URL: ${INFINICUS_EVENT_WORKER_DISCOVERY_DATABASE_URL:?set the narrowly-granted discovery connection (see README)}
+      INFINICUS_EVENT_WORKER_ID: ${INFINICUS_EVENT_WORKER_ID:?set a worker id}
+      INFINICUS_EVENT_WORKER_ACTOR_USER_ID: ${INFINICUS_EVENT_WORKER_ACTOR_USER_ID:?set the worker system actor uuid}
+      INFINICUS_EVENT_WORKER_INTAKE_STATUS_MAX_AGE_MS: ${INFINICUS_EVENT_WORKER_INTAKE_STATUS_MAX_AGE_MS:?set the intake status max age}
+      INFINICUS_EVENT_WORKER_CLAIM_TIMEOUT_MS: ${INFINICUS_EVENT_WORKER_CLAIM_TIMEOUT_MS:?set the claim timeout}
+      INFINICUS_EVENT_WORKER_BATCH_SIZE: ${INFINICUS_EVENT_WORKER_BATCH_SIZE:?set the batch size}
+      INFINICUS_EVENT_WORKER_MAX_SCOPES_PER_CYCLE: ${INFINICUS_EVENT_WORKER_MAX_SCOPES_PER_CYCLE:?set max scopes per cycle}
+      INFINICUS_EVENT_WORKER_POLL_INTERVAL_MS: ${INFINICUS_EVENT_WORKER_POLL_INTERVAL_MS:?set the poll interval}
+    # No published port: the worker serves no requests.

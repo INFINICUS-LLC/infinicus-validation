@@ -122,3 +122,11 @@ export type LayerEventType =
   | 'cl.data.published'
   // Extension point — custom events must still use dot notation
   | (string & {});
+
+// P0-6b: control_loop.action.authorized@1 (alias ACTION_AUTHORIZED) - reference-only notification that a package was sealed.
+export {
+  ACTION_AUTHORIZED_EVENT_TYPE, ACTION_AUTHORIZED_EVENT_VERSION, ACTION_AUTHORIZED_ALIAS, ACTION_AUTHORIZED_SOURCE_SERVICE,
+  ACTION_AUTHORIZED_AGGREGATE_TYPE, ACTION_AUTHORIZED_CONSUMER, ACTION_AUTHORIZED_CONTRACT,
+  isActionAuthorizedPayload, actionAuthorizedIdempotencyKey, actionAuthorizedEventId, registerActionAuthorizedContract, buildActionAuthorizedEvent,
+} from './action-authorized.js';
+export type { ActionAuthorizedPayload, BuildActionAuthorizedEventInput } from './action-authorized.js';

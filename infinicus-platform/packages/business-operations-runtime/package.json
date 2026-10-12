@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@infinicus/database": "workspace:*",
+    "@infinicus/event-contracts": "workspace:*",
     "@infinicus/handoff-contracts": "workspace:*",
     "pg": "^8.12.0"
   },

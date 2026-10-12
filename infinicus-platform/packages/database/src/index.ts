@@ -24,6 +24,7 @@ export {
   DeadLetterRepository,
   EventSubscriptionRepository,
   EventDeliveryAttemptRepository,
+  OutboxDispatcher, DeliveryError, backoffFor, IN_PROCESS_DESTINATION,
   withEventTransaction,
   EventingError,
   EventLedgerValidationError,
@@ -46,6 +47,7 @@ export type {
   CreateEventSubscriptionInput,
   RecordDeliveryAttemptInput,
   EventTransactionContext,
+  EventConsumer, OutboxDispatcherDependencies, DispatchSummary,
 } from './eventing/index.js';
 
 // ── Data Acquisition repositories ─────────────────────────────────────────────

@@ -29,6 +29,7 @@
   "dependencies": {
     "@infinicus/shared-types": "workspace:*",
     "@infinicus/database": "workspace:*",
+    "@infinicus/event-contracts": "workspace:*",
     "@infinicus/handoff-contracts": "workspace:*",
     "@infinicus/simulation-engine": "workspace:*",
     "@infinicus/llm-client": "workspace:*"
