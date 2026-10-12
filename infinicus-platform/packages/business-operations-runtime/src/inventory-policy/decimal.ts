@@ -27,6 +27,16 @@ export class Decimal {
     return Decimal.parse(String(value));
   }
 
+  /**
+   * A reorder value as the BO evaluator RECORDS it in an evaluation snapshot: Postgres `numeric` text (`"170.0000"`) - or, in older fixtures, a finite
+   * JSON number. Plain decimal text only (no sign, exponent or spaces); anything else is null. (P0-6f: the executor must read what the evaluator writes.)
+   */
+  static fromSnapshotValue(value: unknown): Decimal | null {
+    if (typeof value === 'number') return Decimal.fromNumber(value);
+    if (typeof value === 'string' && /^\d+(\.\d+)?$/.test(value)) return Decimal.parse(value);
+    return null;
+  }
+
   static of(units: number | bigint): Decimal { return new Decimal(BigInt(units), 0); }
 
   private align(other: Decimal): [bigint, bigint, number] {

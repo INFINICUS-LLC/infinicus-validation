@@ -58,7 +58,7 @@ describe('B2c architecture', () => {
 
   it('the concrete adapter is constructed at the API composition root only', () => {
     expect(production.filter((f) => /new BoGovernanceEvidenceVerifier\(/.test(f.code)).map((f) => f.rel)).toEqual([APP]);
-    expect(read(APP)).toMatch(/evidenceVerifier: new BoGovernanceEvidenceVerifier\(\), \.\.\.options\.abaAuthoring/);
+    expect(read(APP)).toMatch(/evidenceVerifier: new BoGovernanceEvidenceVerifier\(\), issuer: buildAbaPackageIssuer\(options\.abaAnnouncement\), \.\.\.options\.abaAuthoring/);
   });
 
   it('BO does not import ABA/workflow internals; the verifier uses BO repositories and shared contracts only', () => {

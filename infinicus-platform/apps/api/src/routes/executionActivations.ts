@@ -55,7 +55,7 @@ export default async function executionActivationRoutes(app: FastifyInstance, op
       return reply.status(200).send({ ...view(businessId, actionType, out.activation), changed: out.changed });
     } catch (error) {
       if (error instanceof ExecutionActivationError) {
-        const status = error.code === 'ACTION_TYPE_UNSUPPORTED' ? 409 : error.code === 'BUSINESS_NOT_IN_SCOPE' ? 404 : error.code === 'PERMISSION_INVALID' ? 403 : 400;
+        const status = error.code === 'ACTION_TYPE_UNSUPPORTED' || error.code === 'SUBSCRIPTIONS_INVALID' ? 409 : error.code === 'BUSINESS_NOT_IN_SCOPE' ? 404 : error.code === 'PERMISSION_INVALID' ? 403 : 400;
         return reply.status(status).send({ error: { code: error.name, message: error.message, correlationId: request.correlationId } });
       }
       throw error;

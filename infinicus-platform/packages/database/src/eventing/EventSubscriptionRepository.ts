@@ -3,6 +3,17 @@ import type { TenantContext } from '../client.js';
 import { withTenantTransaction } from '../client.js';
 import type { CreateEventSubscriptionInput, SubscriptionStatus } from './types.js';
 
+const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** Why an existing subscription is not the one asked for (null = it is, and it is active). */
+function subscriptionProblem(row: Record<string, unknown>, want: CreateEventSubscriptionInput): string | null {
+  if (row.status !== 'active') return 'SUBSCRIPTION_INACTIVE';
+  const same = row.event_pattern === want.eventPattern && row.destination_type === want.destinationType && row.destination_ref === want.destinationReference
+    && sameJson(row.supported_versions, want.supportedVersions ?? ['1.0'])
+    && sameJson(row.retry_policy, want.retryPolicy ?? { maxAttempts: 3, backoffSeconds: 30 });
+  return same ? null : 'SUBSCRIPTION_CONFLICT';
+}
+
 export class EventSubscriptionRepository {
   async create(ctx: TenantContext, input: CreateEventSubscriptionInput) {
     return withTenantTransaction(ctx, async (client) => {
@@ -41,14 +52,31 @@ export class EventSubscriptionRepository {
     if (inserted.rows[0]) return { created: true, id: inserted.rows[0].id };
     // The name is platform-unique and RLS hides other scopes' rows: finding nothing here means the name is taken elsewhere.
     const existing = await client.query<Record<string, unknown>>(
-      `SELECT id, event_pattern, destination_type, destination_ref, supported_versions FROM events.event_subscriptions WHERE subscriber_name = $1`, [input.subscriberName],
+      `SELECT id, status, event_pattern, destination_type, destination_ref, supported_versions, retry_policy FROM events.event_subscriptions WHERE subscriber_name = $1`, [input.subscriberName],
     );
     const row = existing.rows[0];
     if (!row) throw new Error('SUBSCRIPTION_NAME_TAKEN');
-    const same = row.event_pattern === input.eventPattern && row.destination_type === input.destinationType && row.destination_ref === input.destinationReference
-      && JSON.stringify(row.supported_versions) === JSON.stringify(versions);
-    if (!same) throw new Error('SUBSCRIPTION_CONFLICT');
+    const problem = subscriptionProblem(row, input);
+    if (problem) throw new Error(problem);
     return { created: false, id: row.id as string };
+  }
+
+  /**
+   * True only when every named subscription EXISTS in this scope and is exactly what was asked for AND ACTIVE (same pattern, destination,
+   * pinned versions and retry policy). Anything else - missing, paused, disabled, failed, edited - is false. Read-only; fail closed on any doubt.
+   */
+  async verifyOnClient(client: PoolClient, specs: readonly CreateEventSubscriptionInput[]): Promise<boolean> {
+    for (const spec of specs) {
+      const r = await client.query<Record<string, unknown>>(
+        `SELECT id, status, event_pattern, destination_type, destination_ref, supported_versions, retry_policy FROM events.event_subscriptions WHERE subscriber_name = $1`, [spec.subscriberName],
+      );
+      if (!r.rows[0] || subscriptionProblem(r.rows[0], spec) !== null) return false;
+    }
+    return specs.length > 0;
+  }
+
+  async verify(ctx: TenantContext, specs: readonly CreateEventSubscriptionInput[]): Promise<boolean> {
+    return withTenantTransaction(ctx, (client) => this.verifyOnClient(client, specs));
   }
 
   async ensure(ctx: TenantContext, input: CreateEventSubscriptionInput): Promise<{ created: boolean; id: string }> {
