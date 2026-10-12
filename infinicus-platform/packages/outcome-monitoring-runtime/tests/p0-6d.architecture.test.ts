@@ -121,6 +121,8 @@ describe('P0-6d architecture', () => {
     expect(read('packages/event-worker/src/compose.ts')).toMatch(/options\.gate \?\? new GovernedExecutionGate\(/);
     const wiring = production.filter((f) => /AuthorizedActionExecutionService/.test(f.code)).map((f) => f.rel).sort();
     // P0-6e wiring: the engine's only other references are the BO notification consumer (the one trigger) and the worker composition root.
-    expect(wiring).toEqual([`${BO_EXEC}AuthorizedActionExecutionService.ts`, 'packages/business-operations-runtime/src/index.ts', 'packages/business-operations-runtime/src/authorized-action/AuthorizedActionNotificationConsumer.ts', 'packages/event-worker/src/compose.ts'].sort());
+    expect(wiring).toEqual([`${BO_EXEC}AuthorizedActionExecutionService.ts`, 'packages/business-operations-runtime/src/index.ts', 'packages/business-operations-runtime/src/authorized-action/AuthorizedActionNotificationConsumer.ts', 'packages/event-worker/src/compose.ts',
+      // P0-6g / P0-6h (owner-approved): the claim recovery consumer (driven only by the claim's own durable signal), the interim operator control and its API composition root.
+      'packages/business-operations-runtime/src/authorized-action/ClaimRecoveryConsumer.ts', 'packages/business-operations-runtime/src/authorized-action/ClaimRecoveryOperatorService.ts', 'apps/api/src/claimRecoveryComposition.ts'].sort());
   });
 });
