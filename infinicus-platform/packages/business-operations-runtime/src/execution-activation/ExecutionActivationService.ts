@@ -21,7 +21,7 @@ export const EXECUTION_ACTIVATION_PERMISSION = 'bo:admin';
 export const EXECUTION_ACTIVATION_AUDIT_ACTIONS = Object.freeze({ enabled: 'bo.execution_activation.enabled', disabled: 'bo.execution_activation.disabled' });
 
 export class ExecutionActivationError extends Error {
-  constructor(readonly code: 'PERMISSION_INVALID' | 'ACTION_TYPE_UNSUPPORTED' | 'REASON_REQUIRED' | 'BUSINESS_NOT_IN_SCOPE' | 'INVALID_REQUEST', message: string) {
+  constructor(readonly code: 'PERMISSION_INVALID' | 'ACTION_TYPE_UNSUPPORTED' | 'REASON_REQUIRED' | 'BUSINESS_NOT_IN_SCOPE' | 'INVALID_REQUEST' | 'SUBSCRIPTIONS_INVALID', message: string) {
     super(message);
     this.name = 'ExecutionActivationError';
   }
@@ -38,13 +38,13 @@ export interface SetActivationRequest {
 export interface ExecutionActivationServiceDependencies {
   capabilities?: ActionCapabilityRegistry;
   activations?: ExecutionCapabilityActivationRepository;
-  subscriptions?: Pick<EventSubscriptionRepository, 'ensureOnClient'>;
+  subscriptions?: Pick<EventSubscriptionRepository, 'ensureOnClient' | 'verifyOnClient'>;
 }
 
 export class ExecutionActivationService {
   private readonly capabilities: ActionCapabilityRegistry;
   private readonly activations: ExecutionCapabilityActivationRepository;
-  private readonly subscriptions: Pick<EventSubscriptionRepository, 'ensureOnClient'>;
+  private readonly subscriptions: Pick<EventSubscriptionRepository, 'ensureOnClient' | 'verifyOnClient'>;
 
   constructor(deps: ExecutionActivationServiceDependencies = {}) {
     this.capabilities = deps.capabilities ?? PRODUCTION_BO_CAPABILITIES;
@@ -75,7 +75,19 @@ export class ExecutionActivationService {
         throw error;
       }
       if (request.state === 'ENABLED') {
-        for (const spec of executionPipelineSubscriptions(ctx.workspaceId)) await this.subscriptions.ensureOnClient(client, ctx, spec);
+        // ATOMIC INVARIANT (P0-6f): the ENABLED row and its delivery subscriptions commit together or not at all. Any failure below throws, the
+        // transaction rolls back, and the business stays CLOSED - nothing is "enabled and repaired later".
+        const specs = executionPipelineSubscriptions(ctx.workspaceId);
+        try {
+          for (const spec of specs) await this.subscriptions.ensureOnClient(client, ctx, spec);
+          if ((await this.subscriptions.verifyOnClient(client, specs)) !== true) throw new Error('SUBSCRIPTION_UNVERIFIED');
+        } catch (error) {
+          const name = error instanceof Error ? error.message : '';
+          if (/^SUBSCRIPTION_(NAME_TAKEN|CONFLICT|INACTIVE|UNVERIFIED)$/.test(name)) {
+            throw new ExecutionActivationError('SUBSCRIPTIONS_INVALID', `the required delivery subscriptions are not valid for this workspace (${name}); nothing was enabled`);
+          }
+          throw error;
+        }
       }
       if (result.changed) {
         await this.activations.recordAudit(client, ctx, {

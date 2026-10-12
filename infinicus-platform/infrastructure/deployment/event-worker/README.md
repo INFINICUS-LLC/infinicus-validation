@@ -29,6 +29,6 @@ See `.env.example` (`INFINICUS_EVENT_WORKER_*`). Thresholds are owner-set deploy
   The API role cannot enumerate other tenants; without this role the worker discovers nothing and does nothing.
 
 ## Run (deliberately, never by default)
-See `docker-compose.event-worker.yml`. Subscription rows are created per business by an administrator (`EventSubscriptionRepository.create`
+See `docker-compose.event-worker.yml`. Since P0-6e/P0-6f the subscription rows are provisioned, verified and activated atomically by the audited `bo:admin` activation request (`PUT /v1/businesses/:id/execution-activations`); the manual form below is reference only (`EventSubscriptionRepository.create`
 with `subscriberName: 'bo.authorized_action_intake@<workspaceId>'` (the name is unique platform-wide, so it carries the scope), `destinationType: 'in_process'`, `destinationReference: 'bo.authorized_action_intake'` (the consumer key), `eventPattern: 'control_loop.action.authorized'`,
 `supportedVersions: ['1']`, and `retryPolicy` `{ "maxAttempts": 3, "backoffSeconds": [1, 5, 15] }`, ruling O-3).

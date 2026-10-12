@@ -31,8 +31,12 @@ export interface PackageAnnouncer {
   announce(ctx: TenantContext, pkg: AuthorizedActionPackageV1, trace: PackageAnnouncementTrace): Promise<AnnouncementOutcome>;
 }
 
+/** A gate chosen per announcement from the issuing tenant context (the composition root owns how). Fail closed: it must still answer per scope. */
+export type ExecutionCapabilityGateFactory = (ctx: TenantContext) => ExecutionCapabilityGate;
+
 export interface ActionAuthorizedAnnouncerDependencies {
-  gate: ExecutionCapabilityGate;
+  /** The activation control, or a factory building it from the issuing context. Never inferred: an absent gate is DENY_ALL. */
+  gate: ExecutionCapabilityGate | ExecutionCapabilityGateFactory;
   outbox: Pick<OutboxRepository, 'enqueueIfAbsent'>;
   clock: () => Date;
 }
@@ -66,7 +70,9 @@ export class ActionAuthorizedAnnouncer implements PackageAnnouncer {
 
   async announce(ctx: TenantContext, pkg: AuthorizedActionPackageV1, trace: PackageAnnouncementTrace): Promise<AnnouncementOutcome> {
     const payload = actionAuthorizedPayloadFor(pkg);
-    const open = await Promise.resolve().then(() => this.d.gate.isEnabled(payload.scope, payload.actionType)).then((v) => v === true, () => false); // a gate that cannot answer is closed
+    const open = await Promise.resolve()
+      .then(() => (typeof this.d.gate === 'function' ? this.d.gate(ctx) : this.d.gate).isEnabled(payload.scope, payload.actionType))
+      .then((v) => v === true, () => false); // a gate (or gate factory) that cannot answer is closed
     if (!open) return 'GATE_CLOSED';
 
     const now = this.d.clock();

@@ -72,3 +72,15 @@ describe('evaluatePreconditions (the BO vocabulary)', () => {
     expect(evaluatePreconditions([], facts)).toEqual({ results: [], unsupported: false, failed: false });
   });
 });
+
+describe('P0-6f: the executor reads the evaluator\'s recorded snapshot values', () => {
+  it('accepts numeric text exactly as the BO evaluator records it, and finite numbers; rejects everything else', async () => {
+    const { Decimal } = await import('../src/inventory-policy/decimal.js');
+    expect(Decimal.fromSnapshotValue('170.0000')?.cmp(Decimal.of(170))).toBe(0);
+    expect(Decimal.fromSnapshotValue('0')?.cmp(Decimal.of(0))).toBe(0);
+    expect(Decimal.fromSnapshotValue(190)?.cmp(Decimal.of(190))).toBe(0);
+    for (const bad of ['', ' 5', '-5', '+5', '1e3', '1,5', 'NaN', 'Infinity', '5.', '.5', null, undefined, {}, [], true, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(Decimal.fromSnapshotValue(bad), String(bad)).toBeNull();
+    }
+  });
+});

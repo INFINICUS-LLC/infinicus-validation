@@ -66,4 +66,4 @@ export type { AuthorityState, ApproverAuthority, ExecutionAuthorityFacts, Execut
 
 // P0-6b: the ABA producer of control_loop.action.authorized@1 (reference-only; gated; closed by default).
 export { ActionAuthorizedAnnouncer, actionAuthorizedPayloadFor } from './ActionAuthorizedAnnouncer.js';
-export type { PackageAnnouncer, AnnouncementOutcome, PackageAnnouncementTrace, ActionAuthorizedAnnouncerDependencies } from './ActionAuthorizedAnnouncer.js';
+export type { ExecutionCapabilityGateFactory, PackageAnnouncer, AnnouncementOutcome, PackageAnnouncementTrace, ActionAuthorizedAnnouncerDependencies } from './ActionAuthorizedAnnouncer.js';

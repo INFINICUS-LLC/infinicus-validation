@@ -23,6 +23,8 @@ import businessAdministrationRoutes from './routes/businessAdministration.js';
 import inventoryPolicyEvaluationRoutes from './routes/inventoryPolicyEvaluations.js';
 import executionActivationRoutes from './routes/executionActivations.js';
 import { BoGovernanceEvidenceVerifier } from '@infinicus/business-operations-runtime';
+import { buildAbaPackageIssuer } from './abaPackageAnnouncement.js';
+import type { AbaAnnouncementCompositionOptions } from './abaPackageAnnouncement.js';
 import type { AbaAuthoringRouteOptions } from './routes/abaAuthoring.js';
 import observabilityRoutes from './routes/observability.js';
 import billingRoutes from './routes/billing.js';
@@ -43,6 +45,8 @@ import './types.js';
 export interface BuildAppOptions {
   /** Composition-root dependency overrides for the ABA authoring surface (for example the authoritative evidence verifier). */
   abaAuthoring?: AbaAuthoringRouteOptions['dependencies'];
+  /** Composition-root overrides for the ABA announcement edge (registry, kill switch). Production leaves it unset. */
+  abaAnnouncement?: AbaAnnouncementCompositionOptions;
 }
 
 export async function buildApp(config: InfinicusConfig, options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -147,7 +151,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(businessRoutes);
   // Composition root: the ONLY place the Business Operations evidence adapter is connected to the ABA verification port. ABA depends on the
   // GovernanceEvidenceVerifier interface alone; a test may override the verifier through options.abaAuthoring.
-  await app.register(abaAuthoringRoutes, { dependencies: { evidenceVerifier: new BoGovernanceEvidenceVerifier(), ...options.abaAuthoring } });
+  // P0-6f: the same root also joins the ABA issuer's announcer to BO's governed activation gate (abaPackageAnnouncement.ts).
+  await app.register(abaAuthoringRoutes, { dependencies: { evidenceVerifier: new BoGovernanceEvidenceVerifier(), issuer: buildAbaPackageIssuer(options.abaAnnouncement), ...options.abaAuthoring } });
   await app.register(inventoryPolicyEvaluationRoutes);
   await app.register(executionActivationRoutes);
   await app.register(businessAdministrationRoutes);

@@ -50,7 +50,8 @@ describe('ABA package issuer architecture', () => {
       .filter((f) => /AuthorizedActionPackageIssuer/.test(f.text))
       .map((f) => f.rel)
       .filter((rel) => rel !== ISSUER && rel !== AUTHORING && rel !== 'packages/workflow/src/index.ts');
-    expect(users).toEqual([]);
+    // P0-6f: the API composition root is the one place the issuer is joined to its announcer (and so to BO's activation gate); no other app, layer or BO code.
+    expect(users).toEqual(['apps/api/src/abaPackageAnnouncement.ts']);
   });
 
   it('the shared transaction is used only by the issuer, the authoring service and the read-only P0-6a status provider (none nests it around the issuer)', () => {

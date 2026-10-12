@@ -132,7 +132,7 @@ export class InventoryReorderPolicyExecutionAdapter {
       const balances = inputs.facts.balances as unknown[];
       if (balances.length !== 1 || !isObject(balances[0])) return none('the evaluation snapshot does not identify exactly one balance');
       const b = balances[0];
-      const rp = Decimal.fromNumber(b.reorderPoint); const rq = Decimal.fromNumber(b.reorderQuantity);
+      const rp = Decimal.fromSnapshotValue(b.reorderPoint); const rq = Decimal.fromSnapshotValue(b.reorderQuantity); // the evaluator records numeric text (P0-6f)
       if (typeof b.id !== 'string' || !UUID.test(b.id) || rp === null || rq === null) return none('the evaluation snapshot balance is malformed');
       if (agreed !== null && (agreed.id !== b.id || agreed.reorderPoint.cmp(rp) !== 0 || agreed.reorderQuantity.cmp(rq) !== 0)) return none('the evaluation records disagree on the baseline');
       agreed = { id: b.id, reorderPoint: rp, reorderQuantity: rq };

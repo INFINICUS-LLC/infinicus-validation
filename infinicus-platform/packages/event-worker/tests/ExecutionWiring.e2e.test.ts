@@ -317,11 +317,19 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
   });
 
   describe('OM is downstream only', () => {
-    it('an OM that cannot verify (consumer unreachable) leaves BO execution truth, evidence and balance exactly as committed', async () => {
+    it('an OM that cannot record its verification leaves BO execution truth, evidence and balance exactly as committed', async () => {
       const s = await scenario();
       await enable(s);
-      await admin.query(`UPDATE events.event_subscriptions SET destination_ref='om.unreachable' WHERE tenant_id=$1 AND workspace_id=$2 AND subscriber_name LIKE 'om.execution_verification@%'`, [s.ctx.tenantId, s.ctx.workspaceId]);
-      await drain(worker(s));
+      // OM's table refuses writes for THIS tenant only (a per-tenant trigger, removed afterwards), so the subscription stays valid and the gate open.
+      const fn = `p06e_fail_${s.ctx.tenantId.replace(/-/g, '')}`;
+      await admin.query(`CREATE FUNCTION public.${fn}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.tenant_id = '${s.ctx.tenantId}' THEN RAISE EXCEPTION 'om unavailable'; END IF; RETURN NEW; END $$`);
+      await admin.query(`CREATE TRIGGER ${fn} BEFORE INSERT ON outcome_monitoring.action_execution_verifications FOR EACH ROW EXECUTE FUNCTION public.${fn}()`);
+      try {
+        await drain(worker(s));
+      } finally {
+        await admin.query(`DROP TRIGGER ${fn} ON outcome_monitoring.action_execution_verifications`);
+        await admin.query(`DROP FUNCTION public.${fn}()`);
+      }
       const ex = await executions(s);
       expect(ex).toHaveLength(1);
       expect(ex[0]).toMatchObject({ outcome: 'SUCCEEDED', mutation_result: 'APPLIED' });

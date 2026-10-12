@@ -4,13 +4,16 @@
  *   1. build-time capability registry   - BO can execute this type at all
  *   2. governed activation record       - an administrator enabled this type for THIS business (database; no row = closed)
  *   3. global kill switch               - a process-level setting that can only REMOVE capability
+ *   +  delivery readiness (P0-6f)       - BOTH pipeline subscriptions of the workspace exist, are ACTIVE and are exactly the pinned ones. An
+ *      activation whose delivery is not provably valid is never open - at activation time (atomic) and at every later evaluation.
  *
  * Open only when all three agree. Any doubt - a thrown error, a malformed scope, an unreadable record - is CLOSED. The gate answers only
  * "may this supported type execute for this business?": it is not authorization, not a claim, not a status check, and it never replaces the
  * fresh authority verification or the execution boundaries. It writes nothing.
  */
-import { ExecutionCapabilityActivationRepository } from '@infinicus/database';
+import { EventSubscriptionRepository, ExecutionCapabilityActivationRepository } from '@infinicus/database';
 import type { TenantContext } from '@infinicus/database';
+import { executionPipelineSubscriptions } from '@infinicus/event-contracts';
 import type { ActionCapabilityRegistry, ExecutionCapabilityGate, PackageScope } from '@infinicus/handoff-contracts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -23,14 +26,17 @@ export interface GovernedExecutionGateDependencies {
   /** The system identity recorded in the tenant context of the read. Required: no default identity is invented. */
   actorUserId: string;
   activations?: Pick<ExecutionCapabilityActivationRepository, 'isEnabled'>;
+  subscriptions?: Pick<EventSubscriptionRepository, 'verify'>;
 }
 
 export class GovernedExecutionGate implements ExecutionCapabilityGate {
   private readonly activations: Pick<ExecutionCapabilityActivationRepository, 'isEnabled'>;
+  private readonly subscriptions: Pick<EventSubscriptionRepository, 'verify'>;
 
   constructor(private readonly deps: GovernedExecutionGateDependencies) {
     if (typeof deps.actorUserId !== 'string' || !UUID.test(deps.actorUserId)) throw new Error('the gate needs a system actor user id (lowercase UUID)');
     this.activations = deps.activations ?? new ExecutionCapabilityActivationRepository();
+    this.subscriptions = deps.subscriptions ?? new EventSubscriptionRepository();
   }
 
   async isEnabled(scope: PackageScope, actionType: { code: string; schemaVersion: string }): Promise<boolean> {
@@ -39,7 +45,8 @@ export class GovernedExecutionGate implements ExecutionCapabilityGate {
       if (!this.deps.capabilities.supports(actionType.code, actionType.schemaVersion)) return false; // key 1
       if (![scope?.tenantId, scope?.workspaceId, scope?.businessId].every((id) => typeof id === 'string' && UUID.test(id))) return false;
       const ctx: TenantContext = { tenantId: scope.tenantId, workspaceId: scope.workspaceId, userId: this.deps.actorUserId };
-      return (await this.activations.isEnabled(ctx, scope.businessId, actionType)) === true; // key 2
+      if ((await this.activations.isEnabled(ctx, scope.businessId, actionType)) !== true) return false; // key 2
+      return (await this.subscriptions.verify(ctx, executionPipelineSubscriptions(scope.workspaceId))) === true; // delivery readiness
     } catch {
       return false;
     }
