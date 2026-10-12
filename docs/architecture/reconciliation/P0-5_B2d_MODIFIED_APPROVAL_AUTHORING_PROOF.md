@@ -52,6 +52,9 @@ issuance needing a fabricated fact (action without a version) · **approver auth
 - No defect in production code was found by the end-to-end proof; every deviation failed closed with a specific reason.
 - Some tests are killed by a *message* rather than a distinct refusal path where two independent checks overlap (for example the
   target, digest and stored-subject comparisons all reject wrong-target evidence). The mutation run removes them together as well as singly.
+- Boundary applicability is enforced twice with the same canonical contract and the same message: by `AbaAuthoringService` and by the
+  database trigger on `authorized_action_boundaries`. Removing the application gate alone therefore changes nothing observable (the mutant
+  survives by design — defence in depth); only removing both would open the hole.
 - `createAbaFixture` (upstream ADI→Simulation fixture) creates a Simulation run in the tenant; the proof shows it is neither required nor
   referenced by the boundaries or the package.
 
