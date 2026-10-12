@@ -10,7 +10,7 @@ import { Pool } from 'pg';
 import { AuthorizedActionExecutionRepository, closePool, createPool } from '@infinicus/database';
 import type { TenantContext } from '@infinicus/database';
 import type { AuthorizedActionPackageV1 } from '@infinicus/handoff-contracts';
-import { AuthorizedActionExecutionService, ClaimNotFoundError, evidenceDigestOf, explicitCapabilities, type ExecutionResult } from '../src/index.js';
+import { AuthorizedActionExecutionService, ClaimNotFoundError, PRODUCTION_BO_CAPABILITIES, evidenceDigestOf, explicitCapabilities, type ExecutionResult } from '../src/index.js';
 import { iso, MIN, answerFor } from './helpers/intakeFixture.js';
 import { ScriptedProvider, SUPPORTED, buildPackage, claimPackage, consumedAnswer, makeExecWorld, type ExecWorld, type PackageSpec } from './helpers/executionWorld.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
@@ -284,14 +284,15 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
       }
     });
 
-    it('an action type BO cannot execute (empty production registry) is REFUSED(ACTION_TYPE_UNSUPPORTED_BY_EXECUTOR)', async () => {
+    it('an action type BO cannot execute is REFUSED(ACTION_TYPE_UNSUPPORTED_BY_EXECUTOR)', async () => {
       const c = await claimed();
       const e = terminal(await engine(c.provider, { capabilities: explicitCapabilities([]) }).executeClaim(c.ctx, c.claimId));
       expect(e.reasonCode).toBe('ACTION_TYPE_UNSUPPORTED_BY_EXECUTOR');
       expect(c.provider.calls).toBe(0);
-      const production = await claimed();
-      const prod = new AuthorizedActionExecutionService({ statusProvider: production.provider, executionStatusMaxAgeMs: MAX_AGE, gate: OPEN });
-      expect(terminal(await prod.executeClaim(production.ctx, production.claimId)).reasonCode).toBe('ACTION_TYPE_UNSUPPORTED_BY_EXECUTOR');
+      // P0-6e: the production registry supports exactly inventory_reorder_policy_update@1 - not another version, not another type.
+      expect(PRODUCTION_BO_CAPABILITIES.supports('inventory_reorder_policy_update', '1')).toBe(true);
+      expect(PRODUCTION_BO_CAPABILITIES.supports('inventory_reorder_policy_update', '2')).toBe(false);
+      expect(PRODUCTION_BO_CAPABILITIES.supports('other_action', '1')).toBe(false);
     });
 
     it('no balance and several balances for the target are refused; none is ever created', async () => {

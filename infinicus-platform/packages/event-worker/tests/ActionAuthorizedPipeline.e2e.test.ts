@@ -3,8 +3,8 @@
  * ABA issuer -> announcer (gated) -> outbox -> dispatcher/worker -> ledger -> subscription -> BO consumer -> pull via ABA source port ->
  * existing BO intake (authoritative status from the ABA provider) -> single-use claim -> ABA CONSUMED mirror.
  *
- * Nothing is executed and no inventory changes: the pipeline ends at claim + mirror. The production capability registry stays empty; tests
- * inject their own registry and gate. Requires DATABASE_URL (app role, RLS) and ADMIN_DATABASE_URL.
+ * Since P0-6e the consumer also hands the claim to the engine; these fixtures hold no inventory balance, so every execution is a terminal
+ * REFUSED(NO_BALANCE) and no inventory changes (the mutating path is proved in ExecutionWiring.e2e.test.ts). Tests inject their own registry and gate. Requires DATABASE_URL (app role, RLS) and ADMIN_DATABASE_URL.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -33,7 +33,7 @@ describe.runIf(run)('P0-6b: ACTION_AUTHORIZED pipeline (real components)', () =>
   const issuer = (gate: ExecutionCapabilityGate) => new AuthorizedActionPackageIssuer({ announcer: new ActionAuthorizedAnnouncer({ gate }) });
   const only = (f: IssuableFixture): ScopeDiscovery => ({ discover: async () => [{ tenantId: f.world.tenantId, workspaceId: f.world.workspaceId }] });
   const worker = (f: IssuableFixture, over: { gate?: ExecutionCapabilityGate; capabilities?: typeof SUPPORTED; clock?: () => Date } = {}) => buildEventWorker({
-    config: { workerId: 'w-e2e', actorUserId: ACTOR, discoveryDatabaseUrl: 'unused', intakeStatusMaxAgeMs: 5000, claimTimeoutMs: 60_000, batchSize: 10, maxScopesPerCycle: 5, pollIntervalMs: 1000 },
+    config: { workerId: 'w-e2e', actorUserId: ACTOR, discoveryDatabaseUrl: 'unused', intakeStatusMaxAgeMs: 5000, executionStatusMaxAgeMs: 5000, claimTimeoutMs: 60_000, batchSize: 10, maxScopesPerCycle: 5, pollIntervalMs: 1000 },
     discovery: only(f), gate: over.gate ?? gateFor(true), capabilities: over.capabilities ?? SUPPORTED, ...(over.clock ? { clock: over.clock } : {}),
   });
   const subscribe = (f: IssuableFixture) => subscriptions.create(f.ctx, {
@@ -86,12 +86,16 @@ describe.runIf(run)('P0-6b: ACTION_AUTHORIZED pipeline (real components)', () =>
     expect(Number((await admin.query('SELECT count(*) n FROM business_operations.inventory_balances WHERE tenant_id=$1', [f.world.tenantId])).rows[0].n)).toBe(0);
   });
 
-  it('a second worker pass is a no-op: one receipt, one claim, one mirror', async () => {
+  it('a repeat worker pass changes nothing more: one receipt, one claim, one mirror, one execution (the executed event is the only new row, delivered once)', async () => {
     const { f, packageId } = await issued();
     await subscribe(f);
     await worker(f).runOnce();
-    const again = await worker(f).runOnce();
-    expect(again).toMatchObject({ claimed: 0, published: 0 });
+    // P0-6e: the consumer hands the claim to the engine; this fixture has no balance, so the single execution is a terminal REFUSED(NO_BALANCE)
+    // and its `operations.action.executed` row (no OM subscription in this scope) is the only thing the next pass can still find.
+    await worker(f).runOnce();
+    const third = await worker(f).runOnce();
+    expect(third).toMatchObject({ claimed: 0, published: 0 });
+    expect(Number((await admin.query('SELECT count(*) n FROM business_operations.authorized_action_executions WHERE tenant_id=$1', [f.world.tenantId])).rows[0].n)).toBe(1);
     expect(await claims(f)).toHaveLength(1);
     expect(await receipts(f)).toHaveLength(1);
     expect((await lifecycle(packageId)).filter((e) => e.state === 'CONSUMED')).toHaveLength(1);
@@ -138,7 +142,7 @@ describe.runIf(run)('P0-6b: ACTION_AUTHORIZED pipeline (real components)', () =>
 
     const g = await issued(gateFor(true)); await subscribe(g.f);
     const w = buildEventWorker({
-      config: { workerId: 'w-default', actorUserId: ACTOR, discoveryDatabaseUrl: 'unused', intakeStatusMaxAgeMs: 5000, claimTimeoutMs: 60_000, batchSize: 10, maxScopesPerCycle: 5, pollIntervalMs: 1000 },
+      config: { workerId: 'w-default', actorUserId: ACTOR, discoveryDatabaseUrl: 'unused', intakeStatusMaxAgeMs: 5000, executionStatusMaxAgeMs: 5000, claimTimeoutMs: 60_000, batchSize: 10, maxScopesPerCycle: 5, pollIntervalMs: 1000 },
       discovery: only(g.f),
     });
     expect(await w.runOnce()).toMatchObject({ claimed: 1, deadLettered: 1, published: 0 });

@@ -18,7 +18,7 @@ const eventOf = (p: ActionAuthorizedPayload = payload()): StoredBusinessEvent =>
 const doc = (over: { id?: string; version?: number; digest?: string } = {}) => ({ identity: { packageId: over.id ?? U(1), packageVersion: over.version ?? 1 }, integrity: { digest: over.digest ?? DIGEST } });
 
 function harness(o: {
-  gate?: boolean | 'throw'; inbox?: 'started' | 'already_processed' | 'already_processing' | 'retry_allowed'; pulled?: unknown; intake?: () => Promise<unknown>; recorder?: () => Promise<unknown>;
+  gate?: boolean | 'throw'; inbox?: 'started' | 'already_processed' | 'already_processing' | 'retry_allowed'; pulled?: unknown; intake?: () => Promise<unknown>; recorder?: () => Promise<unknown>; exec?: 'terminal' | 'replayed' | 'retry' | 'throw';
 } = {}) {
   const log: string[] = [];
   const consumer = new AuthorizedActionNotificationConsumer({
@@ -30,6 +30,14 @@ function harness(o: {
     },
     source: { get: async () => { log.push('source.get'); return o.pulled === undefined ? { document: doc(), digest: DIGEST } : (o.pulled as never); } },
     intake: { intake: async (_c, _r) => { log.push('intake'); return (o.intake ? o.intake() : { outcome: 'CLAIMED', receiptId: U(50), claimId: U(51), claimedAt: '2026-10-12T10:00:00.000Z' }) as never; } },
+    executor: {
+      executeClaim: async (_c, claimId) => {
+        log.push(`execute:${claimId}`);
+        if (o.exec === 'throw') throw new Error('claim not found');
+        if (o.exec === 'retry') return { state: 'RETRY', attemptNumber: 1, reasonCode: 'STATUS_UNAVAILABLE', retryAfterMs: 1000 } as never;
+        return { state: 'TERMINAL', execution: {}, replayed: o.exec === 'replayed' } as never;
+      },
+    },
     recorder: { recordConsumed: async (r) => { log.push(`mirror:${r.receiptId}`); return (o.recorder ? o.recorder() : { outcome: 'RECORDED', recordedAt: 'x' }) as never; } },
   });
   return { consumer, log };
@@ -43,7 +51,34 @@ describe('AuthorizedActionNotificationConsumer', () => {
   it('claims through intake, then mirrors with the BO receipt and marks the inbox processed', async () => {
     const h = harness();
     await h.consumer.handle(ctx, eventOf());
-    expect(h.log).toEqual(['inbox.begin', 'source.get', 'intake', `mirror:${U(50)}`, 'inbox.processed']);
+    expect(h.log).toEqual(['inbox.begin', 'source.get', 'intake', `mirror:${U(50)}`, `execute:${U(51)}`, 'inbox.processed']);
+  });
+
+  it('P0-6e: after the claim and the mirror it hands the claim to the engine once - the only trigger - and a replayed terminal result ends the delivery', async () => {
+    for (const exec of ['terminal', 'replayed'] as const) {
+      const h = harness({ exec });
+      await h.consumer.handle(ctx, eventOf());
+      expect(h.log.filter((l) => l.startsWith('execute:'))).toEqual([`execute:${U(51)}`]);
+      expect(h.log.at(-1)).toBe('inbox.processed');
+    }
+  });
+
+  it('P0-6e: an engine that cannot decide yet is a RETRYABLE delivery failure (the outbox redelivers); the delivery is never marked processed', async () => {
+    const h = harness({ exec: 'retry' });
+    const e = await failure(h.consumer.handle(ctx, eventOf()));
+    expect([e.code, e.retryable]).toEqual(['STATUS_UNAVAILABLE', true]);
+    expect(h.log).toContain('inbox.failed');
+    expect(h.log).not.toContain('inbox.processed');
+  });
+
+  it('P0-6e: nothing is executed unless a claim exists - a refused intake, a closed gate or a bad payload never reach the engine', async () => {
+    const refused = harness({ intake: async () => { throw new PackageIntakeRefusedError(['PACKAGE_REVOKED']); } });
+    await refused.consumer.handle(ctx, eventOf());
+    const closed = harness({ gate: false });
+    await failure(closed.consumer.handle(ctx, eventOf()));
+    const bad = harness();
+    await failure(bad.consumer.handle(ctx, { ...eventOf(), payload: { x: 1 } } as StoredBusinessEvent));
+    for (const h of [refused, closed, bad]) expect(h.log.some((l) => l.startsWith('execute:'))).toBe(false);
   });
 
   it('refuses a payload that is not the reference-only shape (non-retryable) before touching anything', async () => {

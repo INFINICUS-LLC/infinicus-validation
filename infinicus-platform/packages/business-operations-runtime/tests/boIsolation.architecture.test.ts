@@ -231,10 +231,10 @@ describe('Business Operations isolation guard - BO may import only the shared co
     }
   });
 
-  it('the production capability registry declares no executable action type (no execution adapter exists before P0-6)', () => {
+  it('the production capability registry declares exactly one executable action type, inventory_reorder_policy_update@1 (capability only: P0-6e)', () => {
     const text = readFileSync(resolve(PLATFORM_ROOT, 'packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts'), 'utf8');
-    expect(text).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
-    expect(text).not.toMatch(/inventory_reorder_policy_update@1['"]\s*[,\]]/);
+    expect(text).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\['inventory_reorder_policy_update@1'\]\)/);
+    expect(text.match(/'inventory_reorder_policy_update@1'/g)).toHaveLength(1); // listed once, as the only entry
   });
 
   it('the intake code is read-only toward inventory, events and execution', () => {

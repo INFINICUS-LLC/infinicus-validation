@@ -116,10 +116,11 @@ describe('P0-6d architecture', () => {
     expect(sql(M0194)).toMatch(/ENABLE ROW LEVEL SECURITY/);
   });
 
-  it('nothing is activated: the production registry is empty and no worker/gate default is opened', () => {
-    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
-    expect(read('packages/event-worker/src/compose.ts')).toMatch(/gate \?\? DENY_ALL_EXECUTION_GATE/);
+  it('nothing is activated by default: the registry is exactly the P0-6e entry and no worker/gate default is opened', () => {
+    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\['inventory_reorder_policy_update@1'\]\)/);
+    expect(read('packages/event-worker/src/compose.ts')).toMatch(/options\.gate \?\? new GovernedExecutionGate\(/);
     const wiring = production.filter((f) => /AuthorizedActionExecutionService/.test(f.code)).map((f) => f.rel).sort();
-    expect(wiring).toEqual([`${BO_EXEC}AuthorizedActionExecutionService.ts`, 'packages/business-operations-runtime/src/index.ts'].sort());
+    // P0-6e wiring: the engine's only other references are the BO notification consumer (the one trigger) and the worker composition root.
+    expect(wiring).toEqual([`${BO_EXEC}AuthorizedActionExecutionService.ts`, 'packages/business-operations-runtime/src/index.ts', 'packages/business-operations-runtime/src/authorized-action/AuthorizedActionNotificationConsumer.ts', 'packages/event-worker/src/compose.ts'].sort());
   });
 });

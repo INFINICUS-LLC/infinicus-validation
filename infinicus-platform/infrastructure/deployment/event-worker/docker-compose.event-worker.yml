@@ -20,6 +20,9 @@ services:
       INFINICUS_EVENT_WORKER_ID: ${INFINICUS_EVENT_WORKER_ID:?set a worker id}
       INFINICUS_EVENT_WORKER_ACTOR_USER_ID: ${INFINICUS_EVENT_WORKER_ACTOR_USER_ID:?set the worker system actor uuid}
       INFINICUS_EVENT_WORKER_INTAKE_STATUS_MAX_AGE_MS: ${INFINICUS_EVENT_WORKER_INTAKE_STATUS_MAX_AGE_MS:?set the intake status max age}
+      INFINICUS_EVENT_WORKER_EXECUTION_STATUS_MAX_AGE_MS: ${INFINICUS_EVENT_WORKER_EXECUTION_STATUS_MAX_AGE_MS:?set the execution status max age}
+      # Global kill switch (P0-6e): can only REMOVE capability. Empty/absent = not engaged; any other value engages it. Execution stays closed until a business is activated.
+      INFINICUS_EXECUTION_KILL_SWITCH: ${INFINICUS_EXECUTION_KILL_SWITCH:-}
       INFINICUS_EVENT_WORKER_CLAIM_TIMEOUT_MS: ${INFINICUS_EVENT_WORKER_CLAIM_TIMEOUT_MS:?set the claim timeout}
       INFINICUS_EVENT_WORKER_BATCH_SIZE: ${INFINICUS_EVENT_WORKER_BATCH_SIZE:?set the batch size}
       INFINICUS_EVENT_WORKER_MAX_SCOPES_PER_CYCLE: ${INFINICUS_EVENT_WORKER_MAX_SCOPES_PER_CYCLE:?set max scopes per cycle}

@@ -52,7 +52,7 @@ describe.runIf(run)('P0-6d: ACTION_EXECUTED pipeline (real components)', () => {
     destinationReference: ACTION_EXECUTED_CONSUMER, supportedVersions: ['1'], retryPolicy: { maxAttempts: 3, backoffSeconds: [1, 5, 15] },
   });
   const worker = (c: Case) => buildEventWorker({
-    config: { workerId: 'w-exec', actorUserId: ACTOR, discoveryDatabaseUrl: 'unused', intakeStatusMaxAgeMs: 5000, claimTimeoutMs: 60_000, batchSize: 10, maxScopesPerCycle: 5, pollIntervalMs: 1000 },
+    config: { workerId: 'w-exec', actorUserId: ACTOR, discoveryDatabaseUrl: 'unused', intakeStatusMaxAgeMs: 5000, executionStatusMaxAgeMs: 5000, claimTimeoutMs: 60_000, batchSize: 10, maxScopesPerCycle: 5, pollIntervalMs: 1000 },
     discovery: { discover: async () => [{ tenantId: c.ew.w.tenantId, workspaceId: c.ew.w.workspaceId }] } satisfies ScopeDiscovery,
   });
   const rows = async (c: Case) => (await admin.query('SELECT * FROM outcome_monitoring.action_execution_verifications WHERE tenant_id=$1', [c.ew.w.tenantId])).rows;

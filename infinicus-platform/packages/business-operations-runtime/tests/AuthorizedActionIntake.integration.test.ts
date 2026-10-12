@@ -79,8 +79,9 @@ describe.runIf(run)('P0-5 Block 3e: BO authorized-action intake', () => {
       expect((await attempts(pkg)).map((a) => a.outcome)).toEqual(['CLAIMED']);
     });
 
-    it('the production capability registry does NOT claim inventory_reorder_policy_update@1 (no execution adapter until P0-6)', () => {
-      expect(PRODUCTION_BO_CAPABILITIES.supports('inventory_reorder_policy_update', '1')).toBe(false);
+    it('the production capability registry supports exactly inventory_reorder_policy_update@1 (capability only - P0-6e): no other version, no other type, no wildcard', () => {
+      expect(PRODUCTION_BO_CAPABILITIES.supports('inventory_reorder_policy_update', '1')).toBe(true);
+      expect(PRODUCTION_BO_CAPABILITIES.supports('inventory_reorder_policy_update', '2')).toBe(false);
       expect(PRODUCTION_BO_CAPABILITIES.supports('anything', '1')).toBe(false);
     });
   });
@@ -197,9 +198,9 @@ describe.runIf(run)('P0-5 Block 3e: BO authorized-action intake', () => {
       expect(await claims(pkg)).toBe(0);
     });
 
-    it('with the PRODUCTION capability registry the package is received but never claimable (no adapter yet)', async () => {
+    it('with a registry that does not list the type the package is received but never claimable', async () => {
       const pkg = sealedPackage(world);
-      const productionLike = new AuthorizedActionIntakeService({ statusProvider: providerFor(pkg), statusMaxAgeMs: MAX_AGE });
+      const productionLike = new AuthorizedActionIntakeService({ statusProvider: providerFor(pkg), statusMaxAgeMs: MAX_AGE, capabilities: explicitCapabilities([]) });
       const e = await refused(productionLike.intake(ctxOf(world), { package: pkg }));
       expect(e.codes).toEqual(['ACTION_TYPE_UNSUPPORTED_BY_EXECUTOR']);
       expect(await receipts(pkg)).toBe(1);

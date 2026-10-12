@@ -91,8 +91,8 @@ describe('B2c architecture', () => {
     expect(production.filter((f) => /\bExecutionEvidence\b/.test(f.code) && !f.rel.startsWith('packages/handoff-contracts/')).map((f) => f.rel)).toEqual([]);
   });
 
-  it('the production capability registry is still empty, no ABA->BO execution transport exists and P0-6 stays disabled', () => {
-    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
+  it('the production capability registry is exactly the P0-6e entry; the execution transport is the BO notification consumer only', () => {
+    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\['inventory_reorder_policy_update@1'\]\)/);
     // Data-capture Block E (O-10) is authorized: exactly the BO executor and the BO command types may carry the configure command / state; nothing else.
     expect(production.filter((f) => /configure_inventory_reorder_policy|reorder_policy_state/.test(f.code)).map((f) => f.rel).sort()).toEqual(['packages/business-operations-runtime/src/OperationalCommandExecutor.ts', 'packages/business-operations-runtime/src/authorized-action-execution/InventoryReorderPolicyExecutionAdapter.ts', 'packages/business-operations-runtime/src/types.ts']);
     for (const rel of [ROUTE, VERIFIER, `${BO_DIR}InventoryPolicyEvaluationService.ts`]) expect(read(rel)).not.toMatch(/AuthorizedActionIntakeService|PRODUCTION_BO_CAPABILITIES|explicitCapabilities/);

@@ -92,10 +92,10 @@ describe('P0-6c architecture', () => {
     }
   });
 
-  it('the engine is unwired and enables nothing: no app, worker or consumer references it; the production registry is empty; no event is emitted', () => {
+  it('the engine only has references in its own files, the package index, the BO notification consumer (the one trigger) and the worker composition root (P0-6e wiring is pinned in p0-6e.architecture.test.ts); the production registry is exactly the P0-6e entry', () => {
     const users = production.filter((f) => /AuthorizedActionExecutionService|InventoryReorderPolicyExecutionAdapter/.test(f.code)).map((f) => f.rel).sort();
-    expect(users).toEqual([ADAPTER, SERVICE, 'packages/business-operations-runtime/src/index.ts'].sort());
-    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
+    expect(users).toEqual([ADAPTER, SERVICE, 'packages/business-operations-runtime/src/index.ts', 'packages/business-operations-runtime/src/authorized-action/AuthorizedActionNotificationConsumer.ts', 'packages/event-worker/src/compose.ts'].sort());
+    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\['inventory_reorder_policy_update@1'\]\)/);
     for (const rel of [SERVICE, ADAPTER, REPO]) expect(read(rel), rel).not.toMatch(/OutboxRepository|enqueue|operations\.action\.executed|ACTION_EXECUTED|execution_capability_activations/);
     // P0-6d formalised the contract: it may live only in its own handoff-contracts directory (plus the package index export).
     expect(production.filter((f) => f.rel.startsWith('packages/handoff-contracts/') && !f.rel.startsWith('packages/handoff-contracts/src/execution-evidence/') && f.rel !== 'packages/handoff-contracts/src/index.ts' && /\bExecutionEvidence\b|execution-evidence\/1/.test(f.code))).toEqual([]);

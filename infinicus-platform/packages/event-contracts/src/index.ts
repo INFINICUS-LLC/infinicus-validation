@@ -138,3 +138,5 @@ export {
   isActionExecutedPayload, actionExecutedIdempotencyKey, actionExecutedEventId, registerActionExecutedContract, buildActionExecutedEvent,
 } from './action-executed.js';
 export type { ActionExecutedPayload, BuildActionExecutedEventInput } from './action-executed.js';
+export { executionPipelineSubscriptions, EXECUTION_PIPELINE_RETRY_POLICY } from './execution-pipeline-subscriptions.js';
+export type { ExecutionPipelineSubscriptionSpec } from './execution-pipeline-subscriptions.js';
