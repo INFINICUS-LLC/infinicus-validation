@@ -4,6 +4,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any -- tests mutate arbitrary JSON documents */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { AuthorizedActionIntakeRepository, closePool, createPool } from '@infinicus/database';
@@ -299,7 +300,7 @@ describe.runIf(run)('P0-5 Block 3e: BO authorized-action intake', () => {
       for (const t of ['authorized_action_receipts', 'authorized_action_claims', 'authorized_action_intake_attempts']) {
         await expect(admin.query(`UPDATE ${S}.${t} SET correlation_id = gen_random_uuid() WHERE tenant_id = $1`, [world.tenantId])).rejects.toThrow(/append-only/);
         await expect(admin.query(`DELETE FROM ${S}.${t} WHERE tenant_id = $1`, [world.tenantId])).rejects.toThrow(/append-only/);
-        await expect(admin.query(`TRUNCATE ${S}.${t}`)).rejects.toThrow(/append-only|referenced in a foreign key/);
+        await expect(truncateRefusal(admin, `TRUNCATE ${S}.${t}`)).rejects.toThrow(/append-only|referenced in a foreign key/);
       }
     });
 

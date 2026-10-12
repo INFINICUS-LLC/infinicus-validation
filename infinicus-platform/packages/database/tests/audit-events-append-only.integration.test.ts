@@ -5,6 +5,7 @@
  * Requires DATABASE_URL (app_test_user, RLS enforced) and ADMIN_DATABASE_URL (BYPASSRLS), migrated through 0181.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -79,9 +80,9 @@ describe.runIf(run)('audit.audit_events append-only (0181) - live PostgreSQL', (
   });
 
   it('TRUNCATE (plain and CASCADE) is rejected for the admin and application roles; the row survives', async () => {
-    await expect(admin.query(`TRUNCATE audit.audit_events`)).rejects.toThrow(APPEND_ONLY);
-    await expect(admin.query(`TRUNCATE audit.audit_events CASCADE`)).rejects.toThrow(APPEND_ONLY);
-    await expect(app.query(`TRUNCATE audit.audit_events`)).rejects.toThrow();
+    await expect(truncateRefusal(admin, `TRUNCATE audit.audit_events`)).rejects.toThrow(APPEND_ONLY);
+    await expect(truncateRefusal(admin, `TRUNCATE audit.audit_events CASCADE`)).rejects.toThrow(APPEND_ONLY);
+    await expect(truncateRefusal(app, `TRUNCATE audit.audit_events`)).rejects.toThrow();
     await unchanged();
   });
 

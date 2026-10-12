@@ -4,6 +4,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any -- tests read arbitrary rows */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { EventSubscriptionRepository, ExecutionCapabilityActivationRepository, closePool, createPool } from '@infinicus/database';
@@ -91,7 +92,7 @@ describe.runIf(run)('P0-6e: governed activation (real PostgreSQL)', () => {
     expect((await repo.history(w.ctx, w.businessId, ACTION)).map((r) => `${r.version}:${r.state}`)).toEqual(['1:ENABLED', '2:DISABLED', '3:ENABLED']);
     await expect(admin.query(`UPDATE ${BO}.execution_capability_activations SET state='DISABLED' WHERE business_id=$1`, [w.businessId])).rejects.toThrow(/append-only/);
     await expect(admin.query(`DELETE FROM ${BO}.execution_capability_activations WHERE business_id=$1`, [w.businessId])).rejects.toThrow(/append-only/);
-    await expect(admin.query(`TRUNCATE ${BO}.execution_capability_activations`)).rejects.toThrow(/append-only/);
+    await expect(truncateRefusal(admin, `TRUNCATE ${BO}.execution_capability_activations`)).rejects.toThrow(/append-only/);
     // the chain cannot be forged: a skipped version, and a business outside the stated scope, are refused by the database
     await expect(admin.query(`INSERT INTO ${BO}.execution_capability_activations (tenant_id, workspace_id, business_id, action_type_code, action_type_schema_version, version, state, actor_user_id, permission_code, reason) VALUES ($1,$2,$3,$4,$5,9,'ENABLED',$6,'bo:admin','x')`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, ACTION.code, ACTION.schemaVersion, randomUUID()])).rejects.toThrow(/does not follow/);
     await expect(admin.query(`INSERT INTO ${BO}.execution_capability_activations (tenant_id, workspace_id, business_id, action_type_code, action_type_schema_version, version, state, actor_user_id, permission_code, reason) VALUES ($1,$2,$3,$4,$5,1,'ENABLED',$6,'bo:admin','x')`, [w.ctx.tenantId, w.ctx.workspaceId, randomUUID(), ACTION.code, ACTION.schemaVersion, randomUUID()])).rejects.toThrow();

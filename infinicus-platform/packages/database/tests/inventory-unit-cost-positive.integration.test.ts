@@ -3,6 +3,7 @@
  * Requires DATABASE_URL (app role, RLS enforced) and ADMIN_DATABASE_URL (superuser), migrated through 0187.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -149,7 +150,7 @@ describe.runIf(run)('positive unit cost when present (0187) - live PostgreSQL', 
       const id = (await insert({ unit_cost: 4, unit_cost_currency: 'USD' })).rows[0].id;
       await expect(admin.query(`UPDATE ${T} SET unit_cost = 5 WHERE id = $1`, [id])).rejects.toThrow(/append-only table - UPDATE is not permitted/);
       await expect(admin.query(`DELETE FROM ${T} WHERE id = $1`, [id])).rejects.toThrow(/append-only table - DELETE is not permitted/);
-      await expect(admin.query(`TRUNCATE ${T}`)).rejects.toThrow(/append-only table - TRUNCATE is not permitted/);
+      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(/append-only table - TRUNCATE is not permitted/);
     });
 
     it('0186 FORCE RLS is still on, the policy is unchanged and another tenant sees nothing', async () => {

@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
 const run = !!process.env.ADMIN_DATABASE_URL;
+// The dry run scans every business in the shared test database, which other suites grow in
+// parallel; the vitest 5 s default is not a meaningful bound for it.
+const DRY_RUN_TIMEOUT_MS = 120_000;
 const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../infrastructure/database/scripts/owner-authority-backfill-dry-run.sh');
 
 describe('owner-authority-backfill-dry-run.sh', () => {
@@ -33,5 +36,5 @@ describe('owner-authority-backfill-dry-run.sh', () => {
     expect(Array.isArray(report.entries)).toBe(true);
     // No emails or secrets in the report.
     expect(JSON.stringify(report)).not.toMatch(/@|password|token|secret/i);
-  });
+  }, DRY_RUN_TIMEOUT_MS);
 });
