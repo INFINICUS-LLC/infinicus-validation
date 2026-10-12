@@ -100,9 +100,11 @@ describe('P0-6f architecture', () => {
     const record = s.indexOf('this.activations.recordOnClient(client');
     const ensure = s.indexOf('this.subscriptions.ensureOnClient(client');
     const verify = s.indexOf('this.subscriptions.verifyOnClient(client');
-    const audit = s.indexOf('this.activations.recordAudit(client');
     expect(tx).toBeGreaterThan(-1);
-    expect([record, ensure, verify, audit].every((i) => i > tx)).toBe(true); // all inside the one transaction callback
+    expect([record, ensure, verify].every((i) => i > tx)).toBe(true); // all inside the one transaction callback
+    // migration 0196: the audit row is written by the governed database function in the SAME statement path as the row, never by a separate application call
+    expect(s).not.toMatch(/recordAudit/);
+    expect(readFileSync(join(PLATFORM, 'infrastructure/database/migrations/0196_harden_database_authority_activation_and_reorder.sql'), 'utf8')).toMatch(/INSERT INTO business_operations\.execution_capability_activations[\s\S]*INSERT INTO audit\.audit_events/);
     expect(s.match(/withTenantTransaction\(/g)).toHaveLength(1);              // never a second, separate transaction
     expect(s).toMatch(/verifyOnClient\(client, specs\)\) !== true\) throw new Error\('SUBSCRIPTION_UNVERIFIED'\)/);
     expect(s).not.toMatch(/\.catch\(\(\) => undefined\)|catch \{\s*\}/); // no swallowed failure
@@ -121,7 +123,7 @@ describe('P0-6f architecture', () => {
     expect(filesMatching(/bullmq|amqplib|node-cron|agenda|bee-queue/)).toEqual([]);
     expect(under(BO).filter((f) => /setInterval\(|EXECUTION_(MAX_ATTEMPTS|BACKOFF_MS)\s*=/.test(f.code)).map((f) => f.rel)).toEqual([`${BO}authorized-action-execution/constants.ts`]);
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((n) => n.endsWith('.sql')).sort();
-    expect(migrations.at(-1)).toBe('0195_create_bo_execution_capability_activations.sql'); // P0-6f adds no migration
+    expect(migrations.slice(migrations.indexOf('0195_create_bo_execution_capability_activations.sql'))).toEqual(['0195_create_bo_execution_capability_activations.sql', '0196_harden_database_authority_activation_and_reorder.sql']); // P0-6f adds no migration; the only later one is the owner-authorized database-authority hardening (0196)
   });
 
   it('OM cannot write BO and CL learns nothing (unchanged by the announcer wiring)', () => {

@@ -166,6 +166,8 @@ async function main() {
   // the whole surrounding transaction) and report them as retained, so
   // a caller can see exactly what was and was not erased rather than
   // the script silently claiming full erasure or crashing outright.
+  // Migration 0196: the governed activation table is append-only AND its direct DELETE privilege is withheld from the application role, so it is
+  // retained like the other append-only audit-trail tables (its own unconditional forbid trigger has a different function name).
   const appendOnlyRaw = psql(
     ADMIN_DATABASE_URL,
     `SELECT DISTINCT n.nspname||'.'||c.relname
@@ -173,7 +175,7 @@ async function main() {
      JOIN pg_class c ON c.oid = t.tgrelid
      JOIN pg_namespace n ON n.oid = c.relnamespace
      JOIN pg_proc p ON p.oid = t.tgfoid
-     WHERE p.proname = 'forbid_mutation';`
+     WHERE p.proname IN ('forbid_mutation', 'forbid_execution_capability_activation_mutation');`
   );
   const tablesAppendOnly = new Set(
     appendOnlyRaw.split('\n').map((l) => l.trim()).filter(Boolean).filter((t) => tenantScopedTables.has(t))

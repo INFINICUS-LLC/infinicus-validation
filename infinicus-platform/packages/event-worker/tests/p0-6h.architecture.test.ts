@@ -96,8 +96,8 @@ describe('P0-6h architecture', () => {
     expect(read(APP)).toMatch(/app\.register\(claimRecoveryRoutes, \{ operator: buildClaimRecoveryOperator\(options\.claimRecovery\) \}\)/);
   });
 
-  it('no migration, schema or grant change: the newest migration is still 0195', () => {
+  it('no migration, schema or grant change: P0-6h added none (the only migration after 0195 is the separately authorized 0196 hardening)', () => {
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
-    expect(migrations[migrations.length - 1]).toMatch(/^0195_/);
+    expect(migrations.slice(migrations.findIndex((m) => m.startsWith('0195_')) + 1)).toEqual(['0196_harden_database_authority_activation_and_reorder.sql']);
   });
 });

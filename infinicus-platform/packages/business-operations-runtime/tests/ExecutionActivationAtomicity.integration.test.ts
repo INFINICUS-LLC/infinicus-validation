@@ -15,6 +15,7 @@ import { EventSubscriptionRepository, ExecutionCapabilityActivationRepository, c
 import type { TenantContext } from '@infinicus/database';
 import { executionPipelineSubscriptions } from '@infinicus/event-contracts';
 import { ExecutionActivationService, GovernedExecutionGate, PRODUCTION_BO_CAPABILITIES } from '../src/index.js';
+import { seedAdminUser } from './helpers/activationAdmin.js';
 import { makeExecWorld, type ExecWorld } from './helpers/executionWorld.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
 
@@ -37,7 +38,7 @@ describe.runIf(run)('P0-6f: an activation is never ENABLED without valid subscri
   interface W { ew: ExecWorld; ctx: TenantContext; businessId: string }
   async function world(): Promise<W> {
     const ew = await makeExecWorld(admin, tenantIds, {});
-    return { ew, ctx: { tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: randomUUID() }, businessId: ew.ctx.businessId };
+    return { ew, ctx: { tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: await seedAdminUser(admin, ew.w.tenantId, ew.w.workspaceId) }, businessId: ew.ctx.businessId };
   }
   const gate = () => new GovernedExecutionGate({ capabilities: PRODUCTION_BO_CAPABILITIES, killSwitchEngaged: () => false, actorUserId: randomUUID() });
   const scope = (w: W) => ({ tenantId: w.ctx.tenantId, workspaceId: w.ctx.workspaceId, businessId: w.businessId });
@@ -151,10 +152,18 @@ describe.runIf(run)('P0-6f: an activation is never ENABLED without valid subscri
 
   it('a failure AFTER provisioning (the audit write, or the verification) rolls back the activation AND the subscriptions', async () => {
     const w = await world();
-    const brokenAudit = new ExecutionCapabilityActivationRepository();
-    brokenAudit.recordAudit = async () => { throw new Error('audit store down'); };
-    await rejects(enableWith(w, { activations: brokenAudit }), /audit store down/);
-    await expectClosed(w, { subscriptions: 0 });
+    // The audit row is written by the governed database function in the same transaction as the activation: make exactly this tenant's activation
+    // audit insert fail inside the database (a scoped, temporary operator-created trigger) and prove nothing - row or subscription - survives.
+    const fn = `zz_fail_activation_audit_${w.ctx.tenantId.replace(/-/g, '')}`;
+    await admin.query(`CREATE FUNCTION public.${fn}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit store down'; END $$`);
+    await admin.query(`CREATE TRIGGER ${fn} BEFORE INSERT ON audit.audit_events FOR EACH ROW WHEN (NEW.tenant_id = '${w.ctx.tenantId}' AND NEW.action LIKE 'bo.execution_activation.%') EXECUTE FUNCTION public.${fn}()`);
+    try {
+      await rejects(enableWith(w), /audit store down/);
+      await expectClosed(w, { subscriptions: 0 });
+    } finally {
+      await admin.query(`DROP TRIGGER IF EXISTS ${fn} ON audit.audit_events`);
+      await admin.query(`DROP FUNCTION IF EXISTS public.${fn}()`);
+    }
 
     const real = new EventSubscriptionRepository();
     const unverified = { ensureOnClient: (c: any, ctx: any, s: any) => real.ensureOnClient(c, ctx, s), verifyOnClient: async () => false };

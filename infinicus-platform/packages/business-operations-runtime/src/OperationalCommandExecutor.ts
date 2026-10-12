@@ -234,25 +234,17 @@ export class OperationalCommandExecutor {
       && Decimal.parse(before.reorderQuantity)?.cmp(Decimal.fromNumber(p.reorderQuantity) as Decimal) === 0;
     if (unchanged) return { commandType: 'configure_inventory_reorder_policy', recordId: row.id, applied: false, before, after: before };
 
-    // Transaction-local: the guard trigger accepts a state/value change only from this command (see migrations 0189 and 0192).
-    await client.query(`SELECT set_config('app.bo_reorder_policy_writer', 'configure_inventory_reorder_policy', true)`);
-    let updated;
-    try {
-      updated = await client.query<{ reorder_point: string; reorder_quantity: string; reorder_policy_state: 'UNSET' | 'CONFIGURED'; version: number }>(
-        `UPDATE business_operations.inventory_balances
-         SET reorder_point = $2, reorder_quantity = $3, reorder_policy_state = 'CONFIGURED',
-             reorder_policy_configured_at = now(), reorder_policy_configured_source = $4, version = version + 1
-         WHERE id = $1 AND reorder_point = $5::numeric AND reorder_quantity = $6::numeric
-         RETURNING reorder_point, reorder_quantity, reorder_policy_state, version`,
-        [row.id, p.reorderPoint, p.reorderQuantity, source, before.reorderPoint, before.reorderQuantity]
-      );
-    } finally {
-      await client.query(`SELECT set_config('app.bo_reorder_policy_writer', '', true)`);
-    }
+    // The protected mutation boundary (migration 0196): the database function re-verifies scope and values and writes once under the row lock.
+    // Setting a session variable is no longer sufficient to change these fields; only this governed entry point can.
+    const updated = await client.query<{ out_applied: boolean; out_reorder_point: string; out_reorder_quantity: string; out_reorder_policy_state: 'UNSET' | 'CONFIGURED'; out_version: number }>(
+      `SELECT out_applied, out_reorder_point, out_reorder_quantity, out_reorder_policy_state, out_version
+         FROM business_operations.apply_inventory_reorder_policy($1,$2,$3,$4,$5::numeric,$6::numeric,$7,$8::numeric,$9::numeric)`,
+      [ctx.tenantId, ctx.workspaceId, businessId, row.id, p.reorderPoint, p.reorderQuantity, source, before.reorderPoint, before.reorderQuantity]
+    );
     if (updated.rowCount !== 1) throw new ReorderBaselineChangedError(); // second line of defence behind the row lock
     const u = updated.rows[0];
-    const after: ReorderValuesSnapshot = { reorderPoint: exact(u.reorder_point), reorderQuantity: exact(u.reorder_quantity), state: u.reorder_policy_state, version: Number(u.version) };
-    return { commandType: 'configure_inventory_reorder_policy', recordId: row.id, applied: true, before, after };
+    const after: ReorderValuesSnapshot = { reorderPoint: exact(u.out_reorder_point), reorderQuantity: exact(u.out_reorder_quantity), state: u.out_reorder_policy_state, version: Number(u.out_version) };
+    return { commandType: 'configure_inventory_reorder_policy', recordId: row.id, applied: u.out_applied, before, after };
   }
 
   private async createPurchaseOrder(

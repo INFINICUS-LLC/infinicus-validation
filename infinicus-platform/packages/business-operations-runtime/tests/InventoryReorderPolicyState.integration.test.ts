@@ -156,11 +156,11 @@ describe.runIf(RUN)('reorder policy state - live PostgreSQL', () => {
     it('refuses CONFIGURED, configured_* and configured-value changes made outside the BO command', async () => {
       const w = await world();
       const id = (await row(w)).id;
-      await expect(admin.query(`UPDATE business_operations.inventory_balances SET reorder_policy_state='CONFIGURED', reorder_policy_configured_at=now(), reorder_policy_configured_source='BO_COMMAND' WHERE id=$1`, [id])).rejects.toThrow(/configure_inventory_reorder_policy/);
+      await expect(admin.query(`UPDATE business_operations.inventory_balances SET reorder_policy_state='CONFIGURED', reorder_policy_configured_at=now(), reorder_policy_configured_source='BO_COMMAND' WHERE id=$1`, [id])).rejects.toThrow(/apply_inventory_reorder_policy/);
       await expect(admin.query(`UPDATE business_operations.inventory_balances SET reorder_policy_configured_source='BO_COMMAND' WHERE id=$1`, [id])).rejects.toThrow();
       await service.configure(w.ctx, cmd(w));
-      await expect(admin.query(`UPDATE business_operations.inventory_balances SET reorder_point=1 WHERE id=$1`, [id])).rejects.toThrow(/configure_inventory_reorder_policy/);
-      await expect(admin.query(`UPDATE business_operations.inventory_balances SET reorder_quantity=1 WHERE id=$1`, [id])).rejects.toThrow(/configure_inventory_reorder_policy/);
+      await expect(admin.query(`UPDATE business_operations.inventory_balances SET reorder_point=1 WHERE id=$1`, [id])).rejects.toThrow(/apply_inventory_reorder_policy/);
+      await expect(admin.query(`UPDATE business_operations.inventory_balances SET reorder_quantity=1 WHERE id=$1`, [id])).rejects.toThrow(/apply_inventory_reorder_policy/);
     });
 
     it('refuses a direct INSERT as CONFIGURED', async () => {
@@ -169,7 +169,7 @@ describe.runIf(RUN)('reorder policy state - live PostgreSQL', () => {
       await admin.query(`INSERT INTO platform.inventory_items (id, tenant_id, workspace_id, business_id, sku, name, status) VALUES ($1,$2,$3,$4,$5,'I2','active')`, [item, w.ctx.tenantId, w.ctx.workspaceId, w.businessId, `sku-${item}`]);
       await expect(admin.query(
         `INSERT INTO business_operations.inventory_balances (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, reorder_policy_state, reorder_policy_configured_at, reorder_policy_configured_source)
-         VALUES ($1,$2,$3,$4,$5,'CONFIGURED',now(),'BO_COMMAND')`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, item, w.warehouseId])).rejects.toThrow(/configure_inventory_reorder_policy/);
+         VALUES ($1,$2,$3,$4,$5,'CONFIGURED',now(),'BO_COMMAND')`, [w.ctx.tenantId, w.ctx.workspaceId, w.businessId, item, w.warehouseId])).rejects.toThrow(/apply_inventory_reorder_policy/);
     });
 
     it('never returns CONFIGURED to UNSET, even inside the writer context', async () => {
@@ -179,7 +179,7 @@ describe.runIf(RUN)('reorder policy state - live PostgreSQL', () => {
       const c = await admin.connect();
       try {
         await c.query('BEGIN');
-        await c.query(`SELECT set_config('app.bo_reorder_policy_writer','configure_inventory_reorder_policy', true)`);
+        await c.query(`SELECT set_config('app.bo_reorder_policy_writer','apply_inventory_reorder_policy', true)`);
         await expect(c.query(`UPDATE business_operations.inventory_balances SET reorder_policy_state='UNSET', reorder_policy_configured_at=NULL, reorder_policy_configured_source=NULL WHERE id=$1`, [id])).rejects.toThrow(/cannot return to UNSET/);
       } finally { await c.query('ROLLBACK'); c.release(); }
     });
@@ -195,7 +195,7 @@ describe.runIf(RUN)('reorder policy state - live PostgreSQL', () => {
           `reorder_policy_configured_source='NOPE'`,
         ]) {
           await c.query('BEGIN');
-          await c.query(`SELECT set_config('app.bo_reorder_policy_writer','configure_inventory_reorder_policy', true)`);
+          await c.query(`SELECT set_config('app.bo_reorder_policy_writer','apply_inventory_reorder_policy', true)`);
           await expect(c.query(`UPDATE business_operations.inventory_balances SET ${set} WHERE id=$1`, [id])).rejects.toThrow();
           await c.query('ROLLBACK');
         }
@@ -208,7 +208,7 @@ describe.runIf(RUN)('reorder policy state - live PostgreSQL', () => {
       const c = await admin.connect();
       try {
         await c.query('BEGIN');
-        await c.query(`SELECT set_config('app.bo_reorder_policy_writer','configure_inventory_reorder_policy', true)`);
+        await c.query(`SELECT set_config('app.bo_reorder_policy_writer','apply_inventory_reorder_policy', true)`);
         await expect(c.query(`UPDATE business_operations.inventory_balances SET reorder_policy_state='CONFIGURED', reorder_policy_configured_at=now(), reorder_policy_configured_source='NOPE' WHERE id=$1`, [id])).rejects.toThrow(/reorder_policy_source_check/);
       } finally { await c.query('ROLLBACK'); c.release(); }
     });

@@ -6,7 +6,7 @@
  * enforces it and passes it here as the recorded governing fact, and this service refuses any other value. ABA's approval permissions are never
  * activation permissions. Only an action type BO's registry supports can be activated - a type it cannot execute is never "enabled".
  *
- * Every state change is one transaction: the version-chained record, the audit row, and (on enable) the idempotent delivery subscriptions of
+ * Every state change is one transaction: the version-chained record and its audit row (both written by the governed database function, migration 0196) and (on enable) the idempotent delivery subscriptions of
  * the pipeline for the workspace. Repeating the state a business is already in changes nothing. Enabling grants NO authorization: ABA
  * authorization, the BO claim, the fresh authority check and the execution boundaries are all still required.
  */
@@ -18,6 +18,7 @@ import { PRODUCTION_BO_CAPABILITIES } from '../authorized-action/boActionCapabil
 
 /** The existing business-operations administration permission (tenancy.permissions, migration 0137). No permission was invented. */
 export const EXECUTION_ACTIVATION_PERMISSION = 'bo:admin';
+/** The audit actions written by the governed database function (kept here so readers and tests share the names). */
 export const EXECUTION_ACTIVATION_AUDIT_ACTIONS = Object.freeze({ enabled: 'bo.execution_activation.enabled', disabled: 'bo.execution_activation.disabled' });
 
 export class ExecutionActivationError extends Error {
@@ -72,6 +73,8 @@ export class ExecutionActivationService {
         });
       } catch (error) {
         if (error instanceof Error && /does not belong to the stated tenant and workspace/.test(error.message)) throw new ExecutionActivationError('BUSINESS_NOT_IN_SCOPE', 'the business is not in this tenant and workspace');
+        // The database re-checks scope, bo:admin and the actor's active membership (migration 0196): its refusal is a permission failure, never a silent success.
+        if ((error as { code?: string }).code === '42501') throw new ExecutionActivationError('PERMISSION_INVALID', `the database refused the activation: ${error instanceof Error ? error.message : 'insufficient privilege'}`);
         throw error;
       }
       if (request.state === 'ENABLED') {
@@ -88,13 +91,6 @@ export class ExecutionActivationService {
           }
           throw error;
         }
-      }
-      if (result.changed) {
-        await this.activations.recordAudit(client, ctx, {
-          businessId: request.businessId, entityId: result.activation.id, correlationId: request.correlationId,
-          action: request.state === 'ENABLED' ? EXECUTION_ACTIVATION_AUDIT_ACTIONS.enabled : EXECUTION_ACTIVATION_AUDIT_ACTIONS.disabled,
-          metadata: { actionType: `${code}@${schemaVersion}`, version: result.activation.version, state: request.state, permission: permissionCode, reason },
-        });
       }
       return result;
     });

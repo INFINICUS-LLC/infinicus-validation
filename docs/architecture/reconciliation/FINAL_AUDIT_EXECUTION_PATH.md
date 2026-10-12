@@ -68,3 +68,10 @@ Learning, which are intentionally unbuilt; performance and load; third-party dep
 
 About 90% on the code-level conformance claims (each backed by an executed probe, a CI-run guard, or a grep over the whole tree). Lower (about 70%) on completeness: an audit of this size
 can miss a path that no guard or probe names; the guards are the standing protection.
+
+
+## 6. Follow-up status
+
+- **F1 and F3: closed in code by migration 0196** (`DATABASE_AUTHORITY_HARDENING_0196.md`) - repository only; not applied to any live database.
+- **F2: unchanged by owner ruling** (v1 behavior kept).
+- F4 and the deployment preconditions P1-P3 of the hardening document remain open items for live-migration planning.

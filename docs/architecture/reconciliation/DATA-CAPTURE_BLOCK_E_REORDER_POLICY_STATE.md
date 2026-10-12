@@ -22,3 +22,6 @@ the rule set (C4) and P0-6c can rely on facts.
 
 ## Dependencies / extension
 P0-6c's `InventoryReorderPolicyExecutionAdapter` will call this same command with `configurationSource: 'AUTHORIZED_ACTION_PACKAGE'`.
+
+
+> **Superseded in part by migration 0196** (`DATABASE_AUTHORITY_HARDENING_0196.md`): the session-variable write guard described above is replaced by a governed database function (`apply_inventory_reorder_policy`) plus an owner-checked trigger; a session variable alone no longer permits a reorder-field write.
