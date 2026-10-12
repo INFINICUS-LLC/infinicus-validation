@@ -148,9 +148,16 @@ end-to-end smoke test against the live Hetzner-hosted backend.
 
 ## Ongoing operations
 
-- **Redeploying a new version**: `git pull`, `docker compose build`,
+- **Redeploying a new version**: `git pull` (or `git checkout <reviewed SHA>`),
+  `GIT_SHA=$(git rev-parse HEAD) docker compose build`,
   `docker compose run --rm tools` (migration gate — safe to run even
-  when there's nothing new to migrate), `docker compose up -d`.
+  when there's nothing new to migrate),
+  `docker compose run --rm --entrypoint bash tools infrastructure/database/scripts/grant-app-role.sh`
+  (**required after every migration run**: it grants the application role access to new objects and, since migration 0196, withholds direct
+  writes of execution-activation rows and the protected reorder columns; it is idempotent and safe to run when nothing changed),
+  then `docker compose up -d`. Order matters: migrate, grant, then start the new application.
+- **Which version is deployed**: `curl -s https://api.infini-cus.com/v1/health` returns `{"status":"ok","version":"<git commit>"}`
+  (`unknown` if the image was built without `GIT_SHA`). Also `git -C /opt/infinicus/repo rev-parse HEAD` and `docker compose images`.
 - **Logs**: `docker compose logs -f api`.
 - **Backups**: `infrastructure/deployment/scripts/` and
   `infrastructure/database/scripts/` already have backup/restore/PITR

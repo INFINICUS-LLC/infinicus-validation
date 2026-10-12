@@ -44,6 +44,9 @@ services:
     build:
       context: ../../..
       dockerfile: apps/api/Dockerfile
+      args:
+        # Reported by GET /v1/health so the deployed commit can be read: `GIT_SHA=$(git rev-parse HEAD) docker compose build`.
+        GIT_SHA: ${GIT_SHA:-unknown}
     restart: unless-stopped
     depends_on:
       postgres:

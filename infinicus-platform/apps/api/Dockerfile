@@ -35,7 +35,11 @@ RUN npx turbo run build --filter=@infinicus/api...
 
 # ---- runtime stage ------------------------------------------------------
 FROM base AS runtime
+# The git commit this image was built from, reported by GET /v1/health so an operator can tell which code is deployed.
+# Pass it at build time: `GIT_SHA=$(git rev-parse HEAD) docker compose build` (defaults to "unknown").
+ARG GIT_SHA=unknown
 ENV NODE_ENV=production
+ENV INFINICUS_BUILD_SHA=$GIT_SHA
 WORKDIR /repo
 
 # Non-root — least privilege for the running process (spec §5).
