@@ -54,6 +54,6 @@ export { ExecutionCapabilityActivationRepository, ExecutionCapabilityActivationI
 export type { ExecutionCapabilityActivation, RecordActivationInput, ActivationState } from './ExecutionCapabilityActivationRepository.js';
 export { AuthorizedActionExecutionRepository } from './AuthorizedActionExecutionRepository.js';
 export type {
-  ClaimForExecution, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
+  ClaimForExecution, ClaimState, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
   ExecutionOutcome, MutationResult, AuthorityVerdictRecord, AttemptOutcome,
 } from './AuthorizedActionExecutionRepository.js';

@@ -51,10 +51,10 @@ describe('P0-6b architecture', () => {
     expect(production.filter((f) => f.rel.startsWith('apps/api/src/') && /setInterval|setTimeout\(.*dispatch|claimBatch|dispatchScope/.test(f.code)).map((f) => f.rel)).toEqual([]);
   });
 
-  it('the dispatcher cannot sweep unrelated outbox rows: the event types are mandatory and the worker passes only the two declared types (authorized: P0-6b; executed: P0-6d)', () => {
+  it('the dispatcher cannot sweep unrelated outbox rows: the event types are mandatory and the worker passes only the three declared types (authorized: P0-6b; executed: P0-6d; recovery signal: P0-6g)', () => {
     expect(read(DISPATCHER)).toMatch(/requires an explicit, non-empty list of event types/);
     expect(read(DISPATCHER)).toMatch(/eventTypes: \[\.\.\.d\.eventTypes\]/);
-    expect(read(COMPOSE)).toMatch(/const eventTypes = \[ACTION_AUTHORIZED_EVENT_TYPE, ACTION_EXECUTED_EVENT_TYPE\]/);
+    expect(read(COMPOSE)).toMatch(/const eventTypes = \[ACTION_AUTHORIZED_EVENT_TYPE, ACTION_EXECUTED_EVENT_TYPE, AUTHORIZED_ACTION_RECOVERY_EVENT_TYPE\]/);
   });
 
   it('everything defaults closed: the issuer has no announcer of its own, an absent announcer gate is deny-all, governed (closed-by-default) gate in the consumer composition and worker', () => {

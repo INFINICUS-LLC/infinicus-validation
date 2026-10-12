@@ -165,7 +165,7 @@ export type {
   RegisterSession, OpenRegisterSessionInput, CloseRegisterSessionInput,
   Product, CreateProductInput, UpdateProductInput,
   Order, OrderLineItem, OrderOperationalStatus, CreateOrderInput, AddLineItemInput,
-  ExecutionCapabilityActivation, RecordActivationInput, ActivationState, ClaimForExecution, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
+  ExecutionCapabilityActivation, RecordActivationInput, ActivationState, ClaimForExecution, ClaimState, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
   ExecutionOutcome, MutationResult, AuthorityVerdictRecord, AttemptOutcome,
   IntakeOutcome, IntakeEvaluation, IntakeRequest, IntakeResult, IntakeAttemptInput, AuthorizedActionReceipt, AuthorizedActionClaim,
   InventoryPolicyEvaluation, InventoryPolicyEvaluationSubject, InventoryPolicyEvaluationDimension, InventoryPolicyEvaluationResult,

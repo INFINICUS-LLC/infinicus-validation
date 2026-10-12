@@ -290,8 +290,8 @@ describe.runIf(run)('P0-6f: authorized-action execution path - production compos
     }, 60_000);
   });
 
-  describe('dead-lettered notification with a claim and no outcome (owner decision required - see P0-6f doc)', () => {
-    it('is reproducible, fail-safe and observable: nothing mutates and nothing re-drives it; the existing scoped primitive (runDue) can recover it safely, but no worker calls it', async () => {
+  describe('dead-lettered notification with a claim and no outcome (recovered by the claim recovery signal - P0-6g)', () => {
+    it('is reproducible and fail-safe: the shared delivery budget strands the claim (nothing mutates), and the durable recovery signal then recovers it exactly once through the one engine', async () => {
       const c = await kit.authorChain();
       await kit.activate(c);
       await kit.issue(c);
@@ -309,7 +309,7 @@ describe.runIf(run)('P0-6f: authorized-action execution path - production compos
       };
       let offset = 0;
       const clock = () => new Date(Date.now() + offset);
-      for (let i = 0; i < 5; i += 1) { await worker(c, { clock, statusProvider: starve }).runOnce(); offset += 60_000; }
+      for (let i = 0; i < 3; i += 1) { await worker(c, { clock, statusProvider: starve }).runOnce(); offset += 60_000; } // exactly the three deliveries; later passes would reach the recovery signal
       expect(claimedAtCall).not.toBeNull();
 
       const cl = await claims(c);
@@ -322,18 +322,18 @@ describe.runIf(run)('P0-6f: authorized-action execution path - production compos
       const attemptRows = await q(`SELECT attempt_number FROM ${BO}.authorized_action_execution_attempts WHERE claim_id=$1`, [cl[0].id]);
       expect(attemptRows.length).toBeLessThan(3);        // the engine's own budget was not spent: the shared delivery budget was
 
-      // No worker pass re-drives it (the stranded state is stable) ...
-      await worker(c, { clock: () => new Date(Date.now() + offset + 600_000) }).runOnce();
+      // P0-6g: the claim's own durable recovery signal (written with the claim, due 60 s later) is what recovers it. Before it is due, nothing happens ...
+      await worker(c, { clock: () => new Date(Date.now() + 10_000) }).runOnce();
       expect(await executions(c)).toHaveLength(0);
-      // ... while the EXISTING scoped primitive recovers it safely: fresh ABA status, the 60 s threshold, terminal never re-driven.
-      const engine = new AuthorizedActionExecutionService({
-        statusProvider: real, executionStatusMaxAgeMs: MAX_AGE, clock: () => new Date(Date.now() + 120_000),
-        gate: new GovernedExecutionGate({ capabilities: PRODUCTION_BO_CAPABILITIES, killSwitchEngaged: () => false, actorUserId: ACTOR }),
-      });
-      const recovered = await engine.runDue({ tenantId: c.s.ctx.tenantId, workspaceId: c.s.ctx.workspaceId, userId: ACTOR }, { limit: 10 });
+      // ... and once it is due, with the condition that stranded the claim cleared (real ABA status again), the EXISTING worker recovers it, once,
+      // through the one engine: fresh ABA status/authority, the governed gate, terminal never re-driven.
+      await worker(c, { clock: () => new Date(Date.now() + offset + 600_000), statusProvider: real }).runOnce();
+      const recovered = await executions(c);
       expect(recovered).toHaveLength(1);
-      expect((await executions(c))[0]).toMatchObject({ outcome: 'SUCCEEDED', claim_id: cl[0].id });
-      expect(await engine.runDue({ tenantId: c.s.ctx.tenantId, workspaceId: c.s.ctx.workspaceId, userId: ACTOR }, { limit: 10 })).toHaveLength(0); // terminal: never re-driven
+      expect(recovered[0]).toMatchObject({ outcome: 'SUCCEEDED', mutation_result: 'APPLIED', claim_id: cl[0].id });
+      expect(await claims(c)).toHaveLength(1);
+      await worker(c, { clock: () => new Date(Date.now() + offset + 1_200_000), statusProvider: real }).runOnce();
+      expect(await executions(c)).toEqual(recovered); // terminal: never re-driven
     }, 120_000);
   });
 });

@@ -33,6 +33,19 @@ export interface ClaimForExecution {
   document: Record<string, unknown>;
 }
 
+/** A claim's identity and whether it already has a terminal execution: the recovery signal's read (no package body, no lock, no write). */
+export interface ClaimState {
+  claimId: string;
+  tenantId: string;
+  workspaceId: string;
+  businessId: string;
+  packageId: string;
+  packageVersion: number;
+  digest: string;
+  /** The terminal execution row's outcome, or null while the claim has none. */
+  terminalOutcome: ExecutionOutcome | null;
+}
+
 export interface ExecutionRecord {
   id: string;
   tenantId: string;
@@ -226,6 +239,25 @@ export class AuthorizedActionExecutionRepository {
 
   async getByClaim(ctx: TenantContext, claimId: string): Promise<ExecutionRecord | null> {
     return withTenantTransaction(ctx, (client) => this.getExecutionByClaim(client, claimId));
+  }
+
+  /** A claim's identity and terminal state within the caller's scope (RLS). Null when the claim does not exist there. */
+  async getClaimState(ctx: TenantContext, claimId: string): Promise<ClaimState | null> {
+    if (!UUID.test(claimId)) return null;
+    return withTenantTransaction(ctx, async (client) => {
+      const r = await client.query<Json>(
+        `SELECT c.id, c.tenant_id, c.workspace_id, c.business_id, c.package_id, c.package_version, c.digest, e.outcome
+           FROM ${S}.authorized_action_claims c LEFT JOIN ${S}.authorized_action_executions e ON e.claim_id = c.id
+          WHERE c.id = $1`,
+        [claimId],
+      );
+      const x = r.rows[0];
+      if (!x) return null;
+      return {
+        claimId: x.id as string, tenantId: x.tenant_id as string, workspaceId: x.workspace_id as string, businessId: x.business_id as string,
+        packageId: x.package_id as string, packageVersion: x.package_version as number, digest: x.digest as string, terminalOutcome: (x.outcome as ExecutionOutcome | null) ?? null,
+      };
+    });
   }
 
   /** An execution fact by id, within the caller's scope (RLS). Null when it does not exist there. */

@@ -23,7 +23,7 @@ Hardening: `EventSubscriptionRepository.ensureOnClient` now also refuses an exis
 ### Real defect found and fixed by the real end-to-end test
 The real BO evaluator records snapshot reorder values as `numeric` text (`"170.0000"`); the P0-6c baseline reader accepted only JSON numbers, which the P0-6c fixtures used. **Every real modified approval would have been REFUSED(NO_BASELINE_EVIDENCE).** Fixed in the consumer (`Decimal.fromSnapshotValue`: plain decimal text or finite number; everything else rejected). Evaluation records are immutable and were not changed.
 
-## 5. Stranded-claim finding (Blocks 4-5) - OWNER DECISION REQUIRED
+## 5. Stranded-claim finding (Blocks 4-5) - OWNER DECISION: Alternative C (implemented in P0-6g, see `P0-6g_STRANDED_CLAIM_RECOVERY.md`)
 **Scenario (reproduced in the end-to-end test):** delivery attempts 1-2 are spent before the claim (status not obtainable yet); attempt 3 claims, but the final authority check cannot decide; the outbox dead-letters the notification (`RETRIES_EXHAUSTED`). Result: BO holds the single-use claim, no terminal execution exists, nothing is mutated, and no worker re-drives it. Cause: the **outbox delivery budget (3) is shared** between pre-claim intake retries and post-claim engine retries, while the engine counts only its own attempts.
 **Can existing infrastructure recover it? No, not automatically.**
 - `runDue` (the scoped recovery primitive) works - the test recovers the claim with it (fresh ABA status, 60 s threshold, terminal never re-driven) - but **nothing calls it**, and the worker finds scopes only from `events.outbox_events` rows (a dead-lettered notification is no longer dispatchable).

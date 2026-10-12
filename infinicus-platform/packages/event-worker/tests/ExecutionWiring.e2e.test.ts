@@ -136,7 +136,7 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
     expect(await q(`SELECT metadata FROM audit.audit_events WHERE tenant_id=$1 AND action='bo.execution_activation.enabled'`, [t(s)])).toHaveLength(1);
   });
 
-  it('enabling provisions the two delivery subscriptions idempotently, version-pinned and scope-correct', async () => {
+  it('enabling provisions the three delivery subscriptions idempotently, version-pinned and scope-correct', async () => {
     const s = await scenario();
     await enable(s);
     await enable(s); // repeating the state changes nothing
@@ -145,6 +145,7 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
     const subs = await q('SELECT subscriber_name, event_pattern, destination_ref, supported_versions, retry_policy FROM events.event_subscriptions WHERE tenant_id=$1 AND workspace_id=$2 ORDER BY subscriber_name', [s.ctx.tenantId, s.ctx.workspaceId]);
     expect(subs.map((r) => [r.subscriber_name, r.event_pattern, r.destination_ref, r.supported_versions])).toEqual([
       [`bo.authorized_action_intake@${s.ctx.workspaceId}`, 'control_loop.action.authorized', 'bo.authorized_action_intake', ['1']],
+      [`bo.authorized_action_recovery@${s.ctx.workspaceId}`, 'operations.authorized_action.recovery_due', 'bo.authorized_action_recovery', ['1']],
       [`om.execution_verification@${s.ctx.workspaceId}`, 'operations.action.executed', 'om.execution_verification', ['1']],
     ]);
     expect(subs[0].retry_policy).toMatchObject({ maxAttempts: 3, backoffSeconds: [1, 5, 15] });

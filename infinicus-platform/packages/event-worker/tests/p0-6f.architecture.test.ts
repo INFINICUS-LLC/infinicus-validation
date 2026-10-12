@@ -79,7 +79,7 @@ describe('P0-6f architecture', () => {
 
   it('BO validates, claims and executes - and reads no ABA private table: BO code names no ABA schema table, only the shared ports', () => {
     for (const f of under(BO)) expect(f.code, f.rel).not.toMatch(/approved_business_action\.|FROM approved_business_action|AuthorizedActionPackageRepository|AbaPackageStatusProvider/);
-    expect(filesMatching(/\.executeClaim\(/).filter((rel) => rel !== `${BO}authorized-action-execution/AuthorizedActionExecutionService.ts`)).toEqual([`${BO}authorized-action/AuthorizedActionNotificationConsumer.ts`]); // one trigger
+    expect(filesMatching(/\.executeClaim\(/).filter((rel) => rel !== `${BO}authorized-action-execution/AuthorizedActionExecutionService.ts`).sort()).toEqual([`${BO}authorized-action/AuthorizedActionNotificationConsumer.ts`, `${BO}authorized-action/ClaimRecoveryConsumer.ts`].sort()); // one executor; the claim recovery consumer (P0-6g) is its only other driver
   });
 
   it('an announcement is not execution and a subscription is not activation: the gate needs the activation record AND valid subscriptions AND the registry AND no kill switch', () => {

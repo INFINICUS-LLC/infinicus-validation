@@ -52,8 +52,8 @@ describe('P0-6e architecture', () => {
     for (const rel of [CONSUMER, ENGINE, GATE, ACTIVATION_SERVICE, ACTIVATION_REPO, COMPOSE, ROUTE]) expect(read(rel).length, rel).toBeGreaterThan(400);
   });
 
-  it('ONE trigger, ONE executor: the engine is invoked only by the BO notification consumer, and nothing drives it from a timer, route, queue or cron', () => {
-    expect(filesMatching(/\.executeClaim\(/).filter((rel) => rel !== ENGINE)).toEqual([CONSUMER]); // the engine's own runDue is unreferenced (below)
+  it('ONE executor, TWO declared drivers: the engine is invoked only by the BO notification consumer and the BO claim-recovery consumer (P0-6g), and nothing drives it from a timer, route, queue or cron', () => {
+    expect(filesMatching(/\.executeClaim\(/).filter((rel) => rel !== ENGINE).sort()).toEqual([CONSUMER, `${BO}authorized-action/ClaimRecoveryConsumer.ts`].sort()); // the engine's own runDue is unreferenced (below); the second driver is the claim's own durable recovery signal (P0-6g)
     expect(filesMatching(/\.runDue\(/)).toEqual([]); // no second (polling) trigger exists
     expect(filesMatching(/new AuthorizedActionExecutionService\(/)).toEqual([COMPOSE]); // one construction, in the composition root
     for (const f of production) {
@@ -159,7 +159,7 @@ describe('P0-6e architecture', () => {
 
   it('one outbox, one retry policy, one transport: no second queue, scheduler or retry constants were introduced', () => {
     expect(under('packages/').filter((f) => /EXECUTION_(MAX_ATTEMPTS|BACKOFF_MS|CLAIM_RECOVERY_MS)\s*=/.test(f.code)).map((f) => f.rel)).toEqual([`${BO}authorized-action-execution/constants.ts`]);
-    expect(filesMatching(/new OutboxRepository\(\)/).filter((rel) => rel.startsWith(BO) || rel === CONSUMER)).toEqual([`${BO}authorized-action-execution/ExecutionEventPublisher.ts`]);
+    expect(filesMatching(/new OutboxRepository\(\)/).filter((rel) => rel.startsWith(BO) || rel === CONSUMER).sort()).toEqual([`${BO}authorized-action-execution/ExecutionEventPublisher.ts`, `${BO}authorized-action/ClaimRecoveryScheduler.ts`].sort()); // the existing outbox only: the execution announcement (P0-6d) and the claim recovery signal (P0-6g)
     expect(filesMatching(/bullmq|amqplib|node-cron|agenda|bee-queue|setInterval\(/).filter((rel) => rel.startsWith('packages/business-operations-runtime/') || rel === COMPOSE)).toEqual([]);
   });
 

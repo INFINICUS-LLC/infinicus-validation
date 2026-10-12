@@ -405,7 +405,11 @@ describe.runIf(run)('P0-5 Block 3e: BO authorized-action intake', () => {
       const before = await snapshot();
       const pkg = sealedPackage(world, { parameters: { reorderPoint: 999, reorderQuantity: 888 } });
       expect((await service(providerFor(pkg)).intake(ctxOf(world), { package: pkg })).outcome).toBe('CLAIMED');
-      expect(await snapshot()).toEqual(before);
+      // P0-6g: the claim's own durable recovery signal is the ONE additional row (an internal outbox row, not announced or delivered yet).
+      const after = await snapshot();
+      expect(after).toEqual({ ...before, outbox: before.outbox + 1 });
+      const signal = await admin.query("SELECT event_type, status, aggregate_id FROM events.outbox_events WHERE tenant_id=$1 AND event_type = 'operations.authorized_action.recovery_due' AND aggregate_id = (SELECT id FROM business_operations.authorized_action_claims WHERE tenant_id=$1 AND package_id=$2)", [world.tenantId, pkg.identity.packageId]);
+      expect(signal.rows).toEqual([expect.objectContaining({ event_type: 'operations.authorized_action.recovery_due', status: 'pending' })]);
       expect(before.balance).toMatchObject({ reorder_point: '3.0000', reorder_quantity: '7.0000' });
     });
   });

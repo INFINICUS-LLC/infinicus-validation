@@ -10,12 +10,13 @@ import { OutboxDispatcher } from '@infinicus/database';
 import type { EventConsumer } from '@infinicus/database';
 import {
   BusinessEventContractRegistry, ACTION_AUTHORIZED_EVENT_TYPE, registerActionAuthorizedContract, ACTION_EXECUTED_EVENT_TYPE, registerActionExecutedContract,
+  AUTHORIZED_ACTION_RECOVERY_EVENT_TYPE, registerAuthorizedActionRecoveryContract,
 } from '@infinicus/event-contracts';
 import type {
   ActionCapabilityRegistry, AuthoritativePackageStatusProvider, AuthorizedActionPackageSource, ExecutionCapabilityGate, PackageConsumptionRecorder,
 } from '@infinicus/handoff-contracts';
 import {
-  AuthorizedActionExecutionService, AuthorizedActionIntakeService, AuthorizedActionNotificationConsumer, BoExecutionEvidenceReader, GovernedExecutionGate,
+  AuthorizedActionExecutionService, AuthorizedActionIntakeService, AuthorizedActionNotificationConsumer, BoExecutionEvidenceReader, ClaimRecoveryConsumer, GovernedExecutionGate,
   PRODUCTION_BO_CAPABILITIES, killSwitchEngagedFrom,
 } from '@infinicus/business-operations-runtime';
 import { ActionExecutedConsumer, ExecutionVerificationService, OM_VERIFIABLE_ACTION_TYPES } from '@infinicus/outcome-monitoring-runtime';
@@ -51,6 +52,7 @@ export function buildContractRegistry(): BusinessEventContractRegistry {
   const registry = new BusinessEventContractRegistry();
   registerActionAuthorizedContract(registry);
   registerActionExecutedContract(registry);
+  registerAuthorizedActionRecoveryContract(registry);
   return registry;
 }
 
@@ -77,11 +79,13 @@ export function buildEventWorker(options: BuildEventWorkerOptions): EventWorker 
       evidence: new BoExecutionEvidenceReader({ actorUserId: config.actorUserId }), supportedActionTypes: OM_VERIFIABLE_ACTION_TYPES,
     }),
   });
-  const eventTypes = [ACTION_AUTHORIZED_EVENT_TYPE, ACTION_EXECUTED_EVENT_TYPE];
+  // P0-6g: the durable recovery signal of a BO claim. Same executor, same gate; it can only nudge an EXISTING claim.
+  const recoveryConsumer = new ClaimRecoveryConsumer({ executor, gate });
+  const eventTypes = [ACTION_AUTHORIZED_EVENT_TYPE, ACTION_EXECUTED_EVENT_TYPE, AUTHORIZED_ACTION_RECOVERY_EVENT_TYPE];
   const dispatcher = new OutboxDispatcher({
     contracts: buildContractRegistry(),
     eventTypes,
-    consumers: new Map<string, EventConsumer>([[AuthorizedActionNotificationConsumer.NAME, consumer], [ActionExecutedConsumer.NAME, executedConsumer]]),
+    consumers: new Map<string, EventConsumer>([[AuthorizedActionNotificationConsumer.NAME, consumer], [ActionExecutedConsumer.NAME, executedConsumer], [ClaimRecoveryConsumer.NAME, recoveryConsumer]]),
     workerId: config.workerId,
     claimTimeoutMs: config.claimTimeoutMs,
     ...(options.clock ? { clock: options.clock } : {}),
