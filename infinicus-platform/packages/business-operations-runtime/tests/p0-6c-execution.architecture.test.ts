@@ -92,9 +92,9 @@ describe('P0-6c architecture', () => {
     }
   });
 
-  it('the engine only has references in its own files, the package index, the BO notification consumer (the one trigger) and the worker composition root (P0-6e wiring is pinned in p0-6e.architecture.test.ts); the production registry is exactly the P0-6e entry', () => {
+  it('the engine only has references in its own files, the package index, the BO notification consumer (the trigger), the BO claim-recovery consumer (P0-6g: the same engine, driven only by the claim own durable recovery signal) and the worker composition root (P0-6e wiring is pinned in p0-6e.architecture.test.ts); the production registry is exactly the P0-6e entry', () => {
     const users = production.filter((f) => /AuthorizedActionExecutionService|InventoryReorderPolicyExecutionAdapter/.test(f.code)).map((f) => f.rel).sort();
-    expect(users).toEqual([ADAPTER, SERVICE, 'packages/business-operations-runtime/src/index.ts', 'packages/business-operations-runtime/src/authorized-action/AuthorizedActionNotificationConsumer.ts', 'packages/event-worker/src/compose.ts'].sort());
+    expect(users).toEqual([ADAPTER, SERVICE, 'packages/business-operations-runtime/src/index.ts', 'packages/business-operations-runtime/src/authorized-action/AuthorizedActionNotificationConsumer.ts', 'packages/business-operations-runtime/src/authorized-action/ClaimRecoveryConsumer.ts', 'packages/event-worker/src/compose.ts'].sort());
     expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\['inventory_reorder_policy_update@1'\]\)/);
     for (const rel of [SERVICE, ADAPTER, REPO]) expect(read(rel), rel).not.toMatch(/OutboxRepository|enqueue|operations\.action\.executed|ACTION_EXECUTED|execution_capability_activations/);
     // P0-6d formalised the contract: it may live only in its own handoff-contracts directory (plus the package index export).

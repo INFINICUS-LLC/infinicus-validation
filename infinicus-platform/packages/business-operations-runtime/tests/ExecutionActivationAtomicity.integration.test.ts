@@ -46,7 +46,7 @@ describe.runIf(run)('P0-6f: an activation is never ENABLED without valid subscri
   const subRows = async (w: W) => (await admin.query('SELECT subscriber_name, status FROM events.event_subscriptions WHERE tenant_id=$1 ORDER BY 1', [w.ctx.tenantId])).rows;
   const actRows = async (w: W) => (await admin.query(`SELECT version, state FROM ${BO}.execution_capability_activations WHERE business_id=$1`, [w.businessId])).rows;
   const auditRows = async (w: W) => (await admin.query(`SELECT 1 FROM audit.audit_events WHERE tenant_id=$1 AND action LIKE 'bo.execution_activation.%'`, [w.ctx.tenantId])).rowCount;
-  const spec = (w: W, i: 0 | 1) => executionPipelineSubscriptions(w.ctx.workspaceId)[i];
+  const spec = (w: W, i: 0 | 1 | 2) => executionPipelineSubscriptions(w.ctx.workspaceId)[i];
 
   /** After ANY failure: no activation row, no audit row, the gate is CLOSED. */
   async function expectClosed(w: W, opts: { subscriptions?: number } = {}) {
@@ -62,11 +62,11 @@ describe.runIf(run)('P0-6f: an activation is never ENABLED without valid subscri
     if (expected instanceof RegExp) expect((e as Error).message).toMatch(expected); else expect(e).toMatchObject(expected);
   };
 
-  it('success: the activation and BOTH subscriptions exist together, verified, and only then is the gate open', async () => {
+  it('success: the activation and ALL THREE subscriptions exist together, verified, and only then is the gate open', async () => {
     const w = await world();
     await enableWith(w);
     expect((await subRows(w)).map((r) => [r.subscriber_name, r.status])).toEqual([
-      [`bo.authorized_action_intake@${w.ctx.workspaceId}`, 'active'], [`om.execution_verification@${w.ctx.workspaceId}`, 'active'],
+      [`bo.authorized_action_intake@${w.ctx.workspaceId}`, 'active'], [`bo.authorized_action_recovery@${w.ctx.workspaceId}`, 'active'], [`om.execution_verification@${w.ctx.workspaceId}`, 'active'],
     ]);
     expect(await subs.verify(w.ctx, executionPipelineSubscriptions(w.ctx.workspaceId))).toBe(true);
     expect(await gate().isEnabled(scope(w), ACTION)).toBe(true);
@@ -110,6 +110,26 @@ describe.runIf(run)('P0-6f: an activation is never ENABLED without valid subscri
       await rejects(enableWith(w), { code: 'SUBSCRIPTIONS_INVALID' });
       await expectClosed(w, { subscriptions: 1 });
     }
+  });
+
+  it('P0-6g: the claim-recovery subscription is required like the other two: a paused or conflicting one refuses enabling, and a missing one closes the gate', async () => {
+    const paused = await world();
+    const { id } = await subs.ensure(paused.ctx, spec(paused, 2));
+    await admin.query('UPDATE events.event_subscriptions SET status=$2 WHERE id=$1', [id, 'paused']);
+    await rejects(enableWith(paused), { code: 'SUBSCRIPTIONS_INVALID' });
+    await expectClosed(paused, { subscriptions: 1 });
+
+    const conflicting = await world();
+    await subs.ensure(conflicting.ctx, { ...spec(conflicting, 2), retryPolicy: { maxAttempts: 9, backoffSeconds: [1] } });
+    await rejects(enableWith(conflicting), { code: 'SUBSCRIPTIONS_INVALID' });
+    await expectClosed(conflicting, { subscriptions: 1 });
+
+    // an enabled business whose recovery subscription is later removed: the gate re-verifies at every evaluation and closes
+    const w = await world();
+    await enableWith(w);
+    expect(await gate().isEnabled(scope(w), ACTION)).toBe(true);
+    await admin.query('DELETE FROM events.event_subscriptions WHERE subscriber_name=$1', [spec(w, 2).subscriberName]);
+    expect(await gate().isEnabled(scope(w), ACTION)).toBe(false);
   });
 
   it('a subscription with a different retry policy is not the ruled one: enabling is refused', async () => {
@@ -160,7 +180,7 @@ describe.runIf(run)('P0-6f: an activation is never ENABLED without valid subscri
     const c = await world();
     const results = await Promise.all(Array.from({ length: 8 }, () => enableWith(c)));
     expect(results.filter((r) => r.changed)).toHaveLength(1);
-    expect(await subRows(c)).toHaveLength(2);
+    expect(await subRows(c)).toHaveLength(3);
     expect(await gate().isEnabled(scope(c), ACTION)).toBe(true);
   });
 

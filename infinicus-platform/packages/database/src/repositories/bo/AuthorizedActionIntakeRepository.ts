@@ -40,6 +40,12 @@ export interface IntakeRequest {
   correlationId: string;
   /** Pure and synchronous: run under the lock with the database clock (millisecond UTC). */
   evaluate: (databaseNow: string) => IntakeEvaluation;
+  /**
+   * Runs ONLY when this call created the claim, on the SAME transaction client, after the claim and its attempt row are written. Whatever it
+   * writes commits or rolls back with the claim (P0-6g: the durable recovery signal of the claim); a throw rolls the claim back too, so a claim
+   * never exists without it. Never called for a replay or a refusal.
+   */
+  onClaimed?: (client: PoolClient, claim: { claimId: string; receiptId: string; claimedAt: string }) => Promise<void>;
 }
 
 export interface IntakeResult {
@@ -237,7 +243,10 @@ export class AuthorizedActionIntakeRepository {
         [ctx.tenantId, ctx.workspaceId, request.businessId, receiptId, id.packageId, id.packageVersion, id.digest, verdict.statusVerifiedAt, request.correlationId],
       );
       await insertAttempt(client, ctx, attempt({ outcome: 'CLAIMED', receiptId }));
-      return { outcome: 'CLAIMED', receiptId, claimId: claim.rows[0].id as string, claimedAt: iso(claim.rows[0].claimed_at), refusalCodes: [], evaluatedAt: now };
+      const claimId = claim.rows[0].id as string;
+      const claimedAt = iso(claim.rows[0].claimed_at);
+      if (request.onClaimed) await request.onClaimed(client, { claimId, receiptId, claimedAt });
+      return { outcome: 'CLAIMED', receiptId, claimId, claimedAt, refusalCodes: [], evaluatedAt: now };
     });
   }
 

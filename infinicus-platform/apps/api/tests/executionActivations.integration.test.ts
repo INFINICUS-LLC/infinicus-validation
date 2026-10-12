@@ -164,7 +164,7 @@ describe.runIf(run)('execution activation API - live PostgreSQL + Fastify', () =
     expect(await rowsOf(s.bizId)).toEqual([]);
   });
 
-  it('enabling is audited, provisions the two delivery subscriptions once, and grants no authorization (no receipt, claim or execution exists)', async () => {
+  it('enabling is audited, provisions the three delivery subscriptions once, and grants no authorization (no receipt, claim or execution exists)', async () => {
     const s = await setup('admin');
     await put(s, body('ENABLED'));
     await put(s, body('ENABLED'));
@@ -172,7 +172,7 @@ describe.runIf(run)('execution activation API - live PostgreSQL + Fastify', () =
     expect(audit.rows).toHaveLength(1);
     expect(audit.rows[0].actor_id).toBe(s.ctx.userId);
     expect((await adminPool.query(`SELECT subscriber_name FROM events.event_subscriptions WHERE tenant_id=$1 ORDER BY 1`, [s.ctx.tenantId])).rows.map((r) => r.subscriber_name)).toEqual([
-      `bo.authorized_action_intake@${s.ctx.workspaceId}`, `om.execution_verification@${s.ctx.workspaceId}`,
+      `bo.authorized_action_intake@${s.ctx.workspaceId}`, `bo.authorized_action_recovery@${s.ctx.workspaceId}`, `om.execution_verification@${s.ctx.workspaceId}`,
     ]);
     for (const table of ['authorized_action_receipts', 'authorized_action_claims', 'authorized_action_executions']) {
       expect((await adminPool.query(`SELECT 1 FROM business_operations.${table} WHERE tenant_id=$1`, [s.ctx.tenantId])).rowCount, table).toBe(0);

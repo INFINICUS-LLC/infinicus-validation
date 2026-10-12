@@ -2,7 +2,7 @@
  * Business Operations intake of an AuthorizedActionPackage (P0-5 Block 3e).
  *
  * Ends at VALIDATED + RECEIVED + SINGLE-USE CLAIMED. It does NOT execute the action, change inventory, produce execution evidence,
- * emit an event, or reach Approved Business Action in any way other than the injected authoritative status provider (the
+ * announce an outcome (its only write besides the claim is the claim's own internal recovery signal, P0-6g), or reach Approved Business Action in any way other than the injected authoritative status provider (the
  * architecture boundary). CONSUMED means only: BO atomically claimed this package version for one execution attempt.
  *
  * Order (owner ruling, no distributed lock): static validation -> authoritative status (provider) -> ONE transaction { per-package
@@ -22,6 +22,8 @@ import type {
 } from '@infinicus/handoff-contracts';
 import { PRODUCTION_BO_CAPABILITIES } from './boActionCapabilities.js';
 import { assessIntake } from './authorizedActionIntakePolicy.js';
+import { OutboxClaimRecoveryScheduler } from './ClaimRecoveryScheduler.js';
+import type { ClaimRecoveryScheduler } from './ClaimRecoveryScheduler.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -63,6 +65,11 @@ export interface AuthorizedActionIntakeDependencies {
   /** The shared canonical action vocabulary (platform contract truth). */
   actionTypes?: ActionTypeRegistry;
   enablement?: PackageEnablementPolicy;
+  /**
+   * Writes the claim's durable recovery signal in the claim's own transaction (P0-6g). Defaults to the BUILD-33 outbox: there is no way to
+   * create a claim without one.
+   */
+  recovery?: ClaimRecoveryScheduler;
 }
 
 const isRec = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -82,6 +89,7 @@ export class AuthorizedActionIntakeService {
   private readonly repository: AuthorizedActionIntakeRepository;
   private readonly capabilities: ActionCapabilityRegistry;
   private readonly actionTypes: ActionTypeRegistry;
+  private readonly recovery: ClaimRecoveryScheduler;
 
   constructor(private readonly deps: AuthorizedActionIntakeDependencies) {
     if (typeof deps.statusMaxAgeMs !== 'number' || !Number.isFinite(deps.statusMaxAgeMs) || deps.statusMaxAgeMs < 0) {
@@ -90,6 +98,7 @@ export class AuthorizedActionIntakeService {
     this.repository = deps.repository ?? new AuthorizedActionIntakeRepository();
     this.capabilities = deps.capabilities ?? PRODUCTION_BO_CAPABILITIES;
     this.actionTypes = deps.actionTypes ?? canonicalActionTypeRegistry();
+    this.recovery = deps.recovery ?? new OutboxClaimRecoveryScheduler();
   }
 
   async intake(ctx: BoIntakeContext, request: AuthorizedActionIntakeRequest): Promise<AuthorizedActionIntakeResult> {
@@ -131,6 +140,12 @@ export class AuthorizedActionIntakeService {
     try {
       result = await this.repository.receiveAndClaim(ctx, {
         businessId: ctx.businessId, document: request.package, correlationId,
+        onClaimed: async (client, claim) => {
+          await this.recovery.schedule(client, ctx, {
+            claimId: claim.claimId, claimedAt: claim.claimedAt, packageId: doc.identity.packageId, packageVersion: doc.identity.packageVersion, digest: doc.integrity.digest,
+            scope, actionType: { code: doc.action.type.code, schemaVersion: doc.action.type.schemaVersion }, correlationId,
+          });
+        },
         evaluate: (now) => {
           const a = assessIntake({
             document: request.package, scope, actionTypes: this.actionTypes, capabilities: this.capabilities,

@@ -138,5 +138,12 @@ export {
   isActionExecutedPayload, actionExecutedIdempotencyKey, actionExecutedEventId, registerActionExecutedContract, buildActionExecutedEvent,
 } from './action-executed.js';
 export type { ActionExecutedPayload, BuildActionExecutedEventInput } from './action-executed.js';
+// P0-6g: operations.authorized_action.recovery_due@1 - INTERNAL durable recovery signal for an existing BO claim (never creates a claim).
+export {
+  AUTHORIZED_ACTION_RECOVERY_EVENT_TYPE, AUTHORIZED_ACTION_RECOVERY_EVENT_VERSION, AUTHORIZED_ACTION_RECOVERY_ALIAS, AUTHORIZED_ACTION_RECOVERY_SOURCE_SERVICE,
+  AUTHORIZED_ACTION_RECOVERY_AGGREGATE_TYPE, AUTHORIZED_ACTION_RECOVERY_CONSUMER, AUTHORIZED_ACTION_RECOVERY_CONTRACT,
+  isAuthorizedActionRecoveryPayload, authorizedActionRecoveryIdempotencyKey, authorizedActionRecoveryEventId, registerAuthorizedActionRecoveryContract, buildAuthorizedActionRecoveryEvent,
+} from './authorized-action-recovery.js';
+export type { AuthorizedActionRecoveryPayload, BuildAuthorizedActionRecoveryEventInput } from './authorized-action-recovery.js';
 export { executionPipelineSubscriptions, EXECUTION_PIPELINE_RETRY_POLICY } from './execution-pipeline-subscriptions.js';
 export type { ExecutionPipelineSubscriptionSpec } from './execution-pipeline-subscriptions.js';
