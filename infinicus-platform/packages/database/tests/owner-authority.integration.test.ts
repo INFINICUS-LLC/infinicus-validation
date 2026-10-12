@@ -18,6 +18,14 @@ import { OwnershipEvidenceRepository, classifyOwnership, runOwnerAuthorityDryRun
 const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const uid = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+/**
+ * The dry run enumerates every business in the shared test database (one evidence
+ * query set per business), and the other packages' suites create businesses in
+ * parallel, so its cost grows with the whole run, not with this file. The vitest
+ * default (5 s) is therefore not a meaningful bound for it.
+ */
+const DRY_RUN_TIMEOUT_MS = 120_000;
+
 describe.runIf(run)('owner authority — ownership proof, grant, revoke, provenance, dry-run (live PostgreSQL)', () => {
   const users = new UserRepository();
   const tenants = new TenantRepository();
@@ -335,7 +343,7 @@ describe.runIf(run)('owner authority — ownership proof, grant, revoke, provena
     for (const entry of report.entries) {
       expect(entry.proposedGrantee !== null).toBe(entry.classification === 'PROVEN');
     }
-  });
+  }, DRY_RUN_TIMEOUT_MS);
 
   it('the dry-run connection is read-only: a write inside its transaction is rejected by the database', async () => {
     const client = await admin.connect();
