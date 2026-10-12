@@ -51,6 +51,7 @@ export const SECRET_INVENTORY: readonly SecretDefinition[] = [
     rotationPolicyDays: 90,
     description: 'Event worker only (separate process, P0-6b): connection string of a narrowly-granted read-only role that can see which tenant/workspace scopes have dispatchable outbox rows. Never used by the API process.',
   },
+  { name: 'INFINICUS_BUILD_SHA', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'Git commit the API image was built from (injected at image build via ARG GIT_SHA); reported by GET /v1/health. A build identifier, not a secret.' },
   { name: 'NODE_ENV', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'Runtime environment name.' },
   { name: 'PORT', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'HTTP listen port.' },
   { name: 'LOG_LEVEL', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'pino log level.' },

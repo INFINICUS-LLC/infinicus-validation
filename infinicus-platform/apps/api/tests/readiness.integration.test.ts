@@ -20,6 +20,7 @@ import type { FastifyInstance } from 'fastify';
 import { loadConfig } from '@infinicus/configuration';
 import { createPool, closePool } from '@infinicus/database';
 import { buildApp } from '../src/app.js';
+import { resolveBuildVersion } from '../src/buildVersion.js';
 
 const run = !!process.env.DATABASE_URL;
 
@@ -46,6 +47,12 @@ describe.runIf(run)('GET /v1/ready — live PostgreSQL', () => {
       idleCount: expect.any(Number),
       waitingCount: expect.any(Number),
     });
+  });
+
+  it('GET /v1/health stays a pure liveness check and reports the build version (a commit id, or "unknown" when not injected)', async () => {
+    const res = await app!.inject({ method: 'GET', url: '/v1/health' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status: 'ok', version: resolveBuildVersion(process.env) });
   });
 
   it('returns 503 when the database is unreachable', async () => {

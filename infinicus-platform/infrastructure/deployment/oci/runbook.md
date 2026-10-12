@@ -1,3 +1,6 @@
+> **Historical.** The production host is Hetzner (`../hetzner/`); this OCI plan was abandoned. It is kept for reference only. If it is ever used, the redeploy
+> sequence must also run `grant-app-role.sh` after the migration gate (see the Hetzner runbook).
+
 # Phase 3 runbook — deploying `apps/api` to an Oracle Cloud Always Free Compute VM
 
 This is a step-by-step guide for **you** to run — nothing in this session

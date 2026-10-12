@@ -27,6 +27,7 @@ import { buildClaimRecoveryOperator } from './claimRecoveryComposition.js';
 import type { ClaimRecoveryCompositionOptions } from './claimRecoveryComposition.js';
 import { BoGovernanceEvidenceVerifier } from '@infinicus/business-operations-runtime';
 import { buildAbaPackageIssuer } from './abaPackageAnnouncement.js';
+import { resolveBuildVersion } from './buildVersion.js';
 import type { AbaAnnouncementCompositionOptions } from './abaPackageAnnouncement.js';
 import type { AbaAuthoringRouteOptions } from './routes/abaAuthoring.js';
 import observabilityRoutes from './routes/observability.js';
@@ -135,7 +136,10 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   // touch the database, so it stays healthy even during a database outage
   // (an orchestrator should not restart a process for a downstream outage
   // it cannot fix by restarting).
-  app.get('/v1/health', { schema: { hide: true } }, async () => ({ status: 'ok' }));
+  // `version` is the git commit the image was built from (INFINICUS_BUILD_SHA, set at image build; 'unknown' when not injected), so an operator can
+  // tell which code is deployed. It is a build identifier only - no configuration, host or secret is ever reported.
+  const buildVersion = resolveBuildVersion();
+  app.get('/v1/health', { schema: { hide: true } }, async () => ({ status: 'ok', version: buildVersion }));
 
   // Readiness — the process is additionally able to serve real traffic
   // right now, i.e. the database is reachable. An orchestrator should stop
