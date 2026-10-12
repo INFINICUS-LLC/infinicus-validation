@@ -333,8 +333,11 @@ describe.runIf(run)('P0-5 B2d - end-to-end modified-approval authoring proof (re
       expect(await count(`SELECT count(*) n FROM business_operations.authorized_action_receipts WHERE tenant_id=$1`, [s.ctx.tenantId])).toBe(0);
       expect(await count(`SELECT count(*) n FROM approved_business_action.authorized_action_package_lifecycle_events WHERE business_id=$1 AND event_type IN ('CONSUMED','EXECUTED')`, [s.bizId]).catch(() => 0)).toBe(0);
       expect(pkg.consumption).toEqual({ mode: 'SINGLE_USE' });
-      expect(PRODUCTION_SUPPORTED_ACTION_TYPES).toEqual([]);                              // no executable action type is registered
-      expect(PRODUCTION_BO_CAPABILITIES.supports(CODE, '1')).toBe(false);
+      // P0-6e: the registry now lists exactly this type (capability only). Authoring a package neither activates the business nor executes anything.
+      expect(PRODUCTION_SUPPORTED_ACTION_TYPES).toEqual(['inventory_reorder_policy_update@1']);
+      expect(PRODUCTION_BO_CAPABILITIES.supports(CODE, '1')).toBe(true);
+      expect(await count(`SELECT count(*) n FROM business_operations.execution_capability_activations WHERE tenant_id=$1`, [s.ctx.tenantId])).toBe(0);  // nothing is activated
+      expect(await count(`SELECT count(*) n FROM business_operations.authorized_action_executions WHERE tenant_id=$1`, [s.ctx.tenantId])).toBe(0);
     });
   });
 

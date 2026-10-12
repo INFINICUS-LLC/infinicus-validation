@@ -14,9 +14,10 @@ describe('assessIntake (pure)', () => {
   it('a valid, current, supported package is verified and has no refusals', () => {
     expect(base()).toMatchObject({ identityVerified: true, refusalCodes: [] });
   });
-  it('the production capability registry supports nothing, so the same package is verified but not executable', () => {
-    expect([...PRODUCTION_SUPPORTED_ACTION_TYPES]).toEqual([]);
-    expect(base(undefined, { capabilities: PRODUCTION_BO_CAPABILITIES })).toMatchObject({ identityVerified: true, refusalCodes: ['ACTION_TYPE_UNSUPPORTED_BY_EXECUTOR'] });
+  it('the production capability registry is exactly inventory_reorder_policy_update@1; a registry without it leaves the same package verified but not executable', () => {
+    expect([...PRODUCTION_SUPPORTED_ACTION_TYPES]).toEqual(['inventory_reorder_policy_update@1']);
+    expect(base(undefined, { capabilities: PRODUCTION_BO_CAPABILITIES })).toMatchObject({ identityVerified: true, refusalCodes: [] });
+    expect(base(undefined, { capabilities: explicitCapabilities([]) })).toMatchObject({ identityVerified: true, refusalCodes: ['ACTION_TYPE_UNSUPPORTED_BY_EXECUTOR'] });
   });
   it('a missing answer fails closed without verifying identity', () => {
     expect(base(undefined, { answer: null })).toMatchObject({ identityVerified: false, refusalCodes: ['STATUS_UNVERIFIED'] });

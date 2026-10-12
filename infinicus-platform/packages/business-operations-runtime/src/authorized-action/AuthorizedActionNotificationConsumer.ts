@@ -4,7 +4,7 @@
  * Turns a reference-only notification into the EXISTING intake: pull the sealed package through the ABA-owned source port, check it is
  * exactly the package the event names, hand it to {@link AuthorizedActionIntakeService} (which validates, asks the authoritative status
  * provider, writes the receipt and takes the single-use claim), then ask ABA to mirror the claim as CONSUMED (BO's claim stays canonical).
- * It claims nothing itself, executes nothing, changes no inventory, reads no ABA table and trusts nothing in the event beyond the
+ * It claims nothing itself (intake does), changes no inventory itself (the execution engine does, when handed the claim), reads no ABA table and trusts nothing in the event beyond the
  * reference: the document, scope, digest, authority and status are all re-established from the pulled package and the provider.
  *
  * Delivery is at-least-once, so it is idempotent through the inbox (`event_id` + consumer name) and through intake's own replay.
@@ -19,6 +19,7 @@ import type { ActionAuthorizedPayload } from '@infinicus/event-contracts';
 import type { ExecutionCapabilityGate, AuthorizedActionPackageSource, PackageConsumptionRecorder } from '@infinicus/handoff-contracts';
 import { PackageIntakeRefusedError } from './AuthorizedActionIntakeService.js';
 import type { AuthorizedActionIntakeService } from './AuthorizedActionIntakeService.js';
+import type { AuthorizedActionExecutionService } from '../authorized-action-execution/AuthorizedActionExecutionService.js';
 
 /** Refusals that mean "the answer was not obtainable or fresh yet", not "this package is not acceptable". Everything else is final. */
 export const TRANSIENT_INTAKE_REFUSALS: readonly string[] = Object.freeze([
@@ -29,6 +30,11 @@ export interface AuthorizedActionNotificationConsumerDependencies {
   intake: Pick<AuthorizedActionIntakeService, 'intake'>;
   source: AuthorizedActionPackageSource;
   recorder: PackageConsumptionRecorder;
+  /**
+   * The ONE canonical trigger of execution (P0-6e): once BO holds the single-use claim, this consumer hands the claim id to the engine and does
+   * nothing else. Required: a consumer without an executor would claim and strand. The consumer never mutates inventory itself.
+   */
+  executor: Pick<AuthorizedActionExecutionService, 'executeClaim'>;
   /** Required: there is no default, and the platform's only implementation until P0-6e denies everything. */
   gate: ExecutionCapabilityGate;
   inbox?: Pick<InboxRepository, 'beginProcessing' | 'markProcessed' | 'markFailed'>;
@@ -99,5 +105,14 @@ export class AuthorizedActionNotificationConsumer implements EventConsumer {
     await this.deps.recorder.recordConsumed({
       packageId: payload.packageId, packageVersion: payload.packageVersion, digest: payload.digest, scope, receiptId: result.receiptId,
     });
+
+    // The claim is held: hand it to the engine (the only executor). A terminal result - including a replay of one - ends the delivery; the
+    // engine re-checks the gate, the registry, the package, and the CURRENT authority under the target lock, so none of that is trusted here.
+    // "Not decidable yet" is retried through the outbox's own redelivery (the subscription carries the ruled 3 x 1s/5s/15s policy); the
+    // engine bounds the attempts and writes the terminal FAILED itself on the last one.
+    const executed = await this.deps.executor.executeClaim({ ...ctx, businessId: scope.businessId } as TenantContext, result.claimId);
+    if (executed.state === 'RETRY') {
+      throw new DeliveryError(executed.reasonCode, `execution attempt ${executed.attemptNumber} could not decide yet (${executed.reasonCode})`, true);
+    }
   }
 }

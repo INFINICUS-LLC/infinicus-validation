@@ -50,6 +50,8 @@ export type {
   RecordInventoryPolicyEvaluationInput, EvaluationJson,
 } from './InventoryPolicyEvaluationRepository.js';
 
+export { ExecutionCapabilityActivationRepository, ExecutionCapabilityActivationInvalidError } from './ExecutionCapabilityActivationRepository.js';
+export type { ExecutionCapabilityActivation, RecordActivationInput, ActivationState } from './ExecutionCapabilityActivationRepository.js';
 export { AuthorizedActionExecutionRepository } from './AuthorizedActionExecutionRepository.js';
 export type {
   ClaimForExecution, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,

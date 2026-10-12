@@ -26,3 +26,10 @@ export * from './authorized-action-execution/preconditions.js';
 export * from './authorized-action-execution/executionEvidence.js';
 export * from './authorized-action-execution/ExecutionEventPublisher.js';
 export * from './authorized-action-execution/BoExecutionEvidenceReader.js';
+
+// P0-6e: governed activation (key 2 of the execution gate), the gate itself, and the kill switch (key 3).
+export { GovernedExecutionGate } from './execution-activation/GovernedExecutionGate.js';
+export type { GovernedExecutionGateDependencies } from './execution-activation/GovernedExecutionGate.js';
+export { KILL_SWITCH_ENV, killSwitchEngagedFrom } from './execution-activation/killSwitch.js';
+export { ExecutionActivationService, ExecutionActivationError, EXECUTION_ACTIVATION_PERMISSION, EXECUTION_ACTIVATION_AUDIT_ACTIONS } from './execution-activation/ExecutionActivationService.js';
+export type { SetActivationRequest, ExecutionActivationServiceDependencies } from './execution-activation/ExecutionActivationService.js';

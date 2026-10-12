@@ -144,6 +144,7 @@ export {
   RegisterSessionRepository,
   OrderRepository,
   AuthorizedActionIntakeRepository, AuthorizedActionExecutionRepository,
+  ExecutionCapabilityActivationRepository, ExecutionCapabilityActivationInvalidError,
   InventoryPolicyEvaluationRepository, InventoryPolicyEvaluationValidationError,
   INVENTORY_POLICY_EVALUATION_DIMENSIONS, INVENTORY_POLICY_EVALUATION_RESULTS,
 } from './repositories/bo/index.js';
@@ -164,7 +165,7 @@ export type {
   RegisterSession, OpenRegisterSessionInput, CloseRegisterSessionInput,
   Product, CreateProductInput, UpdateProductInput,
   Order, OrderLineItem, OrderOperationalStatus, CreateOrderInput, AddLineItemInput,
-  ClaimForExecution, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
+  ExecutionCapabilityActivation, RecordActivationInput, ActivationState, ClaimForExecution, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
   ExecutionOutcome, MutationResult, AuthorityVerdictRecord, AttemptOutcome,
   IntakeOutcome, IntakeEvaluation, IntakeRequest, IntakeResult, IntakeAttemptInput, AuthorizedActionReceipt, AuthorizedActionClaim,
   InventoryPolicyEvaluation, InventoryPolicyEvaluationSubject, InventoryPolicyEvaluationDimension, InventoryPolicyEvaluationResult,

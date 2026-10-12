@@ -57,13 +57,15 @@ describe('P0-6b architecture', () => {
     expect(read(COMPOSE)).toMatch(/const eventTypes = \[ACTION_AUTHORIZED_EVENT_TYPE, ACTION_EXECUTED_EVENT_TYPE\]/);
   });
 
-  it('everything defaults closed: no announcer by default, deny-all gate in producer, consumer composition and worker, empty BO registry', () => {
+  it('everything defaults closed: no announcer by default, deny-all gate in the producer, governed (closed-by-default) gate in the consumer composition and worker', () => {
     expect(read(ANNOUNCER)).toContain('gate: deps.gate ?? DENY_ALL_EXECUTION_GATE');
-    expect(read(COMPOSE)).toContain('gate: options.gate ?? DENY_ALL_EXECUTION_GATE');
+    // P0-6e: the worker's default gate is the GOVERNED gate (registry + per-business activation record + kill switch), which is closed until an administrator enables a business.
+    expect(read(COMPOSE)).toContain('const gate = options.gate ?? new GovernedExecutionGate({');
+    expect(read(COMPOSE)).not.toContain('DENY_ALL_EXECUTION_GATE');
     expect(read(COMPOSE)).not.toMatch(/explicitCapabilities|PRODUCTION_SUPPORTED_ACTION_TYPES\s*=/);
     expect(read('packages/workflow/src/AuthorizedActionPackageIssuer.ts')).not.toMatch(/new ActionAuthorizedAnnouncer/);
     expect(production.filter((f) => /new ActionAuthorizedAnnouncer/.test(f.code)).map((f) => f.rel)).toEqual([]);
-    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
+    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\['inventory_reorder_policy_update@1'\]\)/);
     // the gate is required by the consumer (no default inside it) and a throwing gate is closed
     expect(read(CONSUMER)).not.toContain('DENY_ALL_EXECUTION_GATE');
     expect(read(CONSUMER)).toMatch(/\(\) => false\)/);

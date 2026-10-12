@@ -21,6 +21,7 @@ import businessRoutes from './routes/businesses.js';
 import abaAuthoringRoutes from './routes/abaAuthoring.js';
 import businessAdministrationRoutes from './routes/businessAdministration.js';
 import inventoryPolicyEvaluationRoutes from './routes/inventoryPolicyEvaluations.js';
+import executionActivationRoutes from './routes/executionActivations.js';
 import { BoGovernanceEvidenceVerifier } from '@infinicus/business-operations-runtime';
 import type { AbaAuthoringRouteOptions } from './routes/abaAuthoring.js';
 import observabilityRoutes from './routes/observability.js';
@@ -148,6 +149,7 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   // GovernanceEvidenceVerifier interface alone; a test may override the verifier through options.abaAuthoring.
   await app.register(abaAuthoringRoutes, { dependencies: { evidenceVerifier: new BoGovernanceEvidenceVerifier(), ...options.abaAuthoring } });
   await app.register(inventoryPolicyEvaluationRoutes);
+  await app.register(executionActivationRoutes);
   await app.register(businessAdministrationRoutes);
   await app.register(observabilityRoutes);
   await app.register(billingRoutes);

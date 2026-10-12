@@ -1,7 +1,7 @@
 /**
  * Worker configuration from the process environment. Every operational parameter is REQUIRED: a missing or malformed value stops the
  * worker at start instead of silently choosing a default for an authorization-pipeline setting. Nothing here enables the pipeline: the
- * execution capability gate (P0-6e) is separate, and closed by default.
+ * governed execution gate (P0-6e: registry + per-business activation record + kill switch) is separate, and closed by default.
  */
 export interface EventWorkerConfig {
   workerId: string;
@@ -9,6 +9,8 @@ export interface EventWorkerConfig {
   discoveryDatabaseUrl: string;
   /** Maximum age of the authoritative status/authority answer judged at BO claim (intake). */
   intakeStatusMaxAgeMs: number;
+  /** Maximum age of the status/authority answer judged immediately before the mutation (ruling O-2: 5000 in v1). Required: no default. */
+  executionStatusMaxAgeMs: number;
   claimTimeoutMs: number;
   batchSize: number;
   maxScopesPerCycle: number;
@@ -28,6 +30,7 @@ export const ENV = Object.freeze({
   actorUserId: 'INFINICUS_EVENT_WORKER_ACTOR_USER_ID',
   discoveryDatabaseUrl: 'INFINICUS_EVENT_WORKER_DISCOVERY_DATABASE_URL',
   intakeStatusMaxAgeMs: 'INFINICUS_EVENT_WORKER_INTAKE_STATUS_MAX_AGE_MS',
+  executionStatusMaxAgeMs: 'INFINICUS_EVENT_WORKER_EXECUTION_STATUS_MAX_AGE_MS',
   claimTimeoutMs: 'INFINICUS_EVENT_WORKER_CLAIM_TIMEOUT_MS',
   batchSize: 'INFINICUS_EVENT_WORKER_BATCH_SIZE',
   maxScopesPerCycle: 'INFINICUS_EVENT_WORKER_MAX_SCOPES_PER_CYCLE',
@@ -52,6 +55,7 @@ export function loadWorkerConfig(env: Readonly<Record<string, string | undefined
     actorUserId: text(ENV.actorUserId),
     discoveryDatabaseUrl: text(ENV.discoveryDatabaseUrl),
     intakeStatusMaxAgeMs: positiveInt(ENV.intakeStatusMaxAgeMs),
+    executionStatusMaxAgeMs: positiveInt(ENV.executionStatusMaxAgeMs),
     claimTimeoutMs: positiveInt(ENV.claimTimeoutMs),
     batchSize: positiveInt(ENV.batchSize),
     maxScopesPerCycle: positiveInt(ENV.maxScopesPerCycle),

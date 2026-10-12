@@ -109,8 +109,8 @@ describe('B2b evaluator architecture', () => {
     expect(read(SERVICE)).not.toMatch(/request\.(result|evaluatedAt|thresholds|subjectDigest|findings|inputs)\b/);
   });
 
-  it('the production capability registry is unchanged (no executable action type) and nothing wires the evaluator into intake, routes or execution (P0-6 stays disabled)', () => {
-    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\[\]\)/);
+  it('the production capability registry is exactly the P0-6e entry and nothing wires the evaluator into intake, routes or execution (P0-6 stays disabled)', () => {
+    expect(read('packages/business-operations-runtime/src/authorized-action/boActionCapabilities.ts')).toMatch(/PRODUCTION_SUPPORTED_ACTION_TYPES: readonly string\[\] = Object\.freeze\(\['inventory_reorder_policy_update@1'\]\)/);
     for (const f of production.filter((p) => p.rel.startsWith('packages/business-operations-runtime/src/authorized-action/') || (p.rel.startsWith('apps/api/src/') && p.rel !== ROUTE && p.rel !== 'apps/api/src/app.ts'))) {
       expect(f.code, f.rel).not.toMatch(/InventoryPolicyEvaluationService|inventory-policy\//);
     }
