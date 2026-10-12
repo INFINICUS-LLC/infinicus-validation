@@ -21,6 +21,7 @@
 #   DB_NAME / DB_ADMIN_USER   (defaults: infinicus / admin_role; the image's local socket is trust-authenticated, so no password is needed)
 #   APP_ROLE         the least-privilege runtime role (default: app_role)
 #   INFINICUS_DISCOVERY_PSQL  test hook: a complete psql command line (e.g. "psql -h localhost -U x -d y") used instead of docker compose exec.
+#   INFINICUS_DISCOVERY_ONLY  test hook: "fingerprint" runs only the schema-fingerprint section (no docker, no host commands).
 
 set -u
 set -o pipefail
@@ -32,8 +33,10 @@ DB_NAME="${DB_NAME:-infinicus}"
 DB_ADMIN_USER="${DB_ADMIN_USER:-admin_role}"
 APP_ROLE="${APP_ROLE:-app_role}"
 
-# Reference fingerprints (SHA-256 of the schema + function fingerprint output) of the repository built on PostgreSQL 16 at the given migration head.
+# Reference fingerprints (SHA-256 prefix of the schema + function fingerprint output) of the repository built from CLEAN migrations on PostgreSQL 16 at the
+# given migration head (docs/architecture/reconciliation/production-discovery/). 0170 is the verified live production head.
 REF_0169_PG16="31a2177a6b48b2af"
+REF_0170_PG16="38eabb12fde135b5"
 REF_0198_PG16="7fd4c419d738de8a"
 
 section() { printf '\n===== %s =====\n' "$1"; }
@@ -57,6 +60,7 @@ q() { # q <label> <sql>
 
 printf 'INFINICUS production runtime discovery (read-only) - %s UTC\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+if [[ "${INFINICUS_DISCOVERY_ONLY:-}" != fingerprint ]]; then
 section '1 SERVER'
 run hostname hostname
 run os 'cat' /etc/os-release
@@ -117,6 +121,8 @@ q ledger-summary "select count(*) rows, count(distinct filename) distinct_names,
 q ledger-names "select string_agg(filename, ',' order by filename) from public._migrations"
 q ledger-acl "select c.relowner::regrole owner, c.relrowsecurity rls, c.relforcerowsecurity force_rls, c.relacl::text from pg_class c where c.oid = 'public._migrations'::regclass"
 
+fi # INFINICUS_DISCOVERY_ONLY=fingerprint (test hook) skips sections 1-5
+
 section '6 SCHEMA FINGERPRINT'
 FP_SQL=$(cat <<'SQL'
 with s as (select nspname from pg_namespace where nspname in ('ai_decision_intelligence','api','approved_business_action','audit','billing','business_digital_twin','business_intelligence','business_operations','continuous_learning','data_acquisition','events','files','identity','observability','onboarding','outcome_monitoring','platform','simulation','tenancy','public'))
@@ -145,9 +151,12 @@ FN_OUT="$(printf '%s\n' "$FN_SQL" | sql 2>&1)"
 FP_HASH="$(printf '%s\n%s\n' "$FP_OUT" "$FN_OUT" | sha256sum | cut -c1-16)"
 printf 'fingerprint-groups=%s function-groups=%s combined-sha256-16=%s\n' "$(printf '%s\n' "$FP_OUT" | grep -c .)" "$(printf '%s\n' "$FN_OUT" | grep -c .)" "$FP_HASH"
 if [[ "$FP_HASH" == "$REF_0198_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0198_PG16'
+elif [[ "$FP_HASH" == "$REF_0170_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0170_PG16'
 elif [[ "$FP_HASH" == "$REF_0169_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0169_PG16'
 else echo 'fingerprint-verdict=NO_REFERENCE_MATCH (send the full fingerprint below for a group-level diff)'; fi
 printf -- '--- fingerprint rows (schema|kind|count|md5)\n%s\n--- function fingerprint rows\n%s\n' "$FP_OUT" "$FN_OUT"
+
+[[ "${INFINICUS_DISCOVERY_ONLY:-}" == fingerprint ]] && exit 0
 
 section '7 ROLES AND PRIVILEGES'
 q roles "select rolname, rolcanlogin login, rolsuper superuser, rolbypassrls bypassrls, rolcreatedb createdb, rolcreaterole createrole, rolreplication replication, rolinherit, rolconnlimit from pg_roles where rolname !~ '^pg_' order by 1"

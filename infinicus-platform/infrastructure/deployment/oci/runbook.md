@@ -1,5 +1,7 @@
-> **Historical.** The production host is Hetzner (`../hetzner/`); this OCI plan was abandoned. It is kept for reference only. If it is ever used, the redeploy
-> sequence must also run `grant-app-role.sh` after the migration gate (see the Hetzner runbook).
+> **Directory name is legacy; this IS the production deployment directory.** Production runs the compose project in this directory on the **Hetzner**
+> VM `infinicus-prod-01` (verified 2026-10-12: PostgreSQL 16.15, ledger head 0170). The "oci" name is a leftover from an abandoned Oracle Cloud plan; do not
+> rename or move it without a separate, planned change. The Oracle-specific provisioning steps below are historical; for Hetzner provisioning see `../hetzner/runbook.md`.
+> Every redeploy must also run `grant-app-role.sh` after the migration gate (see the Hetzner runbook).
 
 # Phase 3 runbook — deploying `apps/api` to an Oracle Cloud Always Free Compute VM
 

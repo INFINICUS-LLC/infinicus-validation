@@ -2,7 +2,32 @@
 
 Date: 2026-10-12. Repo `main` at 57dd5f9 (migrations 0001-0198). Owner ruling applied: the Supabase project `infinicus-development` is development / staging; the authoritative production target is the Hetzner / OCI PostgreSQL deployment. **No write action of any kind was taken and none is authorised by this document.**
 
-## 0. Honest scope statement
+## 0. Runtime evidence (owner-supplied from the first production run, 2026-10-12) and the canonical 0170 verification
+The operator ran `production-readonly-discovery.sh` on the production VM. I did not receive the full output; the owner supplied the facts below, which I treat as reported runtime evidence (not independently verified by me) except the fingerprint comparison, which I reproduced.
+
+| Item | Value | Basis |
+|---|---|---|
+| Host | Hetzner VM `infinicus-prod-01` (Hetzner-only topology confirmed) | owner-reported |
+| Running deployment directory | `infinicus-platform/infrastructure/deployment/oci` - a **legacy directory name**; the physical host is Hetzner. Not to be renamed, removed or migrated in this block. The `hetzner/` directory is a sibling copy that is **not** the running one | owner-reported |
+| PostgreSQL | **16.15**, database `infinicus` (the CI major; the PG 17.6 rehearsal is not the primary evidence) | owner-reported |
+| Migration ledger | 170 rows, head `0170_add_approved_action_source_recommendation.sql`; **pending 0171-0198 (28 migrations)** | owner-reported |
+| Roles | application `app_role`; owner / migration `admin_role`; **P1: PASS** | owner-reported |
+| Fingerprint (script output) | `fingerprint-groups=130 function-groups=12 combined-sha256-16=38eabb12fde135b5`, `NO_REFERENCE_MATCH` (the script then had references for 0169 and 0198 only) | owner-reported |
+
+**Canonical 0170 verification (reproduced).** A fresh empty PostgreSQL **16.15** database (same version as production) was built from repository migrations `0001`-`0170` only (170 ledger rows, 170 distinct names, first `0001_foundation.sql`, last `0170_add_approved_action_source_recommendation.sql`, no 0171+ file applied) and fingerprinted with the **unmodified** discovery script: `fingerprint-groups=130 function-groups=12 combined-sha256-16=38eabb12fde135b5` - identical to production, reproduced three times. Production hash `38eabb12fde135b5` = canonical 0170 hash `38eabb12fde135b5`.
+- **Group-level comparison:** the combined hash is a SHA-256 prefix over the full text of all 130 schema/kind/count/md5 rows plus all 12 function rows, in order; equality of the hash therefore means every row is equal (a false match would need a 64-bit collision; this is a non-adversarial comparison). Production's individual rows were not supplied to me, so a row-by-row diff was not run; none is needed when the combined hashes are equal, and the committed reference rows (`production-discovery/reference-0170.pg16.*.txt`) are what any future production run should be diffed against.
+- **Verdict: `MATCHES_CANONICAL_0170` - no schema drift at the 0170 head.** Differences to classify: none (no category A-E entries).
+- **Migration 0170 itself:** adds nullable `approved_business_action.approved_actions.source_recommendation_id` (FK `ON DELETE SET NULL` to `decision_recommendations`) and the partial index `approved_actions_source_recommendation_id_idx`; both are present in the canonical state, whose hash production matches, so production contains them.
+- **Partial 0171+ state: NOT FOUND.** Every migration 0171-0198 changes the fingerprint (29 distinct hashes for heads 0170-0198, `production-discovery/migration-fingerprint-chain.pg16.txt`), so a production hash equal to the 0170 hash cannot contain any 0171+ object.
+- The script now recognises `MATCHES_REPOSITORY_0170_PG16` (`REF_0170_PG16`), generated only from the clean canonical database above.
+- **Schema gate: PASSED for the 0170 head.** All other migration gates remain open (backup, restore proof, deployment identity, monitoring).
+
+**Corrections found while doing this (the live reality differs from my earlier repository-only assumptions):**
+1. Production runs the compose project in `deployment/oci`, not `deployment/hetzner`. All runbook commands must be run from the **running** directory. Its compose file differs from the Hetzner one in two ways only: it sets `DB_SSL: "false"` on `api` and `tools`, and it does **not** have the `GIT_SHA` build argument added in PR #110 - so a build there still reports `"version":"unknown"` from `/v1/health` until the `oci` compose gets the same three lines (follow-up PR; not done here because that file is the live configuration source).
+2. PR #110 marked the `oci` runbook "historical"; that banner was wrong for this host and is corrected in this change.
+3. The earlier "pending range 0170-0198" and the runbook's "head of 0169" order list are superseded: the live head is 0170 and the pending range is **0171-0198**.
+
+## 0b. Original scope statement (written before any runtime evidence existed; superseded where section 0 gives facts)
 **Runtime discovery of the production environment was NOT possible from this session.** Every fact below is labelled:
 - **REPO** - verified from the repository (config, scripts, compose files, code);
 - **DESIGN** - what the deployment *should* look like if it was deployed exactly as the repository's runbook says (not evidence that it was);
@@ -145,7 +170,7 @@ The prose command list was replaced by one reviewed script, `infinicus-platform/
 
 **Run (operator, on the VM, as `deploy`, from the directory that holds `docker-compose.yml` and `.env`):**
 ```bash
-cd /opt/infinicus/repo/infinicus-platform/infrastructure/deployment/hetzner
+cd /opt/infinicus/repo/infinicus-platform/infrastructure/deployment/oci   # the directory production actually runs (legacy name; physical host is Hetzner)
 # review it first; it changes nothing and prints no secret
 less /opt/infinicus/repo/infinicus-platform/infrastructure/deployment/scripts/production-readonly-discovery.sh
 bash /opt/infinicus/repo/infinicus-platform/infrastructure/deployment/scripts/production-readonly-discovery.sh 2>&1 | tee "discovery-$(date -u +%Y%m%dT%H%M%SZ).txt"
