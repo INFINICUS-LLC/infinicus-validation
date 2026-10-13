@@ -1,0 +1,29 @@
+# Off-VM encrypted backup (runs backup-offsite.sh). Install as /etc/systemd/system/infinicus-backup.service - TEMPLATE, not installed by anything in this repository.
+# Adjust WorkingDirectory to the compose directory that PRODUCTION RUNS (currently .../infrastructure/deployment/oci) and ExecStart to the repo checkout path.
+[Unit]
+Description=INFINICUS off-VM encrypted PostgreSQL backup
+Wants=network-online.target
+After=network-online.target docker.service
+OnFailure=infinicus-backup-failed.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=docker
+WorkingDirectory=/opt/infinicus/repo/infinicus-platform/infrastructure/deployment/oci
+Environment=BACKUP_ENV_FILE=/etc/infinicus/backup.env
+Environment=BACKUP_LABEL=daily
+ExecStartPre=/opt/infinicus/repo/infinicus-platform/infrastructure/backups/backup-offsite.sh --check
+ExecStart=/opt/infinicus/repo/infinicus-platform/infrastructure/backups/backup-offsite.sh
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=idle
+# The job only reads the database and writes encrypted temp files and its state directory.
+NoNewPrivileges=true
+PrivateTmp=true
+# read-only (not true): the S3 client's config lives under the deploy user's home
+ProtectHome=read-only
+ProtectSystem=strict
+# /var/lib/infinicus-backup (state) is created and made writable by StateDirectory; encrypted temp files go to the private /tmp
+StateDirectory=infinicus-backup
+Environment=BACKUP_TMP_DIR=/tmp/infinicus-backup
