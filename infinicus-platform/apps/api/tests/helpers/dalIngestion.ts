@@ -71,5 +71,17 @@ export function dalKit(env: { app: FastifyInstance; admin: Pool; tenantIds: stri
     movements: () => count(`SELECT count(*) n FROM business_operations.inventory_movements WHERE business_id=$1`, [w.businessId]),
     balances: () => count(`SELECT count(*) n FROM business_operations.inventory_balances WHERE business_id=$1`, [w.businessId]),
   });
-  return { da, world, headers, publishThroughDal, boIntake, count, boRows };
+  /** The first-action facts ingested through DAL into BO, plus the BO identifiers BO generated. */
+  async function ingestFirstAction(w: World, sku: string, warehouseCode: string, records: Record<string, unknown>[] = firstActionRecords(sku, warehouseCode)) {
+    const { packageId } = await publishThroughDal(w, records);
+    const res = await boIntake(w, packageId);
+    expect(res.statusCode, res.body).toBe(200);
+    const one = async (sql: string) => (await admin.query(sql, [w.businessId])).rows[0]?.id as string | undefined;
+    return {
+      itemId: await one(`SELECT id FROM platform.inventory_items WHERE business_id=$1`),
+      warehouseId: await one(`SELECT id FROM platform.warehouses WHERE business_id=$1`),
+      balanceId: await one(`SELECT id FROM business_operations.inventory_balances WHERE business_id=$1`),
+    };
+  }
+  return { da, world, headers, publishThroughDal, boIntake, count, boRows, ingestFirstAction };
 }
