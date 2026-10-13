@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { TenantContext } from '@infinicus/database';
-import { OperationalMappingError, ReorderBaselineChangedError } from './errors.js';
+import { OperationalMappingError, ReorderBaselineChangedError, ReorderPolicyAlreadyConfiguredError } from './errors.js';
 import { UNIT_COST_MINIMUM_STORABLE, unitCostProblem } from './unitCost.js';
 import { Decimal } from './inventory-policy/decimal.js';
 import type { ConfigureInventoryReorderPolicyCommand, OperationalCommand } from './types.js';
@@ -442,6 +442,8 @@ export class OperationalCommandExecutor {
     if (locked.rowCount !== 1) throw new OperationalMappingError('No inventory balance exists for this item and warehouse; a reorder policy cannot be configured without one.');
     const row = locked.rows[0];
     const before: ReorderValuesSnapshot = { reorderPoint: exact(row.reorder_point), reorderQuantity: exact(row.reorder_quantity), state: row.reorder_policy_state, version: Number(row.version) };
+
+    if (p.requireState === 'UNSET' && row.reorder_policy_state !== 'UNSET') throw new ReorderPolicyAlreadyConfiguredError();
 
     if (p.expectedBaseline !== undefined) {
       const bp = Decimal.fromNumber(p.expectedBaseline.reorderPoint);

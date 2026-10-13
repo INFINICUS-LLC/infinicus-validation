@@ -52,11 +52,13 @@ describe('data-capture Block E architecture (reorder policy state)', () => {
     expect(literal).toEqual([
       'packages/business-operations-runtime/src/OperationalCommandExecutor.ts',
       'packages/business-operations-runtime/src/authorized-action-execution/InventoryReorderPolicyExecutionAdapter.ts', // P0-6c: the authorized path calls the same command
+      'packages/business-operations-runtime/src/inventory/InventoryReorderPolicyService.ts', // AC-2 (D2): the BO first-policy service (UNSET-only, audited)
       'packages/business-operations-runtime/src/types.ts',
     ]);
     const outside = production.filter((f) => /ConfigureInventoryReorderPolicyCommand|InventoryReorderPolicyService/.test(f.code)
       && !f.rel.startsWith('packages/business-operations-runtime/src/')).map((f) => f.rel);
-    expect(outside).toEqual([]);
+    // AC-2 (owner ruling D2): the ONE other consumer is the BO-owned first-policy route (bo:admin, UNSET-only); see ac2-bo-canonical-writer.architecture.test.ts
+    expect(outside).toEqual(['apps/api/src/routes/inventoryReorderPolicyBaseline.ts']);
   });
 
   it('intake cannot reach the command: it is outside the OperationalCommand union, the executeOn switch and every mapper', () => {

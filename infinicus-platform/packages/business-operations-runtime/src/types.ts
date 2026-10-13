@@ -197,6 +197,11 @@ export interface ConfigureInventoryReorderPolicyCommand {
      * newer state; absent for a plain BO configuration.
      */
     expectedBaseline?: { reorderPoint: number; reorderQuantity: number };
+    /**
+     * AC-2 (owner ruling D2): when 'UNSET', the command is the FIRST configuration only - refused (ReorderPolicyAlreadyConfiguredError) when the balance is
+     * already CONFIGURED, checked under the row lock. Changing a configured policy stays with the authorized-package path.
+     */
+    requireState?: 'UNSET';
   };
 }
 
