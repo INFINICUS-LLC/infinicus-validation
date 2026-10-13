@@ -1,6 +1,6 @@
 /** AC-1 - the ADI structured proposed-action contract: validator is fail-closed; matching helper compares exactly. */
 import { describe, expect, it } from 'vitest';
-import { ADI_PROPOSED_ACTION_CONTRACT, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, STRUCTURED_ADI_PROPOSAL_REQUIRED, boEvaluationReferences, proposalEvidenceProblems, proposalMatchesCapture, validateProposedActionRecommendation, type ProposedActionRecommendation } from '../src';
+import { CANONICAL_ACTION_TYPES, CANONICAL_BASE_RISK_CLASS, canonicalBaseRiskClass, ADI_PROPOSED_ACTION_CONTRACT, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, STRUCTURED_ADI_PROPOSAL_REQUIRED, boEvaluationReferences, proposalEvidenceProblems, proposalMatchesCapture, validateProposedActionRecommendation, type ProposedActionRecommendation } from '../src';
 
 const ITEM = '11111111-1111-4111-8111-111111111111';
 const good = (): ProposedActionRecommendation => ({
@@ -96,5 +96,18 @@ describe('AC-1 corrections: proposal evidence completeness and the mandatory-pro
     expect(validateProposedActionRecommendation(withEvidence((e) => { delete e[1].id; })).join()).toContain('UUID id and a dimension');
     expect(validateProposedActionRecommendation(withEvidence((e) => { e[1].id = 'not-a-uuid'; })).join()).toContain('UUID id and a dimension');
     expect(validateProposedActionRecommendation(withEvidence((e) => { delete e[1].dimension; })).join()).toContain('UUID id and a dimension');
+  });
+});
+
+describe('AC-2 canonical base risk (owner ruling 1)', () => {
+  it('inventory_reorder_policy_update@1 is MEDIUM; unlisted types and versions have no base class', () => {
+    expect(canonicalBaseRiskClass('inventory_reorder_policy_update', '1')).toBe('medium');
+    expect(canonicalBaseRiskClass('inventory_reorder_policy_update', '2')).toBeNull();
+    expect(canonicalBaseRiskClass('something_else', '1')).toBeNull();
+  });
+  it('is defined once, only for canonical action types, and the map is frozen', () => {
+    const canonicalKeys = CANONICAL_ACTION_TYPES.map((c) => `${c.code}@${c.schemaVersion}`);
+    for (const key of CANONICAL_BASE_RISK_CLASS.keys()) expect(canonicalKeys).toContain(key);
+    expect(Object.isFrozen(CANONICAL_BASE_RISK_CLASS)).toBe(true);
   });
 });

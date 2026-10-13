@@ -24,7 +24,7 @@ export type AbaFacts = NonNullable<Parameters<DecisionRecommendationRepository['
 
 /** Full BI -> DT -> Simulation -> ADI -> ABA-intake fixture chain (same proven pattern as BUILD-20's workflow tests). */
 /** Persisted facts that pass the approval gate; tests needing unclassified/unknown pass `{}` or a subset. */
-export const APPROVABLE_FACTS = { riskClass: 'low', isTimeSensitive: false } as const;
+export const APPROVABLE_FACTS = { riskClass: 'medium', isTimeSensitive: false } as const;
 
 /** The digest a fixture proposal cites for its (stand-in) fact snapshot; a test verifier answers with it so the proposal evidence checks line up. */
 export const FIXTURE_FACTS_DIGEST = `sha256:${'a'.repeat(64)}`;

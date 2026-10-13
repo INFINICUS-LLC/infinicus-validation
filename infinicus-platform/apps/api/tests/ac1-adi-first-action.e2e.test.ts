@@ -18,7 +18,7 @@ import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { loadConfig } from '@infinicus/configuration';
 import { createPool, closePool, DecisionRecommendationRepository, ApprovedActionRepository } from '@infinicus/database';
-import { STRUCTURED_ADI_PROPOSAL_REQUIRED, boEvaluationReferences, learningEligibility, proposalEvidenceProblems, validateProposedActionRecommendation } from '@infinicus/handoff-contracts';
+import { STRUCTURED_ADI_PROPOSAL_REQUIRED, boEvaluationReferences, canonicalBaseRiskClass, learningEligibility, proposalEvidenceProblems, validateProposedActionRecommendation } from '@infinicus/handoff-contracts';
 import { ReorderPolicyRecommendationProducer, DEFAULT_APPROVER_ASSIGNMENT_CODE, type ReorderPolicyDeriverPort } from '@infinicus/workflow';
 import { ReorderPolicyBaselineEvidenceRecorder, ReorderPolicyDerivationService } from '@infinicus/business-operations-runtime';
 import { buildEventWorker } from '../../../packages/event-worker/src/index.js';
@@ -26,6 +26,9 @@ import { buildApp } from '../src/app.js';
 import { ACTION, FINAL, BASELINE, chainKit, type AdiChain } from './helpers/authorizedPackageChain.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
 import { createAbaFixture, APPROVABLE_FACTS, uc } from './helpers/abaFixtures.js';
+
+/** AC-2 owner ruling 1: the canonical base risk of the first action is MEDIUM; the test reads it from the contract and also pins the ruling. */
+const CANONICAL_BASE = canonicalBaseRiskClass('inventory_reorder_policy_update', '1');
 
 const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const ACTOR = randomUUID();
@@ -107,9 +110,9 @@ describe.runIf(run)('AC-1: a real ADI-produced first-action recommendation, end 
     expect(rec[0].id).toBe(c.recommendationId);
     expect(rec[0].recommendation_code).toMatch(/^adi-reorder-rec-/);
     expect(rec[0].status).toBe('published');
-    // ADI is not the authoritative risk classifier for this action: the class is left UNCLASSIFIED (null), which P0-2 treats as high
+    // AC-2: the class is the canonical action-type BASE risk (medium), read from the canonical contract - ADI authors no level of its own
     const ver = (await adiVersions(c.s.bizId))[0];
-    expect(ver).toMatchObject({ id: c.recommendationVersionId, status: 'published', risk_class: null, is_time_sensitive: true });
+    expect(ver).toMatchObject({ id: c.recommendationVersionId, status: 'published', risk_class: CANONICAL_BASE, is_time_sensitive: true });
     expect(new Date(ver.valid_until).getTime()).toBeGreaterThan(Date.now());
     const rationales = await q(`SELECT rationale_code, evidence_reference FROM ${ADI}.recommendation_rationales WHERE recommendation_version_id=$1`, [c.recommendationVersionId]);
     expect(rationales.map((r: any) => r.rationale_code).sort()).toEqual(['proposed_action', 'reorder_policy_basis', 'risk_validity_basis']);

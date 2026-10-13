@@ -56,6 +56,19 @@ export const STRUCTURED_ADI_PROPOSAL_REQUIRED: ReadonlySet<string> = Object.free
 ])) as ReadonlySet<string>;
 
 /**
+ * AC-2 (owner ruling 1): the BASE risk class of an action type is canonical action-type governance, defined exactly here and nowhere else.
+ * Per `code@schemaVersion`, never global; a type with no entry has no base class (its risk stays whatever the P0-2/P0-3 evidence supports,
+ * and unclassified is treated as high). Consumers: the ADI risk derivation takes it as a deterministic FLOOR input (ADI does not classify),
+ * and the ABA issuance policy refuses a package whose persisted recommendation risk is below it. Contextual risk (persisted profiles,
+ * generator level, authorised human raise) can only raise the result above this floor.
+ */
+export type CanonicalBaseRiskClass = 'low' | 'medium' | 'high' | 'critical';
+export const CANONICAL_BASE_RISK_CLASS: ReadonlyMap<string, CanonicalBaseRiskClass> = Object.freeze(new Map<string, CanonicalBaseRiskClass>([
+  [`${INVENTORY_REORDER_POLICY_UPDATE_V1.code}@${INVENTORY_REORDER_POLICY_UPDATE_V1.schemaVersion}`, 'medium'],
+])) as ReadonlyMap<string, CanonicalBaseRiskClass>;
+export const canonicalBaseRiskClass = (code: string, schemaVersion: string): CanonicalBaseRiskClass | null => CANONICAL_BASE_RISK_CLASS.get(`${code}@${schemaVersion}`) ?? null;
+
+/**
  * Why a governed NOT_APPLICABLE simulation reference is refused for this action type, or null when it is permitted. Used by every
  * writer and by the issuance policy so the rule cannot drift: the type must be listed AND the reason code must be exactly canonical.
  */

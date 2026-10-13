@@ -73,7 +73,7 @@ describe.runIf(run)('P0-5 Block 3d: ABA package issuer', () => {
       expect(p.authorization).toMatchObject({
         mode: 'HUMAN_APPROVAL', decisionStatus: 'approved', permissionUsed: 'aba:approve', approvalAuditEventId: f.approvalAuditEventId,
         approver: { userId: f.approverUserId, assignmentId: f.assignmentId, assignmentVersionId: f.assignmentVersionId, roleCode: 'business-owner' },
-        authorityProvenance: { scopeId: f.grantScopeId }, risk: { riskClass: 'low', basis: 'PERSISTED', requiredApproverTier: 1, approverTier: 3 },
+        authorityProvenance: { scopeId: f.grantScopeId }, risk: { riskClass: 'medium', basis: 'PERSISTED', requiredApproverTier: 2, approverTier: 3 },
       });
       expect(Date.parse(p.authorization.decidedAt)).toBe(f.decidedAt.getTime());
       expect(p.lineage.recommendation).toEqual({ recommendationId: f.recommendationId, recommendationVersionId: f.recommendationVersionId });
@@ -197,6 +197,7 @@ describe.runIf(run)('P0-5 Block 3d: ABA package issuer', () => {
       ['no canonical authority grant', { noGrantProvenance: true }, 'AUTHORITY_NOT_ESTABLISHED'],
       ['authority granted only after the decision', { grantAfterDecision: true }, 'AUTHORITY_NOT_ESTABLISHED'],
       ['an insufficient risk tier (high risk, manager)', { riskClass: 'high', roleCode: 'manager' }, 'RISK_POLICY'],
+      ['a recommendation risk (low) below the canonical base risk of the action type (medium), AC-2', { riskClass: 'low' }, 'RISK_POLICY'],
       ['an unclassified risk with a cashier', { riskClass: null, roleCode: 'cashier' }, 'RISK_POLICY'],
       ['a stale Digital Twin snapshot', { twin: 'stale' }, 'FRESHNESS_GATE'],
       ['an expired decision', { validUntil: new Date(Date.now() - 1000) }, 'FRESHNESS_GATE'],
