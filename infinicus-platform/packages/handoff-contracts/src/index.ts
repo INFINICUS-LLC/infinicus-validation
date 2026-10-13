@@ -8,6 +8,8 @@ export * from './bi-to-dt';
 export * from './dt-to-sim';
 export * from './sim-to-adi';
 export * from './adi-to-aba';
+// ADI structured proposed action (AC-1): machine-readable first-action proposal carried by an ADI recommendation version.
+export * from './adi-proposed-action';
 export * from './aba-to-om';
 export * from './om-to-cl';
 export * from './cl-feedback';

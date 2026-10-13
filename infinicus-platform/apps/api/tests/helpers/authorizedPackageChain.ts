@@ -9,7 +9,7 @@ import { expect } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import { UserRepository, MembershipRepository, ApprovedActionRepository, type TenantContext } from '@infinicus/database';
+import { UserRepository, MembershipRepository, ApprovedActionRepository, ADIPublicationRepository, ABAIntakeRepository, type TenantContext } from '@infinicus/database';
 import { DEFAULT_APPROVER_ASSIGNMENT_CODE } from '@infinicus/workflow';
 import { createAbaFixture, APPROVABLE_FACTS, uc } from './abaFixtures.js';
 
@@ -25,6 +25,8 @@ const SIMULATION_NA = { state: 'NOT_APPLICABLE', reason: { code: 'NO_APPLICABLE_
 
 export interface Session { ctx: TenantContext; token: string; bizId: string; membershipId: string }
 export interface Chain { s: Session; actionId: string; decisionId: string; itemId: string; warehouseId: string; balanceId: string; base: string }
+/** A chain whose recommendation was produced by the REAL ADI producer (AC-1), not by a fixture. */
+export interface AdiChain extends Chain { recommendationId: string; recommendationVersionId: string; proposal: any }
 
 export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: string[] }) {
   const { app, admin, tenantIds } = env;
@@ -141,10 +143,75 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
     return { s, actionId, decisionId, ...bo, base };
   }
 
+    /** ABA intake built from a REAL (producer-authored) recommendation version: the publication tail of the proven fixture, with no fixture recommendation. */
+  async function intakeFromRecommendation(s: Session, recommendationVersionId: string): Promise<string> {
+    const adiPubRepo = new ADIPublicationRepository();
+    const insight = await adiPubRepo.createInsightPackage(s.ctx, s.bizId, uc('adi-insight'));
+    const insightVersion = await adiPubRepo.createVersion(s.ctx, insight.id, s.bizId, 'ADI->ABA reorder recommendation', recommendationVersionId);
+    const { package: pub } = await adiPubRepo.createPackage(s.ctx, s.bizId, insightVersion.id, 'approved_business_action', 'ABA-01', uc('idem'));
+    const { package: intake } = await new ABAIntakeRepository().receivePackage(s.ctx, { businessId: s.bizId, adiPublicationPackageId: pub.id, intakeCode: uc('aba-intake'), idempotencyKey: uc('idem') });
+    return intake.id;
+  }
+
+  const reorderRecommendationUrl = (s: Session, itemId: string) => `/v1/businesses/${s.bizId}/inventory-items/${itemId}/reorder-policy-recommendation`;
+
+  /**
+   * AC-1 chain: governance, approver, BO facts, then the REAL ADI producer (production route), then ABA intake / decision / capture / owner / boundaries.
+   * `mode`: 'modify' (default) = approve_with_modifications of the ADI proposal to `final` (executable); 'plain' = approve as proposed (BO refuses it: O-4);
+   * 'until-capture' = stop right after the decision so a test can attempt the capture itself.
+   */
+  async function authorFromAdi(opts: { mode?: 'modify' | 'plain' | 'until-capture'; final?: { reorderPoint: number; reorderQuantity: number } } = {}): Promise<AdiChain> {
+    const mode = opts.mode ?? 'modify';
+    const final = opts.final ?? FINAL;
+    const s = await setup();
+    await governance(s);
+    expect((await post(s, `/v1/businesses/${s.bizId}/approver-assignments`, { approverUserId: s.ctx.userId, assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, roleCode: 'business-owner' })).statusCode).toBe(201);
+    const bo = await seedBo(s);
+    const produced = await post(s, reorderRecommendationUrl(s, bo.itemId));
+    expect(produced.statusCode, produced.body).toBe(201);
+    const { recommendationId, recommendationVersionId, proposal } = produced.json();
+    const intakePackageId = await intakeFromRecommendation(s, recommendationVersionId);
+    const d = await post(s, `/v1/businesses/${s.bizId}/decisions`, {
+      intakePackageId, reviewCode: uc('r'), summary: 'AC-1 ADI-produced first-action recommendation', assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, decisionCode: uc('d'),
+      outcome: mode === 'plain' ? 'approve' : 'approve_with_modifications',
+    });
+    expect(d.statusCode, d.body).toBe(201);
+    const decisionId = d.json().id as string;
+    const actions = new ApprovedActionRepository();
+    const action = await actions.createAction(s.ctx, s.bizId, decisionId, uc('act'), recommendationId);
+    await actions.createVersion(s.ctx, action.id, s.bizId, 'AC-1');
+    const base = `/v1/businesses/${s.bizId}/authorized-actions/${action.id}`;
+    const chain: AdiChain = { s, actionId: action.id, decisionId, ...bo, base, recommendationId, recommendationVersionId, proposal };
+    if (mode === 'until-capture') return chain;
+
+    const target = { kind: 'inventory_item', id: bo.itemId };
+    let capturePayload: Record<string, unknown>;
+    if (mode === 'plain') {
+      capturePayload = { actionType: ACTION, target, proposedParameters: { ...proposal.proposedParameters } };
+    } else {
+      const ev = await post(s, `/v1/businesses/${s.bizId}/inventory-policy-evaluations`, { actionType: ACTION, target, finalParameters: final, ruleSetVersion: RULE_SET });
+      expect(ev.statusCode, ev.body).toBe(201);
+      capturePayload = {
+        actionType: ACTION, target, proposedParameters: { ...proposal.proposedParameters },
+        modification: { reason: 'Reviewed the ADI proposal and adjusted it.', changes: Object.entries(final).filter(([k, v]) => proposal.proposedParameters[k] !== v).map(([k, v]) => ({ parameter: k, operation: 'SET', before: proposal.proposedParameters[k], after: v })) },
+        evaluationEvidence: refs(ev),
+      };
+    }
+    const cap = await post(s, `${base}/capture`, capturePayload);
+    expect(cap.statusCode, cap.body).toBe(201);
+    expect((await post(s, `${base}/owner`, {
+      ownerUserId: s.ctx.userId, membershipId: s.membershipId, roleCode: 'operations_lead',
+      dueAt: { state: 'VALUE', value: hoursFromNow(72).replace(/\.\d+Z$/, 'Z') }, escalationPolicy: { state: 'VALUE', value: { ref: 'policy:default-escalation' } },
+    })).statusCode).toBe(201);
+    expect((await post(s, `${base}/boundaries`, boundaries())).statusCode).toBe(201);
+    expect((await get(s, `${base}/authoring-status`)).json().missing).toEqual([]);
+    return chain;
+  }
+
   /** Enables the action type for the business through the audited administration route (as the owner, who holds bo:admin). */
   const activate = (c: Chain, state: 'ENABLED' | 'DISABLED' = 'ENABLED') => put(c.s, `/v1/businesses/${c.s.bizId}/execution-activations`, { actionType: ACTION, state, reason: 'p0-6f e2e' });
   /** ABA's issuer: seals the package and (gate open) announces it in the same transaction. Replays announce again, idempotently. */
   const issue = (c: Chain) => post(c.s, `${c.base}/package`);
 
-  return { hdr, post, put, get, setup, seedBo, authorChain: author, activate, issue };
+  return { hdr, post, put, get, setup, seedBo, authorChain: author, authorFromAdi, reorderRecommendationUrl, refs, boundaries, governance, activate, issue };
 }

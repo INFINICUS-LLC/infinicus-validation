@@ -29,12 +29,13 @@ import type {
   ActionTypeWithStatus, AuthorizedActionBoundaries, AuthorizedActionCapture, GovernedValue, OwnerAssignment, TenantContext,
 } from '@infinicus/database';
 import {
-  SIMULATION_NOT_APPLICABLE_ALLOWED, actionTypeKey, simulationNotApplicableProblem, canonicalActionTypeRegistry, canonicalize, checkParameterValue, requiredGovernanceDimensions,
+  SIMULATION_NOT_APPLICABLE_ALLOWED, actionTypeKey, simulationNotApplicableProblem, canonicalActionTypeRegistry, canonicalize, checkParameterValue, proposalMatchesCapture, requiredGovernanceDimensions,
 } from '@infinicus/handoff-contracts';
 import type { ActionTypeContract, ActionTypeRegistry, GovernanceDimension, GovernanceEvidenceVerifier, JsonValue } from '@infinicus/handoff-contracts';
 import { ApproverAuthorityNotEstablishedError } from './DecisionWorkflowService.js';
 import { AuthorizedActionPackageIssuer, type IssuePackageResult } from './AuthorizedActionPackageIssuer.js';
 import { POLICY_ACTION_TYPES_KEY, notApplicableCodeProblems } from './packageIssuancePolicy.js';
+import { AdiProposedActionSource, type ProposedActionSource } from './ProposedActionSource.js';
 
 const MS_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -131,6 +132,11 @@ export interface AbaAuthoringDependencies {
    * modified approval cannot be captured (fail closed). A caller's evidence reference is never proof.
    */
   evidenceVerifier: GovernanceEvidenceVerifier | null;
+  /**
+   * Reads the structured proposal ADI recorded on the action's source recommendation (AC-1). Where one exists, the original proposal that
+   * ABA captures MUST equal it exactly, so the lineage's `proposed` half is ADI's real proposal and not a caller's claim.
+   */
+  proposedActions: ProposedActionSource;
 }
 
 const defaults = (): AbaAuthoringDependencies => ({
@@ -138,7 +144,7 @@ const defaults = (): AbaAuthoringDependencies => ({
   approverAuthority: new ApproverAuthorityRepository(), captures: new AuthorizedActionCaptureRepository(), boundaries: new AuthorizedActionBoundaryRepository(),
   actionTypes: new ActionTypeRegistryRepository(), policies: new AutomationLevelPolicyRepository(), packages: new AuthorizedActionPackageRepository(),
   audit: new GovernanceAuditRepository(), issuer: new AuthorizedActionPackageIssuer(), canonicalTypes: canonicalActionTypeRegistry(),
-  simulationRuns: new SimulationRunRepositoryReferenceVerifier(), evidenceVerifier: null,
+  simulationRuns: new SimulationRunRepositoryReferenceVerifier(), evidenceVerifier: null, proposedActions: new AdiProposedActionSource(),
 });
 
 const invalid = (message: string): ValidationError => new ValidationError('AbaAuthoring', [message]);
@@ -429,6 +435,13 @@ export class AbaAuthoringService {
       for (const [name, spec] of Object.entries(canonical.parameters)) if (spec.required && !(name in params)) throw invalid(`${label}: required parameter ${name} is missing`);
     };
     checkSet('proposed', input.proposedParameters);
+    // AC-1: where ADI recorded a structured proposal for the source recommendation, ABA's `proposed` half must be exactly that proposal.
+    // ABA still owns the decision and the final parameters (modification is a separate, evaluated step); this only anchors the lineage.
+    const adiProposal = await this.d.proposedActions.getForRecommendation(ctx, action.sourceRecommendationId);
+    if (adiProposal !== null) {
+      const differences = proposalMatchesCapture(adiProposal, { actionType: input.actionType, target: input.target, proposedParameters: input.proposedParameters });
+      if (differences.length > 0) throw invalid(`PROPOSAL_DIFFERS_FROM_ADI_RECOMMENDATION: ${differences.join('; ')}`);
+    }
 
     const modified = decision.status === 'approved_with_modifications';
     if (modified && (!input.modification || input.modification.changes.length === 0)) throw invalid('an approved-with-modifications decision requires a structured modification delta and reason');

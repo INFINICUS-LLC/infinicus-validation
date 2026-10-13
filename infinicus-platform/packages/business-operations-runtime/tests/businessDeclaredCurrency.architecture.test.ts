@@ -79,7 +79,10 @@ describe('business declared currency architecture (0185)', () => {
     expect(production.filter((f) => /declared_currency|declaredCurrency|DECLARED_CURRENCY/.test(f.code)).map((f) => f.rel).sort()).toEqual([
       'apps/api/src/routes/businessAdministration.ts', 'apps/api/src/schemas/businessAdministration.ts',
       // B2b: the BO evaluator READS the declared currency (through the Reader); it never writes it.
-      'packages/business-operations-runtime/src/inventory-policy/InventoryPolicyEvaluationService.ts', 'packages/business-operations-runtime/src/inventory-policy/evaluate.ts',
+      'packages/business-operations-runtime/src/inventory-policy/InventoryPolicyEvaluationService.ts',
+      // AC-1: the read-only derivation READS the declared currency through the same Reader and passes it to the same evaluator; it never writes it.
+      'packages/business-operations-runtime/src/inventory-policy/ReorderPolicyDerivationService.ts', 'packages/business-operations-runtime/src/inventory-policy/derive.ts',
+      'packages/business-operations-runtime/src/inventory-policy/evaluate.ts',
       'packages/database/src/index.ts', 'packages/database/src/repositories/onboarding/BusinessDeclaredCurrencyRepository.ts',
       'packages/database/src/repositories/onboarding/index.ts', 'packages/onboarding/src/BusinessDeclaredCurrencyService.ts', 'packages/onboarding/src/index.ts',
     ]);

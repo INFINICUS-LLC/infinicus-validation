@@ -314,11 +314,28 @@ export class DecisionRecommendationRepository {
   }
 
   /**
+   * Every rationale of ONE version carrying ONE rationale code, oldest first (AC-1: the structured `proposed_action` rationale is looked up
+   * by its code; `listRationalesForVersions` returns only the earliest rationale of each version and cannot be used for that).
+   */
+  async listRationalesByCode(ctx: TenantContext, recommendationVersionId: string, rationaleCode: string): Promise<RecommendationRationale[]> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT * FROM ai_decision_intelligence.recommendation_rationales
+         WHERE recommendation_version_id = $1 AND rationale_code = $2
+         ORDER BY created_at ASC, id ASC`,
+        [recommendationVersionId, rationaleCode]
+      );
+      return result.rows.map(rowToRationale);
+    });
+  }
+
+  /**
    * Bulk lookup of each version's rationale (statement + evidence_reference),
    * keyed by recommendation_version_id — a single query rather than N+1 when
    * building a history page over many recommendations. recommend() adds
    * exactly one rationale row per version; DISTINCT ON ... ORDER BY
-   * created_at keeps this correct (earliest wins) even if that ever changes.
+   * created_at keeps this correct (earliest wins) even if that ever changes. Rationales written in ONE transaction share created_at; the tie
+   * is broken toward the human-readable narrative (structural rationales - the AC-1 proposed action, the risk/validity basis - sort last).
    */
   async listRationalesForVersions(ctx: TenantContext, recommendationVersionIds: string[]): Promise<RecommendationRationale[]> {
     if (recommendationVersionIds.length === 0) return [];
@@ -327,7 +344,8 @@ export class DecisionRecommendationRepository {
         `SELECT DISTINCT ON (recommendation_version_id) *
          FROM ai_decision_intelligence.recommendation_rationales
          WHERE recommendation_version_id = ANY($1)
-         ORDER BY recommendation_version_id, created_at ASC`,
+         ORDER BY recommendation_version_id, created_at ASC,
+                  CASE rationale_code WHEN 'proposed_action' THEN 2 WHEN 'risk_validity_basis' THEN 1 ELSE 0 END ASC, id ASC`,
         [recommendationVersionIds]
       );
       return result.rows.map(rowToRationale);

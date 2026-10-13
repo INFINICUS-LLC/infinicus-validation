@@ -40,6 +40,8 @@ import registerSessionsRoutes from './routes/registerSessions.js';
 import ordersRoutes from './routes/orders.js';
 import twinRoutes from './routes/twin.js';
 import decisionRecommendationsRoutes from './routes/decisionRecommendations.js';
+import reorderPolicyRecommendationRoutes from './routes/reorderPolicyRecommendation.js';
+import type { ReorderRecommendationCompositionOptions } from './reorderPolicyRecommendationComposition.js';
 import dataAcquisitionRoutes from './routes/dataAcquisition.js';
 import webhooksRoutes from './routes/webhooks.js';
 import { redactUrl } from './redactUrl.js';
@@ -53,6 +55,8 @@ export interface BuildAppOptions {
   abaAnnouncement?: AbaAnnouncementCompositionOptions;
   /** Composition-root overrides for the interim operator recovery control (registry, kill switch, scripted ABA status port). Production leaves it unset. */
   claimRecovery?: ClaimRecoveryCompositionOptions;
+  /** AC-1: the ADI reorder-policy recommendation producer's composition (test seam; production uses the BO read-only derivation). */
+  reorderRecommendation?: ReorderRecommendationCompositionOptions;
 }
 
 export async function buildApp(config: InfinicusConfig, options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -177,6 +181,7 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(ordersRoutes);
   await app.register(twinRoutes);
   await app.register(decisionRecommendationsRoutes);
+  await app.register(reorderPolicyRecommendationRoutes, options.reorderRecommendation ?? {});
   await app.register(dataAcquisitionRoutes);
   await app.register(webhooksRoutes, {
     rateLimit: {
