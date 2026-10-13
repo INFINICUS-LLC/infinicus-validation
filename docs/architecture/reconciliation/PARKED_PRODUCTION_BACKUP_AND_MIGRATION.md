@@ -8,6 +8,9 @@ Owner standing rules still apply: no production access or writes, no AWS/Cloudfl
 - Merged and tested tooling (no production run yet): `infrastructure/backups/` (`backup-offsite.sh` with the extended `--check`, `restore-proof.sh` with the expectations profile and timings, freshness check, systemd templates — timer NOT enabled), `infrastructure/deployment/scripts/production-readonly-discovery.sh`, the migration runbook `PRODUCTION_MIGRATION_RUNBOOK_0171-0198.md`, the plan `OFFSITE_BACKUP_PLAN.md`.
 - No production backup has been taken. No AWS bucket, IAM user or GPG key has been reviewed by Claude (nothing was reported).
 
+## Closed since the park date
+The Hetzner VM / production-readiness **discovery** task (VM reachable, runtime healthy, server checkout synchronized, live PostgreSQL 16.15 at migration 0170 fingerprint-confirmed, worker absent, subscriptions zero) is RESOLVED: see `VM_DISCOVERY_TASK_CLOSURE_2026-10-13.md`. It was not a numbered item below; **every numbered item below remains parked and unchanged** (including 11, the migration, and 12, identifying the deployed application SHA).
+
 ## Parked items, in dependency order
 | # | Item | Owner / actor | Blocked until |
 |---|---|---|---|

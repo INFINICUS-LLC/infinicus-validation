@@ -14,6 +14,7 @@ Status words follow the assessment vocabulary: every item is, at most, implement
 | Data capture A (0197, #104), B (0187), C (0183), D (0198, #105), E (0189) and follow-ups (0184, 0185, 0186) | #78–#105 | A, B |
 | Live-database readiness, environment and production-target discovery | #106–#108 | K |
 | Read-only discovery script, migration runbook 0171–0198, canonical 0170 fingerprint | #109, #111 | K |
+| Hetzner VM / production-readiness discovery task resumed and completed (server reachable, runtime healthy, checkout at `ba1979e`, live DB at 0170 fingerprint-confirmed, worker absent, subscriptions 0) — discovery only; see `VM_DISCOVERY_TASK_CLOSURE_2026-10-13.md` | owner-run, 2026-10-13 | K |
 | Deployment hardening (build SHA in `/v1/health`, `grant-app-role.sh` in redeploy) | #110 | L |
 | Off-VM backup tooling, restore-proof with expectations profile, retention doc correction | #112, #113 | L |
 | Parked-items register | #114 | — |
