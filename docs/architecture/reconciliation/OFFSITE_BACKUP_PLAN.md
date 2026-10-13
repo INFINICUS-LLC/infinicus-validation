@@ -31,11 +31,13 @@ Recovery / drill machine (private key, throwaway PostgreSQL 16): restore-proof.s
 - **Disk:** only the encrypted dump touches the VM's disk (`/tmp` of the service, removed on exit). `--check` requires free space greater than twice the database size.
 - **The script never deletes** (remote or local beyond its own temp dir) and never writes to the database; all SQL is `SELECT`/`SHOW` in a read-only session.
 
-## 3. Owner decisions required (with recommendations)
+## 3. Owner decisions (D1-D7 LOCKED by the owner; the recommendations below are the original proposals)
+**Owner rulings in force:** D1 AWS S3 in an AWS account separate from Hetzner (backup storage only). D2 Block Public Access, ACLs disabled, Versioning, Object Lock enabled at bucket creation, encrypted objects, **NO lifecycle deletion or expiration rules until the owner explicitly approves a retention policy**. D3 production upload credential is non-destructive (put-only); recovery credentials stay off the VM. D4 asymmetric GPG, public key only on production, private key never on production. D5 daily 02:30 UTC plus an explicit pre-migration backup; timer stays disabled until backup, remote verification and restore proof have succeeded. D6 failures are non-zero and visible. D7 restore only into an isolated, temporary PostgreSQL 16, never production.
+
 | # | Decision | Recommendation |
 |---|---|---|
 | D1 | Which S3-compatible provider and account | A bucket in an account **separate from the Hetzner Cloud project** (ideally another provider): the VM, its Hetzner backups and a same-account bucket then do not share one account-level failure or compromise. Hetzner's own object storage is acceptable if you accept that correlation. Choose a region with an acceptable data-residency position (the database holds personal data; the legal page still lists Hetzner's region as unverified). I have not verified any provider's features or prices. |
-| D2 | Bucket protections | Versioning **and** object lock (retention) enabled, so even a leaked credential cannot destroy history; lifecycle rules for retention (section 6). If the provider lacks object lock, treat the bucket as weaker and add a periodic copy to a second bucket. |
+| D2 | Bucket protections | Versioning **and** object lock (retention) enabled, so even a leaked credential cannot destroy history. **No lifecycle expiration is configured** (owner ruling); retention is governed by the Object Lock default retention (section 6). If the provider lacks object lock, treat the bucket as weaker and add a periodic copy to a second bucket. |
 | D3 | Credentials | VM credential: **write-only** (no delete, no list/read) if the provider can express it. Verification and drills use a **separate read credential held off the VM**. Consequence: `--verify` on the VM needs read permission; if the VM credential is write-only, run verification (and the restore proof) from the drill machine right after the backup instead. |
 | D4 | gpg key custody | Generate the key pair on an owner workstation, **not on the VM**; give the VM only the public key. Store the private key in two places (password manager + offline/hardware backup) with at least two people who can retrieve it. **Losing the private key makes every backup unrecoverable.** Rotate by adding a new recipient and keeping the old private key for the retention period. |
 | D5 | Schedule | Daily at 02:30 UTC (template timer, randomised by 10 minutes) -> recovery point up to ~24 h; add a pre-migration backup before every migration window. More frequent backups are possible; true point-in-time needs the deferred PITR work. |
@@ -44,23 +46,29 @@ Recovery / drill machine (private key, throwaway PostgreSQL 16): restore-proof.s
 
 ## 4. One-time setup **[SETUP]** (after D1-D7)
 1. On the owner workstation: `gpg --quick-generate-key "INFINICUS backup <backup@...>" rsa4096 encr 0`, export the public key (`gpg --export --armor`), store the private key per D4. Record the fingerprint.
-2. Create the bucket with versioning, object lock and lifecycle rules; create the write-only credential (VM) and read credential (drill machine).
+2. Create the bucket with Block Public Access, ACLs disabled, versioning and Object Lock **enabled at creation** (default retention per section 6) and **without any lifecycle rule**; create the write-only credential (VM) and read credential (drill machine).
 3. On the VM: install the S3 client (rclone is the assumed default; pin the version and verify its checksum from the vendor's release page - this is the only new software); configure a remote named `offsite` in the `deploy` user's own config (mode 0600); `gpg --import` the **public** key only; install `/etc/infinicus/backup.env` from `infrastructure/backups/backup.env.example` (root-owned, readable by `deploy`).
 4. Install the three systemd templates from `infrastructure/backups/systemd/` but **do not enable the timer yet**; run `systemd-analyze verify` on the VM (these units could not be exercised in the build environment).
 
 ## 5. First run and proof **[RUN]** (before the timer is enabled and before any migration)
-1. `backup-offsite.sh --check` on the VM -> `CHECK PASSED` (writes nothing).
+1. `backup-offsite.sh --check` on the VM -> `CHECK PASSED` (writes nothing). It verifies: `pg_dump` and `pg_restore` report major version 16 (`BACKUP_EXPECT_PG_MAJOR`), the server is major 16 and the session is read-only, the recipient public key is present and **no secret key exists in the production keyring** (use a dedicated `BACKUP_GNUPGHOME`), the sink is structurally valid (`aws s3 cp - s3://<bucket>/%KEY%` or `rclone rcat <remote>:<bucket>/%KEY%`), the AWS profile/region exist, `aws sts get-caller-identity` succeeds (the AWS root user is refused), and a bucket HEAD is attempted: an AccessDenied is reported as EXPECTED for an upload-only policy (it also proves the bucket exists), a missing bucket or unreachable service fails. `--check` never calls PutObject; credentials, passwords and key material are never printed. It cannot prove the upload permission itself - only the supervised backup does.
 2. `BACKUP_LABEL=first-proof backup-offsite.sh --verify` (from the running compose directory) -> `BACKUP COMPLETE`. If the VM credential cannot read, omit `--verify` here and verify on the drill machine.
-3. On the drill machine: `restore-proof.sh <manifest-key>` against a throwaway PostgreSQL 16 -> `RESTORE_PROOF=PASS`. Keep the output as evidence. The first PASS also yields the real size and duration of backup and restore (unknown today).
+3. On the drill machine: `restore-proof.sh <manifest-key>` against a throwaway PostgreSQL 16 -> `RESTORE_PROOF=PASS`. PASS requires, in addition to SHA-256, decryption, restore, ledger and schema fingerprint equal to the manifest, that the restored database equals `infrastructure/backups/expectations/production-pre-0171.profile` (ledger 170 / head 0170, fingerprint `38eabb12fde135b5`, tenants 15, users 6, businesses 15, outbox 56 = 45 `onboarding.step.completed` + 11 `billing.subscription.status_changed` with no other type, and six business-operations/audit tables empty). The proof only counts rows; it never consumes, updates or replays outbox events. Keep the output as evidence. The first PASS also yields measured durations (`RESTORE_TIMINGS download/decrypt/restore/verify/total` and the backup's `TIMING` lines/manifest `timings_seconds`; dump and encryption are one streamed stage so no plaintext dump touches disk). These are evidence only; no RTO is claimed from them.
 4. Only then enable `infinicus-backup.timer`, and confirm the next day's run and `check-backup-freshness.sh` (exit 0) the following morning.
 
-## 6. Retention (bucket lifecycle rules, not script deletes)
-| Prefix | Content | Keep |
+## 6. Retention and Object Lock (owner ruling: NO lifecycle deletion or expiration rules until a retention policy is explicitly approved)
+- **Now:** the bucket has **no lifecycle rule**. Nothing expires or is deleted by the bucket, by the scripts (they never delete) or by the production credential (it cannot).
+- **Object Lock default retention (recommendation, owner-configurable):** mode **GOVERNANCE**, **90 days**. It must cover the pre-migration backup through migration acceptance and the rollback window. The VM credential cannot set per-object retention, so the bucket default is what protects uploaded objects. COMPLIANCE mode is irreversible; choose it only after the retention policy is approved. Object Lock is enabled at bucket creation so the protection applies from the first backup.
+- **Pre-migration backups** are kept through migration acceptance and the rollback window; the specific period is part of the retention policy the owner still has to approve.
+- **Retention policy:** not yet approved. Until it is, do not create lifecycle rules, expire versions, or delete objects.
+
+**PROPOSAL ONLY — NOT AUTHORIZED.** The table below is the earlier draft, kept only as input for the owner's retention decision. None of these values is configured, and none may be turned into lifecycle rules without explicit owner approval:
+| Prefix | Content | Proposed keep (PROPOSAL ONLY — NOT AUTHORIZED) |
 |---|---|---|
 | `infinicus-prod/` | daily | 35 days |
 | `infinicus-prod-monthly/` | first-of-month backup (second timer with `BACKUP_PREFIX=infinicus-prod-monthly`) | 13 months |
 | `infinicus-prod-premigration/` | one per migration window (`BACKUP_LABEL=pre-migration-NNNN`) | 12 months, and never before the migration has been in production for 30 days |
-Object lock retention must be at least as long as the shortest lifecycle expiry so a leaked credential cannot shorten it.
+If a retention policy with expiry is later approved, Object Lock retention must be at least as long as the shortest expiry so a leaked credential cannot shorten it. The first production prefix agreed with the owner is `infinicus-production/`.
 
 ## 7. Restore drills and disaster recovery
 - **Drill:** monthly, after every migration window, and after any change to the tooling, the key or the bucket: `restore-proof.sh` on the latest manifest; record date, key, PASS/FAIL, duration.
@@ -76,7 +84,7 @@ Object lock retention must be at least as long as the shortest lifecycle expiry 
 | Private key lost or exposed | two custodians; offline copy; rotation procedure | loss = no recovery; exposure = historic backups readable |
 | Restore pointed at production | restore-proof takes only an explicit throwaway server URL, refuses the production database name and an existing scratch database | operator error with a production URL as the "throwaway" - drill machine is separate by procedure |
 | Backup silently stops | `ExecStartPre --check`, `OnFailure` alert, `check-backup-freshness.sh` (warn 26 h, critical 50 h) | alert channel not chosen yet (D6) |
-| Personal data in backups | encrypted at rest/in transit, restricted access, retention bounded | deletion requests: backups age out per section 6; document this in the privacy notice |
+| Personal data in backups | encrypted at rest/in transit, restricted access, retention bounded | deletion requests: no backup expiry is configured yet (section 6); the approved retention policy must define how requests are handled; document this in the privacy notice |
 
 ## 9. What was verified (and what was not)
 - **Tested, real components** (`packages/database/tests/offsite-backup.integration.test.ts`, 11 tests, PostgreSQL 16.15, real gpg, a file sink standing in for the S3 client): `--check` writes nothing; refusal without encryption / bad label / missing key / missing sink; encrypted objects + manifest with correct SHA-256, ledger, fingerprint and verified upload; stored objects contain no plaintext data, no dump header and no role names, and the public-key-only keyring cannot decrypt them; the restore proof PASSES with owner and data preserved and drops its scratch database; it FAILS on a tampered object, the wrong private key, a missing manifest, a production-named or existing target, and a fingerprint or ledger mismatch; a failing sink or dump fails the backup without a manifest or success record; freshness thresholds.
