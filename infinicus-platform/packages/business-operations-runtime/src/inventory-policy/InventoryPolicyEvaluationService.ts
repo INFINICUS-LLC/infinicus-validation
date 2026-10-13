@@ -165,33 +165,41 @@ export class InventoryPolicyEvaluationService {
 
   /** The persisted snapshot of every fact used, with a digest that ignores capture times so an identical fact set has an identical digest. */
   private buildInputs(snapshot: InventoryPolicyFactsSnapshot, declared: DeclaredCurrencyFact, ruleSet: InventoryReorderRuleSet): { inputs: { [key: string]: EvaluationJson }; snapshotDigest: string } {
-    const parameters = defined({
-      maxChangeReorderPointPct: ruleSet.maxChangeReorderPointPct, maxChangeReorderQuantityPct: ruleSet.maxChangeReorderQuantityPct, orderValueCap: ruleSet.orderValueCap,
-      orderValueCapCurrency: ruleSet.orderValueCapCurrency, maxChangeOrderValuePctOfCap: ruleSet.maxChangeOrderValuePctOfCap, maxImpliedStockUnits: ruleSet.maxImpliedStockUnits,
-      leadTimeDays: ruleSet.leadTimeDays, safetyFactor: ruleSet.safetyFactor, maxCoverDays: ruleSet.maxCoverDays, firstConfigurationAllowed: ruleSet.firstConfigurationAllowed,
-      demandWindowDays: ruleSet.demandWindowDays, demandMovementTypes: [...ruleSet.demandMovementTypes], minDemandObservations: ruleSet.minDemandObservations,
-      maxEvidenceAgeMs: ruleSet.maxEvidenceAgeMs,
-    });
-    const facts: { [key: string]: EvaluationJson } = {
-      item: snapshot.item === null ? null : { id: snapshot.item.id, status: snapshot.item.status, unitOfMeasure: snapshot.item.unitOfMeasure },
-      balances: snapshot.balances.map((b) => ({ id: b.id, warehouseId: b.warehouseId, reorderPoint: b.reorderPoint, reorderQuantity: b.reorderQuantity })),
-      latestReceipt: snapshot.latestReceipt === null ? null : { ...snapshot.latestReceipt },
-      demand: { count: snapshot.demand.count, sumOfMagnitudes: snapshot.demand.sumOfMagnitudes, movementTypes: [...snapshot.demandMovementTypes] },
-      declaredCurrency: declared.status === 'DECLARED' ? { status: 'DECLARED', currency: declared.currency, version: declared.version } : { status: 'UNDECLARED' },
-    };
-    const snapshotDigest = `sha256:${sha256HexOfText(canonicalize({ ruleSetVersion: ruleSet.version, facts }))}`;
-    return {
-      snapshotDigest,
-      inputs: {
-        schema: INVENTORY_POLICY_EVALUATION_INPUTS_SCHEMA,
-        ruleSet: { id: INVENTORY_REORDER_POLICY_RULE_SET_ID, version: ruleSet.version, parameters },
-        capturedAt: snapshot.capturedAt,
-        window: { startsExclusive: snapshot.windowStartsAt, endsInclusive: snapshot.capturedAt, days: snapshot.windowDays },
-        facts,
-        snapshotDigest,
-      },
-    };
+    return buildEvaluationInputs(snapshot, declared, ruleSet);
   }
+}
+
+/**
+ * The persisted snapshot of every fact used by an evaluation, with a digest that ignores capture times (an identical fact set has an identical
+ * digest). One definition: the evaluator persists it, and the read-only ADI derivation cites the same digest as its evidence reference.
+ */
+export function buildEvaluationInputs(snapshot: InventoryPolicyFactsSnapshot, declared: DeclaredCurrencyFact, ruleSet: InventoryReorderRuleSet): { inputs: { [key: string]: EvaluationJson }; snapshotDigest: string } {
+  const parameters = defined({
+    maxChangeReorderPointPct: ruleSet.maxChangeReorderPointPct, maxChangeReorderQuantityPct: ruleSet.maxChangeReorderQuantityPct, orderValueCap: ruleSet.orderValueCap,
+    orderValueCapCurrency: ruleSet.orderValueCapCurrency, maxChangeOrderValuePctOfCap: ruleSet.maxChangeOrderValuePctOfCap, maxImpliedStockUnits: ruleSet.maxImpliedStockUnits,
+    leadTimeDays: ruleSet.leadTimeDays, safetyFactor: ruleSet.safetyFactor, maxCoverDays: ruleSet.maxCoverDays, firstConfigurationAllowed: ruleSet.firstConfigurationAllowed,
+    demandWindowDays: ruleSet.demandWindowDays, demandMovementTypes: [...ruleSet.demandMovementTypes], minDemandObservations: ruleSet.minDemandObservations,
+    maxEvidenceAgeMs: ruleSet.maxEvidenceAgeMs,
+  });
+  const facts: { [key: string]: EvaluationJson } = {
+    item: snapshot.item === null ? null : { id: snapshot.item.id, status: snapshot.item.status, unitOfMeasure: snapshot.item.unitOfMeasure },
+    balances: snapshot.balances.map((b) => ({ id: b.id, warehouseId: b.warehouseId, reorderPoint: b.reorderPoint, reorderQuantity: b.reorderQuantity })),
+    latestReceipt: snapshot.latestReceipt === null ? null : { ...snapshot.latestReceipt },
+    demand: { count: snapshot.demand.count, sumOfMagnitudes: snapshot.demand.sumOfMagnitudes, movementTypes: [...snapshot.demandMovementTypes] },
+    declaredCurrency: declared.status === 'DECLARED' ? { status: 'DECLARED', currency: declared.currency, version: declared.version } : { status: 'UNDECLARED' },
+  };
+  const snapshotDigest = `sha256:${sha256HexOfText(canonicalize({ ruleSetVersion: ruleSet.version, facts }))}`;
+  return {
+    snapshotDigest,
+    inputs: {
+      schema: INVENTORY_POLICY_EVALUATION_INPUTS_SCHEMA,
+      ruleSet: { id: INVENTORY_REORDER_POLICY_RULE_SET_ID, version: ruleSet.version, parameters },
+      capturedAt: snapshot.capturedAt,
+      window: { startsExclusive: snapshot.windowStartsAt, endsInclusive: snapshot.capturedAt, days: snapshot.windowDays },
+      facts,
+      snapshotDigest,
+    },
+  };
 }
 
 /** A correlation id for callers that have none; evaluation records require one. */

@@ -265,6 +265,7 @@ export {
   DecisionEvidenceRepository,
   DecisionAlternativeRepository,
   DecisionRecommendationRepository, RISK_CLASSES, normalizeRiskValidity, maxRiskClass,
+  DecisionRecommendationNotFoundError,
   DecisionConfidenceRepository,
   DecisionPolicyRepository,
   DecisionMonitoringRequirementRepository,

@@ -67,3 +67,13 @@ export type { AuthorityState, ApproverAuthority, ExecutionAuthorityFacts, Execut
 // P0-6b: the ABA producer of control_loop.action.authorized@1 (reference-only; gated; closed by default).
 export { ActionAuthorizedAnnouncer, actionAuthorizedPayloadFor } from './ActionAuthorizedAnnouncer.js';
 export type { ExecutionCapabilityGateFactory, PackageAnnouncer, AnnouncementOutcome, PackageAnnouncementTrace, ActionAuthorizedAnnouncerDependencies } from './ActionAuthorizedAnnouncer.js';
+
+// ── ADI structured first-action recommendation (AC-1) ──────────────────────────
+export {
+  ReorderPolicyRecommendationProducer, REORDER_PRODUCER_NAME, REORDER_PRODUCER_VERSION, REORDER_ACTION, REORDER_PRODUCER_RULE_SET_VERSION, REORDER_AUTHORED_RISK_LEVEL,
+} from './ReorderPolicyRecommendationProducer.js';
+export type {
+  ReorderPolicyDeriverPort, DeriverCandidate, DeriverRefusal, ProduceReorderRecommendationResult, ReorderPolicyRecommendationProducerDependencies,
+} from './ReorderPolicyRecommendationProducer.js';
+export { AdiProposedActionSource, ProposedActionIntegrityError } from './ProposedActionSource.js';
+export type { ProposedActionSource } from './ProposedActionSource.js';
