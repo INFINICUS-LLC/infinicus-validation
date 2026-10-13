@@ -70,10 +70,11 @@ export type { ExecutionCapabilityGateFactory, PackageAnnouncer, AnnouncementOutc
 
 // ── ADI structured first-action recommendation (AC-1) ──────────────────────────
 export {
-  ReorderPolicyRecommendationProducer, REORDER_PRODUCER_NAME, REORDER_PRODUCER_VERSION, REORDER_ACTION, REORDER_PRODUCER_RULE_SET_VERSION, REORDER_AUTHORED_RISK_LEVEL,
+  ReorderPolicyRecommendationProducer, REORDER_PRODUCER_NAME, REORDER_PRODUCER_VERSION, REORDER_ACTION, REORDER_PRODUCER_RULE_SET_VERSION,
 } from './ReorderPolicyRecommendationProducer.js';
 export type {
   ReorderPolicyDeriverPort, DeriverCandidate, DeriverRefusal, ProduceReorderRecommendationResult, ReorderPolicyRecommendationProducerDependencies,
 } from './ReorderPolicyRecommendationProducer.js';
 export { AdiProposedActionSource, ProposedActionIntegrityError } from './ProposedActionSource.js';
-export type { ProposedActionSource } from './ProposedActionSource.js';
+export type { ProposedActionSource, StoredProposedAction } from './ProposedActionSource.js';
+export { AdiProposalBaselineSource } from './AdiProposalBaselineSource.js';

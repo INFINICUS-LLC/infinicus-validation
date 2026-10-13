@@ -43,7 +43,7 @@ describe('B2b evaluator architecture', () => {
     expect(production.length).toBeGreaterThan(200);
     expect(evaluatorFiles.map((f) => f.rel).sort()).toEqual([`${DIR}BoGovernanceEvidenceVerifier.ts`, `${DIR}InventoryPolicyEvaluationService.ts`, `${DIR}decimal.ts`, `${DIR}evaluate.ts`, `${DIR}index.ts`, `${DIR}ruleSet.ts`,
       // AC-1: the read-only derivation of a rule-compliant candidate for the ADI producer (same evaluator, same facts repository; writes nothing - see ac1-adi-producer.architecture.test.ts)
-      `${DIR}derive.ts`, `${DIR}ReorderPolicyDerivationService.ts`].sort());
+      `${DIR}derive.ts`, `${DIR}ReorderPolicyDerivationService.ts`, `${DIR}ReorderPolicyBaselineEvidenceRecorder.ts`].sort());
     expect(read(FACTS).length).toBeGreaterThan(500);
   });
 

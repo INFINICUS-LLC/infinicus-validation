@@ -1,6 +1,6 @@
 /**
- * Test kit (P0-6f): builds an AuthorizedActionPackage through ABA's REAL authoring and issuance path over HTTP - governance, approver
- * authority, the approve_with_modifications decision, BO evaluation evidence verified by the real GovernanceEvidenceVerifier, capture, owner,
+ * Test kit (P0-6f, AC-1): builds an AuthorizedActionPackage through ABA's REAL authoring and issuance path over HTTP - governance, approver
+ * authority, a recommendation PRODUCED BY THE REAL ADI PRODUCER (no recommendation fixture), the approval decision, BO evaluation evidence verified by the real GovernanceEvidenceVerifier, capture, owner,
  * governed boundaries, issuance. Nothing is injected into Business Operations: no BO row except the inventory facts the evaluator reads
  * (item, balance, movements, declared currency) is written by this kit. Same pattern as the B2d proof; kept here so that proof stays untouched.
  */
@@ -11,11 +11,11 @@ import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { UserRepository, MembershipRepository, ApprovedActionRepository, ADIPublicationRepository, ABAIntakeRepository, type TenantContext } from '@infinicus/database';
 import { DEFAULT_APPROVER_ASSIGNMENT_CODE } from '@infinicus/workflow';
-import { createAbaFixture, APPROVABLE_FACTS, uc } from './abaFixtures.js';
+import { uc } from './abaFixtures.js';
 
 export const CODE = 'inventory_reorder_policy_update';
 export const ACTION = { code: CODE, schemaVersion: '1' };
-const RULE_SET = 'inventory-reorder-policy/v1.0.0';
+const RULE_SET = 'inventory-reorder-policy/v1.1.0';
 const DAY = 86_400_000;
 export const BASELINE = { reorderPoint: 170, reorderQuantity: 190 };
 export const FINAL = { reorderPoint: 180, reorderQuantity: 200 };
@@ -93,19 +93,6 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
     expect((await post(s, `${POL}/${code}/versions/1/enable`, { reason: 'initial Level 2 enablement' })).statusCode).toBe(200);
   }
 
-  async function decide(s: Session): Promise<{ actionId: string; decisionId: string }> {
-    const g = await post(s, `/v1/businesses/${s.bizId}/approver-assignments`, { approverUserId: s.ctx.userId, assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, roleCode: 'business-owner' });
-    expect(g.statusCode).toBe(201);
-    const { intakePackageId, recommendationId } = await createAbaFixture(s.ctx, s.bizId, APPROVABLE_FACTS);
-    const d = await post(s, `/v1/businesses/${s.bizId}/decisions`, { intakePackageId, reviewCode: uc('r'), summary: 'P0-6f execution path', assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, decisionCode: uc('d'), outcome: 'approve_with_modifications' });
-    expect(d.statusCode).toBe(201);
-    const decisionId = d.json().id as string;
-    const actions = new ApprovedActionRepository();
-    const action = await actions.createAction(s.ctx, s.bizId, decisionId, uc('act'), recommendationId);
-    await actions.createVersion(s.ctx, action.id, s.bizId, 'P0-6f');
-    return { actionId: action.id, decisionId };
-  }
-
   const refs = (res: { json(): any }) => res.json().evidence.map((e: any) => ({ dimension: e.dimension, evidenceRef: { kind: e.kind, id: e.id } }));
   const boundaries = (over: Record<string, unknown> = {}) => ({
     // the window is OPEN now, so BO intake can claim immediately (a future window is a separate, already-tested refusal)
@@ -117,33 +104,7 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
     simulationRun: SIMULATION_NA, ...over,
   });
 
-  /** Governance, approver, decision, BO facts, then the whole authoring chain up to (not including) issuance. */
-  async function author(): Promise<Chain> {
-    const s = await setup();
-    await governance(s);
-    const { actionId, decisionId } = await decide(s);
-    const bo = await seedBo(s);
-    const base = `/v1/businesses/${s.bizId}/authorized-actions/${actionId}`;
-    const ev = await post(s, `/v1/businesses/${s.bizId}/inventory-policy-evaluations`, { actionType: ACTION, target: { kind: 'inventory_item', id: bo.itemId }, finalParameters: FINAL, ruleSetVersion: RULE_SET });
-    expect(ev.statusCode).toBe(201);
-    const cap = await post(s, `${base}/capture`, {
-      actionType: ACTION, target: { kind: 'inventory_item', id: bo.itemId }, proposedParameters: { ...BASELINE },
-      modification: { reason: 'Raise the reorder policy.', changes: [
-        { parameter: 'reorderPoint', operation: 'SET', before: BASELINE.reorderPoint, after: FINAL.reorderPoint },
-        { parameter: 'reorderQuantity', operation: 'SET', before: BASELINE.reorderQuantity, after: FINAL.reorderQuantity }] },
-      evaluationEvidence: refs(ev),
-    });
-    expect(cap.statusCode).toBe(201);
-    expect((await post(s, `${base}/owner`, {
-      ownerUserId: s.ctx.userId, membershipId: s.membershipId, roleCode: 'operations_lead',
-      dueAt: { state: 'VALUE', value: hoursFromNow(72).replace(/\.\d+Z$/, 'Z') }, escalationPolicy: { state: 'VALUE', value: { ref: 'policy:default-escalation' } },
-    })).statusCode).toBe(201);
-    expect((await post(s, `${base}/boundaries`, boundaries())).statusCode).toBe(201);
-    expect((await get(s, `${base}/authoring-status`)).json().missing).toEqual([]);
-    return { s, actionId, decisionId, ...bo, base };
-  }
-
-    /** ABA intake built from a REAL (producer-authored) recommendation version: the publication tail of the proven fixture, with no fixture recommendation. */
+  /** ABA intake built from a REAL (producer-authored) recommendation version: the publication tail of the proven fixture, with no fixture recommendation. */
   async function intakeFromRecommendation(s: Session, recommendationVersionId: string): Promise<string> {
     const adiPubRepo = new ADIPublicationRepository();
     const insight = await adiPubRepo.createInsightPackage(s.ctx, s.bizId, uc('adi-insight'));
@@ -157,8 +118,8 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
 
   /**
    * AC-1 chain: governance, approver, BO facts, then the REAL ADI producer (production route), then ABA intake / decision / capture / owner / boundaries.
-   * `mode`: 'modify' (default) = approve_with_modifications of the ADI proposal to `final` (executable); 'plain' = approve as proposed (BO refuses it: O-4);
-   * 'until-capture' = stop right after the decision so a test can attempt the capture itself.
+   * `mode`: 'modify' (default) = approve_with_modifications of the ADI proposal to `final`; 'plain' = approve the proposal UNCHANGED (both are executable);
+   * 'until-capture' = a plain approval, stopping right after the decision so a test can attempt the capture itself.
    */
   async function authorFromAdi(opts: { mode?: 'modify' | 'plain' | 'until-capture'; final?: { reorderPoint: number; reorderQuantity: number } } = {}): Promise<AdiChain> {
     const mode = opts.mode ?? 'modify';
@@ -173,7 +134,7 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
     const intakePackageId = await intakeFromRecommendation(s, recommendationVersionId);
     const d = await post(s, `/v1/businesses/${s.bizId}/decisions`, {
       intakePackageId, reviewCode: uc('r'), summary: 'AC-1 ADI-produced first-action recommendation', assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, decisionCode: uc('d'),
-      outcome: mode === 'plain' ? 'approve' : 'approve_with_modifications',
+      outcome: mode === 'modify' ? 'approve_with_modifications' : 'approve',
     });
     expect(d.statusCode, d.body).toBe(201);
     const decisionId = d.json().id as string;
@@ -213,5 +174,5 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
   /** ABA's issuer: seals the package and (gate open) announces it in the same transaction. Replays announce again, idempotently. */
   const issue = (c: Chain) => post(c.s, `${c.base}/package`);
 
-  return { hdr, post, put, get, setup, seedBo, authorChain: author, authorFromAdi, reorderRecommendationUrl, refs, boundaries, governance, activate, issue };
+  return { hdr, post, put, get, setup, seedBo, authorChain: authorFromAdi, authorFromAdi, intakeFromRecommendation, reorderRecommendationUrl, refs, boundaries, governance, activate, issue };
 }

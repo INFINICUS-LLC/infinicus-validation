@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Decimal } from '../src/inventory-policy/decimal.js';
-import { INVENTORY_REORDER_POLICY_V1_0_0 as RS, approvedRuleSetVersions, resolveApprovedRuleSet } from '../src/inventory-policy/ruleSet.js';
+import { INVENTORY_REORDER_POLICY_V1_0_0 as RS, INVENTORY_REORDER_POLICY_V1_1_0 as RS11, approvedRuleSetVersions, resolveApprovedRuleSet } from '../src/inventory-policy/ruleSet.js';
 
 describe('Decimal', () => {
   it('is exact where binary floating point is not', () => {
@@ -30,8 +30,8 @@ describe('Decimal', () => {
 });
 
 describe('rule-set registry', () => {
-  it('has exactly one approved version and no default', () => {
-    expect(approvedRuleSetVersions()).toEqual(['inventory-reorder-policy/v1.0.0']);
+  it('has exactly the two approved versions and no default', () => {
+    expect(approvedRuleSetVersions()).toEqual(['inventory-reorder-policy/v1.0.0', 'inventory-reorder-policy/v1.1.0']);
     expect(() => resolveApprovedRuleSet(undefined)).toThrow(/no default/);
     expect(() => resolveApprovedRuleSet('')).toThrow();
   });
@@ -65,5 +65,26 @@ describe('rule-set registry', () => {
     expect(doc).toContain('DEMAND_MOVEMENT_TYPES = issue');
     expect(RS.demandMovementTypes).toEqual(['issue']);
     expect(RS.firstConfigurationAllowed).toBe(false);
+  });
+});
+
+describe('rule set v1.1.0 (adds the proposal policy; every v1.0.0 value unchanged)', () => {
+  const doc = readFileSync(resolve(__dirname, '../../../../docs/architecture/reconciliation/P0-5_B2_RULE_SET_inventory-reorder-policy_v1.1.0.md'), 'utf8');
+  const record = doc.slice(doc.indexOf('## 12. Owner approval record'));
+  const recorded = (name: string): string => { const m = new RegExp(`^\\s*${name}\\s*=\\s*(\\S+)`, 'm').exec(record); expect(m, name).not.toBeNull(); return (m as RegExpExecArray)[1]; };
+  it('carries every v1.0.0 value unchanged and only adds the version string and the proposal policy', () => {
+    const { version: v0, ...rest0 } = RS; const { version: v1, proposal, ...rest1 } = RS11;
+    expect(v0).toBe('inventory-reorder-policy/v1.0.0'); expect(v1).toBe('inventory-reorder-policy/v1.1.0');
+    expect(rest1).toEqual(rest0);
+    expect(RS.proposal).toBeUndefined(); // v1.0.0 defines no proposal policy: nothing may be proposed from it
+    expect(proposal).toBeDefined();
+  });
+  it('the proposal policy equals the owner approval record, field by field, and is immutable', () => {
+    expect(String(RS11.proposal?.unit)).toBe(recorded('PROPOSAL_UNIT'));
+    expect(String(RS11.proposal?.maxSteps)).toBe(recorded('PROPOSAL_MAX_STEPS'));
+    expect(RS11.proposal?.selection).toBe(recorded('PROPOSAL_SELECTION'));
+    expect(RS11.proposal?.combinedCapPriority).toBe(recorded('PROPOSAL_COMBINED_CAP_PRIORITY'));
+    expect(Object.isFrozen(RS11)).toBe(true); expect(Object.isFrozen(RS11.proposal)).toBe(true);
+    expect(resolveApprovedRuleSet('inventory-reorder-policy/v1.1.0')).toBe(RS11);
   });
 });

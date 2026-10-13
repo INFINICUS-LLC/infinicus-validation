@@ -1,6 +1,6 @@
-import { AbaPackageStatusProvider } from '@infinicus/workflow';
+import { AbaPackageStatusProvider, AdiProposalBaselineSource } from '@infinicus/workflow';
 import {
-  AuthorizedActionExecutionService, ClaimRecoveryOperatorService, GovernedExecutionGate, PRODUCTION_BO_CAPABILITIES, killSwitchEngagedFrom,
+  AuthorizedActionExecutionService, ClaimRecoveryOperatorService, GovernedExecutionGate, InventoryReorderPolicyExecutionAdapter, PRODUCTION_BO_CAPABILITIES, killSwitchEngagedFrom,
 } from '@infinicus/business-operations-runtime';
 import type { ClaimRecoveryOperatorDependencies } from '@infinicus/business-operations-runtime';
 import type { ActionCapabilityRegistry, AuthoritativePackageStatusProvider } from '@infinicus/handoff-contracts';
@@ -38,7 +38,8 @@ export function buildClaimRecoveryOperator(options: ClaimRecoveryCompositionOpti
     engineFor: (ctx) => new AuthorizedActionExecutionService({
       statusProvider: options.statusProviderFor ? options.statusProviderFor(ctx.userId) : new AbaPackageStatusProvider({ actorUserId: ctx.userId }),
       executionStatusMaxAgeMs: options.executionStatusMaxAgeMs ?? OPERATOR_RECOVERY_STATUS_MAX_AGE_MS,
-      gate: gateFor(ctx), capabilities, ...(options.clock ? { clock: options.clock } : {}),
+      gate: gateFor(ctx), capabilities, adapter: new InventoryReorderPolicyExecutionAdapter({ proposalBaseline: new AdiProposalBaselineSource() }),
+      ...(options.clock ? { clock: options.clock } : {}),
     }),
   });
 }

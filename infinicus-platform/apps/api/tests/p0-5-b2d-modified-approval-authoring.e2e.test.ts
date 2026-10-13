@@ -26,7 +26,8 @@ import {
 } from '@infinicus/handoff-contracts';
 import { PRODUCTION_SUPPORTED_ACTION_TYPES, PRODUCTION_BO_CAPABILITIES } from '@infinicus/business-operations-runtime';
 import { buildApp } from '../src/app.js';
-import { createAbaFixture, APPROVABLE_FACTS, uc } from './helpers/abaFixtures.js';
+import { uc } from './helpers/abaFixtures.js';
+import { chainKit } from './helpers/authorizedPackageChain.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
 
 const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
@@ -47,7 +48,8 @@ let app: FastifyInstance;
 const tenantIds: string[] = [];
 
 interface Session { ctx: TenantContext; token: string; bizId: string; membershipId: string }
-interface Bo { itemId: string; warehouseId: string }
+/** `proposal` = the parameters of the ADI-PRODUCED recommendation (the captured original proposal must equal it exactly). */
+interface Bo { itemId: string; warehouseId: string; proposal: { reorderPoint: number; reorderQuantity: number } }
 interface Chain { s: Session; actionId: string; decisionId: string; bo: Bo; base: string }
 
 // ── fixtures: identity, tenancy, BO facts ──────────────────────────────────────────────────────────────────────────────
@@ -98,7 +100,7 @@ async function seedBo(s: Session, o: { declare?: boolean } = {}): Promise<Bo> {
     [tenantId, workspaceId, s.bizId, itemId, warehouseId, type, qty, cost, cur, at]);
   await mv('receipt', 500, '10', 'USD', new Date(Date.now() - 5 * DAY));
   for (let i = 0; i < 12; i += 1) await mv('issue', -75, null, null, new Date(Date.now() - (i + 1) * DAY));
-  return { itemId, warehouseId };
+  return { itemId, warehouseId, proposal: BASELINE };
 }
 
 // ── HTTP helpers ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -120,11 +122,19 @@ async function governance(s: Session): Promise<void> {
   expect((await post(s, POL, { policyCode: code, automationLevel: 2, description: 'Level 2 reorder policy', actionTypes: [{ code: CODE, schemaVersion: '1' }] })).statusCode).toBe(201);
   expect((await post(s, `${POL}/${code}/versions/1/enable`, { reason: 'initial Level 2 enablement' })).statusCode).toBe(200);
 }
-/** The owner holds approver authority and records the decision through the real DecisionWorkflowService route. */
-async function decide(s: Session, outcome: 'approve' | 'approve_with_modifications' | 'reject', o: { version?: boolean } = {}): Promise<{ actionId: string; decisionId: string }> {
+/**
+ * The owner holds approver authority and records the decision through the real DecisionWorkflowService route, over a recommendation PRODUCED BY THE REAL
+ * ADI PRODUCER from the business's BO facts (AC-1 ruling 2: no recommendation fixture can reach capture for this action type).
+ */
+async function decide(s: Session, bo: Bo, outcome: 'approve' | 'approve_with_modifications' | 'reject', o: { version?: boolean } = {}): Promise<{ actionId: string; decisionId: string }> {
+  const kit = chainKit({ app, admin: adminPool, tenantIds });
   const g = await post(s, `/v1/businesses/${s.bizId}/approver-assignments`, { approverUserId: s.ctx.userId, assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, roleCode: 'business-owner' });
   expect(g.statusCode).toBe(201);
-  const { intakePackageId, recommendationId } = await createAbaFixture(s.ctx, s.bizId, APPROVABLE_FACTS);
+  const produced = await post(s, kit.reorderRecommendationUrl(s, bo.itemId));
+  expect(produced.statusCode, produced.body).toBe(201);
+  bo.proposal = produced.json().proposal.proposedParameters;
+  const intakePackageId = await kit.intakeFromRecommendation(s, produced.json().recommendationVersionId);
+  const recommendationId = produced.json().recommendationId as string;
   const d = await post(s, `/v1/businesses/${s.bizId}/decisions`, { intakePackageId, reviewCode: uc('r'), summary: 'B2d authoring proof', assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, decisionCode: uc('d'), outcome });
   expect(d.statusCode).toBe(201);
   const decisionId = d.json().id as string;
@@ -133,12 +143,17 @@ async function decide(s: Session, outcome: 'approve' | 'approve_with_modificatio
   if (o.version !== false) await actions.createVersion(s.ctx, action.id, s.bizId, 'B2d fixture');
   return { actionId: action.id, decisionId };
 }
-/** Step 1-4: governance, the approve_with_modifications decision, and the BO facts. */
+/** Step 1-4: governance, the BO facts, the ADI-produced recommendation and the approve_with_modifications decision. */
 async function begin(o: { outcome?: 'approve' | 'approve_with_modifications' | 'reject'; version?: boolean; declare?: boolean } = {}): Promise<Chain> {
   const s = await setup();
   await governance(s);
-  const { actionId, decisionId } = await decide(s, o.outcome ?? 'approve_with_modifications', { version: o.version });
-  const bo = await seedBo(s, { declare: o.declare });
+  const bo = await seedBo(s); // the producer needs the declared currency; `declare:false` removes it AFTERWARDS (fixture surgery) so the evaluation sees an undeclared business
+  const { actionId, decisionId } = await decide(s, bo, o.outcome ?? 'approve_with_modifications', { version: o.version });
+  if (o.declare === false) {
+    const c = await adminPool.connect();
+    try { await c.query('BEGIN'); await c.query("SET LOCAL session_replication_role = 'replica'"); await c.query('DELETE FROM platform.business_currency_declarations WHERE business_id = $1', [s.bizId]); await c.query('COMMIT'); }
+    catch (e) { await c.query('ROLLBACK').catch(() => undefined); throw e; } finally { c.release(); }
+  }
   return { s, actionId, decisionId, bo, base: actionBase(s, actionId) };
 }
 
@@ -150,11 +165,11 @@ const refs = (res: { json(): any }) => res.json().evidence.map((e: any) => ({ di
 const captureBody = (bo: Bo, evaluationEvidence: unknown, o: { after?: Record<string, number>; modified?: boolean } = {}) => {
   const after = o.after ?? FINAL;
   return {
-    actionType: { code: CODE, schemaVersion: '1' }, target: { kind: 'inventory_item', id: bo.itemId }, proposedParameters: { ...BASELINE },
+    actionType: { code: CODE, schemaVersion: '1' }, target: { kind: 'inventory_item', id: bo.itemId }, proposedParameters: { ...bo.proposal },
     ...(o.modified === false ? {} : {
       modification: { reason: 'Raise the reorder policy.', changes: [
-        { parameter: 'reorderPoint', operation: 'SET', before: BASELINE.reorderPoint, after: after.reorderPoint },
-        { parameter: 'reorderQuantity', operation: 'SET', before: BASELINE.reorderQuantity, after: after.reorderQuantity }] },
+        { parameter: 'reorderPoint', operation: 'SET', before: bo.proposal.reorderPoint, after: after.reorderPoint },
+        { parameter: 'reorderQuantity', operation: 'SET', before: bo.proposal.reorderQuantity, after: after.reorderQuantity }] },
       evaluationEvidence,
     }),
   };
@@ -261,7 +276,8 @@ describe.runIf(run)('P0-5 B2d - end-to-end modified-approval authoring proof (re
       expect(ev.statusCode).toBe(201);
       expect(ev.json().evidence.map((e: any) => e.dimension)).toEqual(DIMENSIONS);
       expect(ev.json().evidence.map((e: any) => e.result)).toEqual(['PASSED', 'PASSED', 'PASSED', 'PASSED']);
-      const rows = (await adminPool.query(`SELECT id, dimension, result, rule_set_version, subject_digest, inventory_item_id, business_id, ${iso('evaluated_at')} AS evaluated_at, requested_by_user_id FROM business_operations.inventory_policy_evaluations WHERE tenant_id=$1 ORDER BY dimension`, [s.ctx.tenantId])).rows;
+      const rows = (await adminPool.query(`SELECT id, dimension, result, rule_set_version, subject_digest, inventory_item_id, business_id, ${iso('evaluated_at')} AS evaluated_at, requested_by_user_id FROM business_operations.inventory_policy_evaluations WHERE tenant_id=$1 ORDER BY dimension`, [s.ctx.tenantId])).rows
+        .filter((r: any) => r.subject_digest === ev.json().subjectDigest); // the producer ALSO recorded four records for the ADI PROPOSAL (a different subject); these are the modification's
       expect(rows).toHaveLength(4);
       for (const row of rows) expect(row).toMatchObject({ result: 'PASSED', rule_set_version: RULE_SET, subject_digest: ev.json().subjectDigest, inventory_item_id: c.bo.itemId, business_id: s.bizId, requested_by_user_id: s.ctx.userId });
 
@@ -305,7 +321,7 @@ describe.runIf(run)('P0-5 B2d - end-to-end modified-approval authoring proof (re
         consumption: { mode: 'SINGLE_USE' },
       });
       expect(pkg.action.parameters).toEqual(capRow.final_parameters);                   // finalParameters sourced from the capture
-      expect(pkg.lineage.proposedParameters.value.parameters).toEqual(BASELINE);
+      expect(pkg.lineage.proposedParameters.value.parameters).toEqual(c.bo.proposal);
       expect(pkg.lineage.modification.value).toMatchObject({ modifiedAt, modifiedByUserId: s.ctx.userId });
       expect(pkg.lineage.modificationEvaluation.value.evidence).toEqual(capRow.modification_evaluation.value.evidence); // evidence lineage
       expect(pkg.lineage.simulationRunId).toEqual(SIMULATION_NA);                         // governed NOT_APPLICABLE, exact reason
@@ -507,7 +523,7 @@ describe.runIf(run)('P0-5 B2d - end-to-end modified-approval authoring proof (re
       const early = await evaluate(s, bo);                 // evaluated BEFORE the decision becomes final
       expect(early.statusCode).toBe(201);
       await new Promise((r) => setTimeout(r, 20));
-      const { actionId } = await decide(s, 'approve_with_modifications');
+      const { actionId } = await decide(s, bo, 'approve_with_modifications');
       const res = await post(s, `${actionBase(s, actionId)}/capture`, captureBody(bo, refs(early)));
       expect(res.statusCode).toBe(409); expect(message(res)).toMatch(/predates the modification decision/);
       expect(await captures(s)).toBe(0); expect(await packages(s)).toBe(0);
@@ -640,7 +656,8 @@ describe.runIf(run)('P0-5 B2d - end-to-end modified-approval authoring proof (re
       const byAction = (a: string) => rows.filter((r) => r.action === a);
       for (const action of ['bo.inventory_policy_evaluation.requested', 'aba.capture.recorded', 'aba.owner.assigned', 'aba.boundaries.authored']) {
         const found = byAction(action);
-        expect(found, action).toHaveLength(1);
+        // the ADI producer's baseline-evidence evaluation is the first request; the modification's is the second
+        expect(found, action).toHaveLength(action === 'bo.inventory_policy_evaluation.requested' ? 2 : 1);
         expect(found[0], action).toMatchObject({ actor_id: c.s.ctx.userId, business_id: c.s.bizId, workspace_id: c.s.ctx.workspaceId });
         expect(typeof found[0].metadata.permissionUsed, action).toBe('string');
         expect(found[0].correlation_id, action).toMatch(/^[0-9a-f-]{36}$/);

@@ -18,7 +18,7 @@ Status words follow the assessment vocabulary: every item is, at most, implement
 | Off-VM backup tooling, restore-proof with expectations profile, retention doc correction | #112, #113 | L |
 | Parked-items register | #114 | — |
 | Completion gap assessment and roadmap reconciliation | #115 | all |
-| AC-1 ADI structured recommendation producer for the first action (draft PR; see `AC-1_ADI_REORDER_RECOMMENDATION_PRODUCER.md`) | this branch | D, M |
+| AC-1 ADI structured recommendation producer for the first action (#116 merged; owner-ruling corrections in a follow-up draft PR; see `AC-1_ADI_REORDER_RECOMMENDATION_PRODUCER.md` section 13) | #116, `fix/ac1-owner-rulings` | D, M |
 
 ## 2. OPEN / BLOCKED (evidence-backed)
 | Item | Why open | Blocked by | Criterion |
@@ -36,7 +36,7 @@ Status words follow the assessment vocabulary: every item is, at most, implement
 | CI diagnosability (F6) | small PR never built | not requested | — |
 | Criterion A: end-to-end ingestion of the data the first action needs | not evidenced | owner decision on next block | A, M |
 | Criterion M: one test from data acquisition and BI/BDT evidence through the ADI-produced recommendation (AC-1 covers BO facts -> ADI -> ABA -> BO -> OM) | not evidenced | owner decision on the next block | A, M |
-| Owner decisions raised by AC-1: executability of an unmodified ADI proposal (BO ruling O-4); making the structured proposal mandatory for the first action | open | owner | D, M |
+| Owner decision: the authoritative source of the risk class for `inventory_reorder_policy_update@1` (the producer records none; policy treats it as high). Executability of an unmodified proposal and mandatory enforcement were ruled and implemented by the AC-1 corrections | open | owner | D, M |
 | Criterion J scope (legacy browser surface V-04/V-05, plan item P3-A) | no completion evidence | owner scope ruling | J |
 | P0-4 owner confirmation D3 | recorded as outstanding at P0-4 acceptance; closure not evidenced | confirm or record | E |
 | Residual items: P0-6g/6h future extensions (bounded re-arm of gate-deferred recovery, held-claims listing), 0196 NOLOGIN owner follow-up (P3) | optional hardening | owner | — |

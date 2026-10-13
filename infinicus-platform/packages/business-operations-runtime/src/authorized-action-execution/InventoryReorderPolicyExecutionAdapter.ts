@@ -6,20 +6,24 @@
  * single Business Operations writer (OperationalCommandExecutor.configureInventoryReorderPolicy) performs the SQL, so no second writer
  * exists. The executed values ARE the package's `action.parameters`: nothing is reconstructed, rounded or defaulted.
  *
- * Baseline (ruling O-4): a plain approval has no authoritative "state at authorization time", so it is REFUSED(NO_BASELINE_EVIDENCE) in
- * v1. A modified approval carries BO's own immutable evaluation records (one per governance dimension); their persisted input snapshot
- * holds the balance values the evaluation judged. That snapshot is the compare-and-set baseline; if the live balance differs the action is
- * REFUSED(BASELINE_CHANGED) and the newer state is never overwritten.
+ * Baseline (ruling O-4, as clarified by the owner in the AC-1 corrections): the baseline is always BO's OWN immutable evaluation records (one per
+ * governance dimension); their persisted input snapshot holds the balance values the evaluation judged, and that snapshot is the compare-and-set
+ * baseline. A MODIFIED approval carries the references in its governed lineage. A PLAIN approval of an ADI proposal carries none, so they are bound
+ * through the proposal it accepted (the proposal cites the records BO produced for exactly its parameters) via the
+ * {@link ApprovedProposalBaselineSource} port. Without such evidence the approval is REFUSED(NO_BASELINE_EVIDENCE); if the live balance differs from
+ * the baseline it is REFUSED(BASELINE_CHANGED) and the newer state is never overwritten. O-4 is not weakened: no baseline, no execution.
  */
 import type { PoolClient } from 'pg';
 import type { TenantContext } from '@infinicus/database';
 import { InventoryPolicyEvaluationRepository } from '@infinicus/database';
-import { computeGovernanceSubjectDigest } from '@infinicus/handoff-contracts';
+import { canonicalize, computeGovernanceSubjectDigest } from '@infinicus/handoff-contracts';
 import type { AuthorizedActionPackageV1, JsonValue } from '@infinicus/handoff-contracts';
 import { OperationalCommandExecutor, type ReorderPolicyConfigurationResult } from '../OperationalCommandExecutor.js';
 import { Decimal } from '../inventory-policy/decimal.js';
 import { EVALUATED_DIMENSIONS, SUPPORTED_ACTION, SUPPORTED_TARGET_KIND } from '../inventory-policy/evaluate.js';
 import { INVENTORY_POLICY_EVALUATION_INPUTS_SCHEMA, INVENTORY_POLICY_EVALUATION_REFERENCE_KIND } from '../inventory-policy/InventoryPolicyEvaluationService.js';
+import { resolveApprovedRuleSet } from '../inventory-policy/ruleSet.js';
+import type { ApprovedProposalBaselineSource } from './ApprovedProposalBaselineSource.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_DECIMALS = 4;
@@ -49,13 +53,15 @@ export type BaselineResolution =
 export interface ReorderExecutionAdapterDependencies {
   executor: Pick<OperationalCommandExecutor, 'configureInventoryReorderPolicy'>;
   evaluations: Pick<InventoryPolicyEvaluationRepository, 'getById'>;
+  /** Baseline of a PLAIN approval (owner ruling 1). Absent = a plain approval has no baseline source and is refused (fail closed). */
+  proposalBaseline: ApprovedProposalBaselineSource | null;
 }
 
 export class InventoryReorderPolicyExecutionAdapter {
   private readonly d: ReorderExecutionAdapterDependencies;
 
   constructor(deps: Partial<ReorderExecutionAdapterDependencies> = {}) {
-    this.d = { executor: deps.executor ?? new OperationalCommandExecutor(), evaluations: deps.evaluations ?? new InventoryPolicyEvaluationRepository() };
+    this.d = { executor: deps.executor ?? new OperationalCommandExecutor(), evaluations: deps.evaluations ?? new InventoryPolicyEvaluationRepository(), proposalBaseline: deps.proposalBaseline ?? null };
   }
 
   /** Reads the target and the exact requested values from the sealed package. No rounding, coercion or defaulting: anything else refuses. */
@@ -99,19 +105,39 @@ export class InventoryReorderPolicyExecutionAdapter {
   }
 
   /**
-   * The compare-and-set baseline, from BO's own immutable evaluation records referenced by the package (modified approvals only).
-   * Every record must be bound to THIS target and THESE final parameters (subject digest) and agree on the single balance it judged.
+   * The compare-and-set baseline, from BO's own immutable evaluation records. Modified approval: the records referenced by the package lineage.
+   * Plain approval: the records cited by the ADI proposal that was approved unchanged (through the port), additionally required to be PASSED and
+   * produced under an approved rule set. In both cases every record must be bound to THIS target and THESE final parameters (subject digest) and
+   * all must agree on the single balance they judged.
    */
   async resolveBaseline(ctx: TenantContext, pkg: AuthorizedActionPackageV1, plan: ParsedReorderPlan): Promise<BaselineResolution> {
     const none = (detail: string): BaselineResolution => ({ ok: false, code: 'NO_BASELINE_EVIDENCE', detail });
     const me = pkg.lineage.modificationEvaluation;
-    if (me.state !== 'VALUE') return none('a plain approval carries no authoritative baseline (v1 refuses it)');
-    const evidence = me.value.evidence;
+    let references: { kind: string; id: string; dimension: string }[];
+    let plain = false;
+    if (me.state === 'VALUE') {
+      references = me.value.evidence.map((e) => ({ kind: e.evidenceRef.kind, id: e.evidenceRef.id, dimension: e.dimension }));
+    } else {
+      plain = true;
+      const source = this.d.proposalBaseline;
+      if (source === null) return none('a plain approval carries no baseline and no approved-proposal baseline source is configured (fail closed)');
+      const proposed = pkg.lineage.proposedParameters;
+      if (proposed.state !== 'VALUE') return none('a plain approval needs the ADI proposal it accepted');
+      if (canonicalize(proposed.value.parameters as JsonValue) !== canonicalize(pkg.action.parameters as JsonValue)) return none('the approved parameters differ from the ADI proposal they claim to accept unchanged');
+      try {
+        references = await source.evaluationReferencesFor(ctx, {
+          businessId: pkg.scope.businessId, recommendationId: proposed.value.source.recordId,
+          actionType: { code: pkg.action.type.code, schemaVersion: pkg.action.type.schemaVersion }, target: { kind: pkg.action.target.kind, id: pkg.action.target.id },
+          parameters: pkg.action.parameters as Record<string, JsonValue>,
+        });
+      } catch { return none('the evaluation evidence of the approved ADI proposal could not be read'); }
+      if (references.length === 0) return none('the approved ADI proposal cites no BO evaluation evidence, so there is no authoritative baseline');
+    }
     const wanted = new Set<string>(EVALUATED_DIMENSIONS);
     const refs = new Map<string, string>();
-    for (const e of evidence) {
-      if (e.evidenceRef.kind !== INVENTORY_POLICY_EVALUATION_REFERENCE_KIND || !wanted.has(e.dimension) || refs.has(e.dimension)) return none('the evaluation evidence is not the expected set of BO evaluation references');
-      refs.set(e.dimension, e.evidenceRef.id);
+    for (const e of references) {
+      if (e.kind !== INVENTORY_POLICY_EVALUATION_REFERENCE_KIND || !wanted.has(e.dimension) || refs.has(e.dimension)) return none('the evaluation evidence is not the expected set of BO evaluation references');
+      refs.set(e.dimension, e.id);
     }
     if (refs.size !== wanted.size) return none('the evaluation evidence does not cover every evaluated dimension');
 
@@ -127,6 +153,11 @@ export class InventoryReorderPolicyExecutionAdapter {
       let record;
       try { record = await this.d.evaluations.getById(ctx, pkg.scope.businessId, id); } catch { return none(`evaluation ${id} could not be read in this business`); }
       if (record.dimension !== dimension || record.inventoryItemId !== plan.itemId || record.subjectDigest !== subjectDigest) return none(`evaluation ${id} is not bound to this target and these parameters`);
+      if (plain) {
+        // The ABA capture verified the proposal's evidence when the approval was recorded; BO re-checks what it relies on, from its own records.
+        if (record.result !== 'PASSED') return none(`evaluation ${id} is ${record.result}, not PASSED`);
+        try { resolveApprovedRuleSet(record.ruleSetVersion); } catch { return none(`evaluation ${id} was produced under a rule set that is not approved`); }
+      }
       const inputs = record.inputs as unknown;
       if (!isObject(inputs) || inputs.schema !== INVENTORY_POLICY_EVALUATION_INPUTS_SCHEMA || !isObject(inputs.facts) || !Array.isArray(inputs.facts.balances)) return none(`evaluation ${id} carries no balance snapshot`);
       const balances = inputs.facts.balances as unknown[];

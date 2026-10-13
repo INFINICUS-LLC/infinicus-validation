@@ -5,3 +5,4 @@ export * from './InventoryPolicyEvaluationService.js';
 export * from './BoGovernanceEvidenceVerifier.js';
 export * from './derive.js';
 export * from './ReorderPolicyDerivationService.js';
+export * from './ReorderPolicyBaselineEvidenceRecorder.js';

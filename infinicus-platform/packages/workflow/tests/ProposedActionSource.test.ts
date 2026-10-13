@@ -13,12 +13,13 @@ const proposal = (): ProposedActionRecommendation => ({
   provenance: { producer: 'p', producerVersion: '1', method: 'DETERMINISTIC_RULE', ruleSetVersion: 'v', producedAt: '2026-10-13T00:00:00.000Z' },
 });
 const source = (rows: unknown[] | 'no-version') => new AdiProposedActionSource({
+  getById: async () => ({ id: 'r', tenantId: 't', workspaceId: 'w', businessId: 'b' }) as never,
   getPublishedVersion: async () => { if (rows === 'no-version') throw new DecisionRecommendationNotFoundError('V', 'r'); return { id: 'v1' } as never; },
   listRationalesByCode: async () => (rows === 'no-version' ? [] : rows.map((r) => ({ recommendationVersionId: 'v1', statement: 's', evidenceReference: r }))) as never,
 });
 
 describe('AC-1 AdiProposedActionSource', () => {
-  it('returns the stored proposal when exactly one valid one exists', async () => { expect(await source([proposal()]).getForRecommendation(ctx, 'r')).toEqual(proposal()); });
+  it('returns the stored proposal when exactly one valid one exists', async () => { expect(await source([proposal()]).getForRecommendation(ctx, 'r')).toEqual({ proposal: proposal(), recommendationId: 'r', recommendationVersionId: 'v1', tenantId: 't', workspaceId: 'w', businessId: 'b' }); });
   it('returns null for a recommendation with no published version or no structured proposal (narrative-only / legacy)', async () => {
     expect(await source('no-version').getForRecommendation(ctx, 'r')).toBeNull();
     expect(await source([]).getForRecommendation(ctx, 'r')).toBeNull();
@@ -29,7 +30,7 @@ describe('AC-1 AdiProposedActionSource', () => {
     await expect(source([proposal(), proposal()]).getForRecommendation(ctx, 'r')).rejects.toThrow('more than one');
   });
   it('other repository errors propagate', async () => {
-    const s = new AdiProposedActionSource({ getPublishedVersion: async () => { throw new Error('db down'); }, listRationalesByCode: async () => [] });
+    const s = new AdiProposedActionSource({ getById: async () => ({}) as never, getPublishedVersion: async () => { throw new Error('db down'); }, listRationalesByCode: async () => [] });
     await expect(s.getForRecommendation(ctx, 'r')).rejects.toThrow('db down');
   });
 });

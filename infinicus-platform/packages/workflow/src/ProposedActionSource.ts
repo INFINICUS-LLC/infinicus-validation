@@ -13,14 +13,24 @@ export class ProposedActionIntegrityError extends Error {
   }
 }
 
+/** The stored proposal with the scope of the recommendation it belongs to, so a consumer can verify scope instead of trusting a caller. */
+export interface StoredProposedAction {
+  proposal: ProposedActionRecommendation;
+  recommendationId: string;
+  recommendationVersionId: string;
+  tenantId: string;
+  workspaceId: string;
+  businessId: string;
+}
+
 export interface ProposedActionSource {
-  getForRecommendation(ctx: TenantContext, recommendationId: string): Promise<ProposedActionRecommendation | null>;
+  getForRecommendation(ctx: TenantContext, recommendationId: string): Promise<StoredProposedAction | null>;
 }
 
 export class AdiProposedActionSource implements ProposedActionSource {
-  constructor(private readonly recommendations: Pick<DecisionRecommendationRepository, 'getPublishedVersion' | 'listRationalesByCode'> = new DecisionRecommendationRepository()) {}
+  constructor(private readonly recommendations: Pick<DecisionRecommendationRepository, 'getById' | 'getPublishedVersion' | 'listRationalesByCode'> = new DecisionRecommendationRepository()) {}
 
-  async getForRecommendation(ctx: TenantContext, recommendationId: string): Promise<ProposedActionRecommendation | null> {
+  async getForRecommendation(ctx: TenantContext, recommendationId: string): Promise<StoredProposedAction | null> {
     let version: Awaited<ReturnType<DecisionRecommendationRepository['getPublishedVersion']>>;
     try { version = await this.recommendations.getPublishedVersion(ctx, recommendationId); }
     catch (e) { if (e instanceof DecisionRecommendationNotFoundError) return null; throw e; } // no published version: no structured proposal exists to compare
@@ -29,6 +39,10 @@ export class AdiProposedActionSource implements ProposedActionSource {
     if (rows.length > 1) throw new ProposedActionIntegrityError(recommendationId, 'more than one structured proposal is recorded');
     const problems = validateProposedActionRecommendation(rows[0].evidenceReference);
     if (problems.length > 0) throw new ProposedActionIntegrityError(recommendationId, problems.join('; '));
-    return rows[0].evidenceReference as unknown as ProposedActionRecommendation;
+    const header = await this.recommendations.getById(ctx, recommendationId);
+    return {
+      proposal: rows[0].evidenceReference as unknown as ProposedActionRecommendation, recommendationId, recommendationVersionId: version.id,
+      tenantId: header.tenantId, workspaceId: header.workspaceId, businessId: header.businessId,
+    };
   }
 }

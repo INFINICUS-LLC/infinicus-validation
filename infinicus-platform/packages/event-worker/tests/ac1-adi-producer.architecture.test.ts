@@ -94,7 +94,9 @@ describe('AC-1 ADI producer: ownership and boundaries', () => {
     expect(code).toMatch(/REORDER_ACTION = Object\.freeze\(\{ code: 'inventory_reorder_policy_update', schemaVersion: '1' \}\)/);
     expect(code).toMatch(/UNSUPPORTED_ACTION_TYPE/);
     expect(code.match(/inventory_reorder_policy_update/g)!.length).toBe(1); // one definition, no second action type
-    expect(code).toMatch(/REORDER_PRODUCER_RULE_SET_VERSION = 'inventory-reorder-policy\/v1\.0\.0'/);
+    expect(code).toMatch(/REORDER_PRODUCER_RULE_SET_VERSION = 'inventory-reorder-policy\/v1\.1\.0'/);
+    expect(code).not.toMatch(/REORDER_AUTHORED_RISK_LEVEL|'medium'/); // ruling 4: no ADI-hardcoded risk class
+    expect(code).toMatch(/deriveRiskClass\(\{\}\)/);
   });
 
   it('no LLM or model is involved in the numbers: the producer and derivation import no LLM client and no randomness', () => {
@@ -126,5 +128,18 @@ describe('AC-1 ADI producer: ownership and boundaries', () => {
   it('exactly one writer of the structured proposal exists, and it is the producer (no ABA/BO/route code writes the rationale)', () => {
     expect(filesMatching(/PROPOSED_ACTION_RATIONALE_CODE/).filter((r) => !r.includes('handoff-contracts')).sort()).toEqual([PRODUCER, SOURCE].sort());
     expect(filesMatching(/addRationale\([^)]*PROPOSED_ACTION_RATIONALE_CODE/)).toEqual([PRODUCER]);
+  });
+
+  it('ruling 2: the structured proposal is enforced at the one production capture writer (AbaAuthoringService), which refuses a missing proposal', () => {
+    const aba = read('packages/workflow/src/AbaAuthoringService.ts');
+    expect(aba).toMatch(/STRUCTURED_ADI_PROPOSAL_REQUIRED/);
+    expect(filesMatching(/recordCapture\(ctx, candidate\)/).filter((r) => r.startsWith('packages/workflow/') || r.startsWith('apps/'))).toEqual(['packages/workflow/src/AbaAuthoringService.ts']);
+    expect(filesMatching(/STRUCTURED_ADI_PROPOSAL_REQUIRED/).filter((r) => !r.includes('handoff-contracts'))).toEqual(['packages/workflow/src/AbaAuthoringService.ts']);
+  });
+
+  it('ruling 1: BO reaches ADI evidence only through its own port; ADI never imports BO; the port is joined at the composition roots', () => {
+    expect(filesMatching(/@infinicus\/business-operations-runtime/).filter((r) => r.startsWith('packages/workflow/'))).toEqual([]);
+    expect(filesMatching(/new AdiProposalBaselineSource\(/).sort()).toEqual(['apps/api/src/claimRecoveryComposition.ts', 'packages/event-worker/src/compose.ts']);
+    expect(read('packages/business-operations-runtime/src/authorized-action-execution/ApprovedProposalBaselineSource.ts')).not.toMatch(/@infinicus\/workflow|ai_decision_intelligence/);
   });
 });
