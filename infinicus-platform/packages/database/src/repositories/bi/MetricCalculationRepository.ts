@@ -16,6 +16,8 @@ export interface MetricCalculatedValue {
   periodEnd: Date;
   calculationStatus: string;
   confidence: number | null;
+  /** AC-2: where the value came from (source layer, record references, fact digest). Never a claim; a pointer to the evidence. */
+  evidenceReference: Record<string, unknown>;
   correlationId: string;
 }
 
@@ -32,6 +34,7 @@ export interface RecordCalculationInput {
   calculationStatus?: 'completed' | 'partial' | 'failed';
   confidence?: number;
   datasetVersionId?: string;
+  evidenceReference?: Record<string, unknown>;
   correlationId?: string;
 }
 
@@ -58,6 +61,7 @@ function rowToValue(row: Record<string, unknown>): MetricCalculatedValue {
     periodEnd: row.period_end as Date,
     calculationStatus: row.calculation_status as string,
     confidence: row.confidence === null ? null : parseFloat(String(row.confidence)),
+    evidenceReference: (row.evidence_reference ?? {}) as Record<string, unknown>,
     correlationId: row.correlation_id as string,
   };
 }
@@ -84,14 +88,14 @@ export class MetricCalculationRepository {
         `INSERT INTO business_intelligence.metric_calculated_values
            (metric_definition_id, metric_definition_version_id, tenant_id, workspace_id, business_id,
             dataset_version_id, value, unit, currency_code, dimensions, period_start, period_end,
-            calculation_status, confidence, correlation_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+            calculation_status, confidence, evidence_reference, correlation_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          RETURNING *`,
         [
           input.metricDefinitionId, input.metricDefinitionVersionId, ctx.tenantId, ctx.workspaceId, input.businessId,
           input.datasetVersionId ?? null, input.value, input.unit, input.currencyCode ?? null,
           JSON.stringify(input.dimensions ?? {}), input.periodStart, input.periodEnd,
-          input.calculationStatus ?? 'completed', input.confidence ?? null, correlationId,
+          input.calculationStatus ?? 'completed', input.confidence ?? null, JSON.stringify(input.evidenceReference ?? {}), correlationId,
         ]
       );
       return rowToValue(result.rows[0]);

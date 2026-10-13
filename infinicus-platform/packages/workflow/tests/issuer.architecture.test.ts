@@ -54,10 +54,11 @@ describe('ABA package issuer architecture', () => {
     expect(users).toEqual(['apps/api/src/abaPackageAnnouncement.ts']);
   });
 
-  it('the shared transaction is used only by the issuer, the authoring service, the read-only P0-6a status provider and the AC-1 ADI producer persistence (none nests it around the issuer)', () => {
+  it('the shared transaction is used only by the issuer, the authoring service, the read-only P0-6a status provider and the AC-1 ADI producer persistence and the AC-2 BI evidence persistence (none nests it around the issuer)', () => {
     const users = production.filter((f) => /withSharedTenantTransaction/.test(f.text.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'))).map((f) => f.rel).sort();
     // AC-1: the ADI reorder-policy producer persists ADI's own recommendation records atomically in one shared tenant transaction; it never touches the issuer.
-    expect(users).toEqual([ISSUER, AUTHORING, 'packages/workflow/src/abaExecutionPorts.ts', 'packages/workflow/src/ReorderPolicyRecommendationProducer.ts', 'packages/database/src/client.ts', 'packages/database/src/index.ts'].sort());
+    // AC-2 Block 5: the BI inventory evidence service writes BI's own metric calculations and insight version atomically in one shared tenant transaction; it never touches the issuer.
+    expect(users).toEqual([ISSUER, AUTHORING, 'packages/workflow/src/abaExecutionPorts.ts', 'packages/workflow/src/ReorderPolicyRecommendationProducer.ts', 'packages/workflow/src/InventoryBiEvidenceService.ts', 'packages/database/src/client.ts', 'packages/database/src/index.ts'].sort());
   });
 
   it('the issuer, its policy and the source reader name no event, outbox, ledger or publisher (any announcement is an injected collaborator)', () => {

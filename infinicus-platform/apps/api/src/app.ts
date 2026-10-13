@@ -42,6 +42,8 @@ import twinRoutes from './routes/twin.js';
 import decisionRecommendationsRoutes from './routes/decisionRecommendations.js';
 import reorderPolicyRecommendationRoutes from './routes/reorderPolicyRecommendation.js';
 import inventoryReorderPolicyBaselineRoutes from './routes/inventoryReorderPolicyBaseline.js';
+import inventoryBiEvidenceRoutes from './routes/inventoryBiEvidence.js';
+import type { InventoryBiEvidenceCompositionOptions } from './inventoryBiEvidenceComposition.js';
 import type { ReorderRecommendationCompositionOptions } from './reorderPolicyRecommendationComposition.js';
 import dataAcquisitionRoutes from './routes/dataAcquisition.js';
 import webhooksRoutes from './routes/webhooks.js';
@@ -58,6 +60,8 @@ export interface BuildAppOptions {
   claimRecovery?: ClaimRecoveryCompositionOptions;
   /** AC-1: the ADI reorder-policy recommendation producer's composition (test seam; production uses the BO read-only derivation). */
   reorderRecommendation?: ReorderRecommendationCompositionOptions;
+  /** AC-2 Block 5: the BI inventory evidence service composition (test seam; production joins BI to the read-only BO facts service). */
+  inventoryBiEvidence?: InventoryBiEvidenceCompositionOptions;
 }
 
 export async function buildApp(config: InfinicusConfig, options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -184,6 +188,7 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(decisionRecommendationsRoutes);
   await app.register(reorderPolicyRecommendationRoutes, options.reorderRecommendation ?? {});
   await app.register(inventoryReorderPolicyBaselineRoutes);
+  await app.register(inventoryBiEvidenceRoutes, options.inventoryBiEvidence ?? {});
   await app.register(dataAcquisitionRoutes);
   await app.register(webhooksRoutes, {
     rateLimit: {

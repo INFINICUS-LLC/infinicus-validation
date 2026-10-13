@@ -105,6 +105,24 @@ export class MetricDefinitionRepository {
     });
   }
 
+  /** AC-2: a business's definition by its code (null when absent). */
+  async findByCode(ctx: TenantContext, businessId: string, metricCode: string): Promise<MetricDefinition | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>('SELECT * FROM business_intelligence.metric_definitions WHERE business_id = $1 AND metric_code = $2', [businessId, metricCode]);
+      return result.rows.length === 0 ? null : rowToDefinition(result.rows[0]);
+    });
+  }
+
+  /** AC-2: the newest version of a definition (calculations reference a version). */
+  async findLatestVersion(ctx: TenantContext, metricDefinitionId: string): Promise<MetricDefinitionVersion> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        'SELECT * FROM business_intelligence.metric_definition_versions WHERE metric_definition_id = $1 ORDER BY version_number DESC LIMIT 1', [metricDefinitionId]);
+      if (result.rows.length === 0) throw new NotFoundError('MetricDefinitionVersion', metricDefinitionId);
+      return rowToVersion(result.rows[0]);
+    });
+  }
+
   async listByDomain(ctx: TenantContext, domain: string): Promise<MetricDefinition[]> {
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>(

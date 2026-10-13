@@ -16,6 +16,8 @@ export interface InsightPackageVersion {
   versionNumber: number;
   summary: string;
   findingIds: string[];
+  /** AC-2: the metric calculations this version references (analytical evidence by id, never duplicated). */
+  metricValueIds: string[];
   correlationId: string;
 }
 
@@ -39,6 +41,7 @@ function rowToVersion(row: Record<string, unknown>): InsightPackageVersion {
     versionNumber: row.version_number as number,
     summary: row.summary as string,
     findingIds: row.finding_ids as string[],
+    metricValueIds: (row.metric_value_ids ?? []) as string[],
     correlationId: row.correlation_id as string,
   };
 }
@@ -62,6 +65,23 @@ export class InsightPackageRepository {
       const result = await client.query<Record<string, unknown>>('SELECT * FROM business_intelligence.insight_packages WHERE id = $1', [id]);
       if (result.rows.length === 0) throw new NotFoundError('InsightPackage', id);
       return rowToPackage(result.rows[0]);
+    });
+  }
+
+  /** AC-2: a business's package by its code (null when absent). */
+  async findByCode(ctx: TenantContext, businessId: string, packageCode: string): Promise<InsightPackage | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>('SELECT * FROM business_intelligence.insight_packages WHERE business_id = $1 AND package_code = $2', [businessId, packageCode]);
+      return result.rows.length === 0 ? null : rowToPackage(result.rows[0]);
+    });
+  }
+
+  /** AC-2: the newest published version of a package (null when none). */
+  async findLatestVersion(ctx: TenantContext, insightPackageId: string): Promise<InsightPackageVersion | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        'SELECT * FROM business_intelligence.insight_package_versions WHERE insight_package_id = $1 ORDER BY version_number DESC LIMIT 1', [insightPackageId]);
+      return result.rows.length === 0 ? null : rowToVersion(result.rows[0]);
     });
   }
 

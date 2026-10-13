@@ -78,6 +78,8 @@ describe('business declared currency architecture (0185)', () => {
     expect(defaults).toEqual(['packages/database/src/repositories/onboarding/TenantRepository.ts']);
     expect(production.filter((f) => /declared_currency|declaredCurrency|DECLARED_CURRENCY/.test(f.code)).map((f) => f.rel).sort()).toEqual([
       'apps/api/src/routes/businessAdministration.ts', 'apps/api/src/schemas/businessAdministration.ts',
+      // AC-2 Block 5: the read-only BO evidence-facts service READS the declared currency through the same Reader (for the fact digest and the cost-currency consistency flag); it never writes it.
+      'packages/business-operations-runtime/src/inventory-policy/InventoryEvidenceFactsService.ts',
       // B2b: the BO evaluator READS the declared currency (through the Reader); it never writes it.
       'packages/business-operations-runtime/src/inventory-policy/InventoryPolicyEvaluationService.ts',
       // AC-1: the read-only derivation READS the declared currency through the same Reader and passes it to the same evaluator; it never writes it.
