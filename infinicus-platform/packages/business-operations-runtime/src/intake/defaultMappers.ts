@@ -88,14 +88,71 @@ function currencyCode(data: Record<string, unknown>, key: string, errors: string
 const FACT_TYPES = ['sale','expense','inventory','customer','team'] as const;
 const FACT_ACTIONS = ['new','return','churn','hire','fire','review'] as const;
 
+const SKU_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+function naturalKey(data: Record<string, unknown>, key: string, errors: string[]): string | undefined {
+  const value = requireString(data, key, errors);
+  if (value !== undefined && !SKU_PATTERN.test(value)) { errors.push(`${key}_invalid`); return undefined; }
+  return value;
+}
+function boundedName(data: Record<string, unknown>, key: string, errors: string[]): string | undefined {
+  const value = requireString(data, key, errors);
+  if (value !== undefined && value.length > 200) { errors.push(`${key}_too_long`); return undefined; }
+  return value;
+}
+
+/** AC-2 (D1): `inventory_item` v1 - SKU + name (+ optional unit of measure). Identity is a natural key; BO generates the id. Scope is never read from the record. */
+export const inventoryItemMapper: IntakeMapper = {
+  recordType: 'inventory_item',
+  version: 1,
+  validate(data) {
+    const errors: string[] = [];
+    naturalKey(data, 'sku', errors);
+    boundedName(data, 'name', errors);
+    const uom = optionalString(data, 'unitOfMeasure', errors);
+    if (uom !== undefined && uom.length > 40) errors.push('unitOfMeasure_too_long');
+    return errors;
+  },
+  map(data, context) {
+    return [{
+      type: 'create_inventory_item',
+      context,
+      payload: { sku: data.sku as string, name: data.name as string, ...(data.unitOfMeasure != null ? { unitOfMeasure: data.unitOfMeasure as string } : {}) },
+    }];
+  },
+};
+
+/** AC-2 (D1): `warehouse` v1 - warehouse code + name. */
+export const warehouseMapper: IntakeMapper = {
+  recordType: 'warehouse',
+  version: 1,
+  validate(data) {
+    const errors: string[] = [];
+    naturalKey(data, 'warehouseCode', errors);
+    boundedName(data, 'name', errors);
+    return errors;
+  },
+  map(data, context) {
+    return [{ type: 'create_warehouse', context, payload: { warehouseCode: data.warehouseCode as string, name: data.name as string } }];
+  },
+};
+
 export const inventoryMovementMapper: IntakeMapper = {
   recordType: 'inventory_movement',
   // v2 (data-capture Block C): a cost must be explicitly currency-tagged; (Block B) a present cost must be strictly positive. Records without a cost are unchanged.
-  version: 2,
+  // v3 (AC-2): the item and warehouse may be addressed by natural key (`sku`, `warehouseCode`) instead of BO identifiers, and the record may state the business
+  // instant of the movement (`occurredAt`). A v2-shaped record (identifiers only, no instant) maps exactly as before.
+  version: 3,
   validate(data) {
     const errors: string[] = [];
-    requireString(data, 'inventoryItemId', errors);
-    requireString(data, 'warehouseId', errors);
+    const hasId = data.inventoryItemId !== undefined; const hasSku = data.sku !== undefined;
+    if (hasId === hasSku) errors.push('exactly_one_of_inventoryItemId_and_sku');
+    else if (hasId) requireString(data, 'inventoryItemId', errors);
+    else naturalKey(data, 'sku', errors);
+    const hasWid = data.warehouseId !== undefined; const hasCode = data.warehouseCode !== undefined;
+    if (hasWid === hasCode) errors.push('exactly_one_of_warehouseId_and_warehouseCode');
+    else if (hasWid) requireString(data, 'warehouseId', errors);
+    else naturalKey(data, 'warehouseCode', errors);
+    dateString(data, 'occurredAt', errors, false);
     enumString(data, 'movementType', INVENTORY_TYPES, errors);
     const quantity = requireFiniteNumber(data, 'quantity', errors);
     if (quantity === 0) errors.push('quantity_must_not_be_zero');
@@ -116,6 +173,25 @@ export const inventoryMovementMapper: IntakeMapper = {
     return errors;
   },
   map(data, context) {
+    const keyed = data.sku !== undefined || data.warehouseCode !== undefined || data.occurredAt !== undefined;
+    if (keyed) {
+      return [{
+        type: 'record_keyed_inventory_movement',
+        context,
+        payload: {
+          ...(data.inventoryItemId !== undefined ? { inventoryItemId: data.inventoryItemId as string } : { inventoryItemSku: data.sku as string }),
+          ...(data.warehouseId !== undefined ? { warehouseId: data.warehouseId as string } : { warehouseCode: data.warehouseCode as string }),
+          ...(data.occurredAt !== undefined ? { occurredAt: data.occurredAt as string } : {}),
+          movementType: data.movementType as typeof INVENTORY_TYPES[number],
+          quantity: data.quantity as number,
+          unitCost: data.unitCost as number | undefined,
+          unitCostCurrency: data.unitCostCurrency as string | undefined,
+          referenceType: data.referenceType as typeof REFERENCE_TYPES[number] | undefined,
+          referenceId: data.referenceId as string | undefined,
+          notes: data.notes as string | undefined,
+        },
+      }];
+    }
     return [{
       type: 'record_inventory_movement',
       context,
@@ -327,6 +403,8 @@ export const operationalFactMapper: IntakeMapper = {
 };
 
 export const DEFAULT_INTAKE_MAPPERS: readonly IntakeMapper[] = Object.freeze([
+  inventoryItemMapper,
+  warehouseMapper,
   inventoryMovementMapper,
   purchaseOrderMapper,
   purchaseReceiptMapper,
