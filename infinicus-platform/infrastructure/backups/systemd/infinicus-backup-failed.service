@@ -1,0 +1,8 @@
+# Runs when infinicus-backup.service fails. TEMPLATE. Replace ExecStart with the real alert channel the owner chooses (email, chat webhook, pager, an
+# uptime monitor's "fail" ping). It must not contain secrets; read them from /etc/infinicus/backup.env if needed.
+[Unit]
+Description=INFINICUS backup FAILED - alert
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'logger -p user.crit "INFINICUS off-VM backup FAILED; see journalctl -u infinicus-backup.service"'

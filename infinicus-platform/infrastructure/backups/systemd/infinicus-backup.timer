@@ -1,0 +1,12 @@
+# Daily trigger for infinicus-backup.service. TEMPLATE: install as /etc/systemd/system/infinicus-backup.timer, then `systemctl enable --now infinicus-backup.timer`
+# (a write to the host; do it only when the backup plan is authorised).
+[Unit]
+Description=Daily INFINICUS off-VM backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
