@@ -53,6 +53,22 @@ describe('deriveRiskClass = MAX(deterministic floor, validated generator level, 
   });
 });
 
+describe('AC-2: the canonical base risk is a deterministic floor input; ADI supplies no level', () => {
+  it('is the class when it is the only evidence, and contextual evidence can only raise it', () => {
+    expect(deriveRiskClass({ canonicalBaseRisk: 'medium' })).toMatchObject({ riskClass: 'medium' });
+    expect(deriveRiskClass({ canonicalBaseRisk: 'medium', persistedSeverities: ['high'] }).riskClass).toBe('high');
+    expect(deriveRiskClass({ canonicalBaseRisk: 'medium', humanAdjustment: 'critical' }).riskClass).toBe('critical');
+  });
+  it('a lower generator level or persisted severity can never lower it', () => {
+    expect(deriveRiskClass({ canonicalBaseRisk: 'medium', authoredRiskLevel: 'low', persistedSeverities: ['low'] }).riskClass).toBe('medium');
+  });
+  it('a base outside the vocabulary leaves the result unclassified (treated as high), never guessed; no base and no evidence is unclassified', () => {
+    expect(deriveRiskClass({ canonicalBaseRisk: 'extreme' }).riskClass).toBeNull();
+    expect(deriveRiskClass({ canonicalBaseRisk: null }).riskClass).toBeNull();
+    expect(deriveRiskClass({}).riskClass).toBeNull();
+  });
+});
+
 describe('determineTimeValidity (explicit fact; risk never implies it)', () => {
   it('is time-sensitive with valid_until = the earliest authoritative end date', () => {
     const result = determineTimeValidity({

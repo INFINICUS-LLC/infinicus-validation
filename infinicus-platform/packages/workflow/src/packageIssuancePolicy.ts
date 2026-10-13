@@ -14,7 +14,7 @@
  * NOT_ENABLED).
  */
 
-import { actionTypeKey, actionTypeMatchesCanonical, canonicalize, simulationNotApplicableProblem } from '@infinicus/handoff-contracts';
+import { actionTypeKey, actionTypeMatchesCanonical, canonicalBaseRiskClass, canonicalize, simulationNotApplicableProblem } from '@infinicus/handoff-contracts';
 import type {
   ActionTypeContract, ActionTypeRegistry, AuthorizedActionPackageBody, AutomationLevelValue, PackageEnablementPolicy,
 } from '@infinicus/handoff-contracts';
@@ -33,6 +33,7 @@ export const ISSUER_COMPONENT = 'aba.package-issuer';
 export const ISSUABLE_AUTOMATION_LEVELS: readonly AutomationLevelValue[] = Object.freeze([2]);
 export const ISSUANCE_ENABLEMENT: PackageEnablementPolicy = Object.freeze({ automationLevels: ISSUABLE_AUTOMATION_LEVELS });
 /** Level 2 policy template convention: the enabled policy version's `specification.actionTypes` lists `{code, schemaVersion}` entries. */
+const RISK_ORDER_INDEX = (c: string): number => ['low', 'medium', 'high', 'critical'].indexOf(c);
 export const POLICY_ACTION_TYPES_KEY = 'actionTypes';
 export const NOT_APPLICABLE_CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 const REQUIRED_PERMISSION_FIELD = 'permissionUsed';
@@ -224,6 +225,12 @@ export function evaluateIssuance(f: IssuanceFacts): IssuanceEvaluation {
 
   // --- canonical action type + workspace activation ---------------------------------------------------------------------
   if (capture) {
+    // AC-2 (owner ruling 1): the action type's canonical BASE risk is a floor. A persisted recommendation risk BELOW it (or one that cannot be ranked) is
+    // refused; unclassified is already treated as high above, which is never below any base. The package still records the persisted class.
+    const base = canonicalBaseRiskClass(capture.actionType.code, capture.actionType.schemaVersion);
+    if (base !== null && review && isRiskClass(review.riskClass) && RISK_ORDER_INDEX(review.riskClass) < RISK_ORDER_INDEX(base)) {
+      refuse('RISK_POLICY', `the recommendation risk class ${review.riskClass} is below the canonical base risk ${base} of ${capture.actionType.code}@${capture.actionType.schemaVersion}`);
+    }
     const canonical = f.canonicalTypes.resolve(capture.actionType.code, capture.actionType.schemaVersion);
     if (!canonical) {
       refuse('ACTION_TYPE_NOT_CANONICAL', `${capture.actionType.code}@${capture.actionType.schemaVersion} is not a canonical platform action type`);

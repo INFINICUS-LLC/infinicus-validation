@@ -96,7 +96,8 @@ describe('AC-1 ADI producer: ownership and boundaries', () => {
     expect(code.match(/inventory_reorder_policy_update/g)!.length).toBe(1); // one definition, no second action type
     expect(code).toMatch(/REORDER_PRODUCER_RULE_SET_VERSION = 'inventory-reorder-policy\/v1\.1\.0'/);
     expect(code).not.toMatch(/REORDER_AUTHORED_RISK_LEVEL|'medium'/); // ruling 4: no ADI-hardcoded risk class
-    expect(code).toMatch(/deriveRiskClass\(\{\}\)/);
+    expect(code).toMatch(/deriveRiskClass\(\{ canonicalBaseRisk: canonicalBaseRiskClass\(REORDER_ACTION\.code, REORDER_ACTION\.schemaVersion\) \}\)/); // AC-2: the base class is read from canonical action-type governance
+    expect(filesMatching(/CANONICAL_BASE_RISK_CLASS\b/).filter((r) => !r.includes('handoff-contracts'))).toEqual([]); // one authoritative definition, no second registry
   });
 
   it('no LLM or model is involved in the numbers: the producer and derivation import no LLM client and no randomness', () => {

@@ -21,6 +21,8 @@ export interface RiskInputs {
   persistedSeverities?: readonly unknown[];
   /** Authorised human upward adjustment. Raise-only: a value below the other inputs has no effect. */
   humanAdjustment?: unknown;
+  /** AC-2: the action type's canonical BASE risk class (canonical action-type governance). A deterministic floor input; ADI never authors it. */
+  canonicalBaseRisk?: unknown;
 }
 
 export interface DerivedRisk {
@@ -50,6 +52,14 @@ export function deriveRiskClass(inputs: RiskInputs): DerivedRisk {
   for (const severity of persisted as AuthoredRiskClass[]) {
     valid.push(severity);
     basis.push(`persisted risk profile severity (deterministic floor input): ${severity}`);
+  }
+  if (inputs.canonicalBaseRisk !== undefined && inputs.canonicalBaseRisk !== null) {
+    if (isRisk(inputs.canonicalBaseRisk)) {
+      valid.push(inputs.canonicalBaseRisk);
+      basis.push(`canonical action-type base risk (deterministic floor input): ${inputs.canonicalBaseRisk}`);
+    } else {
+      return { riskClass: null, basis: [...basis, `canonical base risk is outside the vocabulary (${String(inputs.canonicalBaseRisk)}): unclassified`] };
+    }
   }
   if (inputs.authoredRiskLevel !== undefined && inputs.authoredRiskLevel !== null) {
     if (isRisk(inputs.authoredRiskLevel)) {

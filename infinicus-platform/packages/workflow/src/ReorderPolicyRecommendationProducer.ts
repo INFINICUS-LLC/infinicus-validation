@@ -28,7 +28,7 @@ import {
 } from '@infinicus/database';
 import {
   ADI_PROPOSED_ACTION_CONTRACT, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, SIMULATION_NOT_APPLICABLE_REASON_CODE,
-  proposalEvidenceProblems, validateProposedActionRecommendation, type ProposedActionRecommendation,
+  canonicalBaseRiskClass, proposalEvidenceProblems, validateProposedActionRecommendation, type ProposedActionRecommendation,
 } from '@infinicus/handoff-contracts';
 import { deriveRiskClass, determineTimeValidity } from './recommendationAuthoring.js';
 
@@ -170,9 +170,9 @@ export class ReorderPolicyRecommendationProducer {
         const problems = [...validateProposedActionRecommendation(proposal), ...proposalEvidenceProblems(proposal)];
         if (problems.length > 0) throw new RefusedAfterWrites(none('PRODUCER_CONTRACT_VIOLATION', problems.join('; ')));
 
-        // 4. risk and validity. ADI is not the authoritative risk classifier for this action: NO level is supplied, so the existing P0-3 derivation
-        // leaves the class UNCLASSIFIED, which the P0-2 approval policy treats as high (owner-tier approval). Validity follows the evidence.
-        const risk = deriveRiskClass({});
+        // 4. risk and validity. ADI is not a risk classifier: the base class is read from the canonical action-type governance (owner ruling, AC-2)
+        // and enters the existing P0-3 derivation as a deterministic floor; ADI supplies no level of its own. Validity follows the evidence.
+        const risk = deriveRiskClass({ canonicalBaseRisk: canonicalBaseRiskClass(REORDER_ACTION.code, REORDER_ACTION.schemaVersion) });
         const validity = determineTimeValidity({
           evaluated: { evidenceExpiry: true, forecastHorizon: true, actionWindow: true, policy: true, otherAuthoritativePeriod: true },
           evidenceExpiries: [new Date(Date.parse(evidence.capturedAt) + evidence.evidenceMaxAgeMs)],
@@ -197,7 +197,7 @@ export class ReorderPolicyRecommendationProducer {
         await this.d.recommendations.addRationale(ctx, version.id, request.businessId, PROPOSED_ACTION_RATIONALE_CODE, proposal.reasoning.summary, proposal as unknown as Record<string, unknown>);
         await this.d.recommendations.addRationale(ctx, version.id, request.businessId, 'risk_validity_basis', 'How the risk class and time-sensitivity were determined', {
           riskClass: risk.riskClass, riskBasis: risk.basis, isTimeSensitive: validity.isTimeSensitive, validityBasis: validity.basis,
-          riskAuthority: 'No authoritative per-action risk classification exists for this action type (P0-2/P0-3); the recommendation is left unclassified, which approval policy treats as high.',
+          riskAuthority: 'The base risk class is canonical action-type governance (handoff-contracts canonical-actions); ADI is not a risk classifier. P0-2/P0-3 contextual evidence can only raise it.',
         });
         await this.d.recommendations.validateRecommendation(ctx, recommendation.id, version.id);
         await this.d.recommendations.publishRecommendation(ctx, recommendation.id, version.id);

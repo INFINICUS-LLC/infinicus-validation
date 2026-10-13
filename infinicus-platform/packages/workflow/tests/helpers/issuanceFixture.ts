@@ -184,7 +184,7 @@ export async function makeIssuable(admin: Pool, world: World, o: FixtureOptions 
       `INSERT INTO ${S}.action_review_package_versions (id, tenant_id, workspace_id, business_id, review_package_id, version_number, summary,
           source_recommendation_version_id, risk_class, is_time_sensitive, valid_until, twin_snapshot_id) VALUES ($1,$2,$3,$4,$5,1,'fixture',$6,$7,$8,$9,$10)`,
       [f.reviewVersionId, ...scopeIds, f.reviewPackageId, f.recommendationVersionId,
-        o.riskClass === undefined ? 'low' : o.riskClass, o.isTimeSensitive === undefined ? true : o.isTimeSensitive, validUntil, twinSnapshotId]);
+        o.riskClass === undefined ? 'medium' : o.riskClass, o.isTimeSensitive === undefined ? true : o.isTimeSensitive, validUntil, twinSnapshotId]);
 
     // decision (+ version) and approved action (+ version)
     await c.query(`INSERT INTO ${S}.approval_decisions (id, tenant_id, workspace_id, business_id, review_package_id, approver_assignment_id, decision_code, status, latest_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1)`,
@@ -206,7 +206,7 @@ export async function makeIssuable(admin: Pool, world: World, o: FixtureOptions 
         permissionUsed: o.permissionUsed === undefined ? 'aba:approve' : o.permissionUsed, correlationId: null,
         facts: {
           reviewVersionId: f.reviewVersionId, sourceRecommendationVersionId: f.recommendationVersionId,
-          riskClass: o.riskClass === undefined ? 'low' : o.riskClass, isTimeSensitive: o.isTimeSensitive === undefined ? true : o.isTimeSensitive,
+          riskClass: o.riskClass === undefined ? 'medium' : o.riskClass, isTimeSensitive: o.isTimeSensitive === undefined ? true : o.isTimeSensitive,
           validUntil: validUntil ? validUntil.toISOString() : null, twinSnapshotId,
         },
         actionId: null, modifiedParameters: null, simulationRunId: null, modelVersion: null,
