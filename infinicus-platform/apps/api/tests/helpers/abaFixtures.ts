@@ -12,6 +12,8 @@ import {
   DecisionRecommendationRepository, ADIPublicationRepository, ABAIntakeRepository,
   type TenantContext,
 } from '@infinicus/database';
+import { ADI_PROPOSED_ACTION_CONTRACT, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, type ProposedActionRecommendation } from '@infinicus/handoff-contracts';
+import { randomUUID } from 'node:crypto';
 
 export function uc(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -24,7 +26,27 @@ export type AbaFacts = NonNullable<Parameters<DecisionRecommendationRepository['
 /** Persisted facts that pass the approval gate; tests needing unclassified/unknown pass `{}` or a subset. */
 export const APPROVABLE_FACTS = { riskClass: 'low', isTimeSensitive: false } as const;
 
-export async function createAbaFixture(ctx: TenantContext, businessId: string, facts: AbaFacts = APPROVABLE_FACTS): Promise<{ intakePackageId: string; recommendationId: string }> {
+/** The digest a fixture proposal cites for its (stand-in) fact snapshot; a test verifier answers with it so the proposal evidence checks line up. */
+export const FIXTURE_FACTS_DIGEST = `sha256:${'a'.repeat(64)}`;
+const FIXTURE_DIMENSIONS = ['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME'] as const;
+/**
+ * A structurally complete `adi-proposed-action/1` for ABA-mechanics tests that run with a TEST evidence verifier (AC-1 ruling 2: a recommendation without a
+ * structured proposal can no longer reach capture for this action type, so such tests carry one). It is not a production producer; the real chain uses the producer.
+ */
+export function fixtureProposal(targetId: string, parameters: { reorderPoint: number; reorderQuantity: number }): ProposedActionRecommendation {
+  return {
+    contract: ADI_PROPOSED_ACTION_CONTRACT, actionType: { code: 'inventory_reorder_policy_update', schemaVersion: '1' }, target: { kind: 'inventory_item', id: targetId },
+    proposedParameters: { ...parameters }, currentState: null,
+    evidenceReferences: [
+      { kind: BO_FACTS_REFERENCE_KIND, digest: FIXTURE_FACTS_DIGEST },
+      ...FIXTURE_DIMENSIONS.map((dimension) => ({ kind: BO_EVALUATION_REFERENCE_KIND, id: randomUUID(), dimension, digest: FIXTURE_FACTS_DIGEST })),
+    ],
+    reasoning: { summary: 'ABA mechanics fixture proposal', basis: ['fixture'] }, confidence: { kind: 'RULE_COMPLIANCE', value: null, statement: 'fixture' }, constraints: {},
+    provenance: { producer: 'aba-test-fixture', producerVersion: '1', method: 'DETERMINISTIC_RULE', ruleSetVersion: 'inventory-reorder-policy/v1.1.0', producedAt: new Date().toISOString() },
+  };
+}
+
+export async function createAbaFixture(ctx: TenantContext, businessId: string, facts: AbaFacts = APPROVABLE_FACTS, proposal?: ProposedActionRecommendation): Promise<{ intakePackageId: string; recommendationId: string }> {
   const insightRepo = new InsightPackageRepository();
   const biPubRepo = new BIPublicationPackageRepository();
   const biPkg = await insightRepo.create(ctx, businessId, uc('insight'));
@@ -83,6 +105,7 @@ export async function createAbaFixture(ctx: TenantContext, businessId: string, f
   const case_ = await caseRepo.createCase(ctx, businessId, question.id, uc('case'));
   const recRepo = new DecisionRecommendationRepository();
   const { recommendation, version: recVersion } = await recRepo.createRecommendation(ctx, businessId, case_.id, uc('rec'), 'api fixture recommendation', undefined, facts);
+  if (proposal) await recRepo.addRationale(ctx, recVersion.id, businessId, PROPOSED_ACTION_RATIONALE_CODE, proposal.reasoning.summary, proposal as unknown as Record<string, unknown>);
   await recRepo.validateRecommendation(ctx, recommendation.id, recVersion.id);
   await recRepo.publishRecommendation(ctx, recommendation.id, recVersion.id);
   const adiPubRepo = new ADIPublicationRepository();

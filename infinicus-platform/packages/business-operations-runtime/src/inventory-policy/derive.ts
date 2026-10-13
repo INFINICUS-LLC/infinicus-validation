@@ -6,6 +6,7 @@
  * or a value of the owner-approved rule set `inventory-reorder-policy/v1.0.0`. This module decides nothing for the business: it only says which
  * single-step change, if any, would satisfy the approved rule set. ABA still has to approve it and BO re-checks everything at execution.
  *
+ * Step semantics (unit, step count, selection, cap priority) are NOT chosen here: they are the `proposal` policy of the owner-approved rule set (v1.1.0).
  * Method (deterministic; same inputs, same output; no clock, no I/O, no randomness):
  *   1. Evaluate the CURRENT policy (the baseline) with the real evaluator. Missing, ambiguous, stale or inconsistent evidence (any INDETERMINATE
  *      finding) -> NO candidate (`EVIDENCE_UNAVAILABLE`). Inactive item -> NO candidate. Baseline already PASSED on all four dimensions -> NO
@@ -97,6 +98,11 @@ export function deriveCompliantReorderPolicy(input: {
   const { itemId, snapshot, declaredCurrency, ruleSet: rs } = input;
   const required = [rs.maxChangeReorderPointPct, rs.maxChangeReorderQuantityPct, rs.orderValueCap, rs.maxChangeOrderValuePctOfCap, rs.maxImpliedStockUnits, rs.leadTimeDays, rs.safetyFactor, rs.maxCoverDays];
   if (required.some((v) => v === undefined) || rs.orderValueCapCurrency === undefined) return refuse('RULE_SET_INCOMPLETE', 'the approved rule set leaves a parameter unset; nothing is derived from an unset value');
+  // The step semantics are OWNER policy and live in the rule set (v1.1.0). A rule set without them, or with a policy this module does not implement, proposes nothing.
+  const pol = rs.proposal;
+  if (pol === undefined || pol.unit !== 1 || pol.maxSteps !== 1 || pol.selection !== 'NEAREST_FEASIBLE_TO_BASELINE' || pol.combinedCapPriority !== 'REORDER_QUANTITY_YIELDS_FIRST') {
+    return refuse('RULE_SET_INCOMPLETE', 'the approved rule set defines no (or an unsupported) proposal policy; the proposer may not choose one');
+  }
 
   const target = { kind: SUPPORTED_TARGET_KIND, id: itemId };
   const action = { code: SUPPORTED_ACTION.code, schemaVersion: SUPPORTED_ACTION.schemaVersion };

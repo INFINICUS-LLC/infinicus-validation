@@ -16,6 +16,22 @@
  */
 export const INVENTORY_REORDER_POLICY_V1_MAX_EVIDENCE_AGE_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * PROPOSAL POLICY (rule set v1.1.0, owner ruling 3 of the AC-1 corrections): how a RULE-COMPLIANT PROPOSAL is chosen from the set of
+ * parameter pairs the rule set allows. These are business-policy choices, so they live here, in the owner-approved rule set, and nowhere else.
+ * Anything not named here is not a choice the proposer may make.
+ */
+export interface ReorderProposalPolicy {
+  /** A proposed value is a whole number of the item's own unit. */
+  readonly unit: 1;
+  /** A proposal is ONE governed step: no value moves further than MAX_CHANGE_REORDER_POINT / MAX_CHANGE_REORDER_QUANTITY allow. */
+  readonly maxSteps: 1;
+  /** Among the pairs that satisfy every rule, propose the one closest to the current policy (the smallest change); ties round half up. */
+  readonly selection: 'NEAREST_FEASIBLE_TO_BASELINE';
+  /** When reorderPoint + reorderQuantity would exceed the combined cap: the order quantity yields first (down to its lower bound), then the reorder point (never below the stock-out requirement). */
+  readonly combinedCapPriority: 'REORDER_QUANTITY_YIELDS_FIRST';
+}
+
 export interface InventoryReorderRuleSet {
   readonly version: string;
   /** Percent of the current non-zero baseline (MAX_CHANGE_REORDER_POINT_PCT). */
@@ -39,6 +55,8 @@ export interface InventoryReorderRuleSet {
   readonly minDemandObservations: number;
   /** Oldest evaluation (database clock) that still verifies as evidence, in milliseconds (EVIDENCE_MAX_AGE). */
   readonly maxEvidenceAgeMs: number;
+  /** How a compliant proposal is chosen (v1.1.0). Absent = this version defines no proposal policy, so nothing may be proposed from it. */
+  readonly proposal?: ReorderProposalPolicy;
 }
 
 export const INVENTORY_REORDER_POLICY_RULE_SET_ID = 'inventory-reorder-policy';
@@ -61,8 +79,21 @@ export const INVENTORY_REORDER_POLICY_V1_0_0: InventoryReorderRuleSet = Object.f
   maxEvidenceAgeMs: INVENTORY_REORDER_POLICY_V1_MAX_EVIDENCE_AGE_MS,
 });
 
+/**
+ * v1.1.0 (docs/architecture/reconciliation/P0-5_B2_RULE_SET_inventory-reorder-policy_v1.1.0.md): EVERY v1.0.0 value unchanged, plus the proposal
+ * policy above. v1.0.0 is immutable and stays approved for the evidence already produced under it; it defines no proposal policy.
+ */
+export const INVENTORY_REORDER_POLICY_V1_1_0: InventoryReorderRuleSet = Object.freeze({
+  ...INVENTORY_REORDER_POLICY_V1_0_0,
+  version: 'inventory-reorder-policy/v1.1.0',
+  proposal: Object.freeze({ unit: 1, maxSteps: 1, selection: 'NEAREST_FEASIBLE_TO_BASELINE', combinedCapPriority: 'REORDER_QUANTITY_YIELDS_FIRST' } as const),
+});
+
 /** Every approved version, keyed by its stored `rule_set_version` string. The registry is closed: nothing registers at runtime. */
-const APPROVED: ReadonlyMap<string, InventoryReorderRuleSet> = new Map([[INVENTORY_REORDER_POLICY_V1_0_0.version, INVENTORY_REORDER_POLICY_V1_0_0]]);
+const APPROVED: ReadonlyMap<string, InventoryReorderRuleSet> = new Map([
+  [INVENTORY_REORDER_POLICY_V1_0_0.version, INVENTORY_REORDER_POLICY_V1_0_0],
+  [INVENTORY_REORDER_POLICY_V1_1_0.version, INVENTORY_REORDER_POLICY_V1_1_0],
+]);
 
 export class RuleSetNotApprovedError extends Error {
   constructor(readonly requested: string, reason: string) {

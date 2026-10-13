@@ -47,6 +47,15 @@ export const SIMULATION_NOT_APPLICABLE_ALLOWED: ReadonlySet<string> = Object.fre
 ])) as ReadonlySet<string>;
 
 /**
+ * AC-1 corrections (owner ruling 2): action types whose ABA authoring path REQUIRES a valid structured `adi-proposed-action/1` stored on the
+ * source recommendation. Narrative-only recommendations and caller-supplied "proposals" are not an authoritative production path for them.
+ * Per `code@schemaVersion`, exactly like the simulation allowance above: it is never global and a future type states its own requirement.
+ */
+export const STRUCTURED_ADI_PROPOSAL_REQUIRED: ReadonlySet<string> = Object.freeze(new Set<string>([
+  `${INVENTORY_REORDER_POLICY_UPDATE_V1.code}@${INVENTORY_REORDER_POLICY_UPDATE_V1.schemaVersion}`,
+])) as ReadonlySet<string>;
+
+/**
  * Why a governed NOT_APPLICABLE simulation reference is refused for this action type, or null when it is permitted. Used by every
  * writer and by the issuance policy so the rule cannot drift: the type must be listed AND the reason code must be exactly canonical.
  */

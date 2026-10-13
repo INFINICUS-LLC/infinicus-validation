@@ -17,10 +17,10 @@ import type {
 } from '@infinicus/handoff-contracts';
 import {
   AuthorizedActionExecutionService, AuthorizedActionIntakeService, AuthorizedActionNotificationConsumer, BoExecutionEvidenceReader, ClaimRecoveryConsumer, GovernedExecutionGate,
-  PRODUCTION_BO_CAPABILITIES, killSwitchEngagedFrom,
+  InventoryReorderPolicyExecutionAdapter, PRODUCTION_BO_CAPABILITIES, killSwitchEngagedFrom,
 } from '@infinicus/business-operations-runtime';
 import { ActionExecutedConsumer, ExecutionVerificationService, OM_VERIFIABLE_ACTION_TYPES } from '@infinicus/outcome-monitoring-runtime';
-import { AbaAuthorizedActionPackageSource, AbaPackageConsumptionRecorder, AbaPackageStatusProvider } from '@infinicus/workflow';
+import { AbaAuthorizedActionPackageSource, AbaPackageConsumptionRecorder, AbaPackageStatusProvider, AdiProposalBaselineSource } from '@infinicus/workflow';
 import { EventWorker } from './EventWorker.js';
 import type { ScopeDiscovery } from './ScopeDiscovery.js';
 import type { EventWorkerConfig } from './config.js';
@@ -65,7 +65,9 @@ export function buildEventWorker(options: BuildEventWorkerOptions): EventWorker 
     capabilities, killSwitchEngaged: options.killSwitchEngaged ?? (() => killSwitchEngagedFrom(process.env)), actorUserId: config.actorUserId,
   });
   // ONE executor: the BO engine. The consumer below is its only caller; the status answer is judged fresh, under lock, within the ruled age.
-  const executor = new AuthorizedActionExecutionService({ statusProvider, executionStatusMaxAgeMs: config.executionStatusMaxAgeMs, gate, capabilities });
+  // Plain approvals take their compare-and-set baseline from the BO evaluation records the approved ADI proposal cites (owner ruling 1); BO judges the records itself.
+  const adapter = new InventoryReorderPolicyExecutionAdapter({ proposalBaseline: new AdiProposalBaselineSource() });
+  const executor = new AuthorizedActionExecutionService({ statusProvider, executionStatusMaxAgeMs: config.executionStatusMaxAgeMs, gate, capabilities, adapter });
   const consumer = new AuthorizedActionNotificationConsumer({
     intake: new AuthorizedActionIntakeService({ statusProvider, statusMaxAgeMs: config.intakeStatusMaxAgeMs, capabilities }),
     source: options.ports?.source ?? new AbaAuthorizedActionPackageSource({ actorUserId: config.actorUserId }),

@@ -1,13 +1,13 @@
 /**
  * AC-1 - deterministic unit tests for the read-only reorder-policy derivation (no database, no clock, no randomness).
- * Demand fixture (helpers/policyFixture): SUM 900 over 90 days (10/day), unit cost 10 USD, rule set inventory-reorder-policy/v1.0.0:
+ * Demand fixture (helpers/policyFixture): SUM 900 over 90 days (10/day), unit cost 10 USD, rule set inventory-reorder-policy/v1.1.0 (v1.0.0 values + the owner-approved PROPOSAL POLICY):
  *   stock-out requirement rp >= 175 | cover limit rp + rq <= 900 | policy cap rp + rq <= 500 | change <= 25% | order value <= 5000 USD (rq <= 500)
  *   | increase of order value <= 1250 USD (rq <= baseline + 125).
  * The derivation must be SOUND (every returned candidate passes all four evaluator dimensions) and COMPLETE (when any whole-unit pair within one
  * governed step passes, it returns one) - cross-checked by exhaustive search below.
  */
 import { describe, expect, it } from 'vitest';
-import { INVENTORY_REORDER_POLICY_V1_0_0 as RS, type InventoryReorderRuleSet } from '../src/inventory-policy/ruleSet.js';
+import { INVENTORY_REORDER_POLICY_V1_0_0 as RS10, INVENTORY_REORDER_POLICY_V1_1_0 as RS, type InventoryReorderRuleSet } from '../src/inventory-policy/ruleSet.js';
 import { evaluateInventoryReorderPolicy } from '../src/inventory-policy/evaluate.js';
 import { deriveCompliantReorderPolicy, REORDER_DERIVATION_METHOD, type ReorderPolicyDerivation } from '../src/inventory-policy/derive.js';
 import { DECLARED_USD, UNDECLARED, ITEM_ID, WAREHOUSE_ID, snapshot, subject } from './helpers/policyFixture.js';
@@ -22,7 +22,7 @@ const passes = (rp: number, rq: number, snap: Snap, rs: InventoryReorderRuleSet 
 describe('AC-1 derivation - a candidate when the policy is non-compliant and one governed step can fix it', () => {
   it('raises the reorder point to the stock-out requirement and leaves a compliant order quantity alone', () => {
     const d = derive(base(150, 180));
-    expect(d).toMatchObject({ outcome: 'CANDIDATE', method: REORDER_DERIVATION_METHOD, ruleSetVersion: 'inventory-reorder-policy/v1.0.0', proposed: { reorderPoint: 175, reorderQuantity: 180 }, current: { reorderPoint: '150', reorderQuantity: '180' } });
+    expect(d).toMatchObject({ outcome: 'CANDIDATE', method: REORDER_DERIVATION_METHOD, ruleSetVersion: 'inventory-reorder-policy/v1.1.0', proposed: { reorderPoint: 175, reorderQuantity: 180 }, current: { reorderPoint: '150', reorderQuantity: '180' } });
     if (d.outcome !== 'CANDIDATE') throw new Error('unreachable');
     expect(d.verification.map((v) => v.result)).toEqual(['PASSED', 'PASSED', 'PASSED', 'PASSED']);
     expect(d.demand).toEqual({ count: 12, sumOfMagnitudes: '900', windowDays: 90 });
@@ -75,6 +75,13 @@ describe('AC-1 derivation - NO candidate (fail closed), with the reason named', 
   });
   it('an inactive item yields no candidate', () => {
     expect(derive(base(150, 180, { item: { id: ITEM_ID, status: 'discontinued', unitOfMeasure: 'unit' } }))).toMatchObject({ outcome: 'NONE', code: 'ITEM_NOT_ACTIVE' });
+  });
+  it('the step semantics belong to the governed rule set: a version without a proposal policy (v1.0.0), or with one this module does not implement, proposes nothing', () => {
+    expect(deriveCompliantReorderPolicy({ itemId: ITEM_ID, snapshot: snapshot(base(150, 180)), declaredCurrency: DECLARED_USD, ruleSet: RS10 })).toMatchObject({ outcome: 'NONE', code: 'RULE_SET_INCOMPLETE' });
+    for (const proposal of [undefined, { ...RS.proposal!, unit: 5 }, { ...RS.proposal!, maxSteps: 2 }, { ...RS.proposal!, selection: 'LARGEST_FEASIBLE' }, { ...RS.proposal!, combinedCapPriority: 'REORDER_POINT_YIELDS_FIRST' }]) {
+      expect(derive(base(150, 180), { rs: { proposal: proposal as never } }), JSON.stringify(proposal)).toMatchObject({ outcome: 'NONE', code: 'RULE_SET_INCOMPLETE' });
+    }
+    expect(derive(base(150, 180))).toMatchObject({ outcome: 'CANDIDATE' }); // the control
   });
   it('a rule set with an unset parameter derives nothing (no defaults)', () => {
     expect(derive(base(150, 180), { rs: { leadTimeDays: undefined } })).toMatchObject({ outcome: 'NONE', code: 'RULE_SET_INCOMPLETE' });

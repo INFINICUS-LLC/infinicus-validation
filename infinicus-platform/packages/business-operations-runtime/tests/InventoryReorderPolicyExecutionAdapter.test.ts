@@ -84,3 +84,29 @@ describe('P0-6f: the executor reads the evaluator\'s recorded snapshot values', 
     }
   });
 });
+
+describe('InventoryReorderPolicyExecutionAdapter.resolveBaseline: a PLAIN approval needs the baseline evidence its ADI proposal cites (fail closed, O-4 not weakened)', () => {
+  const ctx = { tenantId: 't', workspaceId: 'w', userId: 'u' } as never;
+  const plainPkg = (over: { proposed?: any; parameters?: any } = {}): any => ({
+    scope: { businessId: 'b' },
+    action: { type: { code: 'inventory_reorder_policy_update', schemaVersion: '1' }, target: { kind: 'inventory_item', id: ITEM }, parameters: over.parameters ?? { reorderPoint: 150, reorderQuantity: 250 } },
+    lineage: {
+      modificationEvaluation: { state: 'NOT_APPLICABLE' },
+      proposedParameters: over.proposed ?? { state: 'VALUE', value: { parameters: { reorderPoint: 150, reorderQuantity: 250 }, source: { recordId: 'rec-1' } } },
+    },
+  });
+  const plan = (): any => adapter.parse(pkg()) as any;
+  const withPort = (evaluationReferencesFor: (...a: any[]) => Promise<any>) => new InventoryReorderPolicyExecutionAdapter({ executor: {} as never, evaluations: {} as never, proposalBaseline: { evaluationReferencesFor } as never });
+  const refusal = async (a: InventoryReorderPolicyExecutionAdapter, p: any) => (await a.resolveBaseline(ctx, p, plan())) as any;
+
+  it('no configured source, no proposal, parameters that differ from the proposal, a failing source, and an empty or malformed reference set are all NO_BASELINE_EVIDENCE', async () => {
+    const never = async () => { throw new Error('must not be called'); };
+    expect(await refusal(adapter, plainPkg())).toMatchObject({ ok: false, code: 'NO_BASELINE_EVIDENCE' });
+    expect(await refusal(withPort(never), plainPkg({ proposed: { state: 'NOT_APPLICABLE' } }))).toMatchObject({ ok: false, code: 'NO_BASELINE_EVIDENCE' });
+    expect(await refusal(withPort(never), plainPkg({ proposed: { state: 'VALUE', value: { parameters: { reorderPoint: 151, reorderQuantity: 250 }, source: { recordId: 'rec-1' } } } }))).toMatchObject({ ok: false, code: 'NO_BASELINE_EVIDENCE' });
+    expect(await refusal(withPort(async () => { throw new Error('down'); }), plainPkg())).toMatchObject({ ok: false, code: 'NO_BASELINE_EVIDENCE' });
+    expect(await refusal(withPort(async () => []), plainPkg())).toMatchObject({ ok: false, code: 'NO_BASELINE_EVIDENCE' });
+    expect(await refusal(withPort(async () => [{ kind: 'simulation_run', id: 'x', dimension: 'COST' }]), plainPkg())).toMatchObject({ ok: false, code: 'NO_BASELINE_EVIDENCE' });
+    expect(await refusal(withPort(async () => [{ kind: 'bo_inventory_policy_evaluation', id: ITEM, dimension: 'COST' }]), plainPkg())).toMatchObject({ ok: false, code: 'NO_BASELINE_EVIDENCE' }); // incomplete dimension set
+  });
+});

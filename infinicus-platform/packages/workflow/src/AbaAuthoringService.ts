@@ -29,13 +29,19 @@ import type {
   ActionTypeWithStatus, AuthorizedActionBoundaries, AuthorizedActionCapture, GovernedValue, OwnerAssignment, TenantContext,
 } from '@infinicus/database';
 import {
-  SIMULATION_NOT_APPLICABLE_ALLOWED, actionTypeKey, simulationNotApplicableProblem, canonicalActionTypeRegistry, canonicalize, checkParameterValue, proposalMatchesCapture, requiredGovernanceDimensions,
+  BO_FACTS_REFERENCE_KIND, SIMULATION_NOT_APPLICABLE_ALLOWED, STRUCTURED_ADI_PROPOSAL_REQUIRED, actionTypeKey, boEvaluationReferences, simulationNotApplicableProblem, canonicalActionTypeRegistry, canonicalize, checkParameterValue, proposalEvidenceProblems, proposalMatchesCapture, requiredGovernanceDimensions,
 } from '@infinicus/handoff-contracts';
-import type { ActionTypeContract, ActionTypeRegistry, GovernanceDimension, GovernanceEvidenceVerifier, JsonValue } from '@infinicus/handoff-contracts';
+import type { ActionTypeContract, ActionTypeRegistry, GovernanceDimension, GovernanceEvidenceVerifier, JsonValue, ProposedActionRecommendation } from '@infinicus/handoff-contracts';
 import { ApproverAuthorityNotEstablishedError } from './DecisionWorkflowService.js';
 import { AuthorizedActionPackageIssuer, type IssuePackageResult } from './AuthorizedActionPackageIssuer.js';
 import { POLICY_ACTION_TYPES_KEY, notApplicableCodeProblems } from './packageIssuancePolicy.js';
 import { AdiProposedActionSource, type ProposedActionSource } from './ProposedActionSource.js';
+
+/**
+ * A plain approval has no modification, so the "evaluation must not predate the modification" bound of the evidence verifier has nothing to compare
+ * against: the floor is the epoch, and the verifier's own rules (exact subject digest, PASSED, approved rule set, maximum age) are what bind the evidence.
+ */
+const NO_MODIFICATION_EVIDENCE_FLOOR = '1970-01-01T00:00:00.000Z';
 
 const MS_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -411,6 +417,28 @@ export class AbaAuthoringService {
     }
   }
 
+  /**
+   * The BO evaluation records an ADI proposal cites must each be VERIFIED by the registered authoritative verifier for EXACTLY the proposed
+   * parameters (exact subject, PASSED, approved rule set, fresh), and must carry the same fact-snapshot digest the proposal cites. A reference is
+   * not proof; with no verifier registered the capture is refused (fail closed).
+   */
+  private async verifyProposalEvidence(ctx: TenantContext, businessId: string, actionId: string, proposal: ProposedActionRecommendation): Promise<void> {
+    const verifier = this.d.evidenceVerifier;
+    if (!verifier) throw new ConflictError('AbaAuthoring', 'no authoritative governance evidence verifier is registered, so the evidence of an ADI proposal cannot be verified (a reference alone is not proof)');
+    const facts = proposal.evidenceReferences.find((e) => e.kind === BO_FACTS_REFERENCE_KIND);
+    for (const ref of boEvaluationReferences(proposal)) {
+      const verdict = await verifier.verify({
+        tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, businessId, actorUserId: ctx.userId, modifiedAt: NO_MODIFICATION_EVIDENCE_FLOOR,
+        dimension: ref.dimension as GovernanceDimension, evidenceRef: { kind: ref.kind, id: ref.id },
+        subject: { actionId, actionType: proposal.actionType, target: proposal.target, finalParameters: proposal.proposedParameters },
+      });
+      if (!verdict || verdict.status !== 'VERIFIED') throw new ConflictError('AbaAuthoring', `ADI_PROPOSAL_EVIDENCE_NOT_VERIFIED: ${ref.dimension} evidence of the proposal was not verified: ${verdict && verdict.status === 'REFUSED' ? verdict.reason : 'no verdict'}`);
+      if (verdict.dimension !== ref.dimension || verdict.result !== 'PASSED' || verdict.evidenceRef.kind !== ref.kind || verdict.evidenceRef.id !== ref.id) throw new ConflictError('AbaAuthoring', `ADI_PROPOSAL_EVIDENCE_NOT_VERIFIED: the ${ref.dimension} verdict does not match the cited reference`);
+      const snapshot = verdict.sourceVersion.split('|')[1];
+      if (!facts || snapshot !== facts.digest) throw new ConflictError('AbaAuthoring', `ADI_PROPOSAL_EVIDENCE_DIGEST_MISMATCH: the ${ref.dimension} evaluation was made against different facts than the proposal cites`);
+    }
+  }
+
   async recordCapture(ctx: TenantContext, rc0: AuthoringRequestContext, businessId: string, actionId: string, input: CaptureInput): Promise<CaptureView> {
     const rc = this.normalise(rc0);
     const action = await this.requireAction(ctx, businessId, actionId);
@@ -435,11 +463,19 @@ export class AbaAuthoringService {
       for (const [name, spec] of Object.entries(canonical.parameters)) if (spec.required && !(name in params)) throw invalid(`${label}: required parameter ${name} is missing`);
     };
     checkSet('proposed', input.proposedParameters);
-    // AC-1: where ADI recorded a structured proposal for the source recommendation, ABA's `proposed` half must be exactly that proposal.
-    // ABA still owns the decision and the final parameters (modification is a separate, evaluated step); this only anchors the lineage.
-    const adiProposal = await this.d.proposedActions.getForRecommendation(ctx, action.sourceRecommendationId);
-    if (adiProposal !== null) {
-      const differences = proposalMatchesCapture(adiProposal, { actionType: input.actionType, target: input.target, proposedParameters: input.proposedParameters });
+    // AC-1 corrections (owner ruling 2): for an action type in STRUCTURED_ADI_PROPOSAL_REQUIRED the production ABA path REQUIRES the valid structured
+    // `adi-proposed-action/1` that ADI stored on the source recommendation. Narrative-only recommendations and caller-supplied "proposals" are refused.
+    // Where a proposal exists for any other type it must still match. ABA keeps the decision and the final parameters; this anchors the lineage.
+    const stored = await this.d.proposedActions.getForRecommendation(ctx, action.sourceRecommendationId);
+    if (STRUCTURED_ADI_PROPOSAL_REQUIRED.has(actionTypeKey(canonical.code, canonical.schemaVersion))) {
+      if (stored === null) throw invalid(`ADI_PROPOSAL_REQUIRED: ${canonical.code}@${canonical.schemaVersion} requires a structured adi-proposed-action/1 on its source recommendation (a narrative recommendation or a caller-supplied proposal is not an authoritative proposal)`);
+      if (stored.tenantId !== ctx.tenantId || stored.workspaceId !== ctx.workspaceId || stored.businessId !== businessId) throw invalid('ADI_PROPOSAL_SCOPE_MISMATCH: the source recommendation is not in this tenant, workspace and business');
+      const evidenceProblems = proposalEvidenceProblems(stored.proposal);
+      if (evidenceProblems.length > 0) throw invalid(`ADI_PROPOSAL_EVIDENCE_INCOMPLETE: ${evidenceProblems.join('; ')}`);
+      await this.verifyProposalEvidence(ctx, businessId, actionId, stored.proposal);
+    }
+    if (stored !== null) {
+      const differences = proposalMatchesCapture(stored.proposal, { actionType: input.actionType, target: input.target, proposedParameters: input.proposedParameters });
       if (differences.length > 0) throw invalid(`PROPOSAL_DIFFERS_FROM_ADI_RECOMMENDATION: ${differences.join('; ')}`);
     }
 

@@ -21,13 +21,19 @@ export const PROPOSED_ACTION_RATIONALE_CODE = 'proposed_action' as const;
 export const PROPOSED_ACTION_METHODS = ['DETERMINISTIC_RULE'] as const;
 export type ProposedActionMethod = (typeof PROPOSED_ACTION_METHODS)[number];
 
+/** Evidence kinds of the first action: the BO fact snapshot the proposal was derived from, and the BO evaluation records of that exact proposal. */
+export const BO_FACTS_REFERENCE_KIND = 'bo_inventory_policy_facts' as const;
+export const BO_EVALUATION_REFERENCE_KIND = 'bo_inventory_policy_evaluation' as const;
+
 export interface ProposedActionEvidenceReference {
   /** What the reference points at, e.g. `bo_inventory_policy_facts`. */
   kind: string;
   /** Digest of the exact fact set used (`sha256:<hex>`), so the evidence can be re-derived and compared. */
   digest: string;
-  /** Optional identifier of the referenced record. */
+  /** Optional identifier of the referenced record (required for a BO evaluation record). */
   id?: string;
+  /** The governance dimension an evaluation record covers (required for a BO evaluation record). */
+  dimension?: string;
 }
 
 export interface ProposedActionRecommendation {
@@ -101,7 +107,8 @@ export function validateProposedActionRecommendation(value: unknown): string[] {
   const ev = value.evidenceReferences;
   if (!Array.isArray(ev) || ev.length === 0) p.push('at least one evidence reference is required');
   else for (const [i, e] of ev.entries()) {
-    if (!isObject(e) || !nonBlank(e.kind, 100) || typeof e.digest !== 'string' || !DIGEST.test(e.digest)) p.push(`evidenceReferences[${i}] must carry a kind and a sha256 digest`);
+    if (!isObject(e) || !nonBlank(e.kind, 100) || typeof e.digest !== 'string' || !DIGEST.test(e.digest)) { p.push(`evidenceReferences[${i}] must carry a kind and a sha256 digest`); continue; }
+    if (e.kind === BO_EVALUATION_REFERENCE_KIND && (typeof e.id !== 'string' || !UUID.test(e.id) || !nonBlank(e.dimension, 100))) p.push(`evidenceReferences[${i}] (a BO evaluation) must carry a lowercase UUID id and a dimension`);
   }
 
   const rs = value.reasoning;
@@ -132,5 +139,30 @@ export function proposalMatchesCapture(
   if (proposal.target.kind !== capture.target.kind || proposal.target.id !== capture.target.id) p.push('target differs from the ADI proposal');
   const a = Object.keys(proposal.proposedParameters).sort(); const b = Object.keys(capture.proposedParameters).sort();
   if (a.length !== b.length || a.some((k, i) => k !== b[i]) || a.some((k) => proposal.proposedParameters[k] !== capture.proposedParameters[k])) p.push('proposed parameters differ from the ADI proposal');
+  return p;
+}
+
+/** The BO evaluation records a proposal cites, as `{ kind, id, dimension }` (the references BO resolves its compare-and-set baseline from). */
+export function boEvaluationReferences(proposal: Pick<ProposedActionRecommendation, 'evidenceReferences'>): { kind: string; id: string; dimension: string }[] {
+  return proposal.evidenceReferences.filter((e) => e.kind === BO_EVALUATION_REFERENCE_KIND).map((e) => ({ kind: e.kind, id: e.id as string, dimension: e.dimension as string }));
+}
+
+/**
+ * First-action evidence completeness (owner ruling 1 and 2): the proposal must cite the fact snapshot it was derived from AND exactly one BO
+ * evaluation record per governance dimension the canonical action type declares, all bound to ONE snapshot digest (the baseline the proposal was
+ * derived and evaluated against). Dimensions come from the canonical contract, never from a local list. Empty = complete.
+ */
+export function proposalEvidenceProblems(proposal: ProposedActionRecommendation): string[] {
+  const p: string[] = [];
+  const canonical = CANONICAL_ACTION_TYPES.find((c) => c.code === proposal.actionType.code && c.schemaVersion === proposal.actionType.schemaVersion);
+  if (!canonical) return [`action type ${proposal.actionType.code}@${proposal.actionType.schemaVersion} is not canonical`];
+  const wanted = new Set<string>(Object.values(canonical.governanceImpact).flat());
+  const facts = proposal.evidenceReferences.filter((e) => e.kind === BO_FACTS_REFERENCE_KIND);
+  if (facts.length !== 1) p.push(`exactly one ${BO_FACTS_REFERENCE_KIND} reference is required`);
+  const evals = proposal.evidenceReferences.filter((e) => e.kind === BO_EVALUATION_REFERENCE_KIND);
+  const seen = new Set<string>();
+  for (const e of evals) { if (e.dimension === undefined || seen.has(e.dimension) || !wanted.has(e.dimension)) p.push(`unexpected or repeated evaluation dimension ${String(e.dimension)}`); else seen.add(e.dimension); }
+  for (const d of wanted) if (!seen.has(d)) p.push(`no BO evaluation reference for ${d}`);
+  if (facts.length === 1 && evals.some((e) => e.digest !== facts[0].digest)) p.push('the evaluation records and the fact snapshot do not carry the same digest');
   return p;
 }

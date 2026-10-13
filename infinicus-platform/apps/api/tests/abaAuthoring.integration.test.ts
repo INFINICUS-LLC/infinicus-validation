@@ -21,11 +21,14 @@ import {
 import { DEFAULT_APPROVER_ASSIGNMENT_CODE } from '@infinicus/workflow';
 import type { GovernanceEvidenceRequest, GovernanceEvidenceVerdict, GovernanceEvidenceVerifier } from '@infinicus/handoff-contracts';
 import { buildApp } from '../src/app.js';
-import { createAbaFixture, APPROVABLE_FACTS, uc } from './helpers/abaFixtures.js';
+import { createAbaFixture, APPROVABLE_FACTS, FIXTURE_FACTS_DIGEST, fixtureProposal, uc } from './helpers/abaFixtures.js';
+import { chainKit } from './helpers/authorizedPackageChain.js';
 
 const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const STRONG_PASSWORD = 'Correct-Horse-9!';
 const CODE = 'inventory_reorder_policy_update';
+/** The target of the mechanics fixtures' ADI proposal (a lowercase UUID, as the structured contract requires). */
+const FIXTURE_TARGET = '11111111-1111-4111-8111-111111111111';
 const hoursFromNow = (n: number) => new Date(Date.now() + n * 3_600_000).toISOString();
 
 let adminPool: Pool;
@@ -51,7 +54,7 @@ async function simulationRun(ctx: TenantContext, businessId: string, finalStatus
 let verifierBehavior: (request: GovernanceEvidenceRequest) => GovernanceEvidenceVerdict | Promise<GovernanceEvidenceVerdict>;
 const verifiedNow = (request: GovernanceEvidenceRequest): GovernanceEvidenceVerdict => ({
   status: 'VERIFIED', dimension: request.dimension, result: 'PASSED', evaluatedAt: new Date().toISOString(), evidenceRef: request.evidenceRef,
-  authoritativeSource: { layer: 'TEST', component: 'fake-verifier' }, sourceVersion: 'test-1',
+  authoritativeSource: { layer: 'TEST', component: 'fake-verifier' }, sourceVersion: `test-1|${FIXTURE_FACTS_DIGEST}`,
 });
 const seen: GovernanceEvidenceRequest[] = [];
 const fakeVerifier: GovernanceEvidenceVerifier = { verify: async (request) => { seen.push(request); return verifierBehavior(request); } };
@@ -118,15 +121,21 @@ const actionBase = (s: Session, actionId: string) => `/v1/businesses/${s.bizId}/
 
 interface Approved { actionId: string; decisionId: string; assignmentCode: string }
 
-/** Grants the session user approver authority, records an approving decision through the real route, and creates the approved action. */
-async function approvedAction(s: Session, outcome: 'approve' | 'approve_with_modifications' | 'reject' = 'approve'): Promise<Approved> {
+/** Grants the session user approver authority (once per business). */
+async function grantApprover(s: Session): Promise<void> {
   const assignmentCode = DEFAULT_APPROVER_ASSIGNMENT_CODE;
   const existing = (await adminPool.query(`SELECT 1 FROM approved_business_action.approver_assignments WHERE business_id=$1 AND assignment_code=$2`, [s.bizId, assignmentCode])).rowCount;
   if (!existing) {
     const g = await post(s, `/v1/businesses/${s.bizId}/approver-assignments`, { approverUserId: s.ctx.userId, assignmentCode, roleCode: 'business-owner' });
     expect(g.statusCode).toBe(201);
   }
-  const { intakePackageId, recommendationId } = await createAbaFixture(s.ctx, s.bizId, APPROVABLE_FACTS);
+}
+
+/** Grants the session user approver authority, records an approving decision through the real route, and creates the approved action. */
+async function approvedAction(s: Session, outcome: 'approve' | 'approve_with_modifications' | 'reject' = 'approve', source?: { intakePackageId: string; recommendationId: string }): Promise<Approved> {
+  const assignmentCode = DEFAULT_APPROVER_ASSIGNMENT_CODE;
+  await grantApprover(s);
+  const { intakePackageId, recommendationId } = source ?? await createAbaFixture(s.ctx, s.bizId, APPROVABLE_FACTS, fixtureProposal(FIXTURE_TARGET, { reorderPoint: 10, reorderQuantity: 50 }));
   const d = await post(s, `/v1/businesses/${s.bizId}/decisions`, { intakePackageId, reviewCode: uc('r'), summary: 'authoring', assignmentCode, decisionCode: uc('d'), outcome });
   expect(d.statusCode).toBe(201);
   const decisionId = d.json().id as string;
@@ -137,7 +146,7 @@ async function approvedAction(s: Session, outcome: 'approve' | 'approve_with_mod
 }
 
 const captureBody = (over: Record<string, unknown> = {}) => ({
-  actionType: { code: CODE, schemaVersion: '1' }, target: { kind: 'inventory_item', id: 'sku-1' },
+  actionType: { code: CODE, schemaVersion: '1' }, target: { kind: 'inventory_item', id: FIXTURE_TARGET },
   proposedParameters: { reorderPoint: 10, reorderQuantity: 50 }, ...over,
 });
 const modifiedBody = () => captureBody({
@@ -629,7 +638,7 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
       const cap2 = await post(s, `${base}/capture`, captureBody());
       expect([cap1.statusCode, cap2.statusCode]).toEqual([201, 201]);
       expect(cap2.json()).toMatchObject({ captureId: cap1.json().captureId, created: false });
-      expect((await post(s, `${base}/capture`, captureBody({ proposedParameters: { reorderPoint: 11, reorderQuantity: 50 } }))).statusCode).toBe(409); // conflicting replay
+      expect((await post(s, `${base}/capture`, captureBody({ proposedParameters: { reorderPoint: 11, reorderQuantity: 50 } }))).statusCode).toBe(400); // a different proposal is refused outright (it must equal ADI's), before any replay conflict can arise
 
       const ownerPayload = ownerBody(s);
       const own1 = await post(s, `${base}/owner`, ownerPayload);
@@ -781,12 +790,15 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
       expect(await capturesFor(s)).toBe(0);
     });
 
-    it('a plain approval needs no verifier and carries no evaluation', async () => {
+    it('a plain approval carries no modification evaluation, but the ADI proposal evidence is still verified, dimension by dimension, for exactly the proposed parameters', async () => {
       const s = await setup('owner');
       await governance(s);
       const a = await approvedAction(s);
       expect((await post(s, `${actionBase(s, a.actionId)}/capture`, captureBody())).statusCode).toBe(201);
-      expect(seen).toHaveLength(0);
+      expect(seen.map((r) => r.dimension).sort()).toEqual(['CONSTRAINTS', 'COST', 'EXPECTED_OUTCOME', 'RESOURCE_REQUIREMENTS']);
+      expect(seen[0]).toMatchObject({ subject: { actionId: a.actionId, finalParameters: { reorderPoint: 10, reorderQuantity: 50 } } });
+      const row = (await adminPool.query(`SELECT modification_evaluation e FROM approved_business_action.authorized_action_captures WHERE business_id=$1`, [s.bizId])).rows[0].e;
+      expect(row).toMatchObject({ state: 'NOT_APPLICABLE' });
     });
 
     it('the persisted evaluation is the VERIFIER\'s answer: its time, not a caller value, and one verified entry per required dimension', async () => {
@@ -794,15 +806,17 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
       await governance(s);
       const a = await approvedAction(s, 'approve_with_modifications');
       const fixed = new Date(Date.now() + 1500).toISOString();
-      verifierBehavior = async (r) => { await new Promise((res) => setTimeout(res, 1800)); return { ...verifiedNow(r), evaluatedAt: fixed } as GovernanceEvidenceVerdict; };
+      // the ADI proposal's own evidence (10/50) is answered normally; only the MODIFICATION's evidence (15/60) is answered with the late, fixed time
+      verifierBehavior = async (r) => { if (r.subject.finalParameters.reorderPoint !== 15) return verifiedNow(r); await new Promise((res) => setTimeout(res, 1800)); return { ...verifiedNow(r), evaluatedAt: fixed } as GovernanceEvidenceVerdict; };
       const res = await post(s, `${actionBase(s, a.actionId)}/capture`, modifiedBody());
       expect(res.statusCode).toBe(201);
       const row = (await adminPool.query(`SELECT modification_evaluation e FROM approved_business_action.authorized_action_captures WHERE business_id=$1`, [s.bizId])).rows[0].e;
       expect(row.value.evidence.map((e: any) => e.dimension).sort()).toEqual(['CONSTRAINTS', 'COST', 'EXPECTED_OUTCOME', 'RESOURCE_REQUIREMENTS']);
       for (const e of row.value.evidence) expect(e).toMatchObject({ result: 'PASSED', evaluatedAt: fixed });
-      expect(seen.map((r) => r.dimension).sort()).toEqual(['CONSTRAINTS', 'COST', 'EXPECTED_OUTCOME', 'RESOURCE_REQUIREMENTS']);
+      const modificationRequests = seen.filter((r) => r.subject.finalParameters.reorderPoint === 15);
+      expect(modificationRequests.map((r) => r.dimension).sort()).toEqual(['CONSTRAINTS', 'COST', 'EXPECTED_OUTCOME', 'RESOURCE_REQUIREMENTS']);
       // the verifier is bound to the server-derived modified values, scope and action - not to anything the caller asserted
-      expect(seen[0]).toMatchObject({ tenantId: s.ctx.tenantId, workspaceId: s.ctx.workspaceId, businessId: s.bizId, subject: { actionId: a.actionId, finalParameters: { reorderPoint: 15, reorderQuantity: 60 } } });
+      expect(modificationRequests[0]).toMatchObject({ tenantId: s.ctx.tenantId, workspaceId: s.ctx.workspaceId, businessId: s.bizId, subject: { actionId: a.actionId, finalParameters: { reorderPoint: 15, reorderQuantity: 60 } } });
     });
 
     it('a REFUSED verdict, a thrown error, a mismatched verdict and a stale or future or malformed time are all refused (fail closed) with nothing stored', async () => {
@@ -889,7 +903,8 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
     const DAY = 86_400_000;
     const NA_SIM = { state: 'NOT_APPLICABLE', reason: { code: 'NO_APPLICABLE_SIMULATION_MODEL', statement: 'No Simulation model evaluates inventory reorder policy.' } };
     const DIMS = ['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME'];
-    interface Bo { itemId: string; warehouseId: string }
+    /** `proposal` = the parameters of the ADI-PRODUCED recommendation (set by produce()). */
+    interface Bo { itemId: string; warehouseId: string; proposal: { reorderPoint: number; reorderQuantity: number } }
 
     beforeAll(async () => {
       // The real default app: its evidence verifier is the Business Operations adapter registered at the composition root.
@@ -914,26 +929,44 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
         [tenantId, workspaceId, s.bizId, itemId, warehouseId, type, qty, cost, cur, at]);
       await mv('receipt', 500, '10', 'USD', new Date(Date.now() - 5 * DAY));
       for (let i = 0; i < 12; i += 1) await mv('issue', -75, null, null, new Date(Date.now() - (i + 1) * DAY));
-      return { itemId, warehouseId };
+      return { itemId, warehouseId, proposal: { reorderPoint: 170, reorderQuantity: 190 } };
     }
     const evaluateVia = (s: Session, bo: Bo, finalParameters: Record<string, number> = { reorderPoint: 180, reorderQuantity: 200 }) => post(s, `/v1/businesses/${s.bizId}/inventory-policy-evaluations`, {
       actionType: { code: CODE, schemaVersion: '1' }, target: { kind: 'inventory_item', id: bo.itemId }, finalParameters, ruleSetVersion: 'inventory-reorder-policy/v1.0.0',
     });
     const refsOf = (res: { json(): any }): { dimension: string; evidenceRef: { kind: string; id: string } }[] => res.json().evidence.map((e: any) => ({ dimension: e.dimension, evidenceRef: { kind: e.kind, id: e.id } }));
     const modified = (bo: Bo, evaluationEvidence: unknown, after = { reorderPoint: 180, reorderQuantity: 200 }) => ({
-      actionType: { code: CODE, schemaVersion: '1' }, target: { kind: 'inventory_item', id: bo.itemId }, proposedParameters: { reorderPoint: 170, reorderQuantity: 190 },
+      actionType: { code: CODE, schemaVersion: '1' }, target: { kind: 'inventory_item', id: bo.itemId }, proposedParameters: { ...bo.proposal },
       modification: { reason: 'Raise the reorder policy.', changes: [
-        { parameter: 'reorderPoint', operation: 'SET', before: 170, after: after.reorderPoint }, { parameter: 'reorderQuantity', operation: 'SET', before: 190, after: after.reorderQuantity }] },
+        { parameter: 'reorderPoint', operation: 'SET', before: bo.proposal.reorderPoint, after: after.reorderPoint }, { parameter: 'reorderQuantity', operation: 'SET', before: bo.proposal.reorderQuantity, after: after.reorderQuantity }] },
       evaluationEvidence,
     });
     const captureCount = (s: Session) => countOf(`SELECT count(*) n FROM approved_business_action.authorized_action_captures WHERE business_id=$1`, [s.bizId]);
 
-    /** A decided approve_with_modifications action (the decision becomes final NOW), then BO facts. Evaluation happens AFTER, as the chronology requires. */
+    /** The REAL ADI producer (production route) turns the BO facts into the structured recommendation ABA now requires; returns the ABA intake over it. */
+    async function produce(s: Session, bo: Bo): Promise<{ intakePackageId: string; recommendationId: string }> {
+      const kit = chainKit({ app, admin: adminPool, tenantIds: [] });
+      const r = await post(s, kit.reorderRecommendationUrl(s, bo.itemId));
+      expect(r.statusCode, r.body).toBe(201);
+      bo.proposal = r.json().proposal.proposedParameters;
+      return { intakePackageId: await kit.intakeFromRecommendation(s, r.json().recommendationVersionId), recommendationId: r.json().recommendationId };
+    }
+    /** Fixture surgery: removes the business's currency declaration AFTER the recommendation was produced, so the evaluations see an undeclared business. */
+    async function undeclare(s: Session): Promise<void> {
+      const c = await adminPool.connect();
+      try { await c.query('BEGIN'); await c.query("SET LOCAL session_replication_role = 'replica'"); await c.query('DELETE FROM platform.business_currency_declarations WHERE business_id = $1', [s.bizId]); await c.query('COMMIT'); }
+      catch (e) { await c.query('ROLLBACK').catch(() => undefined); throw e; } finally { c.release(); }
+    }
+
+    /** BO facts, the ADI-produced recommendation, then a decided approve_with_modifications action (the decision becomes final AFTER the facts and the proposal evidence). */
     async function ready(o: { declared?: string | null } = {}) {
       const s = await setup('owner');
       await governance(s);
-      const a = await approvedAction(s, 'approve_with_modifications');
-      const bo = await seedBo(s, o);
+      const bo = await seedBo(s, { declared: o.declared === null ? undefined : o.declared });
+      await grantApprover(s);
+      const source = await produce(s, bo);
+      if (o.declared === null) await undeclare(s);
+      const a = await approvedAction(s, 'approve_with_modifications', source);
       return { s, a, bo, base: actionBase(s, a.actionId) };
     }
 
@@ -985,10 +1018,12 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
       const s = await setup('owner');
       await governance(s);
       const bo = await seedBo(s);
+      await grantApprover(s);
+      const source = await produce(s, bo);
       const early = await evaluateVia(s, bo); // evaluated first ...
       expect(early.statusCode).toBe(201);
       await new Promise((r) => setTimeout(r, 15));
-      const a = await approvedAction(s, 'approve_with_modifications'); // ... decision becomes final afterwards
+      const a = await approvedAction(s, 'approve_with_modifications', source); // ... decision becomes final afterwards
       const res = await post(s, `${actionBase(s, a.actionId)}/capture`, modified(bo, refsOf(early)));
       expect(res.statusCode).toBe(409);
       expect(res3Message(res)).toMatch(/predates the modification decision/);

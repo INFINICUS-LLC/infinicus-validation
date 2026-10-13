@@ -1,6 +1,6 @@
 /** AC-1 - the ADI structured proposed-action contract: validator is fail-closed; matching helper compares exactly. */
 import { describe, expect, it } from 'vitest';
-import { ADI_PROPOSED_ACTION_CONTRACT, PROPOSED_ACTION_RATIONALE_CODE, proposalMatchesCapture, validateProposedActionRecommendation, type ProposedActionRecommendation } from '../src';
+import { ADI_PROPOSED_ACTION_CONTRACT, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, STRUCTURED_ADI_PROPOSAL_REQUIRED, boEvaluationReferences, proposalEvidenceProblems, proposalMatchesCapture, validateProposedActionRecommendation, type ProposedActionRecommendation } from '../src';
 
 const ITEM = '11111111-1111-4111-8111-111111111111';
 const good = (): ProposedActionRecommendation => ({
@@ -66,5 +66,35 @@ describe('AC-1 proposalMatchesCapture', () => {
     expect(proposalMatchesCapture(good(), cap({ proposedParameters: { reorderPoint: 175, reorderQuantity: 180, extra: 1 } })).join()).toContain('proposed parameters differ');
     expect(proposalMatchesCapture(good(), cap({ target: { kind: 'inventory_item', id: '33333333-3333-4333-8333-333333333333' } })).join()).toContain('target differs');
     expect(proposalMatchesCapture(good(), cap({ actionType: { code: 'inventory_reorder_policy_update', schemaVersion: '2' } })).join()).toContain('action type differs');
+  });
+});
+
+describe('AC-1 corrections: proposal evidence completeness and the mandatory-proposal set', () => {
+  const D = `sha256:${'a'.repeat(64)}`;
+  const DIMS = ['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME'];
+  const withEvidence = (mut: (e: Record<string, any>[]) => void = () => undefined): ProposedActionRecommendation => {
+    const p = JSON.parse(JSON.stringify(good()));
+    p.evidenceReferences = [{ kind: BO_FACTS_REFERENCE_KIND, digest: D }, ...DIMS.map((dimension, i) => ({ kind: BO_EVALUATION_REFERENCE_KIND, id: `00000000-0000-4000-8000-00000000000${i}`, dimension, digest: D }))];
+    mut(p.evidenceReferences);
+    return p;
+  };
+  it('the mandatory set is exactly the first action, per code and version (not global)', () => { expect([...STRUCTURED_ADI_PROPOSAL_REQUIRED]).toEqual(['inventory_reorder_policy_update@1']); });
+  it('a complete proposal has one facts reference and one evaluation per canonical dimension, all with the same digest', () => {
+    expect(validateProposedActionRecommendation(withEvidence())).toEqual([]);
+    expect(proposalEvidenceProblems(withEvidence())).toEqual([]);
+    expect(boEvaluationReferences(withEvidence()).map((r) => r.dimension).sort()).toEqual([...DIMS].sort());
+  });
+  it('facts-only evidence, a missing/repeated/unknown dimension, a second facts reference and a digest mismatch are all named', () => {
+    expect(proposalEvidenceProblems(good()).join()).toContain('no BO evaluation reference for COST');
+    expect(proposalEvidenceProblems(withEvidence((e) => e.splice(1, 1))).join()).toContain('no BO evaluation reference for CONSTRAINTS');
+    expect(proposalEvidenceProblems(withEvidence((e) => { e[2].dimension = 'CONSTRAINTS'; })).join()).toContain('repeated');
+    expect(proposalEvidenceProblems(withEvidence((e) => { e[1].dimension = 'NOT_A_DIMENSION'; })).join()).toContain('unexpected');
+    expect(proposalEvidenceProblems(withEvidence((e) => e.push({ kind: BO_FACTS_REFERENCE_KIND, digest: D }))).join()).toContain('exactly one');
+    expect(proposalEvidenceProblems(withEvidence((e) => { e[3].digest = `sha256:${'b'.repeat(64)}`; })).join()).toContain('same digest');
+  });
+  it('an evaluation reference without a UUID id or a dimension is refused by the validator', () => {
+    expect(validateProposedActionRecommendation(withEvidence((e) => { delete e[1].id; })).join()).toContain('UUID id and a dimension');
+    expect(validateProposedActionRecommendation(withEvidence((e) => { e[1].id = 'not-a-uuid'; })).join()).toContain('UUID id and a dimension');
+    expect(validateProposedActionRecommendation(withEvidence((e) => { delete e[1].dimension; })).join()).toContain('UUID id and a dimension');
   });
 });
