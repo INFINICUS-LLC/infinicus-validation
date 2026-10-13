@@ -27,6 +27,13 @@ export class OperationalStateTransitionError extends Error {
 }
 
 /** The compare-and-set guard of the reorder configuration refused: the balance no longer holds the expected baseline. Nothing was changed. */
+export class ReorderPolicyAlreadyConfiguredError extends OperationalMappingError {
+  constructor() {
+    super('The balance already has a configured reorder policy; changing it needs an authorized action (this path configures the first policy only). Nothing was changed.');
+    this.name = 'ReorderPolicyAlreadyConfiguredError';
+  }
+}
+
 export class ReorderBaselineChangedError extends OperationalMappingError {
   constructor() {
     super('The inventory balance no longer holds the expected baseline reorder values; nothing was changed.');
