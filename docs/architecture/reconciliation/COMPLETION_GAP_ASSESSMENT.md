@@ -80,6 +80,7 @@ Criterion status words: COMPLETE · PARTIAL · BLOCKED · PARKED · NOT STARTED 
 
 ### K — Database: PARTIAL / PARKED
 - Evidence: 198 migrations; hash chain and per-migration fingerprints (`production-discovery/`); production at 0170 fingerprint-matched read-only; `PRODUCTION_MIGRATION_RUNBOOK_0171-0198.md` with entry criteria E1–E14 and forward-only rollback (restore from the recorded point); readiness review A–F.
+- Update 2026-10-13: the VM / production-discovery task is closed (`VM_DISCOVERY_TASK_CLOSURE_2026-10-13.md`): production confirmed at 0170 and fingerprint-matched, worker absent. Criterion K is unchanged.
 - Open: live findings A–D (section 5), backup and restore proof (parked), the controlled migration itself (parked).
 
 ### L — Operations: PARTIAL / PARKED
