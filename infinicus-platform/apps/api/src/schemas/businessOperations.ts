@@ -18,6 +18,9 @@ export const operationsIntakeResponseSchema = z.object({
   commandCount: z.number().int().min(0),
   results: z.array(z.object({
     commandType: z.enum([
+      'create_inventory_item',
+      'create_warehouse',
+      'record_keyed_inventory_movement',
       'record_inventory_movement',
       'create_purchase_order',
       'record_purchase_receipt',

@@ -85,6 +85,12 @@ export class OperationalCommandExecutor {
     assertCommandScope(ctx, command);
 
     switch (command.type) {
+      case 'create_inventory_item':
+        return this.createInventoryItem(client, ctx, command);
+      case 'create_warehouse':
+        return this.createWarehouse(client, ctx, command);
+      case 'record_keyed_inventory_movement':
+        return this.recordKeyedInventoryMovement(client, ctx, command);
       case 'record_inventory_movement':
         return this.recordInventoryMovement(client, ctx, command);
       case 'create_purchase_order':
@@ -100,6 +106,100 @@ export class OperationalCommandExecutor {
       case 'record_operational_fact':
         return this.recordOperationalFact(client, ctx, command);
     }
+  }
+
+  /**
+   * AC-2 (D1): creates the canonical inventory item from a published record. Scope from context, provenance in `source_record_id`, no defaults invented (the
+   * unit of measure falls back only to the table's own column default when the record states none). A replay with identical attributes is a no-op; the same SKU
+   * with different attributes is REFUSED: changing master data is not an ingestion action.
+   */
+  private async createInventoryItem(
+    client: PoolClient,
+    ctx: TenantContext,
+    command: Extract<OperationalCommand, { type: 'create_inventory_item' }>
+  ): Promise<CommandExecutionResult> {
+    assertCommandScope(ctx, command);
+    const p = command.payload;
+    const businessId = command.context.businessId;
+    const existing = await client.query<{ id: string; name: string; unit_of_measure: string }>(
+      `SELECT id, name, unit_of_measure FROM platform.inventory_items WHERE business_id = $1 AND sku = $2`, [businessId, p.sku]);
+    if ((existing.rowCount ?? 0) > 0) {
+      const row = existing.rows[0];
+      if (row.name !== p.name || (p.unitOfMeasure !== undefined && row.unit_of_measure !== p.unitOfMeasure)) {
+        throw new OperationalMappingError(`Inventory item ${p.sku} already exists with different attributes; master data is not changed by intake.`);
+      }
+      return { commandType: command.type, recordId: row.id };
+    }
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO platform.inventory_items
+         (tenant_id, workspace_id, business_id, sku, name, unit_of_measure, source_system, source_record_id, correlation_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,coalesce($6,'unit'),'INFINICUS_DA',$7,$8,$9)
+       RETURNING id`,
+      [ctx.tenantId, ctx.workspaceId, businessId, p.sku, p.name, p.unitOfMeasure ?? null, command.context.sourceReference, command.context.correlationId, ctx.userId]
+    );
+    return { commandType: command.type, recordId: inserted.rows[0].id };
+  }
+
+  /** AC-2 (D1): creates the canonical warehouse from a published record (same rules as {@link createInventoryItem}). */
+  private async createWarehouse(
+    client: PoolClient,
+    ctx: TenantContext,
+    command: Extract<OperationalCommand, { type: 'create_warehouse' }>
+  ): Promise<CommandExecutionResult> {
+    assertCommandScope(ctx, command);
+    const p = command.payload;
+    const businessId = command.context.businessId;
+    const existing = await client.query<{ id: string; name: string }>(
+      `SELECT id, name FROM platform.warehouses WHERE business_id = $1 AND warehouse_code = $2`, [businessId, p.warehouseCode]);
+    if ((existing.rowCount ?? 0) > 0) {
+      if (existing.rows[0].name !== p.name) {
+        throw new OperationalMappingError(`Warehouse ${p.warehouseCode} already exists with a different name; master data is not changed by intake.`);
+      }
+      return { commandType: command.type, recordId: existing.rows[0].id };
+    }
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO platform.warehouses
+         (tenant_id, workspace_id, business_id, warehouse_code, name, source_system, source_record_id, correlation_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,'INFINICUS_DA',$6,$7,$8)
+       RETURNING id`,
+      [ctx.tenantId, ctx.workspaceId, businessId, p.warehouseCode, p.name, command.context.sourceReference, command.context.correlationId, ctx.userId]
+    );
+    return { commandType: command.type, recordId: inserted.rows[0].id };
+  }
+
+  /**
+   * AC-2: resolves a natural-key movement to BO identifiers inside the business scope and hands it to the ONE movement writer. A key that does not resolve,
+   * or an id AND a key for the same thing, is refused; `occurredAt` must not be in the future on the database clock.
+   */
+  private async recordKeyedInventoryMovement(
+    client: PoolClient,
+    ctx: TenantContext,
+    command: Extract<OperationalCommand, { type: 'record_keyed_inventory_movement' }>
+  ): Promise<CommandExecutionResult> {
+    assertCommandScope(ctx, command);
+    const { inventoryItemId, inventoryItemSku, warehouseId, warehouseCode, occurredAt, ...rest } = command.payload;
+    const businessId = command.context.businessId;
+    if ((inventoryItemId === undefined) === (inventoryItemSku === undefined)) throw new OperationalMappingError('Exactly one of inventoryItemId and sku identifies the item.');
+    if ((warehouseId === undefined) === (warehouseCode === undefined)) throw new OperationalMappingError('Exactly one of warehouseId and warehouseCode identifies the warehouse.');
+    let itemId = inventoryItemId;
+    if (itemId === undefined) {
+      const r = await client.query<{ id: string }>(`SELECT id FROM platform.inventory_items WHERE business_id = $1 AND sku = $2`, [businessId, inventoryItemSku]);
+      if (r.rowCount !== 1) throw new OperationalMappingError(`Inventory item with SKU ${inventoryItemSku} not found in business scope.`);
+      itemId = r.rows[0].id;
+    }
+    let whId = warehouseId;
+    if (whId === undefined) {
+      const r = await client.query<{ id: string }>(`SELECT id FROM platform.warehouses WHERE business_id = $1 AND warehouse_code = $2`, [businessId, warehouseCode]);
+      if (r.rowCount !== 1) throw new OperationalMappingError(`Warehouse ${warehouseCode} not found in business scope.`);
+      whId = r.rows[0].id;
+    }
+    if (occurredAt !== undefined) {
+      const ok = await client.query<{ ok: boolean }>(`SELECT $1::timestamptz <= now() AS ok`, [occurredAt]);
+      if (ok.rows[0].ok !== true) throw new OperationalMappingError('occurredAt must not be in the future.');
+    }
+    const movementId = await this.applyInventoryMovement(client, ctx,
+      { type: 'record_inventory_movement', context: command.context, payload: { ...rest, inventoryItemId: itemId, warehouseId: whId } }, occurredAt);
+    return { commandType: command.type, recordId: movementId };
   }
 
   private async recordInventoryMovement(

@@ -1,4 +1,6 @@
 export type OperationalRecordType =
+  | 'inventory_item'
+  | 'warehouse'
   | 'inventory_movement'
   | 'purchase_order'
   | 'purchase_receipt'
@@ -40,6 +42,39 @@ export interface RecordInventoryMovementCommand {
     referenceType?: 'purchase_receipt' | 'order_line' | 'transfer' | 'adjustment' | 'manual' | 'other';
     referenceId?: string;
     notes?: string;
+  };
+}
+
+/**
+ * AC-2 (owner ruling D1): master-data identity enters Business Operations through the published-record intake, never by direct SQL. BO creates the canonical
+ * row; the record supplies only natural keys and descriptive attributes. Scope (tenant, workspace, business) always comes from the command context.
+ */
+export interface CreateInventoryItemCommand {
+  type: 'create_inventory_item';
+  context: OperationalCommandContext;
+  payload: { sku: string; name: string; unitOfMeasure?: string };
+}
+
+export interface CreateWarehouseCommand {
+  type: 'create_warehouse';
+  context: OperationalCommandContext;
+  payload: { warehouseCode: string; name: string };
+}
+
+/**
+ * AC-2: an inventory movement addressed by NATURAL KEY (item SKU, warehouse code), because a data source cannot know BO's generated identifiers. The executor
+ * resolves the keys inside the business scope (fail closed when absent) and then uses the same single movement writer as `record_inventory_movement`.
+ * `occurredAt` is the business instant of the movement (demand history); it can never be in the future (database clock).
+ */
+export interface RecordKeyedInventoryMovementCommand {
+  type: 'record_keyed_inventory_movement';
+  context: OperationalCommandContext;
+  payload: Omit<RecordInventoryMovementCommand['payload'], 'inventoryItemId' | 'warehouseId'> & {
+    inventoryItemId?: string;
+    inventoryItemSku?: string;
+    warehouseId?: string;
+    warehouseCode?: string;
+    occurredAt?: string;
   };
 }
 
@@ -166,6 +201,9 @@ export interface ConfigureInventoryReorderPolicyCommand {
 }
 
 export type OperationalCommand =
+  | CreateInventoryItemCommand
+  | CreateWarehouseCommand
+  | RecordKeyedInventoryMovementCommand
   | RecordInventoryMovementCommand
   | CreatePurchaseOrderCommand
   | RecordPurchaseReceiptCommand

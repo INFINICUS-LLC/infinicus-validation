@@ -1,6 +1,6 @@
 # AC-2 — First-action evidence chain: Block 1 survey and STOP-AND-REPORT
 
-Branch `feat/ac2-first-action-evidence-chain` (from main `ba1979e`). Status: **Block 2 (canonical risk governance) implemented; Blocks 3–10 NOT started — the Block 1 survey found owner-level conflicts (section 3) that the block text tells me to report instead of working around.** Nothing deployed, migrated live, activated or seeded. Evidence is repository inspection plus the tests named in the PR.
+Branch `feat/ac2-first-action-evidence-chain` (from main `ba1979e`). Status: Block 1 survey and Block 2 (canonical risk governance) done; the owner approved D1–D4 as recommended; **Block 3 (DAL ingestion) implemented (section 5)**; Blocks 4–13 not started. Nothing deployed, migrated live, activated or seeded. Evidence is repository inspection plus the tests named in the PR.
 
 ## 1. Survey answers (the ten Block 1 questions)
 | # | Question | Finding |
@@ -41,3 +41,11 @@ On approval of D1–D4 the remaining blocks are: DAL mappers + BO commands (3–
 
 ## 4. Criteria reassessment at this point (no criterion changes)
 A PARTIAL (60%), C PARTIAL (60%), D COMPLETE at code level (85%; risk source now canonical), M PARTIAL (80%). The chain from DAL ingestion through BI/BDT is **not** proven, so none of A, C or M moves.
+
+## 5. Block 3 — DAL ingestion of the first-action source facts (owner rulings D1–D4 applied)
+What changed (Business Operations intake mapper registry and command executor; no migration, no DAL change, no contract change):
+- **`inventory_item` v1 and `warehouse` v1 record types (D1)** -> BO commands `create_inventory_item` / `create_warehouse` in `OperationalCommandExecutor`. Identity is a natural key (SKU / warehouse code, strict pattern, bounded names); BO generates the id; scope always from the authenticated context; `source_system = INFINICUS_DA`, `source_record_id = submission#index` (traceable to the DAL provenance record). A replay with identical attributes is a no-op; the same key with different attributes is refused (master data is not changed by intake).
+- **`inventory_movement` v3**: the item and warehouse may be addressed by natural key (`sku`, `warehouseCode`) because a source cannot know BO identifiers (exactly one of id/key each), and the record may state its business instant `occurredAt` (demand history; never in the future on the database clock). It maps to `record_keyed_inventory_movement`, which resolves the keys inside the business scope (fail closed) and calls the SAME single movement writer. A v2-shaped record maps exactly as before.
+- **Not through DAL, by ruling**: the baseline reorder policy (D2: a later BO-owned route; Block E intact) and the declared currency (D3). The test asserts the balance stays `UNSET` 0/0 and no currency is declared after ingestion.
+- Proof: `apps/api/tests/ac2-dal-first-action-ingestion.integration.test.ts` (6 tests, real PostgreSQL, production `buildApp`, production DAL service and BO intake route): DAL accepts 15 records with 15 provenance records and writes no operational row; BO intake canonicalizes warehouse, item, receipt (1000 units, cost 10 USD, business instant 5 days ago), 12 issues on 12 distinct days and the balance (100); replay is idempotent; unknown SKU / future instant / cost without currency each refuse the whole package with nothing persisted; a conflicting master record is refused; scope in the record is ignored and another tenant cannot consume the package.
+- Honest limit: the mapper-to-command-to-row path is proven; the BO item/warehouse creation still has no HTTP route of its own (it is intake-only by design).

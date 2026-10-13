@@ -24,15 +24,17 @@ const context = {
 };
 
 describe('IntakeMapperRegistry', () => {
-  it('registers the BUILD-32 record types plus the Data-capture Block A purchase_receipt (seven)', () => {
+  it('registers the BUILD-32 record types, the Data-capture Block A purchase_receipt and the AC-2 inventory_item and warehouse (nine)', () => {
     const registry = registerDefaultMappers(new IntakeMapperRegistry());
     expect(registry.supportedRecordTypes()).toEqual([
       'asset_inspection',
+      'inventory_item',
       'inventory_movement',
       'operational_fact',
       'purchase_order',
       'purchase_receipt',
       'supplier_performance',
+      'warehouse',
       'workforce_event',
     ]);
   });
@@ -147,7 +149,7 @@ describe('explicit currency on cost-bearing records (data-capture Block C)', () 
   });
 
   it('the mapper contract versions record the change', () => {
-    expect(inventoryMovementMapper.version).toBe(2);
+    expect(inventoryMovementMapper.version).toBe(3); // v3 (AC-2): natural keys and occurredAt
     expect(purchaseOrderMapper.version).toBe(2);
   });
 
@@ -192,5 +194,38 @@ describe('a present unit cost must be positive (data-capture Block B)', () => {
     expect(() => map({ ...base, unitCostCurrency: 'USD' })).toThrow(/unitCost_required_with_unitCostCurrency/);
     expect(map(base)[0]).toMatchObject({ type: 'record_inventory_movement' });
     expect(map({ ...base, unitCost: null, unitCostCurrency: null })[0]).toMatchObject({ type: 'record_inventory_movement' });
+  });
+});
+
+describe('AC-2 (D1): master-data records and natural-key movements', () => {
+  const context = { tenantId: 't', workspaceId: 'w', businessId: 'b', correlationId: 'c', sourceReference: 's#0', provenanceReference: 'p', idempotencyKey: 'k', actorId: 'a', occurredAt: '2026-10-13T00:00:00.000Z', recordIndex: 0 } as never;
+  const map = (recordType: string, data: Record<string, unknown>) => registerDefaultMappers(new IntakeMapperRegistry()).mapRecord({ recordType, data }, context);
+
+  it('inventory_item and warehouse map to BO commands and never read scope from the record', () => {
+    expect(map('inventory_item', { sku: 'SKU-1', name: 'Widget', unitOfMeasure: 'box', tenantId: 'evil', businessId: 'evil' })[0]).toEqual({ type: 'create_inventory_item', context, payload: { sku: 'SKU-1', name: 'Widget', unitOfMeasure: 'box' } });
+    expect(map('inventory_item', { sku: 'SKU-1', name: 'Widget' })[0]).toMatchObject({ payload: { sku: 'SKU-1', name: 'Widget' } });
+    expect(map('warehouse', { warehouseCode: 'WH-1', name: 'Main' })[0]).toEqual({ type: 'create_warehouse', context, payload: { warehouseCode: 'WH-1', name: 'Main' } });
+  });
+  it('refuses missing, blank, malformed or oversized master data (nothing is defaulted or trimmed)', () => {
+    for (const bad of [{}, { sku: '', name: 'x' }, { sku: 'has space', name: 'x' }, { sku: 'S', name: '' }, { sku: 'S', name: 'x'.repeat(201) }, { sku: 'S', name: 'x', unitOfMeasure: 5 }, { sku: ' S', name: 'x' }]) {
+      expect(() => map('inventory_item', bad as Record<string, unknown>), JSON.stringify(bad)).toThrow(/Invalid inventory_item record/);
+    }
+    for (const bad of [{}, { warehouseCode: 'W 1', name: 'x' }, { warehouseCode: 'W', name: '' }]) {
+      expect(() => map('warehouse', bad as Record<string, unknown>), JSON.stringify(bad)).toThrow(/Invalid warehouse record/);
+    }
+  });
+  it('a movement addressed by natural key maps to the keyed command, with the business instant', () => {
+    const [c] = map('inventory_movement', { sku: 'SKU-1', warehouseCode: 'WH-1', movementType: 'issue', quantity: 75, occurredAt: '2026-10-01T00:00:00.000Z' });
+    expect(c).toMatchObject({ type: 'record_keyed_inventory_movement', payload: { inventoryItemSku: 'SKU-1', warehouseCode: 'WH-1', occurredAt: '2026-10-01T00:00:00.000Z', quantity: 75 } });
+  });
+  it('exactly one of id and key identifies the item and the warehouse; a bad instant is refused', () => {
+    const base = { movementType: 'issue', quantity: 1 };
+    expect(() => map('inventory_movement', { ...base, sku: 'S', inventoryItemId: 'x', warehouseCode: 'W' })).toThrow(/exactly_one_of_inventoryItemId_and_sku/);
+    expect(() => map('inventory_movement', { ...base, warehouseCode: 'W' })).toThrow(/exactly_one_of_inventoryItemId_and_sku/);
+    expect(() => map('inventory_movement', { ...base, sku: 'S', warehouseId: 'x', warehouseCode: 'W' })).toThrow(/exactly_one_of_warehouseId_and_warehouseCode/);
+    expect(() => map('inventory_movement', { ...base, sku: 'S', warehouseCode: 'W', occurredAt: 'yesterday-ish' })).toThrow(/occurredAt_invalid/);
+  });
+  it('a v2-shaped movement (identifiers only, no instant) still maps to the original command', () => {
+    expect(map('inventory_movement', { inventoryItemId: 'i', warehouseId: 'w', movementType: 'receipt', quantity: 5 })[0]).toMatchObject({ type: 'record_inventory_movement' });
   });
 });
