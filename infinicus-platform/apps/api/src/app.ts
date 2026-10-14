@@ -43,6 +43,8 @@ import decisionRecommendationsRoutes from './routes/decisionRecommendations.js';
 import reorderPolicyRecommendationRoutes from './routes/reorderPolicyRecommendation.js';
 import inventoryReorderPolicyBaselineRoutes from './routes/inventoryReorderPolicyBaseline.js';
 import inventoryBiEvidenceRoutes from './routes/inventoryBiEvidence.js';
+import inventoryItemTwinRoutes from './routes/inventoryItemTwin.js';
+import type { InventoryItemTwinCompositionOptions } from './inventoryItemTwinComposition.js';
 import type { InventoryBiEvidenceCompositionOptions } from './inventoryBiEvidenceComposition.js';
 import type { ReorderRecommendationCompositionOptions } from './reorderPolicyRecommendationComposition.js';
 import dataAcquisitionRoutes from './routes/dataAcquisition.js';
@@ -62,6 +64,8 @@ export interface BuildAppOptions {
   reorderRecommendation?: ReorderRecommendationCompositionOptions;
   /** AC-2 Block 5: the BI inventory evidence service composition (test seam; production joins BI to the read-only BO facts service). */
   inventoryBiEvidence?: InventoryBiEvidenceCompositionOptions;
+  /** AC-2 Block 6: the BDT inventory item state composition (test seam; production feeds the twin from the BI evidence service). */
+  inventoryItemTwin?: InventoryItemTwinCompositionOptions;
 }
 
 export async function buildApp(config: InfinicusConfig, options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -189,6 +193,7 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(reorderPolicyRecommendationRoutes, options.reorderRecommendation ?? {});
   await app.register(inventoryReorderPolicyBaselineRoutes);
   await app.register(inventoryBiEvidenceRoutes, options.inventoryBiEvidence ?? {});
+  await app.register(inventoryItemTwinRoutes, options.inventoryItemTwin ?? {});
   await app.register(dataAcquisitionRoutes);
   await app.register(webhooksRoutes, {
     rateLimit: {

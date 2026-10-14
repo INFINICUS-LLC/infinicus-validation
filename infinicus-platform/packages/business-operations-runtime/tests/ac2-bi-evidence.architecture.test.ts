@@ -61,7 +61,7 @@ describe('AC-2 Block 5: BI evidence boundaries', () => {
   it('BI and Business Operations are joined only at the API composition root', () => {
     const joiners = production.filter((f) => /InventoryEvidenceFactsService/.test(f.code) && !f.rel.startsWith('packages/business-operations-runtime/')).map((f) => f.rel);
     expect(joiners).toEqual([COMPOSITION]);
-    expect(filesMatching(/InventoryBiEvidenceService/).filter((r) => !r.startsWith('packages/workflow/') && r !== COMPOSITION && r !== ROUTE && r !== 'apps/api/src/app.ts')).toEqual([]);
+    expect(filesMatching(/InventoryBiEvidenceService/).filter((r) => !r.startsWith('packages/workflow/') && r !== COMPOSITION && r !== ROUTE && r !== 'apps/api/src/app.ts' && r !== 'apps/api/src/inventoryItemTwinComposition.ts' /* AC-2 Block 6: BDT is fed the BI service's read side here; see ac2-bdt-state.architecture.test.ts */)).toEqual([]);
     expect(importsOf(read(COMPOSITION)).sort()).toEqual(['@infinicus/business-operations-runtime', '@infinicus/workflow']);
   });
 
