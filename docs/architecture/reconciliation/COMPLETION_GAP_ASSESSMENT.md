@@ -21,10 +21,10 @@ Criterion status words: COMPLETE · PARTIAL · BLOCKED · PARKED · NOT STARTED 
 
 | ID | Requirement (Section XXII) | Status | I / T / M | Conf. |
 |---|---|---|---|---|
-| A | DAL: canonical data enters; governed provenance; required data for the first action available | **PARTIAL** | yes / yes / yes (code-level) | 70% |
+| A | DAL: canonical data enters; governed provenance; required data for the first action available | **COMPLETE (code-level) - updated by AC-2 Block 11; was PARTIAL** | yes / yes / yes (AC-2 PRs #120-#126) | 85% |
 | B | BO: canonical truth; one authoritative writer for the first action; transactional safety | **COMPLETE** (code-level) | yes / yes / yes | 85% |
-| C | BI/BDT/SIM: evidence and modeled state for the first action; simulation evidence referenceable | **PARTIAL** (owner ruling needed) | yes / yes / yes | 60% |
-| D | ADI: governed recommendation for the first action; cannot execute | **COMPLETE (code-level) - updated by AC-1; was PARTIAL** | yes / yes / yes (AC-1 PR) | 85% |
+| C | BI/BDT/SIM: evidence and modeled state for the first action; simulation evidence referenceable | **COMPLETE (code-level) - updated by AC-2 Block 11; was PARTIAL** (simulation is the owner-ruled governed NOT_APPLICABLE, C-1) | yes / yes / yes (AC-2 PRs #122-#126) | 80% |
+| D | ADI: governed recommendation for the first action; cannot execute | **COMPLETE (code-level) - updated by AC-1; re-confirmed by AC-2 Block 11** | yes / yes / yes (AC-1, AC-2 PRs) | 88% |
 | E | ABA: review/approve, governed parameters, sealed package, revoke/expire/supersede, BO can check authority | **COMPLETE** (code-level) | yes / yes / yes | 85% |
 | F | BO execution: intake, receipt, claim, activation, fresh authority, lock, baseline CAS, execution, evidence, retry/recovery end-to-end | **COMPLETE** (code-level); recovery relies on an undeployed worker | yes / yes / yes | 85% |
 | G | Events: authorization and executed handoffs durable and idempotent | **COMPLETE** (code-level) | yes / yes / yes | 85% |
@@ -33,9 +33,11 @@ Criterion status words: COMPLETE · PARTIAL · BLOCKED · PARKED · NOT STARTED 
 | J | Security/tenancy: authz and isolation validated; no browser-derived authority; no owner backfill; RLS passes | **PARTIAL** | yes / yes / yes | 65% |
 | K | Database: migrations validated; live delta reviewed; controlled runbook; rollback/backup procedure | **PARTIAL / PARKED** | yes / yes / yes | 75% |
 | L | Operations: backup/restore validation; observability for execution failures and stranded work; deployment runbook; production closed | **PARTIAL / PARKED** | partial | 70% |
-| M | End to end: data → evidence → modeled decision → simulation → recommendation → approval → package → claim → execution → evidence → OM, with negative paths | **PARTIAL** | partial | 80% |
+| M | End to end: data → evidence → modeled decision → simulation → recommendation → approval → package → claim → execution → evidence → OM, with negative paths | **COMPLETE (code-level, private database) - updated by AC-2 Block 11; was PARTIAL.** Not run in production or staging. | yes / yes / yes (AC-2 PRs #125, #126) | 80% |
 
 ### A — Data Acquisition: PARTIAL
+- **Update (AC-2 Block 11):** the ingestion path is now proven end to end: DAL manual intake (provenance, validation) -> BO intake mappers/executor for item, warehouse, receipt with cost and currency, and 12 dated issues (`ac2-dal-first-action-ingestion`, `ac2-principal-first-action`); malformed or incomplete data is refused before BO truth (`ac2-failure-proofs`); DAL cannot authorize or execute (`ac2-chain-ownership`). By owner ruling the baseline reorder policy (BO-owned route) and declared currency (business admin) are not DAL-fed. Supplier lead time is not an input of rule set v1.1.0. Status: COMPLETE at code level, 85%. The finding below is the pre-AC-2 position.
+
 - Evidence: `packages/data-acquisition-runtime`; Block A (#104, migration 0197) DAL `purchase_receipt` → `BusinessIntakeService` → mapper → `record_purchase_receipt` with fail-closed provenance; data-capture B (0187 positive unit cost), C (0183 currency), D (0198 PO-line/item linkage), E (0189 `reorder_policy_state`).
 - Missing evidence: no document or test shows that the data the reorder evaluator needs (inventory item/balance, sales or demand history, supplier lead time) can be **ingested end to end** through DAL for a real business; the record shows capture primitives, not a proven ingestion path for that data set. The `layers/data-acquisition` directory is a placeholder.
 - Owner decision: none required to state the gap; deciding whether the existing connectors/imports suffice is part of the next-block decision.
@@ -45,6 +47,8 @@ Criterion status words: COMPLETE · PARTIAL · BLOCKED · PARKED · NOT STARTED 
 - Caveat: the privilege hardening in 0196 only takes effect where the application role is not the function owner (live finding A; production reports P1 PASS, unverified here).
 
 ### C — BI / BDT / SIM: PARTIAL
+- **Update (AC-2 Block 11):** BI evidence (`InventoryBiEvidenceService`: three metric definitions/calculations in an insight package version carrying the BO facts digest) and BDT state (`InventoryItemTwinService`: derived snapshot referencing the BI version) now exist for the first action; ADI refuses without them and on any digest/expiry/supersession mismatch; BI/BDT never import or write BO. Simulation remains the owner-ruled governed NOT_APPLICABLE (C-1). Status: COMPLETE at code level, 80%. Limits: scoped to this one action (no generalization by design); the `layers/business-intelligence` and `layers/business-digital-twin` directories remain placeholders (the services live in `packages/workflow`). The finding below is the pre-AC-2 position.
+
 - Evidence: the BO-owned evaluator `inventory-reorder-policy/v1.0.0` (B2a–B2d; owner approval 2026-10-11) supplies action-relevant evidence; `TwinComputationService` / `twinEvidence` in `packages/workflow` model a twin snapshot (inventory delta only). `layers/business-intelligence` and `layers/business-digital-twin` hold placeholders. Simulation: owner-authorised amendment `P0-5_B2c_SIMULATION_NOT_APPLICABLE_AMENDMENT.md` makes the simulation reference a governed `NOT_APPLICABLE` (`NO_APPLICABLE_SIMULATION_MODEL`) for exactly `inventory_reorder_policy_update@1`, compensated by the BO evaluation.
 - Missing evidence: no BI report or BDT state specific to reorder policy; no simulation model for inventory reorder exists.
 - **Owner decision required:** does the governed `NOT_APPLICABLE` satisfy Section XXII.C and the "simulation" step of XXII.M, or is a reorder simulation model required? (See conflict C-1, section 8.)
@@ -88,6 +92,8 @@ Criterion status words: COMPLETE · PARTIAL · BLOCKED · PARKED · NOT STARTED 
 - Missing: any backup taken, any restore proven, AWS/GPG setup (parked); alerting channel (undecided); **observability for execution failures and stranded work** — `infrastructure/monitoring/` contains only a README and the documents describe operator control but no alert or metric wiring; worker deployment (F4).
 
 ### M — End to end: PARTIAL
+- **Update (AC-2 Block 11):** `ac2-principal-first-action.e2e.test.ts` runs source data -> DAL -> BO -> BI -> BDT -> ADI -> ABA -> BO execution -> OM with nothing seeded (plain, modified and baseline-changed variants); 34 failure proofs and 10 ownership guards cover the negative paths. Status: COMPLETE at code level on a private database, 80%. Not shown: any production or staging run, a deployed worker (the real worker is driven in-process), a real simulation model (ruled out), DAL-fed baseline and currency (ruled out). The finding below is the pre-AC-2 position.
+
 - Evidence: `apps/api/tests/p0-6f-execution-path.e2e.test.ts` proves, on the production `buildApp` and a real PostgreSQL, the path **ABA authoring → issuance and announcement → BO intake → claim → fresh ABA authority check → execution → evidence and event in one transaction → OM verification**, plus negative paths (no activation, missing subscription, revoked authority, duplicates, concurrency, OM unavailable, stranded claim recovery). P0-6g/6h add recovery tests.
 - Missing: the upstream links the criterion names — **data acquisition, BI/BDT evidence, simulation, and an ADI-produced recommendation** — are not part of one test; the recommendation is a fixture and simulation is a governed NOT_APPLICABLE. No such test is run in production or staging.
 
