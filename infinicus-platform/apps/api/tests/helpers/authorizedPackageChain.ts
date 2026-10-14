@@ -133,13 +133,17 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
    * `mode`: 'modify' (default) = approve_with_modifications of the ADI proposal to `final`; 'plain' = approve the proposal UNCHANGED (both are executable);
    * 'until-capture' = a plain approval, stopping right after the decision so a test can attempt the capture itself.
    */
-  async function authorFromAdi(opts: { mode?: 'modify' | 'plain' | 'until-capture'; final?: { reorderPoint: number; reorderQuantity: number } } = {}): Promise<AdiChain> {
+  async function authorFromAdi(opts: {
+    mode?: 'modify' | 'plain' | 'until-capture'; final?: { reorderPoint: number; reorderQuantity: number };
+    /** AC-2 Block 8: an existing session (tenant/business/owner) instead of a fresh one, and a seed that supplies the BO facts (default: direct SQL seeding; the principal proof passes DAL ingestion). */
+    session?: Session; seed?: (s: Session) => Promise<{ itemId: string; warehouseId: string; balanceId: string }>;
+  } = {}): Promise<AdiChain> {
     const mode = opts.mode ?? 'modify';
     const final = opts.final ?? FINAL;
-    const s = await setup();
+    const s = opts.session ?? await setup();
     await governance(s);
     expect((await post(s, `/v1/businesses/${s.bizId}/approver-assignments`, { approverUserId: s.ctx.userId, assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, roleCode: 'business-owner' })).statusCode).toBe(201);
-    const bo = await seedBo(s);
+    const bo = opts.seed ? await opts.seed(s) : await seedBo(s);
     await publishEvidence(s, bo.itemId);
     const produced = await post(s, reorderRecommendationUrl(s, bo.itemId));
     expect(produced.statusCode, produced.body).toBe(201);

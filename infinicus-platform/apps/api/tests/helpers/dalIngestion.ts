@@ -14,7 +14,7 @@ export const DAY = 86_400_000;
 export const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString();
 export const unique = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-export interface World { ctx: TenantContext; token: string; businessId: string; dataSourceId: string }
+export interface World { ctx: TenantContext; token: string; businessId: string; dataSourceId: string; membershipId: string }
 
 /** The first-action source facts exactly as a data source would state them: natural keys only, explicit cost currency, business instants. */
 export function firstActionRecords(sku: string, warehouseCode: string): Record<string, unknown>[] {
@@ -49,7 +49,7 @@ export function dalKit(env: { app: FastifyInstance; admin: Pool; tenantIds: stri
     await memberships.assignRole(ctx, m.id, (await new RoleRepository().getByCode(ctx, 'owner')).id);
     const businessId = (await admin.query(`INSERT INTO platform.businesses (tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,'AC2 Biz',$3,'active') RETURNING id`, [tenantId, workspaceId, unique('ac2-biz')])).rows[0].id as string;
     const source = await da.registerSource(ctx, { businessId, name: 'AC2 inventory feed', sourceCode: unique('ac2-src'), sourceType: 'manual', sensitivityLevel: 'internal', status: 'active' });
-    return { ctx, token, businessId, dataSourceId: source.id };
+    return { ctx, token, businessId, dataSourceId: source.id, membershipId: m.id };
   }
 
   const headers = (w: { ctx: TenantContext; token: string }, extra: Record<string, string> = {}) => ({
