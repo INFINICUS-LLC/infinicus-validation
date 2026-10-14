@@ -95,3 +95,18 @@ source records -> **DAL** (15 records accepted, 15 provenance records, run publi
 - **Same chain with an approver's modification** (final governed parameters executed; original proposal kept in lineage) and **baseline changed before execution** (the newer BO state is never overwritten; `BASELINE_CHANGED`; the verification is ineligible for learning).
 - **Seeds nothing:** a self-scan asserts the test itself contains no direct write to Business Operations or platform master data, no SQL seeding call and no recommendation fixture; the shared kit gained only an optional `session` and `seed` to start the same authoring chain from a DAL-fed world.
 - **Honest limits:** the two non-DAL inputs are the ones ruled (policy D2, currency D3); the worker is the real worker driven in-process (not a deployed one); the proof is code-level on a private database, not a production run.
+
+## 11. Block 9 — failure proofs
+`apps/api/tests/ac2-failure-proofs.integration.test.ts` (34 tests, real PostgreSQL, production `buildApp`). Every scenario ends in a refusal and the downstream layers stay empty.
+
+- **Malformed source data** (10 BO-mapper-bad records) and **missing required source fields** (6): the whole package is refused before any BO truth is written; BO tables stay empty; ADI then reports `BI_EVIDENCE_MISSING` (no recommendation). A non-object DAL record is quarantined at DAL (`recordsRejected >= 2`) and the publication package cannot be prepared.
+- **Evidence quality:** stale (expired) BI/BDT evidence, 200-day-old demand, fewer than the required demand observations, no receipt, receipt without cost, unset baseline, undeclared currency, EUR cost against a USD business — each yields `NO_RECOMMENDATION / EVIDENCE_UNAVAILABLE` with the specific reason code.
+- **Scope:** another tenant or business gets 404s, `BI_EVIDENCE_MISSING`, `TARGET_NOT_FOUND`, a null twin and a refused intake.
+- **BI/BDT mismatch fails closed:** BI republished, a tampered metric digest (`BI_EVIDENCE_INCONSISTENT` on the twin), BO facts changed after the evidence (`EVIDENCE_DIGEST_MISMATCH`), a newer twin (`BDT_STATE_STALE`).
+- **Unsupported action** (`UNSUPPORTED_ACTION_TYPE`; ABA capture of `supplier_price_update` refused) and **no structured proposal** (`ADI_PROPOSAL_REQUIRED`, whatever parameters the caller supplies).
+- **Baseline changed before execution** (plain and modified approvals): `REFUSED / BASELINE_CHANGED`, the newer BO state is never overwritten.
+- No production code changed in this block; it adds proof only.
+
+## 12. Block 10 — chain ownership guards
+`packages/business-operations-runtime/tests/ac2-chain-ownership.architecture.test.ts` (10 tests, no database; scans production source, comments stripped). One test per rule: DAL cannot authorize or execute; BI cannot mutate BO; BDT is not a second BO source of truth (and BO never reads the twin); ADI cannot write BO; ADI cannot bypass ABA (only the three ABA files use the package repositories; capture requires a validated structured proposal); ABA cannot execute; BO is the sole operational writer (inventory items, warehouses, movements, balances and the protected reorder functions); OM cannot mutate BO (and depends only on database, event-contracts and handoff-contracts); CL cannot consume `OUTCOME_PENDING` (`learningEligibility` refuses pending, inconclusive, observed and failed outcomes; CL code never reads execution verifications; migration 0194 admits only pending or inconclusive).
+- Limit: these are source-level guards, not a runtime sandbox; they prove no code path exists in the scanned tree, not that a future file cannot add one without tripping a guard.
