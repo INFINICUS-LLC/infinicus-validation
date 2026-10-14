@@ -10,6 +10,7 @@ import { AnthropicClient } from '@infinicus/llm-client';
 import { TwinComputationService, type TwinSnapshotResult } from './TwinComputationService.js';
 import { DecisionWorkflowService, DEFAULT_APPROVER_ASSIGNMENT_CODE } from './DecisionWorkflowService.js';
 import { assessTwinEvidence, type TwinEvidenceAssessment } from './twinEvidence.js';
+import { BusinessScopeGuard } from './BusinessScopeGuard.js';
 import { deriveRiskClass, determineTimeValidity, type TimeValiditySignals } from './recommendationAuthoring.js';
 
 const TARGET_LAYER_ABA = 'approved_business_action';
@@ -228,7 +229,8 @@ export class BusinessDecisionRecommendationService {
     private readonly twins: TwinComputationService = new TwinComputationService(),
     private readonly workflow: DecisionWorkflowService = new DecisionWorkflowService(),
     private readonly llm: AnthropicClient | null = resolveAnthropicClient(),
-    private readonly validitySignals: ValiditySignalEvaluator = defaultValiditySignalEvaluator
+    private readonly validitySignals: ValiditySignalEvaluator = defaultValiditySignalEvaluator,
+    private readonly scope: BusinessScopeGuard = new BusinessScopeGuard(),
   ) {}
 
   async recommend(ctx: TenantContext, businessId: string): Promise<RecommendationResult> {
@@ -305,6 +307,8 @@ export class BusinessDecisionRecommendationService {
     ctx: TenantContext, businessId: string, recommendationId: string, chosen: boolean,
     requestContext?: { permissionUsed?: string; correlationId?: string },
   ): Promise<ChoiceReviewResult> {
+    // J-1: the business must resolve inside the caller's tenant/workspace before ANY write (insight, publication, intake, review, decision, audit).
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const stamp = Date.now().toString(36);
 
     const recommendationVersion = await this.recommendations.getPublishedVersion(ctx, recommendationId);
@@ -339,6 +343,7 @@ export class BusinessDecisionRecommendationService {
   }
 
   async recordChoiceOutcome(ctx: TenantContext, businessId: string, approvedActionId: string, outcomeNotes: string): Promise<{ observationId: string }> {
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const stamp = Date.now().toString(36);
 
     const { package: abaPublication } = await this.abaPublications.createPackage(

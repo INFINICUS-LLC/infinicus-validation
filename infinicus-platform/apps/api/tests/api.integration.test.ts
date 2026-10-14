@@ -471,6 +471,11 @@ describe.runIf(run)('BUILD-21 governed API — live PostgreSQL', () => {
       const { userId, token } = await registerActiveUser();
       const other = await registerActiveUser();
       const ctx = await createTenantWithOwner(userId);
+      // AC-3 J-6: the grantee must be an ACTIVE workspace member to receive authority; the point of this test (a named other
+      // approver is refused even though they hold authority) therefore needs `other` to be a real member.
+      const otherCtx: TenantContext = { ...ctx, userId: other.userId };
+      const otherMembership = await new MembershipRepository().create(otherCtx, other.userId);
+      await new MembershipRepository().activate(otherCtx, otherMembership.id);
       const bizId = crypto.randomUUID();
       await adminPool!.query(
         `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Impersonation Biz',$4,'active')`,

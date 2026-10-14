@@ -27,6 +27,7 @@ import {
   type ActionReviewPackage, type ApprovalDecision, type ApproverAssignment, type AuthorityProvenanceEntry,
   type OutcomeObservation, type OutcomeObservationVersion,
 } from '@infinicus/database';
+import { BusinessScopeGuard, ApproverGranteeNotEligibleError } from './BusinessScopeGuard.js';
 
 const RECENT_LIMIT = 5;
 
@@ -187,8 +188,15 @@ export class DecisionWorkflowService {
     private readonly monitoredActions: MonitoredActionRepository = new MonitoredActionRepository(),
     private readonly outcomeObservations: OutcomeObservationRepository = new OutcomeObservationRepository(),
     private readonly riskPolicy: ApprovalRiskPolicy = DEFAULT_APPROVAL_RISK_POLICY,
-    private readonly approvalAudit: ABAAuditRepository = new ABAAuditRepository()
+    private readonly approvalAudit: ABAAuditRepository = new ABAAuditRepository(),
+    /** The single authoritative business-scope mechanism (AC-3 J-1/J-6); every business-scoped entry point calls it first. */
+    private readonly scope: BusinessScopeGuard = new BusinessScopeGuard(businesses),
   ) {}
+
+  /** Resolves the business inside the caller's tenant and workspace, or throws the uniform not-found (see BusinessScopeGuard). */
+  async assertBusinessInScope(ctx: TenantContext, businessId: string): Promise<Business> {
+    return this.scope.assertBusinessInScope(ctx, businessId);
+  }
 
   /** Business selection, bounded by LIMIT/OFFSET pushed into the repository query. */
   async listBusinesses(ctx: TenantContext, page: PageOptions = {}): Promise<PagedBusinesses> {
@@ -207,7 +215,7 @@ export class DecisionWorkflowService {
    * for a stage that hasn't produced anything.
    */
   async getWorkflowView(ctx: TenantContext, businessId: string): Promise<WorkflowView> {
-    const business = await this.businesses.getById(ctx, businessId);
+    const business = await this.scope.assertBusinessInScope(ctx, businessId);
 
     const biEvidence = (await this.insightPackages.listForBusiness(ctx, businessId)).slice(0, RECENT_LIMIT);
 
@@ -240,6 +248,7 @@ export class DecisionWorkflowService {
    * additional cross-domain join this build does not introduce.
    */
   async getDecisionHistory(ctx: TenantContext, businessId: string): Promise<DecisionHistory> {
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const [biEvidence, simulationRuns, adiCases, abaReviews, outcomes] = await Promise.all([
       this.insightPackages.listForBusiness(ctx, businessId),
       this.simRuns.listForBusiness(ctx, businessId),
@@ -252,6 +261,7 @@ export class DecisionWorkflowService {
 
   /** Starts an ABA review package for an already-received ABA intake package (not created by this service — see known limitations). */
   async createReview(ctx: TenantContext, businessId: string, input: CreateReviewInput): Promise<ActionReviewPackage> {
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const review = await this.reviews.createReviewPackage(ctx, businessId, input.intakePackageId, input.reviewCode);
     // Snapshot the facts ADI published (P0-3); ABA copies them and never derives or recalculates them.
     const snapshot = await this.reviews.resolvePublishedSnapshot(ctx, input.intakePackageId);
@@ -271,10 +281,14 @@ export class DecisionWorkflowService {
    * by P0-2 / P0-3 of the reconciliation plan.
    */
   async grantApproverAuthority(ctx: TenantContext, businessId: string, input: GrantApproverAuthorityInput): Promise<ApproverAssignment> {
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const roleCode = input.roleCode ?? 'approver';
     if (roleCode !== 'approver' && !(APPROVER_ROLES as readonly string[]).includes(roleCode)) {
       throw new ApprovalPolicyDeniedError(`unknown approver role: ${String(roleCode)}`);
     }
+    // J-6: the grantee is resolved server-side and must hold an ACTIVE membership in this workspace at grant time. The
+    // check precedes the insert, so an unknown, inactive or foreign-scope grantee never creates an assignment.
+    await this.scope.assertActiveWorkspaceMember(ctx, input.approverUserId);
     const { assignment, created } = await this.approverAuthority.grantActiveAssignment(ctx, {
       businessId,
       userId: input.approverUserId,
@@ -313,6 +327,7 @@ export class DecisionWorkflowService {
    * provenance history with the revoking user and the reason.
    */
   async revokeApproverAuthority(ctx: TenantContext, businessId: string, input: RevokeApproverAuthorityInput): Promise<{ assignment: ApproverAssignment; changed: boolean }> {
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const reason = normalizeRevocationReason(input.reason);
     const existing = await this.approverAuthority.findByCode(ctx, businessId, input.assignmentCode);
     if (!existing) throw new ApproverAuthorityNotFoundError('ApproverAssignment', input.assignmentCode);
@@ -328,6 +343,7 @@ export class DecisionWorkflowService {
 
   /** The assignment and its full append-only provenance history (grants and revocations). */
   async getApproverAuthority(ctx: TenantContext, businessId: string, assignmentCode: string): Promise<ApproverAuthorityRecord> {
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const assignment = await this.approverAuthority.findByCode(ctx, businessId, assignmentCode);
     if (!assignment) throw new ApproverAuthorityNotFoundError('ApproverAssignment', assignmentCode);
     return { assignment, provenance: await this.approverAuthority.listProvenance(ctx, assignment.id) };
@@ -340,6 +356,8 @@ export class DecisionWorkflowService {
    * assignment for this business; it never creates one (V-01).
    */
   async submitApprovalDecision(ctx: TenantContext, businessId: string, input: SubmitApprovalInput): Promise<ApprovalDecision> {
+    // Scope first and OUTSIDE the refusal-audit try: a cross-scope attempt must not persist an audit row against a business.
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const trace: ApprovalTrace = { assignment: null, reviewVersion: null };
     try {
       return await this.decideApproval(ctx, businessId, input, trace);
@@ -419,6 +437,7 @@ export class DecisionWorkflowService {
    * transitioned: an audit failure cannot change the returned status.
    */
   async getReviewApprovalStatus(ctx: TenantContext, businessId: string, reviewPackageId: string, requestContext?: { correlationId?: string }): Promise<ReviewApprovalStatus> {
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const pkg = await this.reviews.getById(ctx, reviewPackageId);
     if (pkg.businessId !== businessId) throw new ActionReviewNotFoundError('ActionReviewPackage', reviewPackageId);
     const { version, now } = await this.reviews.getLatestVersionWithClock(ctx, reviewPackageId);
@@ -435,6 +454,15 @@ export class DecisionWorkflowService {
     const assignment = await this.approverAuthority.findActiveForUser(ctx, businessId, ctx.userId, input.assignmentCode);
     if (!assignment) {
       throw new ApproverAuthorityNotEstablishedError('no active approver assignment exists for this user and business');
+    }
+    // Authority is not exercisable on an assignment alone: the principal must still hold an ACTIVE workspace membership (J-6).
+    try {
+      await this.scope.assertActiveWorkspaceMember(ctx, ctx.userId);
+    } catch (err) {
+      if (err instanceof ApproverGranteeNotEligibleError) {
+        throw new ApproverAuthorityNotEstablishedError('the approver does not hold an active membership in this workspace');
+      }
+      throw err;
     }
     trace.assignment = { id: assignment.id, code: assignment.assignmentCode, roleCode: null };
     await this.assertOwnerAuthorityStillProven(ctx, businessId, assignment);
@@ -526,6 +554,7 @@ export class DecisionWorkflowService {
    * (enforced by OutcomeObservationRepository / the database trigger).
    */
   async recordOutcome(ctx: TenantContext, businessId: string, input: RecordOutcomeInput): Promise<{ observation: OutcomeObservation; version: OutcomeObservationVersion }> {
+    await this.scope.assertBusinessInScope(ctx, businessId);
     const { observation, version } = await this.outcomeObservations.createObservation(
       ctx, businessId, input.monitoredActionId, input.observationCode, input.summary, input.effectiveAt
     );
