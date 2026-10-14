@@ -52,6 +52,8 @@ export const SECRET_INVENTORY: readonly SecretDefinition[] = [
     description: 'Event worker only (separate process, P0-6b): connection string of a narrowly-granted read-only role that can see which tenant/workspace scopes have dispatchable outbox rows. Never used by the API process.',
   },
   { name: 'INFINICUS_BUILD_SHA', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'Git commit the API image was built from (injected at image build via ARG GIT_SHA); reported by GET /v1/health. A build identifier, not a secret.' },
+  { name: 'SUPABASE_URL', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'J-3 identity exchange: base URL of the Supabase project whose access tokens POST /v1/auth/identity-exchange verifies (public value). Unset = the exchange route answers 503 (closed).' },
+  { name: 'SUPABASE_ANON_KEY', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'J-3 identity exchange: the Supabase project\'s public anon/publishable key, sent as the apikey header when verifying a token (already shipped to every browser by the public site). Unset = the exchange route answers 503 (closed).' },
   { name: 'NODE_ENV', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'Runtime environment name.' },
   { name: 'PORT', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'HTTP listen port.' },
   { name: 'LOG_LEVEL', classification: 'non-secret', required: false, owner: 'platform', rotationPolicyDays: null, description: 'pino log level.' },

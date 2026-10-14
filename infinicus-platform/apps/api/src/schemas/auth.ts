@@ -36,3 +36,8 @@ export const verifyEmailResponseSchema = z.object({
   email: z.string(),
   emailVerifiedAt: z.string().datetime(),
 });
+
+/** J-3: strict — any field other than accessToken is a 400, so no identifier can ride along to influence the account chosen. */
+export const identityExchangeBodySchema = z.object({
+  accessToken: z.string().min(20).max(8192),
+}).strict();

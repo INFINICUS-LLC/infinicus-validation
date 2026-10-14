@@ -61,3 +61,11 @@ export class VerificationTokenInvalidError extends Error {
     this.name = 'VerificationTokenInvalidError';
   }
 }
+
+/** register() refused an address in the reserved managed-account domain (see managedAccounts.ts). */
+export class ManagedAccountEmailReservedError extends Error {
+  constructor() {
+    super('This email domain is reserved and cannot be registered');
+    this.name = 'ManagedAccountEmailReservedError';
+  }
+}

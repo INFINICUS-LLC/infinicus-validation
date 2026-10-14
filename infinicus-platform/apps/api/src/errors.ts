@@ -47,6 +47,12 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   ApiKeyInvalidError: 401,
   WeakPasswordError: 400,
   VerificationTokenInvalidError: 400,
+  // J-3: register() of the reserved managed-account domain.
+  ManagedAccountEmailReservedError: 400,
+  // J-3 identity exchange (apps/api/src/identityVerifier.ts): bad provider token -> 401; provider unreachable or the exchange not configured -> 503 (closed).
+  IdentityTokenInvalidError: 401,
+  IdentityProviderUnavailableError: 503,
+  IdentityExchangeNotConfiguredError: 503,
 
   // Authorization (@infinicus/authorization)
   PermissionDeniedError: 403,

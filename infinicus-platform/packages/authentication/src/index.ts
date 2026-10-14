@@ -2,7 +2,7 @@
 export {
   InvalidCredentialsError, AccountNotActiveError, AccountLockedError,
   SessionExpiredError, SessionRevokedError, SessionInvalidError,
-  ApiKeyInvalidError, WeakPasswordError, VerificationTokenInvalidError,
+  ApiKeyInvalidError, WeakPasswordError, VerificationTokenInvalidError, ManagedAccountEmailReservedError,
 } from './errors.js';
 
 export type { EmailMessage, EmailSender } from './email/EmailSender.js';
@@ -18,6 +18,8 @@ export {
   generateApiKey, parseApiKey,
 } from './tokens.js';
 export type { GeneratedApiKey } from './tokens.js';
+
+export { MANAGED_ACCOUNT_EMAIL_DOMAIN, isManagedAccountEmail, managedAccountEmailFor } from './managedAccounts.js';
 
 export { AuthenticationService } from './AuthenticationService.js';
 export type { LoginResult, ValidatedSession, RequestMetadata } from './AuthenticationService.js';

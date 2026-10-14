@@ -837,6 +837,7 @@ SUPA.auth.onAuthStateChange(async (event, session) => {
     }
     const { data: profile } = await SUPA.from('profiles').select('*').eq('id', session.user.id).single();
     const prev = U || {};
+    if (prev.supaId && prev.supaId !== session.user.id && typeof clearBackendSession === 'function') clearBackendSession();
     U = {
       email:      session.user.email,
       supaId:     session.user.id,
@@ -864,6 +865,7 @@ SUPA.auth.onAuthStateChange(async (event, session) => {
       }
     }
   } else if (event === 'SIGNED_OUT') {
+    if (typeof clearBackendSession === 'function') clearBackendSession();
     U = null;
     try { localStorage.removeItem('infinicus_user'); } catch(e) {}
     renderUserBadge();
@@ -3468,71 +3470,101 @@ function nav(id) {
 // Bridges an already-signed-in Supabase user (U, populated above by the
 // existing SUPA.auth.onAuthStateChange listener — signup is already
 // required before this runs, since startSim() below still gates on !U) to
-// a shadow account on the new backend (infinicus-platform/apps/api), which
-// has its own separate identity system with no shared login with Supabase.
-// This block is purely additive: it never reads, writes, or otherwise
-// touches Supabase auth, landing.html's signup, or account.html.
+// that user's account on the platform backend (infinicus-platform/apps/api).
+//
+// Identity: the backend verifies the user's Supabase access token with
+// Supabase itself (POST /v1/auth/identity-exchange) and issues its own
+// short-lived session. The page never derives, stores or sends a password,
+// and no browser-held identifier is treated as authority: the backend
+// decides which account the verified token belongs to.
+//
+// Storage: the backend session token lives in sessionStorage only (tab-scoped,
+// 10 minute client-side life). localStorage keeps exactly four non-secret ids
+// (backend user, tenant, workspace, business) so a returning user reuses the
+// same business instead of provisioning another one.
+//
+// This block never reads, writes, or otherwise touches Supabase auth state,
+// landing.html's signup, or account.html.
 //
 // Already pointed at the real production API — deployed on Hetzner (see
 // infrastructure/deployment/oci/docker-compose.yml; the "oci" directory
 // name is a legacy artifact of an earlier, abandoned OCI hosting plan).
-// Set localStorage.inf_api_base_url for local testing without editing
-// this file — see docs/production-readiness/.
+// For local testing only: on localhost / 127.0.0.1, localStorage.inf_api_base_url
+// may point at a loopback http origin. On the real site any stored override is
+// ignored and removed, so a script or extension cannot redirect the API.
 const API_BASE_URL = (function () {
-  try { const override = localStorage.getItem('inf_api_base_url'); if (override) return override; } catch (e) {}
-  return (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-    ? 'http://127.0.0.1:3000'
-    : 'https://api.infini-cus.com';
+  const onLocalPage = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  try {
+    const override = localStorage.getItem('inf_api_base_url');
+    if (override) {
+      if (onLocalPage && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(override)) return override;
+      if (!onLocalPage) localStorage.removeItem('inf_api_base_url');
+    }
+  } catch (e) {}
+  return onLocalPage ? 'http://127.0.0.1:3000' : 'https://api.infini-cus.com';
 })();
-// v2: see deriveShadowAccountCredentials() below for why this bumped from
-// v1 — the old key cached a random password against the user's real email,
-// which could become permanently unrecoverable. Bumping the key means every
-// browser picks up a fresh, deterministically-derived account once, instead
-// of continuing to retry a password that can never work again.
-const BACKEND_ACCOUNT_KEY = 'inf_backend_account_v2';
+const BACKEND_IDS_KEY = 'inf_backend_account_v3';
+const BACKEND_SESSION_KEY = 'inf_backend_session_v1';
+const BACKEND_SESSION_TTL_MS = 10 * 60 * 1000;
 
-function loadBackendAccount() {
-  try { return JSON.parse(localStorage.getItem(BACKEND_ACCOUNT_KEY) || 'null'); } catch (e) { return null; }
+function loadBackendIds() {
+  try {
+    const r = JSON.parse(localStorage.getItem(BACKEND_IDS_KEY) || 'null');
+    return (r && typeof r === 'object') ? r : null;
+  } catch (e) { return null; }
 }
-function saveBackendAccount(acct) {
-  try { localStorage.setItem(BACKEND_ACCOUNT_KEY, JSON.stringify(acct)); } catch (e) {}
-}
-// Derives this browser-shadow-account's email AND password deterministically
-// from the signed-in Supabase user's stable, immutable supaId — instead of a
-// random password cached only in this browser's localStorage against the
-// user's real (mutable) email.
-//
-// That older design (randomBackendPassword(), v1 key) had no recovery path:
-// if localStorage was ever cleared, or the account was accessed from a
-// different browser/device, a brand-new random password was generated while
-// the backend still only recognized the old one. Login then failed (401,
-// wrong password), and the automatic fallback to /v1/auth/register also
-// failed (409, that email is already registered) — a dead end with no way
-// back in, surfaced to the user as the generic "Couldn't reach the
-// operations service" message. Repeated retries against the same
-// never-going-to-match password also triggered the backend's login-attempt
-// lockout (429). Traced live via browser DevTools on 2026-10-03.
-//
-// Deriving both the email AND the password from supaId (via SHA-256) fixes
-// this permanently: the exact same credentials are reproduced on every
-// device/browser for a given Supabase account, so login always succeeds
-// without ever needing to store or recover a password. Keying the shadow
-// email off supaId instead of the user's real email also means it can never
-// collide with a prior broken registration under that real email, and stays
-// valid even if the user later changes their real email address.
-async function deriveShadowAccountCredentials(supaId) {
-  const digestHex = async (label) => {
-    const data = new TextEncoder().encode(label + ':' + supaId);
-    const buf = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+// The ONLY localStorage write of this bridge: the four non-secret ids.
+function saveBackendIds(ids) {
+  const rec = {
+    backendUserId: ids.backendUserId || null,
+    tenantId: ids.tenantId || null,
+    workspaceId: ids.workspaceId || null,
+    businessId: ids.businessId || null,
   };
-  const emailHash = await digestHex('infinicus-shadow-email-v2');
-  const passwordHash = await digestHex('infinicus-shadow-password-v2');
-  return {
-    email: 'shadow-' + emailHash.slice(0, 32) + '@infini-cus.local',
-    password: 'Inf-' + passwordHash.slice(0, 40) + '-aA1!',
-  };
+  try { localStorage.setItem(BACKEND_IDS_KEY, JSON.stringify(rec)); } catch (e) {}
 }
+// One-time purge of the earlier account records. Those held a password
+// derived from the Supabase user id; they are deleted, and only the three
+// non-secret business ids are carried over (the backend user id is adopted
+// from the first verified exchange, see ensureBackendBusiness()).
+function purgeLegacyBackendAccounts() {
+  let migrated = null;
+  ['inf_backend_account_v2', 'inf_backend_account_v1'].forEach(function (key) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return;
+      if (!migrated) {
+        try {
+          const old = JSON.parse(raw);
+          if (old && typeof old.tenantId === 'string' && typeof old.workspaceId === 'string' && typeof old.businessId === 'string') {
+            migrated = { tenantId: old.tenantId, workspaceId: old.workspaceId, businessId: old.businessId };
+          }
+        } catch (e) {}
+      }
+      localStorage.removeItem(key);
+    } catch (e) {}
+  });
+  if (migrated && !loadBackendIds()) saveBackendIds(migrated);
+}
+purgeLegacyBackendAccounts();
+
+function loadBackendSession(supaId) {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(BACKEND_SESSION_KEY) || 'null');
+    if (s && typeof s.token === 'string' && s.forSupaId === supaId && typeof s.expiresAt === 'number' && s.expiresAt > Date.now()) return s;
+  } catch (e) {}
+  return null;
+}
+function saveBackendSession(s) {
+  try { sessionStorage.setItem(BACKEND_SESSION_KEY, JSON.stringify(s)); } catch (e) {}
+}
+// Drops the cached backend session (sign-out, or a different Supabase user).
+// The id record stays: it holds no credential and lets the same user get
+// the same business back; the backend verifies ownership on every request.
+function clearBackendSession() {
+  try { sessionStorage.removeItem(BACKEND_SESSION_KEY); } catch (e) {}
+}
+
 async function backendFetch(path, opts) {
   opts = opts || {};
   const headers = Object.assign({}, opts.headers || {});
@@ -3546,31 +3578,34 @@ async function backendFetch(path, opts) {
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch (e) {}
   if (!res.ok) {
-    const err = new Error((json && json.message) || ('HTTP ' + res.status));
+    const err = new Error((json && json.error && json.error.message) || (json && json.message) || ('HTTP ' + res.status));
     err.status = res.status;
     throw err;
   }
   return json;
 }
 
+// Trades the current Supabase access token for a backend session. The
+// backend verifies the token with Supabase; nothing else is sent.
+async function exchangeSupabaseSession() {
+  const sess = (await SUPA.auth.getSession()).data.session;
+  if (!sess || !sess.access_token || !sess.user) throw new Error('not signed in');
+  const out = await backendFetch('/v1/auth/identity-exchange', { method: 'POST', body: { accessToken: sess.access_token } });
+  return { token: out.rawSessionToken, backendUserId: out.user.id, forSupaId: sess.user.id, expiresAt: Date.now() + BACKEND_SESSION_TTL_MS };
+}
+
 // Provisions (once per browser, cached thereafter) or reuses a backend
 // tenant/workspace/business tied to the currently-signed-in Supabase user,
-// and returns a fresh session token for it.
+// and returns it together with a backend session token.
 //
 // This is called from several independent places (the onAuthStateChange
 // listener, each layer's own init function, the section-nav handler for
 // Business Operations, the simulation flow) and more than one of those can
-// fire within the same page load — e.g. arriving on Business Operations
-// right as sign-in resolves fires both onAuthStateChange's call AND the
-// section-nav's call within milliseconds of each other. Two concurrent,
-// un-deduplicated calls could both see no cached tenantId and each try to
-// provision a tenant/business, and under heavier concurrency one call's
-// /v1/auth/register could even race another's, returning 409 after the
-// first succeeded a moment earlier — surfacing as the operations UI
-// rendering successfully and then flipping to the error screen a few
-// seconds later as the second, losing call's failure overwrites it. Traced
-// live via browser DevTools on 2026-10-03 (a reported "works, then
-// disappears" symptom).
+// fire within the same page load. Two concurrent, un-deduplicated calls
+// could both see no cached tenantId and each provision a tenant/business,
+// surfacing as the operations UI rendering and then flipping to an error
+// screen when the losing call fails (traced live via browser DevTools on
+// 2026-10-03).
 //
 // _ensureBackendBusinessInFlight makes every concurrent caller within a
 // given provisioning attempt share the exact same promise instead of
@@ -3587,44 +3622,34 @@ async function _ensureBackendBusinessUncached() {
   if (!U) throw new Error('not signed in');
   // U.supaId only exists after a real Supabase sign-up/sign-in (see
   // onAuthStateChange above) — Public Idea Mode's lightweight email-only
-  // capture sets U.email without it, and every step below needs a real
-  // supaId to key the backend account.
+  // capture sets U.email without it, and the exchange needs a real session.
   if (!U.supaId) throw new Error('not signed in with a full account');
-  let acct = loadBackendAccount();
-  if (!acct || acct.supaId !== U.supaId) {
-    const creds = await deriveShadowAccountCredentials(U.supaId);
-    acct = { supaId: U.supaId, email: creds.email, password: creds.password };
-    saveBackendAccount(acct);
+  let session = loadBackendSession(U.supaId);
+  if (!session) {
+    session = await exchangeSupabaseSession();
+    if (session.forSupaId !== U.supaId) { clearBackendSession(); throw new Error('signed-in user changed; try again'); }
+    saveBackendSession(session);
   }
-  let token;
-  try {
-    token = (await backendFetch('/v1/auth/login', { method: 'POST', body: { email: acct.email, password: acct.password } })).rawSessionToken;
-  } catch (e) {
-    if (e.status !== 401 && e.status !== 404) throw e;
-    try {
-      await backendFetch('/v1/auth/register', { method: 'POST', body: { email: acct.email, password: acct.password } });
-    } catch (regErr) {
-      // A 409 here (account already exists) is not necessarily a real
-      // inconsistency — with the in-flight de-dupe above it should be rare,
-      // but another tab/window running the same deterministic credentials
-      // could still win this exact race. Fall through to the login retry
-      // below rather than failing hard on it: if the account now exists,
-      // login succeeds normally. Only a genuine credential mismatch would
-      // make that retry fail too, which surfaces as a clear error from the
-      // login catch below rather than this generic one.
-      if (regErr.status !== 409) throw regErr;
-    }
-    token = (await backendFetch('/v1/auth/login', { method: 'POST', body: { email: acct.email, password: acct.password } })).rawSessionToken;
+  const token = session.token;
+  let ids = loadBackendIds() || {};
+  if (ids.backendUserId && ids.backendUserId !== session.backendUserId) {
+    // The stored business belongs to a different backend user (another account used this browser): start clean.
+    ids = {};
   }
-  acct.token = token;
-  saveBackendAccount(acct);
+  if (!ids.backendUserId || ids.backendUserId !== session.backendUserId) {
+    // First verified exchange for ids migrated from the earlier record (or a fresh browser): bind them to this user and persist.
+    ids.backendUserId = session.backendUserId;
+    saveBackendIds(ids);
+  }
+  const acct = { token: token, backendUserId: ids.backendUserId, tenantId: ids.tenantId, workspaceId: ids.workspaceId, businessId: ids.businessId };
   if (acct.tenantId && acct.workspaceId && acct.businessId) return acct;
 
   const stamp = Date.now().toString(36);
+  const slugSeed = (window.crypto && crypto.randomUUID) ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10);
   const authHeader = { Authorization: 'Bearer ' + token };
   const onboarding = await backendFetch('/v1/onboarding', { method: 'POST', headers: authHeader, body: {
     tenantName: (U.email.split('@')[0] || 'demo') + "'s Workspace",
-    tenantSlug: 'demo-' + acct.supaId.slice(0, 8) + '-' + stamp,
+    tenantSlug: 'demo-' + slugSeed + '-' + stamp,
     workspaceName: 'Primary',
     workspaceSlug: 'primary-' + stamp,
   }});
@@ -3634,7 +3659,7 @@ async function _ensureBackendBusinessUncached() {
   }});
   await backendFetch('/v1/onboarding/' + onboarding.progress.id + '/owner', { method: 'POST', headers: authHeader, body: { tenantId, workspaceId } });
   acct.tenantId = tenantId; acct.workspaceId = workspaceId; acct.businessId = step2.business.id;
-  saveBackendAccount(acct);
+  saveBackendIds(acct);
   return acct;
 }
 
