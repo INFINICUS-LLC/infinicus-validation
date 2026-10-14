@@ -16,6 +16,8 @@ import permissionPlugin from './plugins/permission.js';
 import billingPlugin from './plugins/billing.js';
 import idempotencyPlugin from './plugins/idempotency.js';
 import authRoutes from './routes/auth.js';
+import identityExchangeRoutes from './routes/identityExchange.js';
+import { resolveIdentityVerifier, type IdentityVerifier } from './identityVerifier.js';
 import onboardingRoutes from './routes/onboarding.js';
 import businessRoutes from './routes/businesses.js';
 import abaAuthoringRoutes from './routes/abaAuthoring.js';
@@ -54,6 +56,8 @@ import { resolveTrustProxy } from './trustProxy.js';
 import './types.js';
 
 export interface BuildAppOptions {
+  /** J-3: identity-provider verifier for POST /v1/auth/identity-exchange (test seam; production resolves it from SUPABASE_URL / SUPABASE_ANON_KEY, unset = closed). */
+  identityVerifier?: IdentityVerifier;
   /** Composition-root dependency overrides for the ABA authoring surface (for example the authoritative evidence verifier). */
   abaAuthoring?: AbaAuthoringRouteOptions['dependencies'];
   /** Composition-root overrides for the ABA announcement edge (registry, kill switch). Production leaves it unset. */
@@ -169,6 +173,7 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   });
 
   await app.register(authRoutes);
+  await app.register(identityExchangeRoutes, { verifier: options.identityVerifier ?? resolveIdentityVerifier() });
   await app.register(onboardingRoutes);
   await app.register(businessRoutes);
   // Composition root: the ONLY place the Business Operations evidence adapter is connected to the ABA verification port. ABA depends on the

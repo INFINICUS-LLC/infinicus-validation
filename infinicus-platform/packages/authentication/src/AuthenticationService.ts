@@ -8,8 +8,10 @@ import { generateSessionToken, hashToken, defaultSessionExpiry } from './tokens.
 import {
   InvalidCredentialsError, AccountNotActiveError, AccountLockedError,
   SessionExpiredError, SessionRevokedError, SessionInvalidError,
-  VerificationTokenInvalidError,
+  VerificationTokenInvalidError, ManagedAccountEmailReservedError,
 } from './errors.js';
+import { randomBytes } from 'node:crypto';
+import { isManagedAccountEmail } from './managedAccounts.js';
 import { createEmailSender, resolveEmailConfig, type EmailConfig } from './email/createEmailSender.js';
 import type { EmailSender } from './email/EmailSender.js';
 import { verificationEmail } from './email/verificationEmail.js';
@@ -63,6 +65,8 @@ export class AuthenticationService {
    * registration, since the account is already fully usable regardless.
    */
   async register(email: string, password: string): Promise<User> {
+    // The managed-account domain is reserved for identities created by startManagedSession(); nobody may claim one with a password.
+    if (isManagedAccountEmail(email)) throw new ManagedAccountEmailReservedError();
     const passwordHash = await hashPassword(password);
     const created = await this.users.createUser({ email, passwordHash });
     const active = await this.users.activate(created.id);
@@ -114,6 +118,12 @@ export class AuthenticationService {
   }
 
   async login(email: string, password: string, meta: RequestMetadata = {}): Promise<LoginResult> {
+    // Managed accounts have no password login at all (J-3). Refused before any lookup so an existing and an unknown managed
+    // identifier are indistinguishable (same error, no bcrypt work, no lockout counter for either).
+    if (isManagedAccountEmail(email)) {
+      await this.recordAuditEvent(null, 'failed_auth', meta, { reason: 'managed_account_password_login_refused' });
+      throw new InvalidCredentialsError();
+    }
     let user: User;
     try {
       user = await this.users.getByEmail(email);
@@ -169,6 +179,52 @@ export class AuthenticationService {
     await this.users.recordLogin(user.id);
     await this.recordAuditEvent(user.id, 'login', meta, { sessionId: session.id });
 
+    return { user, session, rawSessionToken };
+  }
+
+  /**
+   * Finds or creates the managed account for `email` (see managedAccounts.ts). Race-safe: concurrent first calls converge on
+   * one user. A user in any status other than 'active' or 'pending' (suspended, disabled, deleted) is refused and never
+   * silently reactivated. The account is created with a random, unusable password hash, so it cannot be logged into with a
+   * password even if the managed-domain refusal in login() were bypassed.
+   */
+  private async provisionManagedUser(email: string): Promise<User> {
+    let user: User;
+    try {
+      user = await this.users.getByEmail(email);
+    } catch (err) {
+      if (!(err instanceof UserNotFoundError)) throw err;
+      try {
+        user = await this.users.createUser({ email, passwordHash: `!unusable:${randomBytes(32).toString('hex')}` });
+      } catch (createErr) {
+        // Lost a creation race (unique violation / already exists): the winner's row is the one to use.
+        try {
+          user = await this.users.getByEmail(email);
+        } catch {
+          throw createErr;
+        }
+      }
+    }
+    if (user.status === 'pending') return this.users.activate(user.id);
+    return user;
+  }
+
+  /**
+   * Opens a session for a managed account. The caller (the identity-exchange route) MUST have obtained `email` from an
+   * identity provider's verified answer; this method is not an authentication step by itself and is never reachable with
+   * request-supplied identifiers.
+   */
+  async startManagedSession(email: string, meta: RequestMetadata = {}): Promise<LoginResult> {
+    if (!isManagedAccountEmail(email)) throw new InvalidCredentialsError();
+    const user = await this.provisionManagedUser(email);
+    if (user.status !== 'active') {
+      await this.recordAuditEvent(user.id, 'failed_auth', meta, { reason: 'account_not_active', status: user.status, via: 'managed-identity-exchange' });
+      throw new AccountNotActiveError(user.status);
+    }
+    const rawSessionToken = generateSessionToken();
+    const session = await this.sessions.createSession(user.id, hashToken(rawSessionToken), defaultSessionExpiry(), meta.ipAddress, meta.userAgent);
+    await this.users.recordLogin(user.id);
+    await this.recordAuditEvent(user.id, 'login', meta, { sessionId: session.id, via: 'managed-identity-exchange' });
     return { user, session, rawSessionToken };
   }
 

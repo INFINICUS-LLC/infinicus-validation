@@ -15,6 +15,7 @@ on:
       - "functions/**"
       - "scripts/tests/functions-routes.test.mjs"
       - "scripts/tests/functions-guard.test.mjs"
+      - "scripts/tests/browser-credentials.test.mjs"
       - "docs/deployment/LEGACY_ROUTE_HARDENING.md"
       - "index.html"
       - "account.html"
@@ -25,6 +26,7 @@ on:
       - "functions/**"
       - "scripts/tests/functions-routes.test.mjs"
       - "scripts/tests/functions-guard.test.mjs"
+      - "scripts/tests/browser-credentials.test.mjs"
       - "docs/deployment/LEGACY_ROUTE_HARDENING.md"
       - "index.html"
       - "account.html"
@@ -52,7 +54,7 @@ jobs:
         run: npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund @anthropic-ai/sdk@0.39.0
 
       - name: Route, gate, email-policy and default-deny tests
-        run: node --test scripts/tests/functions-routes.test.mjs scripts/tests/functions-guard.test.mjs
+        run: node --test scripts/tests/functions-routes.test.mjs scripts/tests/functions-guard.test.mjs scripts/tests/browser-credentials.test.mjs
 
       - name: Compile the complete Pages Functions tree
         run: >
