@@ -28,7 +28,7 @@ If either is unset the route answers **503** and nothing is created (closed). No
 
 ## Deployment order (treat as ONE release)
 
-1. Deploy the API with `SUPABASE_URL` and `SUPABASE_ANON_KEY` set.
+1. Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` in the VM `.env` (the Hetzner/OCI compose files pass them to the `api` container and refuse to start without them), then deploy the API. See `ac3-r1-release-compatibility.md` for the browser/API compatibility matrix and the exact sequence.
 2. Verify: `POST /v1/auth/identity-exchange` with a made-up 20+ character token → **401** (not 503; 503 means the config did not load). With a real test user's access token → **200** and a working `rawSessionToken`.
 3. Only then publish `index.html`.
 
@@ -43,6 +43,7 @@ Roll back the API and the page together (previous API image + previous `index.ht
 * `sessionStorage` is readable by same-origin script; the backend token is short-lived, revocable and not derivable from anything, but it is not a vault.
 * `index.html` still persists the provider user id in `localStorage` key `infinicus_user` (low; pre-existing).
 * A cached backend token that the API rejects (401) inside its 10-minute client-side window is not retried automatically (low).
+* Sign-out and user switching now revoke the backend session server-side (R1). A superseded cached token that is simply replaced after its 10-minute client life is not revoked and lives to the 24 h server expiry (low).
 * Legacy shadow accounts keep their old password hash (unusable because login is refused for the domain); rotating those hashes is out of scope.
 * Legacy-id migration: ids carried over from the old browser record are bound to the first Supabase user who exchanges on that browser; a different user on the same browser would be refused by the API (403) when using them.
 
