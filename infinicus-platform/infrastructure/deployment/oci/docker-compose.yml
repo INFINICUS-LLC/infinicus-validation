@@ -59,6 +59,12 @@ services:
       EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-INFINICUS <noreply@infini-cus.com>}
       EMAIL_VERIFICATION_URL_BASE: ${EMAIL_VERIFICATION_URL_BASE:-https://infini-cus.com/verify-email}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # J-3 identity exchange (POST /v1/auth/identity-exchange). Public values (the Supabase project URL and its public anon/publishable key),
+      # passed to THIS service only. Required: `docker compose` refuses to start rather than run without them, because the exchange route
+      # would otherwise answer 503 and the site could not obtain a backend session. Set both in .env before deploying; see
+      # docs/production-readiness/ac3-j3-identity-exchange.md. There is deliberately no default and no development fallback.
+      SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL in .env}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY in .env}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Client-IP derivation for rate limiting and audit: trust exactly ONE proxy
       # hop. Caddy is the only entry point (this service is `expose`-only, never

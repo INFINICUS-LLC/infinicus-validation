@@ -3558,11 +3558,65 @@ function loadBackendSession(supaId) {
 function saveBackendSession(s) {
   try { sessionStorage.setItem(BACKEND_SESSION_KEY, JSON.stringify(s)); } catch (e) {}
 }
-// Drops the cached backend session (sign-out, or a different Supabase user).
-// The id record stays: it holds no credential and lets the same user get
-// the same business back; the backend verifies ownership on every request.
-function clearBackendSession() {
+// ── Backend session lifecycle ──────────────────────────────────────────────
+// The 10 minute figure above is only how long THIS PAGE reuses a token. The backend session itself lives on the server until it
+// expires there (24 hours) or is revoked, so every path that stops using a token must also revoke it with POST /v1/auth/logout.
+const BACKEND_LOGOUT_TIMEOUT_MS = 4000;
+// Bumped on every sign-out / user change. An exchange or provisioning step that began under an older value must not complete.
+let _backendAuthEpoch = 0;
+// Outcome of the most recent revocation attempt: { ok, status?, reason?, at }. Never contains a token.
+let lastBackendRevocation = null;
+
+function readStoredBackendSession() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(BACKEND_SESSION_KEY) || 'null');
+    return (s && typeof s.token === 'string' && s.token) ? s : null;
+  } catch (e) { return null; }
+}
+function removeStoredBackendSession() {
   try { sessionStorage.removeItem(BACKEND_SESSION_KEY); } catch (e) {}
+}
+// Asks the backend to revoke one session token. Never throws. The result is recorded in lastBackendRevocation and, when the server
+// did not confirm, reported on the console WITHOUT the token. A 401 means the server no longer accepts the token (already expired or
+// revoked); it is reported as not confirmed by this call.
+async function revokeBackendToken(token) {
+  if (!token) return null;
+  let outcome;
+  const controller = (typeof AbortController === 'function') ? new AbortController() : null;
+  const timer = controller ? setTimeout(function () { controller.abort(); }, BACKEND_LOGOUT_TIMEOUT_MS) : null;
+  try {
+    const res = await fetch(API_BASE_URL + '/v1/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token },
+      signal: controller ? controller.signal : undefined,
+    });
+    outcome = (res.status === 204 || res.status === 200)
+      ? { ok: true, status: res.status }
+      : { ok: false, status: res.status, reason: res.status === 401 ? 'token-not-accepted' : 'http-error' };
+  } catch (e) {
+    outcome = { ok: false, reason: (e && e.name === 'AbortError') ? 'timeout' : 'network' };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+  outcome.at = Date.now();
+  lastBackendRevocation = outcome;
+  if (!outcome.ok) {
+    try { console.warn('[backend-session] server-side revocation not confirmed', { status: outcome.status, reason: outcome.reason }); } catch (e) {}
+  }
+  return outcome;
+}
+// Ends the cached backend session: removes it from this browser FIRST (so it can never be reused, whatever the network does), then asks
+// the server to revoke it. Used on sign-out and when a different Supabase user becomes active. Idempotent; never throws; callers that
+// are about to leave the page await it. The id record stays: it holds no credential and lets the same user get the same business back.
+function discardStoredBackendSession() {
+  const stored = readStoredBackendSession();
+  removeStoredBackendSession();
+  return revokeBackendToken(stored ? stored.token : null);
+}
+function clearBackendSession() {
+  _backendAuthEpoch++;
+  _ensureBackendBusinessInFlight = null;
+  return discardStoredBackendSession();
 }
 
 async function backendFetch(path, opts) {
@@ -3614,9 +3668,10 @@ async function exchangeSupabaseSession() {
 let _ensureBackendBusinessInFlight = null;
 async function ensureBackendBusiness() {
   if (_ensureBackendBusinessInFlight) return _ensureBackendBusinessInFlight;
-  _ensureBackendBusinessInFlight = _ensureBackendBusinessUncached()
-    .finally(() => { _ensureBackendBusinessInFlight = null; });
-  return _ensureBackendBusinessInFlight;
+  const attempt = _ensureBackendBusinessUncached()
+    .finally(() => { if (_ensureBackendBusinessInFlight === attempt) _ensureBackendBusinessInFlight = null; });
+  _ensureBackendBusinessInFlight = attempt;
+  return attempt;
 }
 async function _ensureBackendBusinessUncached() {
   if (!U) throw new Error('not signed in');
@@ -3624,10 +3679,21 @@ async function _ensureBackendBusinessUncached() {
   // onAuthStateChange above) — Public Idea Mode's lightweight email-only
   // capture sets U.email without it, and the exchange needs a real session.
   if (!U.supaId) throw new Error('not signed in with a full account');
-  let session = loadBackendSession(U.supaId);
+  const supaIdAtStart = U.supaId;
+  // A stored session that belongs to a different Supabase user is revoked, never reused. (Narrow discard: it must not bump the epoch
+  // or reset the in-flight attempt, because this very attempt is the one that continues for the current user.)
+  const stored = readStoredBackendSession();
+  if (stored && stored.forSupaId !== supaIdAtStart) { void discardStoredBackendSession(); }
+  const epoch = _backendAuthEpoch;
+  const stillCurrent = function () { return epoch === _backendAuthEpoch && !!U && U.supaId === supaIdAtStart; };
+  let session = loadBackendSession(supaIdAtStart);
   if (!session) {
     session = await exchangeSupabaseSession();
-    if (session.forSupaId !== U.supaId) { clearBackendSession(); throw new Error('signed-in user changed; try again'); }
+    if (!stillCurrent() || session.forSupaId !== supaIdAtStart) {
+      // Signed out, or a different user became active, while the exchange was in flight: discard the result and revoke what it created.
+      void revokeBackendToken(session.token);
+      throw new Error('signed out or user changed during sign-in; try again');
+    }
     saveBackendSession(session);
   }
   const token = session.token;
@@ -3659,6 +3725,7 @@ async function _ensureBackendBusinessUncached() {
   }});
   await backendFetch('/v1/onboarding/' + onboarding.progress.id + '/owner', { method: 'POST', headers: authHeader, body: { tenantId, workspaceId } });
   acct.tenantId = tenantId; acct.workspaceId = workspaceId; acct.businessId = step2.business.id;
+  if (!stillCurrent()) throw new Error('signed out or user changed during provisioning; try again');
   saveBackendIds(acct);
   return acct;
 }
@@ -6223,6 +6290,7 @@ function toggleUserMenu(e) {
 function closeUserMenu() { const m=$('user-menu'); if(m) m.classList.remove('open'); }
 async function signOutEngine() {
   closeUserMenu();
+  if (typeof clearBackendSession === 'function') await clearBackendSession();
   await SUPA.auth.signOut().catch(()=>{});
   try{localStorage.removeItem('infinicus_user');}catch(e){}
   try{localStorage.removeItem('infinicus_tc_accepted');}catch(e){}
@@ -6419,6 +6487,7 @@ async function doRegister() {
 }
 
 async function signOut() {
+  if (typeof clearBackendSession === 'function') await clearBackendSession();
   await SUPA.auth.signOut().catch(()=>{});
   try{localStorage.removeItem('infinicus_user');}catch(e){}
   try{localStorage.removeItem('infinicus_tc_accepted');}catch(e){}
