@@ -110,3 +110,20 @@ source records -> **DAL** (15 records accepted, 15 provenance records, run publi
 ## 12. Block 10 — chain ownership guards
 `packages/business-operations-runtime/tests/ac2-chain-ownership.architecture.test.ts` (10 tests, no database; scans production source, comments stripped). One test per rule: DAL cannot authorize or execute; BI cannot mutate BO; BDT is not a second BO source of truth (and BO never reads the twin); ADI cannot write BO; ADI cannot bypass ABA (only the three ABA files use the package repositories; capture requires a validated structured proposal); ABA cannot execute; BO is the sole operational writer (inventory items, warehouses, movements, balances and the protected reorder functions); OM cannot mutate BO (and depends only on database, event-contracts and handoff-contracts); CL cannot consume `OUTCOME_PENDING` (`learningEligibility` refuses pending, inconclusive, observed and failed outcomes; CL code never reads execution verifications; migration 0194 admits only pending or inconclusive).
 - Limit: these are source-level guards, not a runtime sandbox; they prove no code path exists in the scanned tree, not that a future file cannot add one without tripping a guard.
+
+## 13. Block 11 — criteria reassessment (A, C, D, M)
+Basis: merged AC-2 blocks 2–10 (#118–#126), full Turbo 39/39 on the Block 9/10 head. Statuses are code-level, on a private PostgreSQL; nothing was run in production or staging.
+
+| Criterion | Before AC-2 | After | Confidence | Evidence |
+|---|---|---|---|---|
+| A — DAL | PARTIAL (70%) | **COMPLETE (code-level)** | 85% | `ac2-dal-first-action-ingestion` (6), `ac2-principal-first-action` (4), `ac2-failure-proofs` malformed/missing-field groups, `ac2-bo-canonical-writer.architecture`, `ac2-chain-ownership` (DAL rule) |
+| C — BI/BDT/SIM | PARTIAL (60%) | **COMPLETE (code-level)** | 80% | `ac2-bi-evidence` (9+6), `ac2-bdt-state` (8+7+5), `ac2-adi-boundary` (8+7), `ac2-failure-proofs` BI/BDT mismatch group; simulation = ruled governed NOT_APPLICABLE (C-1) |
+| D — ADI | COMPLETE (85%, AC-1) | **COMPLETE (code-level)** | 88% | producer v1.2.0 requires BI and BDT evidence; canonical base risk class `medium` (Block 2); ADI cannot write BO or bypass ABA (`ac2-chain-ownership`) |
+| M — End to end | PARTIAL (80%) | **COMPLETE (code-level, private database)** | 80% | `ac2-principal-first-action.e2e` (DAL-fed, nothing seeded, plain/modified/baseline-changed), `ac2-failure-proofs` (34), `ac2-chain-ownership` (10) |
+
+Why these are not higher (confidence below 90%):
+- **A:** the baseline reorder policy and the declared currency are not DAL-fed, by owner ruling D2/D3; intake is manual, with no connector or scheduled source.
+- **C:** scoped to one action by design; BI/BDT services live in `packages/workflow` and the `layers/*` directories remain placeholders; no simulation model exists (ruled).
+- **M:** no production or staging run; the worker is driven in-process, not deployed; failure-proof reason codes and ownership guards were not mutation-tested.
+- **Unchanged:** J (security/tenancy scope), K and L (parked track #114) are not touched by AC-2; "repository architecture complete" therefore stays PARTIAL until the owner rules on J and the parked track.
+- Owner decision requested: accept A, C, D, M as COMPLETE at code level on this evidence, or name the evidence still required.
