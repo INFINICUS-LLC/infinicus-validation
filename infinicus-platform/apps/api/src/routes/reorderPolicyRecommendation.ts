@@ -12,6 +12,9 @@ import { errorResponseSchema } from '../schemas/common.js';
  * named and nothing was persisted). Tenant, workspace and actor come from the authenticated context only.
  */
 export const REORDER_RECOMMENDATION_PERMISSION = 'adi:write';
+/** AC-2 Block 7: the principal path reads the governed Business Intelligence evidence and the Business Digital Twin state, so the caller must hold their read permissions (existing permissions, no new one). */
+export const REORDER_RECOMMENDATION_BI_PERMISSION = 'bi:read';
+export const REORDER_RECOMMENDATION_DT_PERMISSION = 'dt:read';
 /** The route also appends Business Operations evaluation facts (the proposal's authoritative baseline), so it requires BO's own write permission too. */
 export const REORDER_RECOMMENDATION_BO_PERMISSION = 'bo:write';
 const errors = { 400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema, 409: errorResponseSchema };
@@ -28,7 +31,7 @@ export default async function reorderPolicyRecommendationRoutes(app: FastifyInst
       params: reorderPolicyRecommendationParamsSchema,
       response: { 200: reorderPolicyRecommendationResponseSchema, 201: reorderPolicyRecommendationResponseSchema, ...errors },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission(REORDER_RECOMMENDATION_PERMISSION), app.requirePermission(REORDER_RECOMMENDATION_BO_PERMISSION), app.requireActiveSubscription(), app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission(REORDER_RECOMMENDATION_PERMISSION), app.requirePermission(REORDER_RECOMMENDATION_BO_PERMISSION), app.requirePermission(REORDER_RECOMMENDATION_BI_PERMISSION), app.requirePermission(REORDER_RECOMMENDATION_DT_PERMISSION), app.requireActiveSubscription(), app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, itemId } = request.params;
     await businesses.getById(request.ctx!, businessId); // 404s cleanly when the business is not in this tenant and workspace

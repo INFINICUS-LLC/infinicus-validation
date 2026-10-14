@@ -47,7 +47,7 @@ export interface InventoryItemTwinDependencies {
   bi: InventoryBiEvidenceReader;
   definitions: Pick<DigitalTwinDefinitionRepository, 'createDefinition' | 'createVersion' | 'validateVersion' | 'activateVersion'>;
   instances: Pick<DigitalTwinInstanceRepository, 'createInstance' | 'createVersion' | 'transitionStatus' | 'getActiveForBusiness'>;
-  snapshots: Pick<DigitalTwinSnapshotRepository, 'createSnapshot' | 'addValue' | 'addEvidence' | 'validateSnapshot' | 'publishSnapshot' | 'getPublishedForInstance' | 'getValuesForPublishedSnapshot'>;
+  snapshots: Pick<DigitalTwinSnapshotRepository, 'createSnapshot' | 'addValue' | 'addEvidence' | 'validateSnapshot' | 'publishSnapshot' | 'getPublishedForInstance' | 'getValuesForPublishedSnapshot' | 'assessFreshness'>;
   now: () => Date;
 }
 
@@ -120,15 +120,26 @@ export class InventoryItemTwinService {
     });
   }
 
+  /** The existing P0-3 freshness rule for a twin snapshot: `usable` when it was published; `newerPublishedExists` when a newer snapshot of the business has been published since. Read-only. */
+  async assessFreshness(ctx: TenantContext, businessId: string, snapshotId: string): Promise<{ usable: boolean; newerPublishedExists: boolean }> {
+    return this.d.snapshots.assessFreshness(ctx, businessId, snapshotId);
+  }
+
   /** The newest published twin state of an item (its snapshot id, effective time and state), or null. Read-only. */
   async getLatest(ctx: TenantContext, businessId: string, itemId: string): Promise<{ snapshotId: string; effectiveAt: string; state: InventoryItemTwinState } | null> {
     const instance = (await this.d.instances.getActiveForBusiness(ctx, businessId)).find((i) => i.instanceCode === INVENTORY_ITEM_TWIN_CODE);
     if (!instance) return null;
-    for (const snap of await this.d.snapshots.getPublishedForInstance(ctx, instance.id)) { // newest first
+    // Snapshots come newest first by effective time, which has one-second resolution: two states published within the same second tie, so the tie is broken
+    // deterministically by the BI evidence version each was derived from (the later evidence wins). The scan stops once an older effective time is reached.
+    let best: { snapshotId: string; effectiveAt: string; state: InventoryItemTwinState } | null = null;
+    for (const snap of await this.d.snapshots.getPublishedForInstance(ctx, instance.id)) {
+      if (best !== null && snap.effectiveAt.toISOString() < best.effectiveAt) break;
       const value = (await this.d.snapshots.getValuesForPublishedSnapshot(ctx, snap.id)).find((v) => v.variableCode === INVENTORY_ITEM_TWIN_VARIABLE);
       const state = value?.valueJson as InventoryItemTwinState | undefined;
-      if (state && state.inventoryItemId === itemId) return { snapshotId: snap.id, effectiveAt: snap.effectiveAt.toISOString(), state };
+      if (!state || state.inventoryItemId !== itemId) continue;
+      if (best === null || state.references.biVersionNumber > best.state.references.biVersionNumber) best = { snapshotId: snap.id, effectiveAt: snap.effectiveAt.toISOString(), state };
     }
-    return null;
+    return best;
   }
 }
+

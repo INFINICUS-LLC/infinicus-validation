@@ -946,6 +946,7 @@ describe.runIf(run)('P0-5 ABA authoring / administration (HTTP, live PostgreSQL)
     /** The REAL ADI producer (production route) turns the BO facts into the structured recommendation ABA now requires; returns the ABA intake over it. */
     async function produce(s: Session, bo: Bo): Promise<{ intakePackageId: string; recommendationId: string }> {
       const kit = chainKit({ app, admin: adminPool, tenantIds: [] });
+      await kit.publishEvidence(s, bo.itemId); // AC-2 Block 7: governed BI evidence and BDT state precede the recommendation
       const r = await post(s, kit.reorderRecommendationUrl(s, bo.itemId));
       expect(r.statusCode, r.body).toBe(201);
       bo.proposal = r.json().proposal.proposedParameters;

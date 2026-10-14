@@ -11,7 +11,7 @@
 //
 // The action vocabulary is the canonical one (canonical-actions.ts); this contract invents no action type, target kind or parameter.
 
-import { CANONICAL_ACTION_TYPES } from './authorized-action-package/canonical-actions';
+import { BI_BDT_EVIDENCE_REQUIRED, CANONICAL_ACTION_TYPES, actionTypeKey } from './authorized-action-package/canonical-actions';
 import { checkParameterValue } from './authorized-action-package/action-types';
 import type { JsonValue } from './authorized-action-package/types';
 
@@ -24,6 +24,10 @@ export type ProposedActionMethod = (typeof PROPOSED_ACTION_METHODS)[number];
 /** Evidence kinds of the first action: the BO fact snapshot the proposal was derived from, and the BO evaluation records of that exact proposal. */
 export const BO_FACTS_REFERENCE_KIND = 'bo_inventory_policy_facts' as const;
 export const BO_EVALUATION_REFERENCE_KIND = 'bo_inventory_policy_evaluation' as const;
+/** AC-2 Block 7: a reference to the published BI insight package version the proposal was derived from (`id` = the version id). */
+export const BI_EVIDENCE_REFERENCE_KIND = 'bi_inventory_evidence' as const;
+/** AC-2 Block 7: a reference to the published BDT snapshot (`id` = the snapshot id) whose modeled state the proposal was derived from. */
+export const BDT_STATE_REFERENCE_KIND = 'bdt_inventory_item_state' as const;
 
 export interface ProposedActionEvidenceReference {
   /** What the reference points at, e.g. `bo_inventory_policy_facts`. */
@@ -108,6 +112,7 @@ export function validateProposedActionRecommendation(value: unknown): string[] {
   if (!Array.isArray(ev) || ev.length === 0) p.push('at least one evidence reference is required');
   else for (const [i, e] of ev.entries()) {
     if (!isObject(e) || !nonBlank(e.kind, 100) || typeof e.digest !== 'string' || !DIGEST.test(e.digest)) { p.push(`evidenceReferences[${i}] must carry a kind and a sha256 digest`); continue; }
+    if ((e.kind === BI_EVIDENCE_REFERENCE_KIND || e.kind === BDT_STATE_REFERENCE_KIND) && (typeof e.id !== 'string' || !UUID.test(e.id))) p.push(`evidenceReferences[${i}] (${String(e.kind)}) must carry a lowercase UUID id`);
     if (e.kind === BO_EVALUATION_REFERENCE_KIND && (typeof e.id !== 'string' || !UUID.test(e.id) || !nonBlank(e.dimension, 100))) p.push(`evidenceReferences[${i}] (a BO evaluation) must carry a lowercase UUID id and a dimension`);
   }
 
@@ -164,5 +169,12 @@ export function proposalEvidenceProblems(proposal: ProposedActionRecommendation)
   for (const e of evals) { if (e.dimension === undefined || seen.has(e.dimension) || !wanted.has(e.dimension)) p.push(`unexpected or repeated evaluation dimension ${String(e.dimension)}`); else seen.add(e.dimension); }
   for (const d of wanted) if (!seen.has(d)) p.push(`no BO evaluation reference for ${d}`);
   if (facts.length === 1 && evals.some((e) => e.digest !== facts[0].digest)) p.push('the evaluation records and the fact snapshot do not carry the same digest');
+  if (BI_BDT_EVIDENCE_REQUIRED.has(actionTypeKey(canonical.code, canonical.schemaVersion))) {
+    for (const kind of [BI_EVIDENCE_REFERENCE_KIND, BDT_STATE_REFERENCE_KIND]) {
+      const refs = proposal.evidenceReferences.filter((e) => e.kind === kind);
+      if (refs.length !== 1) p.push(`exactly one ${kind} reference is required (the principal path consumes governed BI/BDT evidence)`);
+      else if (facts.length === 1 && refs[0].digest !== facts[0].digest) p.push(`the ${kind} reference and the fact snapshot do not carry the same digest`);
+    }
+  }
   return p;
 }
