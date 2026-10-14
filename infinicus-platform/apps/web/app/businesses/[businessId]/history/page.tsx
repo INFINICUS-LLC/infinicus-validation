@@ -1,37 +1,23 @@
 import { DecisionWorkflowService } from '@infinicus/workflow';
-import { ensurePool } from '../../../../lib/db';
-import { contextFromSearchParams, ctxQuery, type SearchParams } from '../../../../lib/context';
+import { requireServerContext } from '../../../../lib/serverContext';
+import { WORKFLOW_VIEW_PERMISSIONS } from '../../../../lib/permissions';
+import { AccessNotice } from '../../../access-notice';
 
-export default async function HistoryPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ businessId: string }>;
-  searchParams: Promise<SearchParams>;
-}) {
+export default async function HistoryPage({ params }: { params: Promise<{ businessId: string }> }) {
   const { businessId } = await params;
-  const resolvedSearchParams = await searchParams;
-  const ctx = contextFromSearchParams(resolvedSearchParams);
+  // The history aggregates every layer, so it needs the same full read set as the workflow view.
+  const access = await requireServerContext(WORKFLOW_VIEW_PERMISSIONS);
+  if (!access.ok) return <AccessNotice reason={access.reason} />;
 
-  if (!ctx) {
-    return (
-      <div className="card">
-        <p className="notice danger">Missing tenant context. <a href="/businesses">Start over</a>.</p>
-      </div>
-    );
-  }
-
-  ensurePool();
   const service = new DecisionWorkflowService();
   const [view, history] = await Promise.all([
-    service.getWorkflowView(ctx, businessId),
-    service.getDecisionHistory(ctx, businessId),
+    service.getWorkflowView(access.ctx, businessId),
+    service.getDecisionHistory(access.ctx, businessId),
   ]);
-  const query = ctxQuery(ctx);
 
   return (
     <div>
-      <p><a href={`/businesses/${businessId}/workflow?${query}`}>&larr; Back to workflow</a></p>
+      <p><a href={`/businesses/${businessId}/workflow`}>&larr; Back to workflow</a></p>
       <h1>Decision history — {view.business.legalName}</h1>
       <p>
         Each stage is listed independently, most recent first — there is no

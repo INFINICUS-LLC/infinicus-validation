@@ -12,14 +12,17 @@
     "clean": "rm -rf .next dist"
   },
   "devDependencies": {
+    "@types/pg": "^8.11.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "pg": "^8.12.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   },
   "dependencies": {
     "@infinicus/shared-types": "workspace:*",
     "@infinicus/authentication": "workspace:*",
+    "@infinicus/authorization": "workspace:*",
     "@infinicus/configuration": "workspace:*",
     "@infinicus/database": "workspace:*",
     "@infinicus/workflow": "workspace:*",

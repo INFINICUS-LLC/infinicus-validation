@@ -1,41 +1,26 @@
 import { DecisionWorkflowService } from '@infinicus/workflow';
-import { ensurePool } from '../../../../lib/db';
-import { contextFromSearchParams, ctxQuery, type SearchParams } from '../../../../lib/context';
+import { requireServerContext } from '../../../../lib/serverContext';
+import { WORKFLOW_VIEW_PERMISSIONS } from '../../../../lib/permissions';
+import { AccessNotice } from '../../../access-notice';
 import { submitApprovalDecisionAction, recordOutcomeAction } from './actions';
 
-export default async function WorkflowPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ businessId: string }>;
-  searchParams: Promise<SearchParams>;
-}) {
+export default async function WorkflowPage({ params }: { params: Promise<{ businessId: string }> }) {
   const { businessId } = await params;
-  const resolvedSearchParams = await searchParams;
-  const ctx = contextFromSearchParams(resolvedSearchParams);
+  const access = await requireServerContext(WORKFLOW_VIEW_PERMISSIONS);
+  if (!access.ok) return <AccessNotice reason={access.reason} />;
 
-  if (!ctx) {
-    return (
-      <div className="card">
-        <p className="notice danger">Missing tenant context. <a href="/businesses">Start over</a>.</p>
-      </div>
-    );
-  }
-
-  ensurePool();
   const service = new DecisionWorkflowService();
-  const view = await service.getWorkflowView(ctx, businessId);
-  const query = ctxQuery(ctx);
+  const view = await service.getWorkflowView(access.ctx, businessId);
 
   return (
     <div>
-      <p><a href={`/businesses?${query}`}>&larr; All businesses</a></p>
+      <p><a href="/businesses">&larr; All businesses</a></p>
       <h1>{view.business.legalName}</h1>
       <p>
         <span className="status-badge">{view.business.status}</span>
         {view.business.industry ? <span> &middot; {view.business.industry}</span> : null}
         {' · '}
-        <a href={`/businesses/${businessId}/history?${query}`}>View decision history</a>
+        <a href={`/businesses/${businessId}/history`}>View decision history</a>
       </p>
 
       <section className="card" aria-labelledby="data-review-heading">
@@ -136,9 +121,6 @@ export default async function WorkflowPage({
         <details>
           <summary>Start a review and record a decision</summary>
           <form className="stack" action={submitApprovalDecisionAction}>
-            <input type="hidden" name="tenantId" value={ctx.tenantId} />
-            <input type="hidden" name="workspaceId" value={ctx.workspaceId} />
-            <input type="hidden" name="userId" value={ctx.userId} />
             <input type="hidden" name="businessId" value={businessId} />
             <div>
               <label htmlFor="intakePackageId">ABA intake package ID</label>
@@ -178,9 +160,6 @@ export default async function WorkflowPage({
         <details>
           <summary>Record an outcome</summary>
           <form className="stack" action={recordOutcomeAction}>
-            <input type="hidden" name="tenantId" value={ctx.tenantId} />
-            <input type="hidden" name="workspaceId" value={ctx.workspaceId} />
-            <input type="hidden" name="userId" value={ctx.userId} />
             <input type="hidden" name="businessId" value={businessId} />
             <div>
               <label htmlFor="monitoredActionId">Monitored action ID</label>

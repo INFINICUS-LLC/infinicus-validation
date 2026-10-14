@@ -2,22 +2,18 @@
 
 import { redirect } from 'next/navigation';
 import { DecisionWorkflowService, DEFAULT_APPROVER_ASSIGNMENT_CODE } from '@infinicus/workflow';
-import { ensurePool } from '../../../../lib/db';
-import { contextFromSearchParams, ctxQuery } from '../../../../lib/context';
+import { requireServerContext } from '../../../../lib/serverContext';
+import { DECISION_PERMISSIONS, OUTCOME_PERMISSIONS } from '../../../../lib/permissions';
 
-function requireCtxFromForm(formData: FormData) {
-  const ctx = contextFromSearchParams({
-    tenantId: String(formData.get('tenantId') ?? ''),
-    workspaceId: String(formData.get('workspaceId') ?? ''),
-    userId: String(formData.get('userId') ?? ''),
-  });
-  if (!ctx) throw new Error('Missing tenant context.');
-  return ctx;
+/** Identity and scope come only from the server-validated session; form fields identify targets (businessId and ids) and nothing else. */
+async function requireCtx(permissions: readonly string[]) {
+  const result = await requireServerContext(permissions);
+  if (!result.ok) throw new Error('Not authorized.');
+  return result.ctx;
 }
 
 export async function submitApprovalDecisionAction(formData: FormData): Promise<void> {
-  ensurePool();
-  const ctx = requireCtxFromForm(formData);
+  const ctx = await requireCtx(DECISION_PERMISSIONS);
   const businessId = String(formData.get('businessId'));
   const outcome = String(formData.get('outcome'));
   if (outcome !== 'approve' && outcome !== 'approve_with_modifications' && outcome !== 'reject') {
@@ -38,12 +34,11 @@ export async function submitApprovalDecisionAction(formData: FormData): Promise<
     outcome,
   });
 
-  redirect(`/businesses/${businessId}/workflow?${ctxQuery(ctx)}`);
+  redirect(`/businesses/${encodeURIComponent(businessId)}/workflow`);
 }
 
 export async function recordOutcomeAction(formData: FormData): Promise<void> {
-  ensurePool();
-  const ctx = requireCtxFromForm(formData);
+  const ctx = await requireCtx(OUTCOME_PERMISSIONS);
   const businessId = String(formData.get('businessId'));
 
   const service = new DecisionWorkflowService();
@@ -54,5 +49,5 @@ export async function recordOutcomeAction(formData: FormData): Promise<void> {
     effectiveAt: new Date(),
   });
 
-  redirect(`/businesses/${businessId}/workflow?${ctxQuery(ctx)}`);
+  redirect(`/businesses/${encodeURIComponent(businessId)}/workflow`);
 }
