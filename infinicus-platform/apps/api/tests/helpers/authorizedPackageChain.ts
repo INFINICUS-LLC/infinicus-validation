@@ -114,6 +114,18 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
     return intake.id;
   }
 
+  /**
+   * AC-2 Block 7: the principal path needs GOVERNED evidence - BI evidence of the item and the BDT state derived from it - before ADI will recommend. Publishes both
+   * through the production routes (BO -> BI -> BDT).
+   */
+  async function publishEvidence(s: Session, itemId: string): Promise<{ bi: any; twin: any }> {
+    const bi = await post(s, `/v1/businesses/${s.bizId}/inventory-items/${itemId}/bi-evidence`, { ruleSetVersion: RULE_SET });
+    expect(bi.statusCode, bi.body).toBe(201);
+    const twin = await post(s, `/v1/businesses/${s.bizId}/inventory-items/${itemId}/twin-state`, {});
+    expect(twin.statusCode, twin.body).toBe(201);
+    return { bi: bi.json(), twin: twin.json() };
+  }
+
   const reorderRecommendationUrl = (s: Session, itemId: string) => `/v1/businesses/${s.bizId}/inventory-items/${itemId}/reorder-policy-recommendation`;
 
   /**
@@ -128,6 +140,7 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
     await governance(s);
     expect((await post(s, `/v1/businesses/${s.bizId}/approver-assignments`, { approverUserId: s.ctx.userId, assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, roleCode: 'business-owner' })).statusCode).toBe(201);
     const bo = await seedBo(s);
+    await publishEvidence(s, bo.itemId);
     const produced = await post(s, reorderRecommendationUrl(s, bo.itemId));
     expect(produced.statusCode, produced.body).toBe(201);
     const { recommendationId, recommendationVersionId, proposal } = produced.json();
@@ -174,5 +187,5 @@ export function chainKit(env: { app: FastifyInstance; admin: Pool; tenantIds: st
   /** ABA's issuer: seals the package and (gate open) announces it in the same transaction. Replays announce again, idempotently. */
   const issue = (c: Chain) => post(c.s, `${c.base}/package`);
 
-  return { hdr, post, put, get, setup, seedBo, authorChain: authorFromAdi, authorFromAdi, intakeFromRecommendation, reorderRecommendationUrl, refs, boundaries, governance, activate, issue };
+  return { hdr, post, put, get, setup, seedBo, authorChain: authorFromAdi, authorFromAdi, intakeFromRecommendation, publishEvidence, reorderRecommendationUrl, refs, boundaries, governance, activate, issue };
 }

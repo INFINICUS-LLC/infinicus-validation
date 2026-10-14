@@ -23,6 +23,8 @@ import { ReorderPolicyRecommendationProducer, DEFAULT_APPROVER_ASSIGNMENT_CODE, 
 import { ReorderPolicyBaselineEvidenceRecorder, ReorderPolicyDerivationService } from '@infinicus/business-operations-runtime';
 import { buildEventWorker } from '../../../packages/event-worker/src/index.js';
 import { buildApp } from '../src/app.js';
+import { buildInventoryBiEvidenceService } from '../src/inventoryBiEvidenceComposition.js';
+import { buildInventoryItemTwinService } from '../src/inventoryItemTwinComposition.js';
 import { ACTION, FINAL, BASELINE, chainKit, type AdiChain } from './helpers/authorizedPackageChain.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
 import { createAbaFixture, APPROVABLE_FACTS, uc } from './helpers/abaFixtures.js';
@@ -100,6 +102,7 @@ describe.runIf(run)('AC-1: a real ADI-produced first-action recommendation, end 
     const s = await kit.setup();
     const bo = await kit.seedBo(s);
     await tweak(s, bo);
+    await kit.publishEvidence(s, bo.itemId); // AC-2 Block 7: the governed BI evidence and BDT state describe the (tweaked) BO facts the producer will read
     return { s, bo, produce: () => kit.post(s, kit.reorderRecommendationUrl(s, bo.itemId)) };
   }
 
@@ -297,6 +300,7 @@ describe.runIf(run)('AC-1: a real ADI-produced first-action recommendation, end 
       // re-point the action's source recommendation to a recommendation owned by the other business
       const s2 = { ...c.s, bizId: biz2 };
       const bo2 = await kit.seedBo(s2);
+      await kit.publishEvidence(s2, bo2.itemId);
       const produced = await kit.post(s2, kit.reorderRecommendationUrl(s2, bo2.itemId));
       expect(produced.statusCode, produced.body).toBe(201);
       await replica(`UPDATE ${ABA}.approved_actions SET source_recommendation_id=$2 WHERE id=$1`, [c.actionId, produced.json().recommendationId]);
@@ -392,9 +396,9 @@ describe.runIf(run)('AC-1: a real ADI-produced first-action recommendation, end 
       const b = await world();
       // b's item under a's business: the item does not resolve inside a's tenant, workspace and business
       const cross = await kit.post(a.s, kit.reorderRecommendationUrl(a.s, b.bo.itemId));
-      noRec(cross, 'EVIDENCE_UNAVAILABLE', 'TARGET_UNRESOLVED');
+      noRec(cross, 'BI_EVIDENCE_MISSING'); // AC-2 Block 7: the evidence gate precedes the derivation; b's item has no BI evidence under a's business
       const unknown = await kit.post(a.s, kit.reorderRecommendationUrl(a.s, randomUUID()));
-      noRec(unknown, 'EVIDENCE_UNAVAILABLE', 'TARGET_UNRESOLVED');
+      noRec(unknown, 'BI_EVIDENCE_MISSING');
       // a's business id through b's session: not found in b's tenant
       const foreignBusiness = await kit.post(b.s, `/v1/businesses/${a.s.bizId}/inventory-items/${a.bo.itemId}/reorder-policy-recommendation`);
       expect(foreignBusiness.statusCode).toBe(404);
@@ -423,16 +427,16 @@ describe.runIf(run)('AC-1: a real ADI-produced first-action recommendation, end 
         current: { reorderPoint: '170', reorderQuantity: '190' }, proposed: { reorderPoint: 175, reorderQuantity: 190 }, bounds: { a: '1' },
         verification: [{ dimension: 'CONSTRAINTS', result: 'PASSED' }], demand: { count: 12, sumOfMagnitudes: '900', windowDays: 90 }, method: 'm',
       };
-      const digest = `sha256:${'b'.repeat(64)}`;
+      const digest = (await kit.publishEvidence(w.s, w.bo.itemId)).bi.factsDigest; // the digest the governed BI/BDT evidence carries (the injected deriver must agree with it)
       const evidence = { snapshotDigest: digest, capturedAt: new Date().toISOString(), windowStartsAt: new Date(Date.now() - 90 * DAY).toISOString(), ruleSetVersion: RS, evidenceMaxAgeMs: 86_400_000 };
       const okRecord = async () => ({ ok: true as const, snapshotDigest: digest, references: ['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME'].map((dimension) => ({ kind: 'bo_inventory_policy_evaluation', id: randomUUID(), dimension })) });
-      const producerWith = (derive: ReorderPolicyDeriverPort['derive'], recordBaselineEvidence: ReorderPolicyDeriverPort['recordBaselineEvidence'] = okRecord) => new ReorderPolicyRecommendationProducer({ deriver: { derive, recordBaselineEvidence } });
+      const producerWith = (derive: ReorderPolicyDeriverPort['derive'], recordBaselineEvidence: ReorderPolicyDeriverPort['recordBaselineEvidence'] = okRecord) => new ReorderPolicyRecommendationProducer({ deriver: { derive, recordBaselineEvidence }, bi: buildInventoryBiEvidenceService(), twin: buildInventoryItemTwinService() });
       const req = { businessId: w.s.bizId, itemId: w.bo.itemId };
       const rc = { permissionUsed: 'bo:write' };
 
       // the control: with a well-formed derivation and recording the injected producer does produce (so each refusal below is caused by its own defect)
       const control = await producerWith(async () => ({ derivation: good, evidence })).produce(w.s.ctx, req, rc);
-      expect(control).toMatchObject({ outcome: 'RECOMMENDED' });
+      expect(control, JSON.stringify(control)).toMatchObject({ outcome: 'RECOMMENDED' });
       await replica(`DELETE FROM ${ADI}.recommendation_rationales WHERE business_id=$1`, [w.s.bizId]).catch(() => undefined);
 
       const before = (await adiRecs(w.s.bizId)).length;
@@ -463,7 +467,7 @@ describe.runIf(run)('AC-1: a real ADI-produced first-action recommendation, end 
       const evalCount = async () => (await q(`SELECT 1 FROM ${BO}.inventory_policy_evaluations WHERE business_id=$1`, [w.s.bizId])).length;
       const evalsBefore = await evalCount();
       await expect(new ReorderPolicyRecommendationProducer({
-        deriver: { derive: (ctx, r) => real.derive(ctx, r), recordBaselineEvidence: (ctx, r) => recorder.record(ctx, r) },
+        deriver: { derive: (ctx, r) => real.derive(ctx, r), recordBaselineEvidence: (ctx, r) => recorder.record(ctx, r) }, bi: buildInventoryBiEvidenceService(), twin: buildInventoryItemTwinService(),
         recommendations: { createRecommendation: async () => { throw new Error('persist failed'); } } as any,
       }).produce(w.s.ctx, req, rc)).rejects.toThrow('persist failed');
       expect(await evalCount()).toBe(evalsBefore); // no orphan BO evaluation facts

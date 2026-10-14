@@ -56,6 +56,15 @@ export const STRUCTURED_ADI_PROPOSAL_REQUIRED: ReadonlySet<string> = Object.free
 ])) as ReadonlySet<string>;
 
 /**
+ * AC-2 Block 7: action types whose structured ADI proposal must cite the governed Business Intelligence evidence AND the Business Digital Twin state it was
+ * derived from (one reference each, bound to the same fact digest), so the principal path never rests on an ad-hoc Business Operations snapshot. Per
+ * `code@schemaVersion`, never global; a future type states its own requirement.
+ */
+export const BI_BDT_EVIDENCE_REQUIRED: ReadonlySet<string> = Object.freeze(new Set<string>([
+  `${INVENTORY_REORDER_POLICY_UPDATE_V1.code}@${INVENTORY_REORDER_POLICY_UPDATE_V1.schemaVersion}`,
+])) as ReadonlySet<string>;
+
+/**
  * AC-2 (owner ruling 1): the BASE risk class of an action type is canonical action-type governance, defined exactly here and nowhere else.
  * Per `code@schemaVersion`, never global; a type with no entry has no base class (its risk stays whatever the P0-2/P0-3 evidence supports,
  * and unclassified is treated as high). Consumers: the ADI risk derivation takes it as a deterministic FLOOR input (ADI does not classify),

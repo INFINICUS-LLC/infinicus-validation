@@ -1,6 +1,6 @@
 /** AC-1 - the ADI structured proposed-action contract: validator is fail-closed; matching helper compares exactly. */
 import { describe, expect, it } from 'vitest';
-import { CANONICAL_ACTION_TYPES, CANONICAL_BASE_RISK_CLASS, canonicalBaseRiskClass, ADI_PROPOSED_ACTION_CONTRACT, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, STRUCTURED_ADI_PROPOSAL_REQUIRED, boEvaluationReferences, proposalEvidenceProblems, proposalMatchesCapture, validateProposedActionRecommendation, type ProposedActionRecommendation } from '../src';
+import { BDT_STATE_REFERENCE_KIND, BI_BDT_EVIDENCE_REQUIRED, BI_EVIDENCE_REFERENCE_KIND, CANONICAL_ACTION_TYPES, CANONICAL_BASE_RISK_CLASS, canonicalBaseRiskClass, ADI_PROPOSED_ACTION_CONTRACT, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, STRUCTURED_ADI_PROPOSAL_REQUIRED, boEvaluationReferences, proposalEvidenceProblems, proposalMatchesCapture, validateProposedActionRecommendation, type ProposedActionRecommendation } from '../src';
 
 const ITEM = '11111111-1111-4111-8111-111111111111';
 const good = (): ProposedActionRecommendation => ({
@@ -74,7 +74,8 @@ describe('AC-1 corrections: proposal evidence completeness and the mandatory-pro
   const DIMS = ['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME'];
   const withEvidence = (mut: (e: Record<string, any>[]) => void = () => undefined): ProposedActionRecommendation => {
     const p = JSON.parse(JSON.stringify(good()));
-    p.evidenceReferences = [{ kind: BO_FACTS_REFERENCE_KIND, digest: D }, ...DIMS.map((dimension, i) => ({ kind: BO_EVALUATION_REFERENCE_KIND, id: `00000000-0000-4000-8000-00000000000${i}`, dimension, digest: D }))];
+    p.evidenceReferences = [{ kind: BO_FACTS_REFERENCE_KIND, digest: D }, ...DIMS.map((dimension, i) => ({ kind: BO_EVALUATION_REFERENCE_KIND, id: `00000000-0000-4000-8000-00000000000${i}`, dimension, digest: D })),
+      { kind: BI_EVIDENCE_REFERENCE_KIND, id: '00000000-0000-4000-8000-0000000000b1', digest: D }, { kind: BDT_STATE_REFERENCE_KIND, id: '00000000-0000-4000-8000-0000000000d1', digest: D }];
     mut(p.evidenceReferences);
     return p;
   };
@@ -86,6 +87,7 @@ describe('AC-1 corrections: proposal evidence completeness and the mandatory-pro
   });
   it('facts-only evidence, a missing/repeated/unknown dimension, a second facts reference and a digest mismatch are all named', () => {
     expect(proposalEvidenceProblems(good()).join()).toContain('no BO evaluation reference for COST');
+    expect(proposalEvidenceProblems(good()).join()).toContain('exactly one bi_inventory_evidence reference is required');
     expect(proposalEvidenceProblems(withEvidence((e) => e.splice(1, 1))).join()).toContain('no BO evaluation reference for CONSTRAINTS');
     expect(proposalEvidenceProblems(withEvidence((e) => { e[2].dimension = 'CONSTRAINTS'; })).join()).toContain('repeated');
     expect(proposalEvidenceProblems(withEvidence((e) => { e[1].dimension = 'NOT_A_DIMENSION'; })).join()).toContain('unexpected');
@@ -96,6 +98,33 @@ describe('AC-1 corrections: proposal evidence completeness and the mandatory-pro
     expect(validateProposedActionRecommendation(withEvidence((e) => { delete e[1].id; })).join()).toContain('UUID id and a dimension');
     expect(validateProposedActionRecommendation(withEvidence((e) => { e[1].id = 'not-a-uuid'; })).join()).toContain('UUID id and a dimension');
     expect(validateProposedActionRecommendation(withEvidence((e) => { delete e[1].dimension; })).join()).toContain('UUID id and a dimension');
+  });
+});
+
+describe('AC-2 Block 7: the principal path cites governed BI and BDT evidence', () => {
+  const D = `sha256:${'a'.repeat(64)}`;
+  const full = (mut: (e: Record<string, any>[]) => void = () => undefined): ProposedActionRecommendation => {
+    const p = JSON.parse(JSON.stringify(good()));
+    p.evidenceReferences = [{ kind: BO_FACTS_REFERENCE_KIND, digest: D },
+      ...['CONSTRAINTS', 'RESOURCE_REQUIREMENTS', 'COST', 'EXPECTED_OUTCOME'].map((dimension, i) => ({ kind: BO_EVALUATION_REFERENCE_KIND, id: `00000000-0000-4000-8000-00000000000${i}`, dimension, digest: D })),
+      { kind: BI_EVIDENCE_REFERENCE_KIND, id: '00000000-0000-4000-8000-0000000000b1', digest: D }, { kind: BDT_STATE_REFERENCE_KIND, id: '00000000-0000-4000-8000-0000000000d1', digest: D }];
+    mut(p.evidenceReferences);
+    return p;
+  };
+  it('the requirement is per code and version (the first action only)', () => { expect([...BI_BDT_EVIDENCE_REQUIRED]).toEqual(['inventory_reorder_policy_update@1']); });
+  it('a proposal with one BI and one BDT reference bound to the same digest is complete', () => {
+    expect(validateProposedActionRecommendation(full())).toEqual([]);
+    expect(proposalEvidenceProblems(full())).toEqual([]);
+  });
+  it('a missing, repeated or differently-digested BI or BDT reference is named', () => {
+    expect(proposalEvidenceProblems(full((e) => e.splice(5, 1))).join()).toContain('bi_inventory_evidence');
+    expect(proposalEvidenceProblems(full((e) => e.splice(6, 1))).join()).toContain('bdt_inventory_item_state');
+    expect(proposalEvidenceProblems(full((e) => e.push({ ...e[5] }))).join()).toContain('exactly one bi_inventory_evidence');
+    expect(proposalEvidenceProblems(full((e) => { e[6].digest = `sha256:${'b'.repeat(64)}`; })).join()).toContain('bdt_inventory_item_state reference and the fact snapshot do not carry the same digest');
+  });
+  it('a BI or BDT reference without a UUID id is refused by the validator', () => {
+    expect(validateProposedActionRecommendation(full((e) => { e[5].id = 'nope'; })).join()).toContain('bi_inventory_evidence) must carry a lowercase UUID id');
+    expect(validateProposedActionRecommendation(full((e) => { delete e[6].id; })).join()).toContain('bdt_inventory_item_state) must carry a lowercase UUID id');
   });
 });
 

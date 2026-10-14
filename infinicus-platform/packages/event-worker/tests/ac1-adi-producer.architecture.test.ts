@@ -42,7 +42,7 @@ describe('AC-1 ADI producer: ownership and boundaries', () => {
   it('the producer exists in the ADI/workflow package and uses only ADI repositories, the shared contracts and the shared transaction helper', () => {
     const code = read(PRODUCER);
     expect(code.length).toBeGreaterThan(0);
-    expect(importsOf(code).sort()).toEqual(['./recommendationAuthoring.js', '@infinicus/database', '@infinicus/handoff-contracts', 'node:crypto']);
+    expect(importsOf(code).sort()).toEqual(['./InventoryItemTwinService.js', './recommendationAuthoring.js', '@infinicus/database', '@infinicus/handoff-contracts', 'node:crypto']); // AC-2 Block 7: types of the governed BI/BDT evidence ports
     const dbImport = /import\s*\{([^}]+)\}\s*from\s*'@infinicus\/database'/.exec(code)![1].split(',').map((x) => x.replace(/type\s+/, '').trim()).filter(Boolean).sort();
     expect(dbImport).toEqual(['DecisionCaseRepository', 'DecisionQuestionRepository', 'DecisionRecommendationRepository', 'TenantContext', 'withSharedTenantTransaction'].sort());
   });
@@ -63,8 +63,8 @@ describe('AC-1 ADI producer: ownership and boundaries', () => {
     const joiners = production.filter((f) => /ReorderPolicyDerivationService/.test(f.code) && !f.rel.startsWith('packages/business-operations-runtime/')).map((f) => f.rel);
     expect(joiners).toEqual([COMPOSITION]);
     const comp = read(COMPOSITION);
-    expect(comp).toMatch(/new ReorderPolicyRecommendationProducer\(\{ deriver \}\)/);
-    expect(importsOf(comp).sort()).toEqual(['@infinicus/business-operations-runtime', '@infinicus/workflow']);
+    expect(comp).toMatch(/new ReorderPolicyRecommendationProducer\(\{ deriver, bi: /); // AC-2 Block 7: the governed BI/BDT evidence services are handed in with the deriver
+    expect(importsOf(comp).sort()).toEqual(['./inventoryBiEvidenceComposition.js', './inventoryItemTwinComposition.js', '@infinicus/business-operations-runtime', '@infinicus/workflow']);
   });
 
   it('the derivation and its service are READ-ONLY: no SQL write, no repository write, no event, no audit, no ABA/ADI/workflow import', () => {

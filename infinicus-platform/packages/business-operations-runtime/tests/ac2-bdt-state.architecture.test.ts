@@ -60,7 +60,7 @@ describe('AC-2 Block 6: BDT state boundaries', () => {
 
   it('BDT is joined to BI only through the API composition (the BI composition is the one place BI meets Business Operations)', () => {
     expect(importsOf(read(COMPOSITION)).sort()).toEqual(['./inventoryBiEvidenceComposition.js', '@infinicus/workflow']);
-    expect(filesMatching(/InventoryItemTwinService/).filter((r) => !r.startsWith('packages/workflow/') && ![COMPOSITION, ROUTE, 'apps/api/src/app.ts'].includes(r))).toEqual([]);
+    expect(filesMatching(/InventoryItemTwinService/).filter((r) => !r.startsWith('packages/workflow/') && ![COMPOSITION, ROUTE, 'apps/api/src/app.ts', 'apps/api/src/reorderPolicyRecommendationComposition.ts' /* AC-2 Block 7: ADI is handed the twin read side here; see ac2-adi-boundary.architecture.test.ts */].includes(r))).toEqual([]);
   });
 
   it('the HTTP surface is one dt:write, idempotent POST that calls only the twin service and reads no Business Operations table', () => {

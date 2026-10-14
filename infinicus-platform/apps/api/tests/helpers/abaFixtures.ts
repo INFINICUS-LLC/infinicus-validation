@@ -12,7 +12,7 @@ import {
   DecisionRecommendationRepository, ADIPublicationRepository, ABAIntakeRepository,
   type TenantContext,
 } from '@infinicus/database';
-import { ADI_PROPOSED_ACTION_CONTRACT, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, type ProposedActionRecommendation } from '@infinicus/handoff-contracts';
+import { ADI_PROPOSED_ACTION_CONTRACT, BDT_STATE_REFERENCE_KIND, BI_EVIDENCE_REFERENCE_KIND, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, type ProposedActionRecommendation } from '@infinicus/handoff-contracts';
 import { randomUUID } from 'node:crypto';
 
 export function uc(prefix: string): string {
@@ -40,6 +40,8 @@ export function fixtureProposal(targetId: string, parameters: { reorderPoint: nu
     evidenceReferences: [
       { kind: BO_FACTS_REFERENCE_KIND, digest: FIXTURE_FACTS_DIGEST },
       ...FIXTURE_DIMENSIONS.map((dimension) => ({ kind: BO_EVALUATION_REFERENCE_KIND, id: randomUUID(), dimension, digest: FIXTURE_FACTS_DIGEST })),
+      { kind: BI_EVIDENCE_REFERENCE_KIND, id: randomUUID(), digest: FIXTURE_FACTS_DIGEST },
+      { kind: BDT_STATE_REFERENCE_KIND, id: randomUUID(), digest: FIXTURE_FACTS_DIGEST },
     ],
     reasoning: { summary: 'ABA mechanics fixture proposal', basis: ['fixture'] }, confidence: { kind: 'RULE_COMPLIANCE', value: null, statement: 'fixture' }, constraints: {},
     provenance: { producer: 'aba-test-fixture', producerVersion: '1', method: 'DETERMINISTIC_RULE', ruleSetVersion: 'inventory-reorder-policy/v1.1.0', producedAt: new Date().toISOString() },

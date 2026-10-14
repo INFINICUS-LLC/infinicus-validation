@@ -27,13 +27,14 @@ import {
   DecisionCaseRepository, DecisionQuestionRepository, DecisionRecommendationRepository, withSharedTenantTransaction, type TenantContext,
 } from '@infinicus/database';
 import {
-  ADI_PROPOSED_ACTION_CONTRACT, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, SIMULATION_NOT_APPLICABLE_REASON_CODE,
+  ADI_PROPOSED_ACTION_CONTRACT, BDT_STATE_REFERENCE_KIND, BI_EVIDENCE_REFERENCE_KIND, BO_EVALUATION_REFERENCE_KIND, BO_FACTS_REFERENCE_KIND, PROPOSED_ACTION_RATIONALE_CODE, SIMULATION_NOT_APPLICABLE_REASON_CODE,
   canonicalBaseRiskClass, proposalEvidenceProblems, validateProposedActionRecommendation, type ProposedActionRecommendation,
 } from '@infinicus/handoff-contracts';
 import { deriveRiskClass, determineTimeValidity } from './recommendationAuthoring.js';
+import type { InventoryBiEvidenceReader, InventoryItemTwinState } from './InventoryItemTwinService.js';
 
 export const REORDER_PRODUCER_NAME = 'adi-reorder-policy-recommendation-producer';
-export const REORDER_PRODUCER_VERSION = '1.1.0';
+export const REORDER_PRODUCER_VERSION = '1.2.0';
 export const REORDER_ACTION = Object.freeze({ code: 'inventory_reorder_policy_update', schemaVersion: '1' });
 /** The one rule-set version this producer is written against (the first version that defines a proposal policy); the deriver refuses any version that is not approved. */
 export const REORDER_PRODUCER_RULE_SET_VERSION = 'inventory-reorder-policy/v1.1.0';
@@ -73,8 +74,22 @@ export type ProduceReorderRecommendationResult =
   | { outcome: 'RECOMMENDED'; recommendationId: string; recommendationVersionId: string; proposal: ProposedActionRecommendation; riskClass: string | null; validUntil: string | null }
   | { outcome: 'NO_RECOMMENDATION'; code: string; detail: string; reasonCodes: string[] };
 
+/**
+ * The governed evidence boundary (AC-2 Block 7): the BI evidence service's read side and the BDT twin state, structurally (their services satisfy it). ADI reads
+ * evidence through these two ports; it never reads Business Intelligence or Digital Twin tables itself and never writes either.
+ */
+export interface GovernedTwinStatePort {
+  getLatest(ctx: TenantContext, businessId: string, itemId: string): Promise<{ snapshotId: string; effectiveAt: string; state: InventoryItemTwinState } | null>;
+  assessFreshness(ctx: TenantContext, businessId: string, snapshotId: string): Promise<{ usable: boolean; newerPublishedExists: boolean }>;
+}
+
 export interface ReorderPolicyRecommendationProducerDependencies {
   deriver: ReorderPolicyDeriverPort;
+  /** Business Intelligence evidence (required: the principal path never proceeds without it). */
+  bi: InventoryBiEvidenceReader;
+  /** Business Digital Twin modeled state (required). */
+  twin: GovernedTwinStatePort;
+  now: () => Date;
   questions: Pick<DecisionQuestionRepository, 'createQuestion'>;
   cases: Pick<DecisionCaseRepository, 'createCase' | 'createVersion' | 'transitionStatus'>;
   recommendations: Pick<DecisionRecommendationRepository, 'createRecommendation' | 'addRationale' | 'validateRecommendation' | 'publishRecommendation'>;
@@ -85,9 +100,12 @@ const none = (code: string, detail: string, reasonCodes: string[] = []): Produce
 export class ReorderPolicyRecommendationProducer {
   private readonly d: ReorderPolicyRecommendationProducerDependencies;
 
-  constructor(deps: Pick<ReorderPolicyRecommendationProducerDependencies, 'deriver'> & Partial<ReorderPolicyRecommendationProducerDependencies>) {
+  constructor(deps: Pick<ReorderPolicyRecommendationProducerDependencies, 'deriver' | 'bi' | 'twin'> & Partial<ReorderPolicyRecommendationProducerDependencies>) {
     this.d = {
       deriver: deps.deriver,
+      bi: deps.bi,
+      twin: deps.twin,
+      now: deps.now ?? (() => new Date()),
       questions: deps.questions ?? new DecisionQuestionRepository(),
       cases: deps.cases ?? new DecisionCaseRepository(),
       recommendations: deps.recommendations ?? new DecisionRecommendationRepository(),
@@ -115,6 +133,20 @@ export class ReorderPolicyRecommendationProducer {
     // evaluation facts is thrown out of the callback so those facts roll back with it.
     try {
       return await withSharedTenantTransaction(ctx, async () => {
+        // 0. the GOVERNED evidence boundary (AC-2 Block 7): published BI evidence and the BDT state derived from it must exist, be current and describe the same
+        // facts. Missing, expired, mismatched or superseded evidence means NO recommendation (nothing has been written yet).
+        const bi = await this.d.bi.getLatest(ctx, request.businessId, request.itemId);
+        if (bi === null) return none('BI_EVIDENCE_MISSING', 'no Business Intelligence evidence has been published for this item');
+        if (this.d.now().getTime() >= Date.parse(bi.validUntil)) return none('BI_EVIDENCE_EXPIRED', `the Business Intelligence evidence expired at ${bi.validUntil}`);
+        const twin = await this.d.twin.getLatest(ctx, request.businessId, request.itemId);
+        if (twin === null) return none('BDT_STATE_MISSING', 'no Business Digital Twin state has been published for this item');
+        if (this.d.now().getTime() >= Date.parse(twin.state.validUntil)) return none('BDT_STATE_EXPIRED', `the Business Digital Twin state expired at ${twin.state.validUntil}`);
+        if (twin.state.factsDigest !== bi.factsDigest || twin.state.references.biInsightPackageVersionId !== bi.insightPackageVersionId) {
+          return none('BI_BDT_EVIDENCE_MISMATCH', 'the Business Digital Twin state was not derived from the latest Business Intelligence evidence');
+        }
+        const fresh = await this.d.twin.assessFreshness(ctx, request.businessId, twin.snapshotId);
+        if (!fresh.usable || fresh.newerPublishedExists) return none('BDT_STATE_STALE', 'a newer Business Digital Twin snapshot has been published since the state used here');
+
         // 1. authoritative evidence + deterministic derivation (read-only, tenant scoped by ctx).
         const result = await this.d.deriver.derive(ctx, { businessId: request.businessId, itemId: request.itemId, ruleSetVersion: REORDER_PRODUCER_RULE_SET_VERSION });
         const derivation = result.derivation;
@@ -123,6 +155,8 @@ export class ReorderPolicyRecommendationProducer {
         if (evidence === null || evidence.ruleSetVersion !== REORDER_PRODUCER_RULE_SET_VERSION || derivation.ruleSetVersion !== REORDER_PRODUCER_RULE_SET_VERSION) {
           return none('EVIDENCE_UNAVAILABLE', 'the derivation carries no evidence digest for the approved rule set');
         }
+        // The BI evidence and the twin must describe the SAME facts Business Operations holds NOW: if BO truth moved since the evidence was published, nothing is proposed.
+        if (evidence.snapshotDigest !== bi.factsDigest) return none('EVIDENCE_DIGEST_MISMATCH', 'Business Operations facts changed since the Business Intelligence evidence and the twin state were published; republish them');
         if (derivation.itemId !== request.itemId) return none('TARGET_MISMATCH', 'the derivation is for a different target than the one requested');
         if (derivation.verification.length === 0 || derivation.verification.some((v) => v.result !== 'PASSED')) return none('DERIVATION_UNVERIFIED', 'the candidate is not verified against every governance dimension');
 
@@ -149,12 +183,15 @@ export class ReorderPolicyRecommendationProducer {
           evidenceReferences: [
             { kind: BO_FACTS_REFERENCE_KIND, id: derivation.balanceId, digest: evidence.snapshotDigest },
             ...recorded.references.map((r) => ({ kind: BO_EVALUATION_REFERENCE_KIND, id: r.id, dimension: r.dimension, digest: recorded.snapshotDigest })),
+            { kind: BI_EVIDENCE_REFERENCE_KIND, id: bi.insightPackageVersionId, digest: bi.factsDigest },
+            { kind: BDT_STATE_REFERENCE_KIND, id: twin.snapshotId, digest: twin.state.factsDigest },
           ],
           reasoning: {
             summary: `The current reorder policy (${derivation.current.reorderPoint} / ${derivation.current.reorderQuantity}) does not satisfy rule set ${evidence.ruleSetVersion}; the proposal is the smallest whole-unit single step that does.`,
             basis: [
               `Average daily demand uses ${derivation.demand.count} issue movement(s) totalling ${derivation.demand.sumOfMagnitudes} over ${derivation.demand.windowDays} days (database clock ${evidence.capturedAt}).`,
               `The proposal was chosen within these whole-unit bounds: ${JSON.stringify(derivation.bounds)}, using the proposal policy of rule set ${evidence.ruleSetVersion}.`,
+              `Governed evidence: Business Intelligence insight package version ${bi.versionNumber} and the Business Digital Twin state (${twin.state.derived.daysOfCover === null ? 'no demand' : `${twin.state.derived.daysOfCover} days of cover`}, ${twin.state.derived.policyPosition}) describe the same Business Operations facts (${bi.factsDigest}).`,
               `Business Operations recorded its evaluation of exactly these parameters against exactly these facts (cited as evidence): ${derivation.verification.map((v) => `${v.dimension}=${v.result}`).join(', ')}.`,
               `Simulation is NOT_APPLICABLE for this action (${SIMULATION_NOT_APPLICABLE_REASON_CODE}); no simulation was fabricated.`,
               'The rule-set values are owner-defined pre-launch policy values, not data-derived; Approved Business Action decides whether to approve, modify or reject.',
@@ -164,7 +201,7 @@ export class ReorderPolicyRecommendationProducer {
             kind: 'RULE_COMPLIANCE', value: null,
             statement: 'Deterministic satisfaction of the owner-approved rule set on the cited facts. This is not a statistical forecast of business benefit.',
           },
-          constraints: { ruleSetVersion: evidence.ruleSetVersion, bounds: derivation.bounds, method: derivation.method, windowDays: derivation.demand.windowDays },
+          constraints: { ruleSetVersion: evidence.ruleSetVersion, biInsightPackageVersionId: bi.insightPackageVersionId, bdtSnapshotId: twin.snapshotId, bounds: derivation.bounds, method: derivation.method, windowDays: derivation.demand.windowDays },
           provenance: { producer: REORDER_PRODUCER_NAME, producerVersion: REORDER_PRODUCER_VERSION, method: 'DETERMINISTIC_RULE', ruleSetVersion: evidence.ruleSetVersion, producedAt },
         };
         const problems = [...validateProposedActionRecommendation(proposal), ...proposalEvidenceProblems(proposal)];
@@ -175,7 +212,7 @@ export class ReorderPolicyRecommendationProducer {
         const risk = deriveRiskClass({ canonicalBaseRisk: canonicalBaseRiskClass(REORDER_ACTION.code, REORDER_ACTION.schemaVersion) });
         const validity = determineTimeValidity({
           evaluated: { evidenceExpiry: true, forecastHorizon: true, actionWindow: true, policy: true, otherAuthoritativePeriod: true },
-          evidenceExpiries: [new Date(Date.parse(evidence.capturedAt) + evidence.evidenceMaxAgeMs)],
+          evidenceExpiries: [new Date(Date.parse(bi.validUntil)), new Date(Date.parse(twin.state.validUntil))],
         });
         if (validity.error) throw new RefusedAfterWrites(none('VALIDITY_UNDETERMINED', validity.error));
 
@@ -188,7 +225,7 @@ export class ReorderPolicyRecommendationProducer {
         await this.d.cases.transitionStatus(ctx, decisionCase.id, 'recommended', 'rule-derived recommendation (AC-1)');
         const { recommendation, version } = await this.d.recommendations.createRecommendation(
           ctx, request.businessId, decisionCase.id, `adi-reorder-rec-${stamp}`, summary, undefined,
-          { riskClass: risk.riskClass, isTimeSensitive: validity.isTimeSensitive, validUntil: validity.validUntil },
+          { riskClass: risk.riskClass, isTimeSensitive: validity.isTimeSensitive, validUntil: validity.validUntil, twinSnapshotId: twin.snapshotId },
         );
         // First rationale = the human-readable basis the decision-history view shows (it reads the earliest rationale: statement + expectedOutcome).
         await this.d.recommendations.addRationale(ctx, version.id, request.businessId, 'reorder_policy_basis', proposal.reasoning.summary, {

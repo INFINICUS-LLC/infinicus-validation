@@ -130,6 +130,7 @@ async function decide(s: Session, bo: Bo, outcome: 'approve' | 'approve_with_mod
   const kit = chainKit({ app, admin: adminPool, tenantIds });
   const g = await post(s, `/v1/businesses/${s.bizId}/approver-assignments`, { approverUserId: s.ctx.userId, assignmentCode: DEFAULT_APPROVER_ASSIGNMENT_CODE, roleCode: 'business-owner' });
   expect(g.statusCode).toBe(201);
+  await kit.publishEvidence(s, bo.itemId); // AC-2 Block 7: governed BI evidence and BDT state precede the recommendation
   const produced = await post(s, kit.reorderRecommendationUrl(s, bo.itemId));
   expect(produced.statusCode, produced.body).toBe(201);
   bo.proposal = produced.json().proposal.proposedParameters;
