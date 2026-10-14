@@ -1,47 +1,14 @@
 import { DecisionWorkflowService } from '@infinicus/workflow';
-import { ensurePool } from '../../lib/db';
-import { contextFromSearchParams, ctxQuery, type SearchParams } from '../../lib/context';
+import { requireServerContext } from '../../lib/serverContext';
+import { BUSINESS_LIST_PERMISSIONS } from '../../lib/permissions';
+import { AccessNotice } from '../access-notice';
 
-export default async function BusinessesPage({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams>;
-}) {
-  const resolvedSearchParams = await searchParams;
-  const ctx = contextFromSearchParams(resolvedSearchParams);
+export default async function BusinessesPage() {
+  const access = await requireServerContext(BUSINESS_LIST_PERMISSIONS);
+  if (!access.ok) return <AccessNotice reason={access.reason} />;
 
-  if (!ctx) {
-    return (
-      <div className="card">
-        <h1>Select a business</h1>
-        <p className="notice">
-          No tenant context is set. This build has no login flow yet (see
-          Known Limitations) — enter a tenant, workspace, and user id
-          directly to continue.
-        </p>
-        <form className="stack" method="get">
-          <div>
-            <label htmlFor="tenantId">Tenant ID</label>
-            <input id="tenantId" name="tenantId" required aria-required="true" placeholder="uuid" />
-          </div>
-          <div>
-            <label htmlFor="workspaceId">Workspace ID</label>
-            <input id="workspaceId" name="workspaceId" required aria-required="true" placeholder="uuid" />
-          </div>
-          <div>
-            <label htmlFor="userId">User ID</label>
-            <input id="userId" name="userId" required aria-required="true" placeholder="uuid" />
-          </div>
-          <button type="submit">Continue</button>
-        </form>
-      </div>
-    );
-  }
-
-  ensurePool();
   const service = new DecisionWorkflowService();
-  const { items: businesses } = await service.listBusinesses(ctx);
-  const query = ctxQuery(ctx);
+  const { items: businesses } = await service.listBusinesses(access.ctx);
 
   return (
     <div>
@@ -52,7 +19,7 @@ export default async function BusinessesPage({
         <ul className="business-list" aria-label="Businesses">
           {businesses.map((business) => (
             <li key={business.id}>
-              <a href={`/businesses/${business.id}/workflow?${query}`}>
+              <a href={`/businesses/${business.id}/workflow`}>
                 <strong>{business.legalName}</strong>
                 <br />
                 <span className="status-badge">{business.status}</span>

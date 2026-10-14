@@ -53,6 +53,8 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   // V-01: a decision was attempted without pre-established approval authority.
   ApproverAuthorityNotEstablishedError: 403,
   ApprovalPolicyDeniedError: 403,
+  // J-6: the proposed approver grantee is unknown, inactive or of another scope; one status for every reason (no probing).
+  ApproverGranteeNotEligibleError: 400,
   ApprovalBlockedError: 409,
   // P0-5 package issuance refused by the issuer (state conflict: the reasons are listed in the controlled message).
   PackageIssuanceRefusedError: 409,

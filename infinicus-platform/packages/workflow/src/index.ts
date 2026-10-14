@@ -10,6 +10,8 @@ export type {
   CreateReviewInput, SubmitApprovalInput, GrantApproverAuthorityInput, RevokeApproverAuthorityInput, ApproverAuthorityRecord, RecordOutcomeInput,
 } from './DecisionWorkflowService.js';
 
+export { BusinessScopeGuard, ApproverGranteeNotEligibleError } from './BusinessScopeGuard.js';
+
 export { SimulationOrchestrationService, ValidationError as SimulationValidationError } from './SimulationOrchestrationService.js';
 export type {
   StartSimulationInput, SimulationRunStatus, SimulationRunStatusResult,

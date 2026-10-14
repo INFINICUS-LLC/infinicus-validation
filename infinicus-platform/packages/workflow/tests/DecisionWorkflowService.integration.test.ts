@@ -256,6 +256,14 @@ async function setupWorkflowIntegration(): Promise<void> {
      ON CONFLICT (id) DO NOTHING`,
     [UID]
   );
+  // AC-3 J-6: an approver grantee must hold an ACTIVE membership in the workspace at grant time, so the fixture user is
+  // a real active member of each fixture workspace (previously it was granted authority with no membership at all).
+  await adminPool.query(
+    `INSERT INTO tenancy.memberships (tenant_id, workspace_id, user_id, status, joined_at)
+     SELECT v.t, v.w, $1, 'active', now() FROM (VALUES ($2::uuid,$3::uuid), ($4::uuid,$5::uuid)) AS v(t, w)
+     ON CONFLICT (user_id, workspace_id) DO UPDATE SET status = 'active'`,
+    [UID, T1, WS1, T2, WS2]
+  );
 }
 
 async function teardownWorkflowIntegration(): Promise<void> {
@@ -452,6 +460,8 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       await expect(decide(ctx1, BIZ1, 'business-owner-approver')).rejects.toMatchObject({ name: 'ApproverAuthorityNotEstablishedError' });
       // Never silently destructive: the assignment is still active until an administrator revokes it.
       expect((await authority.getById(ctx1, assignment.id)).status).toBe('active');
+      // Restore the fixture membership so later tests (which need an ACTIVE member, AC-3 J-6) are unaffected.
+      await adminPool!.query(`UPDATE tenancy.memberships SET status = 'active' WHERE id = $1`, [membership.rows[0].id]);
 
       // A manual administrator grant under the same code (other business) is an explicit decision and is not re-derived from ownership.
       await service.grantApproverAuthority(ctx2, BIZ2, { approverUserId: UID, assignmentCode: 'business-owner-approver' });
@@ -1082,11 +1092,13 @@ describe.runIf(run)('DecisionWorkflowService — live PostgreSQL', () => {
       expect(history.adiCases.length).toBeGreaterThan(0);
     });
 
-    it('returns no rows when reading a different tenant\'s business (RLS, not a stage-emptiness check)', async () => {
-      // BIZ2 belongs to tenant 2's workspace — reading it under ctx1 (tenant 1) must be denied by RLS,
-      // so this call should surface zero rows rather than tenant-2 data.
-      const history = await service.getDecisionHistory(ctx1, BIZ2);
-      expect(history.biEvidence).toEqual([]);
+    it('refuses a different tenant\'s business with the same not-found as an unknown business (AC-3 J-1, scope guard before any read)', async () => {
+      // BIZ2 belongs to tenant 2's workspace. Previously this surfaced zero rows (RLS only); the scope guard now refuses it
+      // outright, identically to an id that does not exist anywhere.
+      const foreign = await service.getDecisionHistory(ctx1, BIZ2).then(() => null, (e: Error) => e);
+      const unknown = await service.getDecisionHistory(ctx1, '66666666-7171-0000-0000-0000000000ff').then(() => null, (e: Error) => e);
+      expect(foreign?.name).toBe('NotFoundError');
+      expect(unknown?.name).toBe('NotFoundError');
     });
   });
 
