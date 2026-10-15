@@ -15,6 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <strong>INFINICUS</strong>
           <nav aria-label="Primary">
             <ul>
+              <li><a href="/console">Console</a></li>
               <li><a href="/businesses">Businesses</a></li>
             </ul>
           </nav>

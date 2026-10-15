@@ -28,8 +28,12 @@ describe('apps/web takes no identity or scope from the browser (AC-3 J-2)', () =
     for (const f of files) expect(read(f), f).not.toMatch(/contextFromSearchParams|ctxQuery|requireCtxFromForm/);
   });
 
+  // NA-04: the browser-side client (lib/client, app/(client)) holds a workspace SELECTION that it sends as a claim; that is not a server TenantContext,
+  // so it is exempt from this one rule only. It is covered by tests/clientBoundary.architecture.test.ts instead.
+  const isClientSide = (f: string) => /[\\/]lib[\\/]client[\\/]|[\\/]app[\\/]\(client\)[\\/]/.test(f);
+
   it('no page or action builds a TenantContext literal; only lib/context.ts does', () => {
-    const offenders = files.filter((f) => !f.endsWith('lib/context.ts') && /tenantId\s*:\s*\S+\s*,\s*workspaceId\s*:/.test(read(f)));
+    const offenders = files.filter((f) => !f.endsWith('lib/context.ts') && !isClientSide(f) && /tenantId\s*:\s*\S+\s*,\s*workspaceId\s*:/.test(read(f)));
     expect(offenders.map((f) => f.replace(ROOT, ''))).toEqual([]);
   });
 
