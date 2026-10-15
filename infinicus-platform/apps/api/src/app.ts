@@ -114,7 +114,9 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(cors, {
     origin: config.corsAllowedOrigins,
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    // PUT is used by three routes (execution activations, declared currency, initial reorder-policy baseline); without it a browser on an allowed origin
+    // fails the preflight. cors.test.ts derives the list from the registered routes so a new method cannot be forgotten.
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id', 'X-Workspace-Id', 'Idempotency-Key'],
   });
 
