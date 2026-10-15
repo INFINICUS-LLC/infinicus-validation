@@ -446,7 +446,7 @@ export type {
   ApiKeyReference,
   Role,
   Permission,
-  Membership,
+  Membership, ActiveMembershipSummary,
   Invitation,
   AccessEvent, AccessEventType,
 } from './repositories/auth/index.js';

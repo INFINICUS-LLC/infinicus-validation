@@ -1,5 +1,5 @@
 import type { TenantContext } from '../../client.js';
-import { withTenantTransaction } from '../../client.js';
+import { withTenantTransaction, withTransaction } from '../../client.js';
 import { MembershipNotFoundError, MembershipAlreadyExistsError } from './errors.js';
 
 export interface Membership {
@@ -10,6 +10,17 @@ export interface Membership {
   status: string;
   joinedAt: Date | null;
   createdAt: Date;
+}
+
+/** One workspace the user is an ACTIVE member of (ids, names and statuses only; no roles or permissions). */
+export interface ActiveMembershipSummary {
+  tenantId: string;
+  tenantName: string;
+  tenantStatus: string;
+  workspaceId: string;
+  workspaceName: string;
+  workspaceStatus: string;
+  joinedAt: Date | null;
 }
 
 const VALID_STATUSES = ['invited', 'active', 'suspended', 'removed'];
@@ -41,6 +52,27 @@ export class MembershipRepository {
         [ctx.tenantId, ctx.workspaceId, userId, ctx.userId]
       );
       return rowToMembership(result.rows[0]);
+    });
+  }
+
+  /**
+   * The workspaces the given user is an ACTIVE member of, across tenants (migration 0199). The user id must come from a VALIDATED session: the
+   * database function refuses unless it equals the transaction's app.user_id, which is set here from the same argument, so this lists exactly one
+   * user's own memberships and never anyone else's. It authorizes nothing: every business request still resolves membership and permission itself.
+   */
+  async listActiveForUser(userId: string): Promise<ActiveMembershipSummary[]> {
+    return withTransaction(async (client) => {
+      await client.query('SELECT set_config($1, $2, true)', ['app.user_id', userId]);
+      const result = await client.query<Record<string, unknown>>('SELECT * FROM tenancy.list_active_memberships($1)', [userId]);
+      return result.rows.map((r) => ({
+        tenantId: r.out_tenant_id as string,
+        tenantName: r.out_tenant_name as string,
+        tenantStatus: r.out_tenant_status as string,
+        workspaceId: r.out_workspace_id as string,
+        workspaceName: r.out_workspace_name as string,
+        workspaceStatus: r.out_workspace_status as string,
+        joinedAt: r.out_joined_at as Date | null,
+      }));
     });
   }
 

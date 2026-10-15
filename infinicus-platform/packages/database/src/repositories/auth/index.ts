@@ -32,7 +32,7 @@ export { PermissionRepository } from './PermissionRepository.js';
 export type { Permission } from './PermissionRepository.js';
 
 export { MembershipRepository } from './MembershipRepository.js';
-export type { Membership } from './MembershipRepository.js';
+export type { Membership, ActiveMembershipSummary } from './MembershipRepository.js';
 
 export { InvitationRepository } from './InvitationRepository.js';
 export type { Invitation } from './InvitationRepository.js';
