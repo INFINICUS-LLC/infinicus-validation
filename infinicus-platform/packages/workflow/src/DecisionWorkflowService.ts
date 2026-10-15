@@ -17,7 +17,7 @@ import {
   type ActionReviewVersion, ActionReviewNotFoundError,
   OwnershipEvidenceRepository, provenOwnersOf, OWNER_APPROVER_ASSIGNMENT_CODE, normalizeRevocationReason,
   ApproverAuthorityNotFoundError, ApproverAuthorityStateConflictError,
-  MonitoredActionRepository, OutcomeObservationRepository,
+  MonitoredActionRepository, MonitoredActionNotFoundError, OutcomeObservationRepository,
   type TenantContext, type Business, type CreateBusinessInput,
   type PagedBusinesses, type PageOptions,
   type InsightPackage,
@@ -28,6 +28,8 @@ import {
   type OutcomeObservation, type OutcomeObservationVersion,
 } from '@infinicus/database';
 import { BusinessScopeGuard, ApproverGranteeNotEligibleError } from './BusinessScopeGuard.js';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const RECENT_LIMIT = 5;
 
@@ -555,6 +557,7 @@ export class DecisionWorkflowService {
    */
   async recordOutcome(ctx: TenantContext, businessId: string, input: RecordOutcomeInput): Promise<{ observation: OutcomeObservation; version: OutcomeObservationVersion }> {
     await this.scope.assertBusinessInScope(ctx, businessId);
+    await this.assertMonitoredActionOfBusiness(ctx, businessId, input.monitoredActionId);
     const { observation, version } = await this.outcomeObservations.createObservation(
       ctx, businessId, input.monitoredActionId, input.observationCode, input.summary, input.effectiveAt
     );
@@ -568,6 +571,26 @@ export class DecisionWorkflowService {
 
     const recorded = await this.outcomeObservations.record(ctx, observation.id, version.id);
     return { observation: recorded, version };
+  }
+
+  /**
+   * F-NA05-1: the monitored action named by a request is a TARGET, never authority. It is resolved under the caller's tenant and workspace
+   * (row-level security) and must belong to the business in the path. The observation's foreign key alone proves only that the id exists
+   * SOMEWHERE (a foreign-key check is not subject to row-level security), so without this an unknown id surfaced as an unmapped constraint
+   * failure (500) and an id of another business or tenant was accepted. Unknown, malformed, other-business and other-tenant ids raise the
+   * identical `MonitoredActionNotFoundError` (HTTP 404), so existence elsewhere is not observable. Performs no write.
+   */
+  private async assertMonitoredActionOfBusiness(ctx: TenantContext, businessId: string, monitoredActionId: string): Promise<void> {
+    const notFound = () => new MonitoredActionNotFoundError('MonitoredAction', monitoredActionId);
+    if (!UUID_PATTERN.test(monitoredActionId)) throw notFound();
+    let action;
+    try {
+      action = await this.monitoredActions.getById(ctx, monitoredActionId);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotFoundError') throw notFound();
+      throw err;
+    }
+    if (action.businessId !== businessId || action.tenantId !== ctx.tenantId || action.workspaceId !== ctx.workspaceId) throw notFound();
   }
 
   private async latestDtSnapshot(ctx: TenantContext, instances: DigitalTwinInstance[]): Promise<DigitalTwinSnapshot | null> {
