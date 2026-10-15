@@ -158,6 +158,9 @@ end-to-end smoke test against the live Hetzner-hosted backend.
   then `docker compose up -d`. Order matters: migrate, grant, then start the new application.
 - **Which version is deployed**: `curl -s https://api.infini-cus.com/v1/health` returns `{"status":"ok","version":"<git commit>"}`
   (`unknown` if the image was built without `GIT_SHA`). Also `git -C /opt/infinicus/repo rev-parse HEAD` and `docker compose images`.
+  After every redeploy confirm it equals `git rev-parse HEAD`; the scripted form fails on a mismatch:
+  `BASE_URL=https://api.infini-cus.com EXPECTED_BUILD_SHA=$(git rev-parse HEAD) infrastructure/deployment/scripts/smoke-test.sh`.
+  `deploy.sh` performs this check automatically for staging and production.
 - **Logs**: `docker compose logs -f api`.
 - **Backups**: `infrastructure/deployment/scripts/` and
   `infrastructure/database/scripts/` already have backup/restore/PITR

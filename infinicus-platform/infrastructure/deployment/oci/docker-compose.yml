@@ -41,6 +41,11 @@ services:
     build:
       context: ../../..
       dockerfile: apps/api/Dockerfile
+      args:
+        # Reported by GET /v1/health so the deployed commit can be read: `GIT_SHA=$(git rev-parse HEAD) docker compose build`.
+        # (S-3: this directory IS the production deployment directory, and it did not pass the argument at all, so the running image always
+        # reported "unknown" however it was built. Same line as the hetzner/ definition.)
+        GIT_SHA: ${GIT_SHA:-unknown}
     restart: unless-stopped
     depends_on:
       postgres:

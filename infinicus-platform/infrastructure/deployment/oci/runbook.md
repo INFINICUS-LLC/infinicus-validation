@@ -135,9 +135,16 @@ end-to-end smoke test against the live OCI-hosted backend.
 
 ## Ongoing operations
 
-- **Redeploying a new version**: `git pull`, `docker compose build`,
+- **Redeploying a new version**: `git pull` (or `git checkout <reviewed SHA>`), **`GIT_SHA=$(git rev-parse HEAD) docker compose build`**,
   `docker compose run --rm tools` (migration gate — safe to run even
-  when there's nothing new to migrate), `docker compose up -d`.
+  when there's nothing new to migrate), `docker compose run --rm --entrypoint bash tools infrastructure/database/scripts/grant-app-role.sh`
+  (required after every migration run, see the Hetzner runbook), then `docker compose up -d`.
+  Build **with** `GIT_SHA`: it is what lets `GET /v1/health` report the running commit. (Until S-3 this file's compose definition did not pass the
+  build argument at all, so the running API always reported `"unknown"`; it now does, like `../hetzner/docker-compose.yml`.)
+- **Verify which commit is running** (do this after every `up -d`): `curl -s https://api.infini-cus.com/v1/health` must show
+  `"version":"<the full output of git rev-parse HEAD>"`. `unknown` means the image was built without `GIT_SHA` or a stale container is still running.
+  The same check, scripted and failing on a mismatch: `BASE_URL=https://api.infini-cus.com EXPECTED_BUILD_SHA=$(git rev-parse HEAD) infrastructure/deployment/scripts/smoke-test.sh`.
+  `deploy.sh` does it automatically for staging and production (and refuses to start from a dirty tracked tree).
 - **Logs**: `docker compose logs -f api`.
 - **Backups**: `infrastructure/deployment/scripts/` and
   `infrastructure/database/scripts/` already have backup/restore/PITR

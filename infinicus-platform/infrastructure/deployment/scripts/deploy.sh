@@ -26,6 +26,11 @@
 #   6. Run the smoke test against the now-running instance.
 #   7. Record the outcome: 'succeeded' or 'failed'.
 #
+# Traceable build (S-3). For staging and production the deployment must be traceable to the exact commit it claims: the script refuses to start
+# unless HEAD is a full 40-hex commit with no uncommitted changes to tracked files, and the smoke test then requires the RUNNING API to report that
+# commit in GET /v1/health (so an image built without GIT_SHA, or a stale container, fails the promotion). This cannot be waived in production.
+# REQUIRE_TRACEABLE_BUILD=true|false overrides the default (true for staging/production, false for local/test); false is refused in production.
+#
 # Exit code: 0 only if every gate passed and the smoke test succeeded.
 # A non-zero exit means the deployment_events row is left as 'failed' —
 # an operator (or the calling pipeline) must decide whether to retry or
@@ -45,6 +50,20 @@ DATABASE_URL="${DATABASE_URL:?DATABASE_URL is required}"
 BASE_URL="${BASE_URL:-http://localhost:3000}"
 DEPLOYED_BY="${DEPLOYED_BY:-unknown}"
 
+case "$ENVIRONMENT" in
+  staging|production) DEFAULT_REQUIRE_TRACEABLE=true ;;
+  *) DEFAULT_REQUIRE_TRACEABLE=false ;;
+esac
+REQUIRE_TRACEABLE_BUILD="${REQUIRE_TRACEABLE_BUILD:-$DEFAULT_REQUIRE_TRACEABLE}"
+if [[ "$REQUIRE_TRACEABLE_BUILD" != "true" && "$REQUIRE_TRACEABLE_BUILD" != "false" ]]; then
+  echo "ERROR: REQUIRE_TRACEABLE_BUILD must be true or false" >&2
+  exit 1
+fi
+if [[ "$ENVIRONMENT" == "production" && "$REQUIRE_TRACEABLE_BUILD" != "true" ]]; then
+  echo "ERROR: a production deployment must be traceable to its commit; REQUIRE_TRACEABLE_BUILD=false is not allowed for production" >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DIST_INDEX="$REPO_ROOT/packages/database/dist/index.js"
@@ -56,6 +75,16 @@ fi
 
 VERSION=$("$SCRIPT_DIR/version.sh")
 GIT_SHA=$(git -C "$REPO_ROOT" rev-parse HEAD)
+if [[ "$REQUIRE_TRACEABLE_BUILD" == "true" ]]; then
+  if [[ ! "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: HEAD is not a full commit id (${GIT_SHA}); cannot trace this deployment" >&2
+    exit 1
+  fi
+  if [[ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ]]; then
+    echo "ERROR: tracked files have uncommitted changes; the running build could not be tied to commit ${GIT_SHA}. Commit or discard them first." >&2
+    exit 1
+  fi
+fi
 AUDIT_CLI="$SCRIPT_DIR/deployment-audit.cjs"
 
 echo "=== Deploying ${VERSION} (${GIT_SHA}) to ${ENVIRONMENT} ==="
@@ -90,7 +119,9 @@ fi
 
 echo "--- Smoke test (${BASE_URL}) ---"
 echo "NOTE: this assumes the new version is already running at ${BASE_URL} — start/restart it before running this script."
-if ! BASE_URL="$BASE_URL" "$SCRIPT_DIR/smoke-test.sh"; then
+EXPECTED_BUILD_SHA_FOR_SMOKE=""
+if [[ "$REQUIRE_TRACEABLE_BUILD" == "true" ]]; then EXPECTED_BUILD_SHA_FOR_SMOKE="$GIT_SHA"; fi
+if ! BASE_URL="$BASE_URL" EXPECTED_BUILD_SHA="$EXPECTED_BUILD_SHA_FOR_SMOKE" "$SCRIPT_DIR/smoke-test.sh"; then
   echo "Smoke test FAILED — deployment did not pass promotion gate." >&2
   mark_outcome failed "smoke test failed"
   exit 1
