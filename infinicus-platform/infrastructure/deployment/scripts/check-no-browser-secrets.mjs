@@ -16,6 +16,11 @@
 //      component reading it would only ever see `undefined` at runtime,
 //      which is itself a real bug worth failing the build on.
 //
+// What is scanned (S-1): the directories that actually hold browser-reachable source, apps/web/app, apps/web/lib and apps/admin/src. A configured
+// directory that is missing, or holds no source file, FAILS the check: a scan of nothing must never read as a pass (it used to, when the list named
+// apps/web/src, which does not exist). Files under lib/client or app/(client) are browser code even without a 'use client' directive (they are plain
+// modules imported by client components), so they are treated as client files for failure mode 2.
+//
 // Usage: node check-no-browser-secrets.mjs [rootDir]
 // Exit code: 0 if clean, 1 if any violation is found (each printed to stderr).
 
@@ -33,7 +38,9 @@ const rootDir = process.argv[2] ? resolve(process.cwd(), process.argv[2]) : repo
 const { SECRET_INVENTORY } = await import(join(repoRoot, 'packages', 'configuration', 'dist', 'index.js'));
 const SECRET_NAMES = SECRET_INVENTORY.filter((s) => s.classification === 'secret').map((s) => s.name);
 
-const BROWSER_APP_DIRS = ['apps/web/src', 'apps/admin/src'];
+const BROWSER_APP_DIRS = ['apps/web/app', 'apps/web/lib', 'apps/admin/src'];
+/** Path fragments that mark browser-only code that carries no 'use client' directive of its own. */
+const BROWSER_ONLY_PATH = /(^|[\\/])(lib[\\/]client|app[\\/]\(client\))([\\/]|$)/;
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx']);
 
 function walk(dir) {
@@ -62,13 +69,20 @@ function isClientFile(content) {
 }
 
 const violations = [];
+let scannedFiles = 0;
 
 for (const appDir of BROWSER_APP_DIRS) {
   const absoluteAppDir = join(rootDir, appDir);
-  for (const file of walk(absoluteAppDir)) {
+  const files = walk(absoluteAppDir);
+  if (files.length === 0) {
+    violations.push(`${appDir}: configured browser source directory is missing or contains no source files — the scan would check nothing here. Fix the directory list in check-no-browser-secrets.mjs if the layout changed.`);
+    continue;
+  }
+  for (const file of files) {
+    scannedFiles += 1;
     const content = readFileSync(file, 'utf8');
     const relPath = relative(rootDir, file);
-    const clientFile = isClientFile(content);
+    const clientFile = isClientFile(content) || BROWSER_ONLY_PATH.test(relPath);
 
     for (const secretName of SECRET_NAMES) {
       const nextPublicPattern = new RegExp(`process\\.env\\.NEXT_PUBLIC_${secretName}\\b`);
@@ -79,7 +93,7 @@ for (const appDir of BROWSER_APP_DIRS) {
       if (clientFile) {
         const clientReadPattern = new RegExp(`process\\.env\\.${secretName}\\b`);
         if (clientReadPattern.test(content)) {
-          violations.push(`${relPath}: 'use client' file references process.env.${secretName} directly — this is always undefined in the browser and indicates a bug, even though Next.js would not inline it.`);
+          violations.push(`${relPath}: browser-side file ('use client', or under lib/client or app/(client)) references process.env.${secretName} directly — this is always undefined in the browser and indicates a bug, even though Next.js would not inline it.`);
         }
       }
     }
@@ -92,4 +106,4 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
-console.log(`Browser-secret check passed — scanned ${BROWSER_APP_DIRS.join(', ')} against ${SECRET_NAMES.length} known secret(s).`);
+console.log(`Browser-secret check passed — scanned ${scannedFiles} file(s) in ${BROWSER_APP_DIRS.join(', ')} against ${SECRET_NAMES.length} known secret(s).`);
