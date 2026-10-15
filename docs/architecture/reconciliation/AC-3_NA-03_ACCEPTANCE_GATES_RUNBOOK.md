@@ -6,7 +6,7 @@ Date: 2026-10-15. Base: `main` at `15846f3`. Authority: `AC-3_OPTION_B_OWNER_DEC
 
 ## 0. How this was prepared, and what could not be done
 - Prepared from the repository only (documentation, no code, Compose, CI, migration or environment change).
-- Claude could not run the read-only public probes for Gate C. The session's network policy denies the host `api.infini-cus.com` (HTTP 403 from the gateway on CONNECT), so no result for it exists. **No result is fabricated.** Either the owner runs the commands below, or the owner adds that host to the environment's allowed domains and asks for the probes to be run (read-only `GET` requests only; no authenticated or state-changing request).
+- Gate C probes: the first attempts on 2026-10-15 were refused by the session's network policy (HTTP 403 from the gateway on CONNECT). After the owner authorised the probes and the policy allowed the hosts, they were run as read-only `GET`/`HEAD` requests; the results are in §8. No authenticated or state-changing request has been made.
 - Rules for everything below: never paste a key, token, URL containing a key, or `.env` content into a report. Report pass/fail, counts, hostnames of public services, and commit SHAs only.
 
 ## 1. Gate A — Configuration readiness
@@ -131,10 +131,32 @@ Rollback triggers: any Gate D failure after release; sustained 5xx or `failed_au
 |---|---|---|---|---|---|
 | A | A1–A6 | | | NOT VERIFIED | |
 | B | B1–B4 | | | NOT VERIFIED | |
-| C | C1–C5 | | | NOT VERIFIED | |
+| C | C1–C5 | Claude (read-only GET/HEAD), owner for dashboard items | 2026-10-15 | PARTIAL: C1 (version unknown), C2, C3 and API-generation evidence collected, see §8; dashboard, DNS, `apps/web` items NOT VERIFIED | §8 |
 | D | D1–D12 | | | NOT RUN | |
 | E | Checklist 1–6, rehearsed rollback | | | NOT VERIFIED | |
 | Option B final acceptance | Owner written acceptance | owner | | NOT GIVEN | |
 
 ## 7. What this document does not do
 Does not authorise any live request, deployment, merge, configuration change, secret rotation, test identity, migration, worker activation, or the start of NA-04. Does not close Criterion J. Findings F1–F7 stay open as recorded in the Option B decision record.
+
+## 8. Gate C — probe evidence collected 2026-10-15 (read-only GET/HEAD, about 14:06–14:12 UTC)
+Authorised by the owner ("Authorize Gate C probes"). Requests made: `GET /v1/health`, `GET /v1/ready`, `GET /documentation/json` on `api.infini-cus.com`; `GET /` and `HEAD /` on `infini-cus.com`. No `POST`, no credentials, no token, no state change. No secret or key appears in any output recorded here.
+
+| Item | Observation | Reading |
+|---|---|---|
+| C1 `GET /v1/health` | HTTP 200, body `{"status":"ok","version":"unknown"}` | API is up. `version` is `unknown`: the image was built without `GIT_SHA` (known open item), so the running commit **cannot be identified from outside**. The VM check (`git rev-parse HEAD` and `docker compose images api`) is still needed. |
+| `GET /v1/ready` | HTTP 200 | Readiness (including database) reported OK. |
+| API generation | The public OpenAPI document (`/documentation/json`, HTTP 200) lists 96 paths including `POST /v1/auth/identity-exchange` and `POST /v1/auth/logout` | The deployed API **contains the identity-exchange route** (code at or after PR #131). This is the route definition only; it does not prove Supabase is configured (that is Gate A, check A6). |
+| C2 live page | `GET /` returned 612,786 bytes with SHA-256 identical to `index.html` on `origin/main` (`15846f3`, byte-for-byte, zero diff lines). Markers present: `inf_backend_account_v3` 1, `revokeBackendToken` 3, `identity-exchange` 2 | The page served at `infini-cus.com` is the **current `main` page, including the R1 sign-out revocation code**. |
+| C3 headers | `server: cloudflare`, `cf-cache-status: DYNAMIC`, `content-type: text/html`, CSP present with `script-src 'self' 'unsafe-inline' …` | Served through Cloudflare. Not enough to tell Cloudflare Pages from a proxied origin. `'unsafe-inline'` confirms finding F1 still applies. |
+
+### What this establishes
+- The live browser/API pair is **New browser / New API** (page = current `main`; API has the exchange route). The "Old/New" and "New/Old" rows of the R1 compatibility matrix do not apply today. Do not run the R1 sequencing steps that assume the page or API is old.
+- The page is already at `main`, which means a publish path for `main` exists and is active (see C-open below).
+
+### Still NOT VERIFIED for Gate C
+1. Which API commit runs (needs the VM: `git -C <repo> rev-parse HEAD`, `docker compose -p oci images api`, or rebuild with `GIT_SHA`). C1 stays open.
+2. How `infini-cus.com` is published and whether Cloudflare Pages auto-deploys `main` (Cloudflare dashboard: production branch, automatic deployments, custom domain; GitHub: `PAGES_DEPLOY_FROM_ACTIONS`, Pages source). The byte-identical page proves a publish happened, not which mechanism did it.
+3. DNS provider for `infini-cus.com`.
+4. Whether `apps/web` is deployed anywhere (expected: no).
+5. Gates A, B, D and E are unaffected by these probes and remain NOT VERIFIED / NOT RUN.
