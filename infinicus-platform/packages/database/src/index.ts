@@ -367,6 +367,7 @@ export {
   OMPublicationRepository,
   OMComponentRegistryRepository,
   ActionExecutionVerificationRepository, ActionExecutionVerificationConflictError,
+  MonitoredActionNotFoundError,
 } from './repositories/om/index.js';
 export type {
   OMIntakePackage, ReceiveOMPackageInput,
