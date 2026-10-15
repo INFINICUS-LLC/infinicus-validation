@@ -125,8 +125,22 @@ export const businessIdParamsSchema = z.object({
   businessId: z.string().uuid(),
 });
 
+/** Read-only detail the web client renders (NA-05). Additive: the count and boolean fields below are unchanged. */
+const businessDetailSchema = businessSummarySchema.extend({
+  tradingName: z.string().nullable(),
+  legalStructure: z.string().nullable(),
+  businessModel: z.string().nullable(),
+});
+
 export const workflowViewResponseSchema = z.object({
-  business: businessSummarySchema,
+  business: businessDetailSchema,
+  biEvidence: z.array(z.object({ id: z.string().uuid(), packageCode: z.string(), status: z.string(), latestVersion: z.number() })),
+  dtLatestSnapshot: z.object({ snapshotCode: z.string(), status: z.string(), effectiveAt: z.string() }).nullable(),
+  simulationLatestResult: z.object({ resultCode: z.string(), status: z.string() }).nullable(),
+  simulationRuns: z.array(z.object({ id: z.string().uuid(), runCode: z.string(), status: z.string(), sampleSize: z.number() })),
+  adiLatestRecommendation: z.object({ recommendationCode: z.string(), status: z.string() }).nullable(),
+  abaLatestDecision: z.object({ decisionCode: z.string(), status: z.string() }).nullable(),
+  outcomes: z.array(z.object({ id: z.string().uuid(), observationCode: z.string(), status: z.string() })),
   biEvidenceCount: z.number(),
   dtInstanceCount: z.number(),
   hasDtSnapshot: z.boolean(),
@@ -139,13 +153,25 @@ export const workflowViewResponseSchema = z.object({
   outcomeCount: z.number(),
 });
 
+const historyRowSchema = (codeKey: string) => z.object({ id: z.string().uuid(), [codeKey]: z.string(), status: z.string() });
+
+/** Per-stage lists, most recent first. There is deliberately no interleaved cross-stage timeline. */
+export const decisionHistoryResponseSchema = z.object({
+  biEvidence: z.array(historyRowSchema('packageCode')),
+  simulationRuns: z.array(historyRowSchema('runCode')),
+  adiCases: z.array(historyRowSchema('caseCode')),
+  abaReviews: z.array(historyRowSchema('reviewCode')),
+  outcomes: z.array(historyRowSchema('observationCode')),
+});
+
 export const createDecisionBodySchema = z.object({
   intakePackageId: z.string().uuid(),
   reviewCode: z.string().min(1).max(255),
   summary: z.string().min(1).max(10_000),
   // Never a source of authority: if present it must equal the authenticated user.
   approverUserId: z.string().uuid().optional(),
-  assignmentCode: z.string().min(1).max(255),
+  // Optional: the server defaults it to the owner approver assignment. The assignment is still verified against the authenticated user.
+  assignmentCode: z.string().min(1).max(255).optional(),
   decisionCode: z.string().min(1).max(255),
   outcome: z.enum(['approve', 'approve_with_modifications', 'reject']),
 });

@@ -1,28 +1,28 @@
-import { DecisionWorkflowService } from '@infinicus/workflow';
-import { requireServerContext } from '../../../../lib/serverContext';
-import { WORKFLOW_VIEW_PERMISSIONS } from '../../../../lib/permissions';
-import { AccessNotice } from '../../../access-notice';
-import { submitApprovalDecisionAction, recordOutcomeAction } from './actions';
+import type { BusinessList, DecisionHistory, WorkflowView } from '../../../lib/client/schemas';
 
-export default async function WorkflowPage({ params }: { params: Promise<{ businessId: string }> }) {
-  const { businessId } = await params;
-  const access = await requireServerContext(WORKFLOW_VIEW_PERMISSIONS);
-  if (!access.ok) return <AccessNotice reason={access.reason} />;
+/** Presentational only: no hooks, no data access. The pages fetch through the /v1 API and hand the validated result in. */
 
-  const service = new DecisionWorkflowService();
-  const view = await service.getWorkflowView(access.ctx, businessId);
-
+export function BusinessListView({ data }: { data: BusinessList }) {
+  if (data.items.length === 0) return <p className="empty-state">No businesses found in this workspace yet.</p>;
   return (
-    <div>
-      <p><a href="/businesses">&larr; All businesses</a></p>
-      <h1>{view.business.legalName}</h1>
-      <p>
-        <span className="status-badge">{view.business.status}</span>
-        {view.business.industry ? <span> &middot; {view.business.industry}</span> : null}
-        {' · '}
-        <a href={`/businesses/${businessId}/history`}>View decision history</a>
-      </p>
+    <ul className="business-list" aria-label="Businesses">
+      {data.items.map((b) => (
+        <li key={b.id}>
+          <a href={`/businesses/${b.id}/workflow`}>
+            <strong>{b.legalName}</strong>
+            <br />
+            <span className="status-badge">{b.status}</span>
+            {b.industry ? <span> &middot; {b.industry}</span> : null}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
+export function WorkflowSections({ view }: { view: WorkflowView }) {
+  return (
+    <>
       <section className="card" aria-labelledby="data-review-heading">
         <h2 id="data-review-heading">Data review</h2>
         <table>
@@ -44,9 +44,7 @@ export default async function WorkflowPage({ params }: { params: Promise<{ busin
           <table>
             <thead><tr><th scope="col">Package code</th><th scope="col">Status</th><th scope="col">Latest version</th></tr></thead>
             <tbody>
-              {view.biEvidence.map((pkg) => (
-                <tr key={pkg.id}><td>{pkg.packageCode}</td><td>{pkg.status}</td><td>{pkg.latestVersion}</td></tr>
-              ))}
+              {view.biEvidence.map((pkg) => (<tr key={pkg.id}><td>{pkg.packageCode}</td><td>{pkg.status}</td><td>{pkg.latestVersion}</td></tr>))}
             </tbody>
           </table>
         )}
@@ -85,9 +83,7 @@ export default async function WorkflowPage({ params }: { params: Promise<{ busin
             <table>
               <thead><tr><th scope="col">Run code</th><th scope="col">Status</th><th scope="col">Sample size</th></tr></thead>
               <tbody>
-                {view.simulationRuns.map((run) => (
-                  <tr key={run.id}><td>{run.runCode}</td><td>{run.status}</td><td>{run.sampleSize}</td></tr>
-                ))}
+                {view.simulationRuns.map((run) => (<tr key={run.id}><td>{run.runCode}</td><td>{run.status}</td><td>{run.sampleSize}</td></tr>))}
               </tbody>
             </table>
           </>
@@ -111,68 +107,53 @@ export default async function WorkflowPage({ params }: { params: Promise<{ busin
       <section className="card" aria-labelledby="aba-heading">
         <h2 id="aba-heading">ABA review</h2>
         {view.abaLatestDecision ? (
-          <p>
-            Latest decision: <span className="status-badge">{view.abaLatestDecision.status}</span>{' '}
-            ({view.abaLatestDecision.decisionCode})
-          </p>
+          <p>Latest decision: <span className="status-badge">{view.abaLatestDecision.status}</span> ({view.abaLatestDecision.decisionCode})</p>
         ) : (
           <p className="empty-state">No approval decision recorded yet.</p>
         )}
-        <details>
-          <summary>Start a review and record a decision</summary>
-          <form className="stack" action={submitApprovalDecisionAction}>
-            <input type="hidden" name="businessId" value={businessId} />
-            <div>
-              <label htmlFor="intakePackageId">ABA intake package ID</label>
-              <input id="intakePackageId" name="intakePackageId" required aria-required="true" placeholder="uuid" />
-            </div>
-            <div>
-              <label htmlFor="aba-summary">Review summary</label>
-              <textarea id="aba-summary" name="summary" required aria-required="true" rows={3} />
-            </div>
-            <div>
-              <label htmlFor="outcome">Decision</label>
-              <select id="outcome" name="outcome" defaultValue="approve">
-                <option value="approve">Approve</option>
-                <option value="approve_with_modifications">Approve with modifications</option>
-                <option value="reject">Reject</option>
-              </select>
-            </div>
-            <button type="submit">Submit decision</button>
-          </form>
-        </details>
       </section>
 
       <section className="card" aria-labelledby="outcome-heading">
-        <h2 id="outcome-heading">Outcome entry</h2>
+        <h2 id="outcome-heading">Outcomes</h2>
         {view.outcomes.length === 0 ? (
           <p className="empty-state">No outcome observations recorded yet.</p>
         ) : (
           <table>
             <thead><tr><th scope="col">Observation code</th><th scope="col">Status</th></tr></thead>
             <tbody>
-              {view.outcomes.map((obs) => (
-                <tr key={obs.id}><td>{obs.observationCode}</td><td>{obs.status}</td></tr>
-              ))}
+              {view.outcomes.map((obs) => (<tr key={obs.id}><td>{obs.observationCode}</td><td>{obs.status}</td></tr>))}
             </tbody>
           </table>
         )}
-        <details>
-          <summary>Record an outcome</summary>
-          <form className="stack" action={recordOutcomeAction}>
-            <input type="hidden" name="businessId" value={businessId} />
-            <div>
-              <label htmlFor="monitoredActionId">Monitored action ID</label>
-              <input id="monitoredActionId" name="monitoredActionId" required aria-required="true" placeholder="uuid" />
-            </div>
-            <div>
-              <label htmlFor="outcome-summary">Outcome summary</label>
-              <textarea id="outcome-summary" name="summary" required aria-required="true" rows={3} />
-            </div>
-            <button type="submit">Record outcome</button>
-          </form>
-        </details>
       </section>
-    </div>
+    </>
+  );
+}
+
+function HistorySection({ title, emptyLabel, rows }: { title: string; emptyLabel: string; rows: Array<{ id: string; code: string; status: string }> }) {
+  return (
+    <section className="card" aria-label={title}>
+      <h2>{title}</h2>
+      {rows.length === 0 ? (
+        <p className="empty-state">{emptyLabel}</p>
+      ) : (
+        <table>
+          <thead><tr><th scope="col">Code</th><th scope="col">Status</th></tr></thead>
+          <tbody>{rows.map((r) => (<tr key={r.id}><td>{r.code}</td><td>{r.status}</td></tr>))}</tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+export function HistorySections({ history }: { history: DecisionHistory }) {
+  return (
+    <>
+      <HistorySection title="BI evidence" emptyLabel="No BI evidence yet." rows={history.biEvidence.map((r) => ({ id: r.id, code: r.packageCode, status: r.status }))} />
+      <HistorySection title="Simulation runs" emptyLabel="No simulation runs yet." rows={history.simulationRuns.map((r) => ({ id: r.id, code: r.runCode, status: r.status }))} />
+      <HistorySection title="ADI decision cases" emptyLabel="No ADI decision cases yet." rows={history.adiCases.map((r) => ({ id: r.id, code: r.caseCode, status: r.status }))} />
+      <HistorySection title="ABA reviews" emptyLabel="No ABA reviews yet." rows={history.abaReviews.map((r) => ({ id: r.id, code: r.reviewCode, status: r.status }))} />
+      <HistorySection title="Outcomes" emptyLabel="No outcomes recorded yet." rows={history.outcomes.map((r) => ({ id: r.id, code: r.observationCode, status: r.status }))} />
+    </>
   );
 }
