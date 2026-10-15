@@ -2,8 +2,8 @@
 
 The outbox dispatcher runs as its **own process** (owner ruling O-1). The API only accepts requests; it never polls, schedules or dispatches.
 
-**Status: built, not deployed, not enabled.** Nothing here starts by default (compose profile `event-worker`). Even a running worker acts on
-nothing until all of these hold: the build registry lists the action type (`PRODUCTION_SUPPORTED_ACTION_TYPES`, empty until P0-6e), a
+**Status: built, not deployed, not enabled (as of the repository at `130bf5a`; whether it runs on the production host is not recorded in the repository and must be confirmed by the owner).** Nothing here starts by default (compose profile `event-worker`). Even a running worker acts on
+nothing until all of these hold: the build registry lists the action type (`PRODUCTION_SUPPORTED_ACTION_TYPES`; it lists `inventory_reorder_policy_update@1` since P0-6e — see `boActionCapabilities.ts`), a
 per-business activation exists, the global kill switch is not engaged (P0-6e), **and** the business has an `events.event_subscriptions` row
 for `bo.authorized_action_intake`. No subscription row = nothing is delivered.
 
