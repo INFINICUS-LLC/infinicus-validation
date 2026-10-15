@@ -35,12 +35,12 @@ Business Operations currently has persistence but no completed browser bundle.
 | 2B | Data Acquisition | data_acquisition | completed |
 | 2C | Business Operations | business_operations | completed |
 | 2D | Business Intelligence | business_intelligence | completed |
-| 2E | Business Digital Twin | business_digital_twin | prepared |
-| 2F | Simulation | simulation | prepared |
-| 2G | AI Decision Intelligence | ai_decision_intelligence | prepared |
-| 2H | Approved Business Action | approved_business_action | prepared |
-| 2I | Outcome Monitoring | outcome_monitoring | prepared |
-| 2J | Continuous Learning | continuous_learning | prepared |
+| 2E | Business Digital Twin | business_digital_twin | completed |
+| 2F | Simulation | simulation | completed |
+| 2G | AI Decision Intelligence | ai_decision_intelligence | completed |
+| 2H | Approved Business Action | approved_business_action | completed |
+| 2I | Outcome Monitoring | outcome_monitoring | completed |
+| 2J | Continuous Learning | continuous_learning | completed |
 
 ## Important repository paths
 
@@ -171,6 +171,8 @@ As of BUILD-09:
 ```
 
 Later builds must inspect the migration directory to determine the actual current boundary before assigning numbers.
+
+**Current repository boundary (NA-02, verified 2026-10-15 at `main` `130bf5a`):** `0001`–`0198`, 198 files, contiguous, no duplicates. The `0001–0049` line above is the historical BUILD-09 boundary only. Stages 2E–2J are recorded as completed in `.claude/state/reports/` (code, repositories and tests in the repository; not evidence of live application). The live database state is not derived from this inventory; see `docs/architecture/reconciliation/PRODUCTION_FACTS_OWNER_REPORTED_2026-10-15.md`.
 
 ## RLS conventions
 

@@ -29,12 +29,14 @@ Stage 1  Foundation
 | Historical | 2B | Data Acquisition | data_acquisition | external sources | dal-to-bo | completed |
 | Historical | 2C | Business Operations | business_operations | dal-to-bo | bo-to-bi | completed |
 | BUILD-09 | 2D | Business Intelligence | business_intelligence | bo-to-bi | bi-to-dt | completed |
-| BUILD-12 | 2E | Business Digital Twin | business_digital_twin | bi-to-dt | dt-to-sim | prepared |
-| BUILD-13 | 2F | Simulation | simulation | dt-to-sim | sim-to-adi | prepared |
-| BUILD-14 | 2G | AI Decision Intelligence | ai_decision_intelligence | sim-to-adi | adi-to-aba | prepared |
-| BUILD-15 | 2H | Approved Business Action | approved_business_action | adi-to-aba | aba-to-om | prepared |
-| BUILD-16 | 2I | Outcome Monitoring | outcome_monitoring | aba-to-om | om-to-cl | prepared |
-| BUILD-17 | 2J | Continuous Learning | continuous_learning | om-to-cl | cl-feedback | prepared |
+| BUILD-12 | 2E | Business Digital Twin | business_digital_twin | bi-to-dt | dt-to-sim | completed |
+| BUILD-13 | 2F | Simulation | simulation | dt-to-sim | sim-to-adi | completed |
+| BUILD-14 | 2G | AI Decision Intelligence | ai_decision_intelligence | sim-to-adi | adi-to-aba | completed |
+| BUILD-15 | 2H | Approved Business Action | approved_business_action | adi-to-aba | aba-to-om | completed |
+| BUILD-16 | 2I | Outcome Monitoring | outcome_monitoring | aba-to-om | om-to-cl | completed |
+| BUILD-17 | 2J | Continuous Learning | continuous_learning | om-to-cl | cl-feedback | completed |
+
+> **Status reconciliation (NA-02, 2026-10-15).** Stages 2E–2J were marked `prepared` when this map was written. The completion reports `.claude/state/reports/BUILD-12…BUILD-17-*-completion.md` record each stage as completed, and the repository holds contiguous migrations `0001`–`0198`. `completed` here means *the schema, repositories and tests exist in the repository*. It does **not** mean applied to any live database; live migration state is never inferred from the repository (Guardrail §XIX).
 
 ## Dependency rules
 
