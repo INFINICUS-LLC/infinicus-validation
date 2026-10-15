@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { DecisionWorkflowService, SimulationOrchestrationService } from '@infinicus/workflow';
+import { DecisionWorkflowService, SimulationOrchestrationService, DEFAULT_APPROVER_ASSIGNMENT_CODE } from '@infinicus/workflow';
 import {
-  businessListResponseSchema, businessIdParamsSchema, workflowViewResponseSchema,
+  businessListResponseSchema, businessIdParamsSchema, workflowViewResponseSchema, decisionHistoryResponseSchema,
   createBusinessBodySchema, createBusinessResponseSchema,
   createDecisionBodySchema, decisionResponseSchema,
   grantApproverAuthorityBodySchema, grantApproverAuthorityResponseSchema,
@@ -76,7 +76,20 @@ export default async function businessRoutes(app: FastifyInstance) {
       business: {
         id: view.business.id, legalName: view.business.legalName, businessCode: view.business.businessCode,
         status: view.business.status, industry: view.business.industry,
+        tradingName: view.business.tradingName, legalStructure: view.business.legalStructure, businessModel: view.business.businessModel,
       },
+      biEvidence: view.biEvidence.map((p) => ({ id: p.id, packageCode: p.packageCode, status: p.status, latestVersion: p.latestVersion })),
+      dtLatestSnapshot: view.dtLatestSnapshot
+        ? { snapshotCode: view.dtLatestSnapshot.snapshotCode, status: view.dtLatestSnapshot.status, effectiveAt: new Date(view.dtLatestSnapshot.effectiveAt).toISOString() }
+        : null,
+      simulationLatestResult: view.simulationLatestResult
+        ? { resultCode: view.simulationLatestResult.resultCode, status: view.simulationLatestResult.status } : null,
+      simulationRuns: view.simulationRuns.map((r) => ({ id: r.id, runCode: r.runCode, status: r.status, sampleSize: r.sampleSize })),
+      adiLatestRecommendation: view.adiLatestRecommendation
+        ? { recommendationCode: view.adiLatestRecommendation.recommendationCode, status: view.adiLatestRecommendation.status } : null,
+      abaLatestDecision: view.abaLatestDecision
+        ? { decisionCode: view.abaLatestDecision.decisionCode, status: view.abaLatestDecision.status } : null,
+      outcomes: view.outcomes.map((o) => ({ id: o.id, observationCode: o.observationCode, status: o.status })),
       biEvidenceCount: view.biEvidence.length,
       dtInstanceCount: view.dtInstances.length,
       hasDtSnapshot: view.dtLatestSnapshot !== null,
@@ -87,6 +100,26 @@ export default async function businessRoutes(app: FastifyInstance) {
       abaReviewCount: view.abaReviews.length,
       hasAbaDecision: view.abaLatestDecision !== null,
       outcomeCount: view.outcomes.length,
+    });
+  });
+
+  server.get('/v1/businesses/:businessId/history', {
+    schema: {
+      tags: ['businesses'],
+      summary: 'Per-stage decision history for a business (BI evidence, simulation runs, ADI cases, ABA reviews, outcomes), most recent first',
+      params: businessIdParamsSchema,
+      response: { 200: decisionHistoryResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
+    },
+    // Aggregates every layer, so it needs the same full read set as the workflow view (owner ruling F2).
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requireAllPermissions(WORKFLOW_VIEW_PERMISSIONS)],
+  }, async (request, reply) => {
+    const h = await workflow.getDecisionHistory(request.ctx!, request.params.businessId);
+    return reply.status(200).send({
+      biEvidence: h.biEvidence.map((p) => ({ id: p.id, packageCode: p.packageCode, status: p.status })),
+      simulationRuns: h.simulationRuns.map((r) => ({ id: r.id, runCode: r.runCode, status: r.status })),
+      adiCases: h.adiCases.map((c) => ({ id: c.id, caseCode: c.caseCode, status: c.status })),
+      abaReviews: h.abaReviews.map((r) => ({ id: r.id, reviewCode: r.reviewCode, status: r.status })),
+      outcomes: h.outcomes.map((o) => ({ id: o.id, observationCode: o.observationCode, status: o.status })),
     });
   });
 
@@ -191,7 +224,7 @@ export default async function businessRoutes(app: FastifyInstance) {
     const decision = await workflow.submitApprovalDecision(request.ctx!, businessId, {
       reviewPackageId: review.id,
       approverUserId: request.body.approverUserId,
-      assignmentCode: request.body.assignmentCode,
+      assignmentCode: request.body.assignmentCode ?? DEFAULT_APPROVER_ASSIGNMENT_CODE,
       decisionCode: request.body.decisionCode,
       summary: request.body.summary,
       outcome: request.body.outcome,

@@ -22,6 +22,16 @@ export class FakeBackend {
   exchangeStatus = 200;
   logoutStatus: number | 'network' | 'hang' = 204;
   membershipsBody: unknown = null;                             // override with a malformed body
+  /** Lifecycle writes: answer with this status instead of 201 (to exercise error mapping). */
+  writeStatus = 201;
+  /** idempotency key -> the response already given (a replay returns the same record). */
+  readonly replays = new Map<string, unknown>();
+  readonly decisions: Array<Record<string, unknown>> = [];
+  /** Read routes for the lifecycle screens: payload per route, or a status to answer instead. */
+  businessList: unknown = { items: [], page: 1, pageSize: 20, total: 0 };
+  workflowView: unknown = null;
+  historyView: unknown = null;
+  readStatus = 200;
   exchangeDelayMs = 0;
   exchangeCount = 0;
 
@@ -71,6 +81,27 @@ export class FakeBackend {
       if (!userId) return unauth();
       if (this.membershipsBody !== null) return json(200, this.membershipsBody);
       return json(200, { memberships: this.memberships.get(userId) ?? [] });
+    }
+    const read = /^\/v1\/businesses(?:\/([0-9a-f-]{36})\/(workflow|history))?$/.exec(url.pathname);
+    if (read && (init?.method ?? 'GET') === 'GET') {
+      if (!userId) return unauth();
+      if (!headers['x-tenant-id'] || !headers['x-workspace-id']) return json(400, { error: { code: 'Bad', message: 'missing header', correlationId: 'c-7' } });
+      if (this.readStatus !== 200) return json(this.readStatus, { error: { code: 'E', message: 'internal detail that must not be shown', correlationId: 'corr-read' } });
+      return json(200, read[2] === 'workflow' ? this.workflowView : read[2] === 'history' ? this.historyView : this.businessList);
+    }
+    const write = /^\/v1\/businesses\/([0-9a-f-]{36})\/(decisions|outcomes)$/.exec(url.pathname);
+    if (write && (init?.method ?? 'GET') === 'POST') {
+      if (!userId) return unauth();
+      if (!headers['idempotency-key'] || !headers['x-tenant-id'] || !headers['x-workspace-id']) return json(400, { error: { code: 'Bad', message: 'missing header', correlationId: 'c-6' } });
+      if (this.writeStatus !== 201) return json(this.writeStatus, { error: { code: 'E', message: 'internal detail that must not be shown', correlationId: 'corr-write' } });
+      const key = headers['idempotency-key'];
+      if (this.replays.has(key)) return json(201, this.replays.get(key));
+      const record = write[2] === 'decisions'
+        ? { id: randomUUID(), status: 'approved', decisionCode: body.decisionCode }
+        : { id: randomUUID(), status: 'recorded', observationCode: body.observationCode };
+      if (write[2] === 'decisions') this.decisions.push(body);
+      this.replays.set(key, record);
+      return json(201, record);
     }
     return json(404, { error: { code: 'NotFound', message: 'nope', correlationId: 'c-5' } });
   };

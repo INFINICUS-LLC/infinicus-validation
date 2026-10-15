@@ -143,24 +143,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@infinicus/authentication':
-        specifier: workspace:*
-        version: link:../../packages/authentication
-      '@infinicus/authorization':
-        specifier: workspace:*
-        version: link:../../packages/authorization
-      '@infinicus/configuration':
-        specifier: workspace:*
-        version: link:../../packages/configuration
-      '@infinicus/database':
-        specifier: workspace:*
-        version: link:../../packages/database
-      '@infinicus/shared-types':
-        specifier: workspace:*
-        version: link:../../packages/shared-types
-      '@infinicus/workflow':
-        specifier: workspace:*
-        version: link:../../packages/workflow
       '@supabase/supabase-js':
         specifier: ^2.118.0
         version: 2.118.0
@@ -177,18 +159,12 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
-      '@types/pg':
-        specifier: ^8.11.0
-        version: 8.20.0
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.17
       '@types/react-dom':
         specifier: ^19.0.0
         version: 19.2.3(@types/react@19.2.17)
-      pg:
-        specifier: ^8.12.0
-        version: 8.22.0
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
