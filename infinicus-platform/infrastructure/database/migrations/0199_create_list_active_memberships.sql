@@ -9,9 +9,12 @@
 --
 -- MECHANISM (no role statements, no GRANT - this repository provisions roles per environment, see grant-app-role.sh; same pattern as 0196):
 --   * SECURITY DEFINER with an explicit, hardened search_path (pg_catalog, pg_temp); every object it names is schema-qualified; no dynamic SQL.
---   * The function refuses unless p_user_id equals the transaction's authoritative app.user_id (set by the API from the VALIDATED session, never from the
---     request). A caller-supplied id that differs from the transaction's user raises; a missing app.user_id raises. So it cannot be used to list another
---     user's memberships even by an application bug that passes a wrong argument.
+--   * The function refuses unless p_user_id equals the transaction's app.user_id. This is a CONSISTENCY check, not an authorization: app.user_id is set by
+--     the caller of the transaction (MembershipRepository.listActiveForUser sets it from the same argument it passes here), so the check does not stop an
+--     application that passes a wrong user id. What it does stop: any caller that has not set app.user_id (a direct SQL caller, an injected statement,
+--     other code calling the function) and any mismatch between the argument and the setting (a missing or different app.user_id raises 42501).
+--     The guarantee that the id is the signed-in user's own comes from the API route, which passes only the VALIDATED session's user id and never a
+--     value taken from the request (GET /v1/auth/memberships; covered by a mutation-checked test).
 --   * It reads the tables as their owner (RLS on these three tables is ENABLE-only, so the owner is not subject to it; a superuser/BYPASSRLS owner is
 --     not either). It re-establishes isolation itself by selecting strictly on user_id. If a future migration FORCEs RLS on these tables the function will
 --     return no rows (fail closed); the integration test pins today's behaviour.
@@ -61,7 +64,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION tenancy.list_active_memberships(uuid) IS
-  'NA-04: the ONLY cross-workspace read of memberships. SECURITY DEFINER, search_path pinned. Returns the ACTIVE, non-deleted memberships of exactly p_user_id, and only when p_user_id equals the transaction''s authoritative app.user_id (otherwise 42501). Ids, names and statuses only; no roles, permissions or other users. Read-only. Not an authorization engine: every business route still resolves membership and permission per request.';
+  'NA-04: the ONLY cross-workspace read of memberships. SECURITY DEFINER, search_path pinned. Returns the ACTIVE, non-deleted memberships of exactly p_user_id, and only when p_user_id equals the transaction''s app.user_id (otherwise 42501). That is a consistency check, not an authorization: the caller sets app.user_id, so the caller must pass the validated session user (the API route does). Ids, names and statuses only; no roles, permissions or other users. Read-only. Not an authorization engine: every business route still resolves membership and permission per request.';
 
 REVOKE ALL ON FUNCTION tenancy.list_active_memberships(uuid) FROM PUBLIC;
 
