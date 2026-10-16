@@ -38,6 +38,9 @@ APP_ROLE="${APP_ROLE:-app_role}"
 REF_0169_PG16="31a2177a6b48b2af"
 REF_0170_PG16="38eabb12fde135b5"
 REF_0198_PG16="7fd4c419d738de8a"
+REF_0199_PG16="fcad5f9bfb827028"
+REF_0200_PG16="44b7dd1cc29d81bd"
+REF_0201_PG16="61ef99d74289c3b3"
 
 section() { printf '\n===== %s =====\n' "$1"; }
 run() { # run <label> <command...> : print the command's output, never abort
@@ -150,7 +153,10 @@ FP_OUT="$(printf '%s\n' "$FP_SQL" | sql 2>&1)"
 FN_OUT="$(printf '%s\n' "$FN_SQL" | sql 2>&1)"
 FP_HASH="$(printf '%s\n%s\n' "$FP_OUT" "$FN_OUT" | sha256sum | cut -c1-16)"
 printf 'fingerprint-groups=%s function-groups=%s combined-sha256-16=%s\n' "$(printf '%s\n' "$FP_OUT" | grep -c .)" "$(printf '%s\n' "$FN_OUT" | grep -c .)" "$FP_HASH"
-if [[ "$FP_HASH" == "$REF_0198_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0198_PG16'
+if [[ "$FP_HASH" == "$REF_0201_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0201_PG16'
+elif [[ "$FP_HASH" == "$REF_0200_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0200_PG16'
+elif [[ "$FP_HASH" == "$REF_0199_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0199_PG16'
+elif [[ "$FP_HASH" == "$REF_0198_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0198_PG16'
 elif [[ "$FP_HASH" == "$REF_0170_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0170_PG16'
 elif [[ "$FP_HASH" == "$REF_0169_PG16" ]]; then echo 'fingerprint-verdict=MATCHES_REPOSITORY_0169_PG16'
 else echo 'fingerprint-verdict=NO_REFERENCE_MATCH (send the full fingerprint below for a group-level diff)'; fi
