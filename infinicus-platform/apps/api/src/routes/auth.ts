@@ -87,7 +87,7 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   // NA-04: lets a signed-in client discover WHICH workspaces it may select. Session-only by design (there is no tenant yet to resolve). The user is
-  // taken from the validated session, never from the request; the database function (migration 0199) refuses any other user. Choosing a workspace from
+  // taken from the validated session, never from the request (this route is the control that guarantees it); the database function (migration 0199) additionally refuses a caller whose app.user_id does not match. Choosing a workspace from
   // this list does not authorize anything: every tenant route still resolves membership and permission from the X-Tenant-Id / X-Workspace-Id claims.
   server.get('/v1/auth/memberships', {
     schema: {

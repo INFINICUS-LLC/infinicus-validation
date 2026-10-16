@@ -56,9 +56,11 @@ export class MembershipRepository {
   }
 
   /**
-   * The workspaces the given user is an ACTIVE member of, across tenants (migration 0199). The user id must come from a VALIDATED session: the
-   * database function refuses unless it equals the transaction's app.user_id, which is set here from the same argument, so this lists exactly one
-   * user's own memberships and never anyone else's. It authorizes nothing: every business request still resolves membership and permission itself.
+   * The workspaces the given user is an ACTIVE member of, across tenants (migration 0199). The user id MUST come from a VALIDATED session; this method
+   * trusts its argument. The database function checks only that its argument equals the transaction's app.user_id, which is set here from that same
+   * argument, so the check is a consistency check (it blocks callers that do not set app.user_id), not protection against a caller passing the wrong
+   * user id. That protection is the route: GET /v1/auth/memberships passes only request.session.user.id. It authorizes nothing: every business request
+   * still resolves membership and permission itself.
    */
   async listActiveForUser(userId: string): Promise<ActiveMembershipSummary[]> {
     return withTransaction(async (client) => {
