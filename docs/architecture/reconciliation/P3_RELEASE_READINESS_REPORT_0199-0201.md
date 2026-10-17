@@ -8,6 +8,8 @@
 | Builds on | `PRODUCTION_RELEASE_SEQUENCE_0199-0201_DESIGN.md` (phases, acceptance criteria A1–A10), `PHASE_R_REHEARSAL_DESIGN_0199-0201.md`, `production-discovery/*`, `infrastructure/backups/README.md` |
 | Evidence labels | `OWNER-RUN-OUTPUT` pasted tool output from the owner's session (checksums below identify the saved files, which are **not** in the repository); `REPO-VERIFIED`; `UNKNOWN` |
 
+> **Correction notice (2026-10-17, docs only).** After this report was merged, Block G (owner-run, read-only) showed that three statements here were wrong. (1) G2: the backup uses a dedicated gpg home (`BACKUP_GNUPGHOME`), which holds the public key; the earlier count of 0 was taken on the default keyring. (2) G3: an offsite backup was recorded on 2026-10-13 (historical, pre-0198, not restore-proven here). (3) G4: `check-backup-freshness.sh` is present on the VM; only the schedule is missing. Rows G1–G4, §5 item 2, §6 item 8 and the evidence table were updated. The historical backup is not fresh and not restore-proven; the verdict (NOT READY) is unchanged.
+
 ## 1. Evidence collected (all READ-ONLY, all on 2026-10-17)
 
 Every session below was forced read-only (`default_transaction_read_only=on`), database `infinicus`, PostgreSQL 16.15, ledger head `0198_link_purchase_order_lines_to_inventory_items.sql` (198 rows).
@@ -20,6 +22,7 @@ Every session below was forced read-only (`default_transaction_read_only=on`), d
 | D | evidence SQL E01–E07 | exit 0, `ERROR` 0, `TABLE_MISSING` 0; RLS `t/t` and one policy on all 46 OM tables; outbox 48 + 11 = 59 equals `events.outbox_events` | `evidence-20261017T132400Z.txt` `6ca55d22d5a734a1742392e1ab84f2148ef5b0c22ae6066015c1cb8ca910635e` |
 | E | `production-readonly-discovery.sh` | `combined-sha256-16=7fd4c419d738de8a`, `fingerprint-verdict=MATCHES_REPOSITORY_0198_PG16`; roles/privileges as designed (see §2) | `discovery-20261017T132655Z.txt` `c0099aaf9c4f138d53023e086b913ba05c6e120019b54302ba54ba0df5ef190f` |
 | F | image identity, test containers, ports, backup tooling | see §3 | `blockF-20261017T135600Z.txt` `37aa86c95447150a317a2ff3628095ac115a660d4c0f85003ae10ec96c2f85c7` (the pasted command had a typo on its last line; treat this checksum as recorded, not independently verified) |
+| G | `backup-offsite.sh --check` and `check-backup-freshness.sh` (corrects Block F's key finding) | `--check`: 15 checks ok, 0 FAIL, `CHECK PASSED`, exit 0 (dedicated gpg home holds the public key only; rclone remote `offsite`, type s3, structurally valid). Freshness: CRITICAL, about 89 h since the 2026-10-13 `first-proof` backup. | `blockG-20261017T142642Z.txt` `d4582f175aba8fd54d8975ff9420722c20b43a097ed52c0ee37e8c49a02f1390` |
 
 Production OM population at the time: 3 observations, 3 monitored actions, 3 action versions, 3 status-history rows, 3 execution observations, 0 execution verifications, 0 scope mismatches anywhere. The three new migrations therefore have nothing to refuse on today.
 
@@ -36,10 +39,10 @@ Production OM population at the time: 3 observations, 3 monitored actions, 3 act
 
 | # | Gap | Evidence | Needed to close | Owner action |
 |---|---|---|---|---|
-| G1 | **No fresh, restore-proven backup.** The only dump is `infinicus-20261014T201406Z.dump` (4,128,924 bytes, sha256 `71101eb1544e35a4e07c85c68b84a1c0e805b66cdd4a752e2641b94873dde514`), three days old and local only. | Block F | A backup of the quiesced pre-migration state (W4) and `RESTORE_PROOF=PASS` against it | Authorise the backup step; provide drill machine |
-| G2 | **No encryption key on the VM.** `gpg` public key count is 0; `backup-offsite.sh` encrypts to a public key present in the VM keyring. | Block F | Public key imported on the VM; private key only on the drill machine | Create/import the key pair (owner-held) |
-| G3 | **Offsite sink untested.** `rclone listremotes` shows `offsite:`; whether it works is not established. The README states the S3 path has not been exercised against a real service. | Block F; `backups/README.md` | `backup-offsite.sh --check` (write-free), then a `--verify` backup | Authorise a read-only `--check` (optional Block G) |
-| G4 | **No schedule and no freshness monitor.** No crontab, no backup timer; the `systemd/` units are repo templates only. | Block E/F | Decide whether to install the timer after the release | Separate authorisation |
+| G1 | **No fresh, restore-proven backup.** The only dump is `infinicus-20261014T201406Z.dump` (4,128,924 bytes, sha256 `71101eb1544e35a4e07c85c68b84a1c0e805b66cdd4a752e2641b94873dde514`), three days old and local only. The historical offsite backup recorded on 2026-10-13 (see G3) predates the migrations to head 0198 and is not a pre-release recovery point. | Block F | A backup of the quiesced pre-migration state (W4) and `RESTORE_PROOF=PASS` against it | Authorise the backup step; provide drill machine |
+| G2 | **Closed (corrected 2026-10-17).** `/etc/infinicus/backup.env` (variable names only) selects a dedicated gpg home (`BACKUP_GNUPGHOME`). `backup-offsite.sh --check` (Block G, 2026-10-17T14:26:42Z) validated that the configured recipient public key is present in that keyring and that no secret key exists there. The earlier 'public key count is 0' observation counted the default keyring, which the backup does not use. | Block G (corrects Block F) | — | Confirm where the private key is held (custody) |
+| G3 | **Partly closed (corrected 2026-10-17).** The rclone remote `offsite` (type s3), bucket `infinicus-production-backups-01` and prefix `infinicus-production` are configured; `--check` validates the sink structurally only and does not contact the bucket. A historical offsite backup was recorded on 2026-10-13 (`infinicus-production/2026-10-13/20261013T203235Z-first-proof/manifest.json`, from the VM's local state file). Its readability, contents and recoverability have not been established. | Blocks F, G; `backups/README.md` | Manifest retrieval (Block H), then a restore proof on the drill machine | Block H operator runs; drill-machine custody answers |
+| G4 | **No active schedule (corrected 2026-10-17).** No crontab and no active backup timer; the `systemd/` units are repository templates. `check-backup-freshness.sh` is present in the VM checkout and reported CRITICAL on 2026-10-17 (about 89 h since the 2026-10-13 backup). | Blocks E, F, G | Decide whether to install the timer after the release | Separate authorisation |
 | G5 | **Running API build is unidentified.** `INFINICUS_BUILD_SHA=unknown` in both `oci-api-1` and the smoke-test container; image `4fba8110ac9c` (created 2026-10-14T21:01Z) cannot be tied to a commit from the container. | Block F | Build the release image with `GIT_SHA` set and record the digest; record the current image id as the rollback identity (criterion A9) | Operator step in W2/W5 |
 | G6 | **Rollback image compatibility with 0198 is UNKNOWN.** `oci-api:rollback-20261014` is image `ee6e44c5b7b2` created 2026-10-04 although the tag says 20261014. | Block F | Treat the image running *before* W5 as the rollback image (tag it at W2); do not rely on the existing tag | Operator step in W2 |
 | G7 | **Expectations profile for head 0198 does not exist.** `production-pre-0171.profile` fails for 0198 by design. Production counts are live (59 pending outbox rows, 6 users, 16 tenants and businesses) and can change, so a profile committed today could be stale at backup time. | Block D/E | Generate the profile from evidence taken *after the quiesce, immediately before the backup* (§5), reviewed by the owner | Owner decision 6 |
@@ -53,7 +56,7 @@ Production OM population at the time: 3 observations, 3 monitored actions, 3 act
 |---|---|---|---|
 | A1 | Production identity confirmed | **Evidence available for today** (host, database, compose project, containers); must be re-run in W0 | Blocks A, B, E |
 | A2 | Pre-release audit v2 clean | **Met for today's state**; must be repeated in W1 and Phase R | Block C |
-| A3 | Restore-proven off-VM backup of the pre-migration state | **Not met** | G1–G3 |
+| A3 | Restore-proven off-VM backup of the pre-migration state | **Not met** | G1, G3 |
 | A4 | Ledger head and constraints validated after migration | Not yet applicable | needs W6/W8 |
 | A5 | Fingerprint equals reference for the new head | Reference exists (0201 = REPO-VERIFIED); not yet applicable | needs W8 |
 | A6 | App role privileges unchanged, EXECUTE only via grant script | Baseline captured (Block E); not yet applicable | needs W7/W8 |
@@ -69,7 +72,7 @@ These refine Phase W of the design; they change nothing until the owner adopts t
 1. **Profile at backup time.** After W3 (API stopped, so no application writes) and before the dump in W4, the operator runs, read-only: the evidence SQL (`production-discovery/p3-owner-01-evidence.sql`) and `production-readonly-discovery.sh`, saves both outputs, then runs on the drill machine (or the VM after a normal `git pull` of `main`):
    `infrastructure/backups/make-expectations-profile.sh --evidence <file> --discovery <file> --out <new-file>`.
    The generator refuses on any error, wrong identity, wrong head or wrong verdict, and never overwrites. The owner reviews the generated file (counts must match what they see) and passes it to the restore proof with `RESTORE_EXPECTATIONS=<file>`. The same file is committed afterwards through a normal reviewed PR; it is not hand-edited.
-2. **Write-free backup check first.** `backup-offsite.sh --check` runs before the first real backup, as the README requires, with the key (G2) and sink (G3) in place.
+2. **Write-free backup check.** `backup-offsite.sh --check` runs before the first real backup, as the README requires. It passed on 2026-10-17 (Block G: 15 checks ok, 0 FAIL) with the key (G2) and sink configuration (G3) in place; it must be re-run in the window.
 3. **Rollback identity.** At W2, record `docker compose -p oci images` and tag the currently running API image id as the rollback image, regardless of the existing `oci-api:rollback-20261014` tag.
 4. **Compose file pair.** Record the running project's config files (Block E shows two) and use the identical pair for build, up, and rollback.
 5. **Image built in advance** with `GIT_SHA=<SHA>` (build cache can be pruned only with separate authorisation) so that the stop window is W3–W9 only.
@@ -84,7 +87,7 @@ These refine Phase W of the design; they change nothing until the owner adopts t
 5. Who runs audit v2, and the backup and restore-proof roles (drill machine, key custody).
 6. Adopt, amend or reject the §5 addendum, in particular generating the profile at backup time.
 7. Where Phase R runs (not the production VM; see G8).
-8. Whether to import the gpg public key and exercise `backup-offsite.sh --check` now (Block G), and whether to install the backup timer.
+8. The gpg public key is already configured (G2). Decide whether to install the backup timer after the release, and confirm where the private key is held.
 
 ## 7. Housekeeping findings (no action taken; for the owner)
 
