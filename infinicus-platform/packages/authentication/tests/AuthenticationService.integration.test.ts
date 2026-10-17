@@ -31,8 +31,9 @@ const STRONG_PASSWORD = 'Correct-Horse-9!';
 
 // bcryptjs is pure JavaScript and deliberately slow at the production cost factor (12). A test that registers and logs in
 // (or changes a password) performs two or more hashes, which on a loaded shared CI runner can pass the 5000 ms default
-// (seen on #62, #63). The lockout tests below carry their own allowance. This only gives such tests an explicit, bounded
-// patience: the bcrypt cost, lockout thresholds, assertions and the global default timeout are unchanged.
+// (seen on #62, #63, and on #147 where 'stores a bcrypt hash' timed out and its late email send shifted the next test's email
+// count). Every test that registers or logs in carries an explicit allowance (this one, or its own below). This only gives such
+// tests an explicit, bounded patience: the bcrypt cost, lockout thresholds, assertions and the global default timeout are unchanged.
 const MULTI_BCRYPT_TEST_TIMEOUT_MS = 30_000;
 
 /** Captures every message "sent" instead of making a real HTTP call — lets tests recover the raw verification token, which is otherwise never returned from register()'s own public API (see AuthenticationService.register()'s doc comment: it's emailed, not returned). */
@@ -77,7 +78,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
     it('activates the account immediately — never leaves it pending from the caller\'s perspective', async () => {
       const user = await service.register(uniqueEmail('reg'), STRONG_PASSWORD);
       expect(user.status).toBe('active');
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('an immediately-registered account can log in right away, with no separate activation step', async () => {
       const email = uniqueEmail('reg-login');
@@ -91,7 +92,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const hash = await users.getPasswordHash(user.id);
       expect(hash).not.toBe(STRONG_PASSWORD);
       expect(hash?.startsWith('$2')).toBe(true);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('rejects registration with a weak password before creating any user row', async () => {
       const email = uniqueEmail('reg-weak');
@@ -113,7 +114,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       expect(verified.emailVerifiedAt).not.toBeNull();
       // Verifying email never changes account usability — it's tracked independently (see register()'s own doc comment).
       expect(verified.status).toBe('active');
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('rejects an already-used verification token on a second attempt', async () => {
       const email = uniqueEmail('reg-reuse');
@@ -121,7 +122,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const rawToken = emailSender.lastToken();
       await service.verifyEmail(rawToken);
       await expect(service.verifyEmail(rawToken)).rejects.toBeInstanceOf(VerificationTokenInvalidError);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('rejects an unknown verification token', async () => {
       await expect(service.verifyEmail(generateSessionToken())).rejects.toBeInstanceOf(VerificationTokenInvalidError);
@@ -133,7 +134,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       const rawToken = generateSessionToken();
       await verificationTokens.create(user.id, hashToken(rawToken), new Date(Date.now() - 1000));
       await expect(service.verifyEmail(rawToken)).rejects.toBeInstanceOf(VerificationTokenInvalidError);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
   });
 
   describe('login', () => {
@@ -159,7 +160,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
     it('rejects an unknown email and records a failed_auth access event', async () => {
       const unknownEmail = uniqueEmail('never-registered');
       await expect(service.login(unknownEmail, STRONG_PASSWORD)).rejects.toBeInstanceOf(InvalidCredentialsError);
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
 
     it('rejects the correct email with a wrong password and records a failed_auth access event', async () => {
       const { email, user } = await registerAndActivate(service, users);
@@ -224,7 +225,7 @@ describe.runIf(run)('AuthenticationService — live PostgreSQL', () => {
       for (let i = 0; i < 10; i++) {
         await expect(service.login(unknownEmail, 'Wrong-Password-9!')).rejects.toBeInstanceOf(InvalidCredentialsError);
       }
-    });
+    }, MULTI_BCRYPT_TEST_TIMEOUT_MS);
   });
 
   describe('logout', () => {
