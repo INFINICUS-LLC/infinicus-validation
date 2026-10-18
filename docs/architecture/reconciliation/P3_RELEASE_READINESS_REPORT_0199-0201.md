@@ -5,6 +5,7 @@
 | Date | 2026-10-17 |
 | Status | **REPORT ONLY.** No migration, deployment, backup, restart or other production write was performed in preparing it. The evidence below was produced by the owner running read-only blocks A–F on `infinicus-prod-01` as `deploy`; Claude never had production access. |
 | Verdict | **NOT READY for Phase R or Phase W.** Schema, data integrity, exposure and role evidence are good. Backup, restore proof, image provenance, rollback compatibility and the owner decisions of §6 are open. |
+| Update (2026-10-18) | **Still NOT READY for Phase W.** A verified head-0198 backup now exists and its restore proof passed on a disposable machine (§3e). The Phase R *rehearsal* of the design (migrations, refusal, rollback, API compatibility; steps R4–R13) has **not** been run. |
 | Builds on | `PRODUCTION_RELEASE_SEQUENCE_0199-0201_DESIGN.md` (phases, acceptance criteria A1–A10), `PHASE_R_REHEARSAL_DESIGN_0199-0201.md`, `production-discovery/*`, `infrastructure/backups/README.md` |
 | Evidence labels | `OWNER-RUN-OUTPUT` pasted tool output from the owner's session (checksums below identify the saved files, which are **not** in the repository); `REPO-VERIFIED`; `UNKNOWN` |
 
@@ -59,8 +60,8 @@ Production OM population at the time: 3 observations, 3 monitored actions, 3 act
 | MANIFEST READABLE | **VERIFIED** | The production VM retrieved the historical manifest from the configured remote (2026-10-17T22:02:13Z, exit 0, 742 bytes, sha256 `4364eb53a70fbb967fa37128060082e339105541846bbb9bcb81be644c617ac6`). Read-only, manifest only. |
 | INTERNALLY CONSISTENT | **VERIFIED** | Manifest and local state file agree on migration head and schema fingerprint; the key stem equals `created_utc` plus label; the objects are exactly `db.dump.gpg` and `roles.sql.gpg`; the manifest recipient fingerprint equals the configured public key. Both records were written by the same host, so this is a consistency check only. |
 | AUTHENTICATED | **NOT VERIFIED** | The manifest has no independently verified signature or MAC. The SHA-256 values inside it do not independently establish authenticity. |
-| ARCHIVE RESTORABLE | **NOT VERIFIED** | Block H did not retrieve, decrypt or restore the encrypted archive. A successful manifest retrieval is not a successful restore. `verified_after_upload=True` records only an upload read-back at backup time. |
-| CURRENT PRE-RELEASE BACKUP | **NOT VERIFIED** | The inspected backup is at migration `0170`; production is at `0198`. |
+| ARCHIVE RESTORABLE | **NOT VERIFIED for the historical 0170 backup; VERIFIED for the 2026-10-18 head-0198 backup (§3e)** | Block H did not retrieve, decrypt or restore the encrypted archive. A successful manifest retrieval is not a successful restore. `verified_after_upload=True` records only an upload read-back at backup time. |
+| CURRENT PRE-RELEASE BACKUP | **VERIFIED as of 2026-10-18 (§3e); the window repeats it** | The inspected backup is at migration `0170`; production is at `0198`. |
 
 Historical backup (Block H, production-observed unless stated): identifier `infinicus-production/2026-10-13/20261013T203235Z-first-proof`; label `first-proof`; manifest format 1; database `infinicus`; PostgreSQL 16.15; ledger count 170; ledger head `0170_add_approved_action_source_recommendation.sql`; schema fingerprint `38eabb12fde135b5`; encrypted objects `db.dump.gpg` (4,336,494 bytes) and `roles.sql.gpg` (1,534 bytes); state file `/var/lib/infinicus-backup/last-success.json`, mode 600, owner `deploy`, 268 bytes, `verified=True`.
 
@@ -97,13 +98,47 @@ The manifest `host` field reads `infinicus-prod-01_`. The trailing underscore co
 - D4: PR #153 (the evidence SQL) required owner review; GitHub shows it merged on 2026-10-17 at 06:21:40Z by the owner account, and the owner's later records report it merged.
 - Criterion J remains OPEN.
 
+### 3e. Phase B backup and restore proof of the head-0198 backup (2026-10-18, owner-run)
+
+Evidence is `OWNER-RUN-OUTPUT` pasted into the working session. Claude had no production access; the owner ran every command on `infinicus-prod-01` as `deploy` and on the drill laptop, and Claude gave the commands and read the results.
+
+**Step 1 (script currency).** The SHA-256 of `backup-offsite.sh` (`e111f447…f4940`) and `check-backup-freshness.sh` (`6591416e…e738`) is identical in all three checkouts on the VM and equal to `main`. The live checkout `/opt/infinicus/repo` is at commit `130bf5a` (R1, #134); it was not updated.
+
+**Step 2 (`backup-offsite.sh --check`).** Exit 0, `CHECK PASSED`: PostgreSQL, `pg_dump` and `pg_restore` major 16; read-only session; keyring holds the public key only; rclone remote `offsite` and bucket `infinicus-production-backups-01` structurally valid; free disk about 17.5 GB against a 60 MB database. Nothing was written.
+
+**Step 3 (backup, `BACKUP_LABEL=pre-release-0198 backup-offsite.sh --verify`).** Exit 0, `BACKUP COMPLETE`. Key prefix `infinicus-production/2026-10-18/20261018T173225Z-pre-release-0198`; ledger 198, head `0198_link_purchase_order_lines_to_inventory_items.sql`; schema fingerprint `7fd4c419d738de8a`; PostgreSQL 16.15; `db.dump.gpg` 4,710,564 bytes sha256 `6295e6f2b80dbe0911ebaa1ae91eb60523079f56bca975df2375c1258a486677`; `roles.sql.gpg` 1,534 bytes sha256 `14ab6cccf9ba81f4ba913b08c3eee9056a50b3d4406b51f723f534a2d1662aa5`; both objects read back and re-verified (`verified_after_upload=true`); manifest uploaded last. Dump and encryption took about 0.7 s.
+
+**Step 4 (manifest read-back).** The manifest read from the bucket agrees with the Step 3 output on every field; recipient fingerprint `6FA8FA1079F1EB18466E44C8D636066837F9141B`; `check-backup-freshness.sh` reported `OK` (exit 0) pointing at this manifest.
+
+**Key custody.** The private key for that fingerprint (primary `[SC]`, encryption subkey `6F37E017…D86BB0B` `[E]`, both expiring 2028-10-12) is present, passphrase-protected, in the owner's laptop keyring. It is not on the VM. It is held in **one place**; no offline copy or revocation certificate was confirmed.
+
+**Retrieval to the drill machine.** The three encrypted objects were copied through the VM to a temporary folder, copied to the laptop over `scp`, hash-verified on the laptop (both hashes equal the manifest) and the VM copy was removed. A new read-only bucket credential was **not** created (see the credential finding below).
+
+**Restore proof (`restore-proof.sh`, run through `rehearsal/phase-r-restore.sh`, PR #166).** The drill target was a new disposable `postgres:16` container with no published port, marked `infinicus.restore_target=disposable` and pinned by system identifier; the secret **subkeys** only were exported (primary secret stayed in the keyring) and the passphrase went to a temporary agent from a hidden prompt. Result: `RESTORE_PROOF=PASS` and `PHASE_R=PASS` — SHA-256 equal to the manifest, decrypt, restore of roles and database, ledger 198 rows with head `0198_…`, schema fingerprint `7fd4c419d738de8a` equal to the manifest; 508 tables restored; restore 34.2 s, total 37.1 s (evidence only, not an RTO). The expectations profile was generated from the manifest (ledger count, head, fingerprint) and contains **no row-count or outbox rules**, so the design's R3 pass condition "every count rule satisfied" is not met in the strict sense; row counts were printed and not compared with production. Afterwards the container with its volumes, the exported key file and the downloaded objects were destroyed on the laptop.
+
+**What this establishes.** The head-0198 backup is encrypted, intact, retrievable from the bucket and restorable into a clean PostgreSQL 16 with the expected migration state and schema fingerprint. Evidence classes: CONFIGURED, READABLE and RESTORABLE are established for this backup; AUTHENTICATED is not (the manifest is unsigned).
+
+**What it does not establish.**
+- It is not the design's Phase R rehearsal. Steps R4–R13 (audit v2 on the clone, building the image from the release SHA, applying 0199–0201 with the gate and grants, fingerprint `0201`, API compatibility, refusal path, rollback path, idempotency, destruction record) have **not** been run, and the restored copy was destroyed afterwards, so they need a new restore.
+- Role password hashes are stripped by design; a real recovery re-sets database role passwords.
+- Production row counts were not compared with the restored copy; production changed after the backup.
+- Coverage is the logical dump only: no point-in-time recovery, application secrets or deployment.
+- The window repeats the backup immediately before migration, so this backup does not replace W-phase backup evidence.
+
+**New or sharpened findings (owner decisions).**
+1. **Storage credentials are full-access.** Hetzner Object Storage S3 credentials are "valid for all buckets within this project", with no read-only scope (dialog shown to the owner; only a description is requested). The VM's credential and the existing credential labelled `restore-readonly` (created about 5 days earlier, per the console activity log) must be treated as able to read, write and delete. Use of the label as a safety control is unsound.
+2. **Bucket protection not confirmed.** The console bucket menu offers "Enable protection"; whether protection, versioning or Object Lock is enabled is not verified. Decide what it does before enabling it.
+3. **Single private-key copy and expiry.** One copy, on one laptop, expiring 2028-10-12: make an encrypted offline copy and a revocation certificate; set a renewal reminder (an expired key still decrypts, but the VM could no longer encrypt new backups to it).
+4. **Retrieval path.** Because of finding 1, retrieval was done through the VM instead of a laptop-held credential. A true "VM lost" retrieval test with its own credential remains untested.
+5. **Production VM co-tenants unchanged.** `infinicus-restore-test-db` and `infinicus-api-smoke-test` still run next to the production database (§7).
+
 ## 4. Acceptance criteria status (design §6)
 
 | # | Criterion | Status today | Basis |
 |---|---|---|---|
 | A1 | Production identity confirmed | **Evidence available for today** (host, database, compose project, containers); must be re-run in W0 | Blocks A, B, E |
 | A2 | Pre-release audit v2 clean | **Met for today's state**; must be repeated in W1 and Phase R | Block C |
-| A3 | Restore-proven off-VM backup of the pre-migration state | **Not met** | G1, G3 |
+| A3 | Restore-proven off-VM backup of the pre-migration state | **Met for the 2026-10-18 head-0198 backup, with caveats** (manifest-derived profile only, no count rules; the window repeats the backup) | §3e |
 | A4 | Ledger head and constraints validated after migration | Not yet applicable | needs W6/W8 |
 | A5 | Fingerprint equals reference for the new head | Reference exists (0201 = REPO-VERIFIED); not yet applicable | needs W8 |
 | A6 | App role privileges unchanged, EXECUTE only via grant script | Baseline captured (Block E); not yet applicable | needs W7/W8 |
@@ -147,3 +182,5 @@ These refine Phase W of the design; they change nothing until the owner adopts t
 ## 8. Not done, and not authorised by this report
 
 No migration, deploy, merge, backup, restore, key creation, cleanup, `chmod`, container stop, reboot, Cloudflare/DNS/secret/role/grant change, or Phase R/W start. Each requires its own explicit authorisation from the owner.
+
+**Addendum (2026-10-18).** The owner ran Phase B (a head-0198 backup) and a restore proof of it, recorded in §3e. Still not done and not authorised by this report: Phase R rehearsal steps R4–R13, Phase W, any migration, deployment, merge, Cloudflare/DNS/secret/role/grant change, bucket-protection or credential change, and key-custody changes.
