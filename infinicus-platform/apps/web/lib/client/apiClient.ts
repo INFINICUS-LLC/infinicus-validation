@@ -48,6 +48,7 @@ export interface RequestInitLite<T> {
 export interface ApiClient {
   get<T>(path: string, init?: RequestInitLite<T>): Promise<T>;
   post<T>(path: string, init?: RequestInitLite<T>): Promise<T>;
+  delete<T>(path: string, init?: RequestInitLite<T>): Promise<T>;
 }
 
 export function createApiClient(options: ApiClientOptions): ApiClient {
@@ -95,6 +96,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
   return {
     get: (path, init) => request('GET', path, init),
     post: (path, init) => request('POST', path, init),
+    delete: (path, init) => request('DELETE', path, init),
   };
 }
 

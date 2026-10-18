@@ -1,14 +1,17 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { Product } from '../../../../../lib/client/schemas';
 import { ALL_CATEGORIES, categoriesOf, filterProducts, formatAmount, visibleProducts } from '../../../../../lib/client/counter';
 
 /**
- * Counter catalogue (POS-1): product tiles with search and category filters. Read only: choosing a tile does nothing yet, because building an order
- * is the next step (POS-2). The order panel is a visible placeholder so the layout is the final one.
+ * Counter catalogue: product tiles with search and category filters. Without `onAdd` it is read only (POS-1): the tiles do nothing and the order panel is a
+ * visible placeholder. With `onAdd` (POS-2) each tile is a button that adds one unit to the open order; `disabled` greys them out while an action runs or no
+ * order is open. `orderPanel` replaces the placeholder.
  */
-export function CounterCatalogue({ products }: { products: readonly Product[] }) {
+export function CounterCatalogue({ products, onAdd, disabled = false, orderPanel }: {
+  products: readonly Product[]; onAdd?: (product: Product) => void; disabled?: boolean; orderPanel?: ReactNode;
+}) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState(ALL_CATEGORIES);
   const active = useMemo(() => visibleProducts(products), [products]);
@@ -17,10 +20,12 @@ export function CounterCatalogue({ products }: { products: readonly Product[] })
 
   return (
     <div className="counter">
-      <section className="counter-order card" aria-labelledby="order-heading">
-        <h2 id="order-heading">Order</h2>
-        <p className="empty-state">Building an order comes in the next step. This screen shows the catalogue only.</p>
-      </section>
+      {orderPanel ?? (
+        <section className="counter-order card" aria-labelledby="order-heading">
+          <h2 id="order-heading">Order</h2>
+          <p className="empty-state">Building an order comes in the next step. This screen shows the catalogue only.</p>
+        </section>
+      )}
 
       <section className="counter-catalogue" aria-labelledby="catalogue-heading">
         <h2 id="catalogue-heading">Products</h2>
@@ -45,10 +50,21 @@ export function CounterCatalogue({ products }: { products: readonly Product[] })
           <ul className="product-grid" aria-label="Products">
             {shown.map((p) => (
               <li key={p.id} className="product-tile">
-                {p.icon ? <span aria-hidden="true" className="product-icon">{p.icon}</span> : null}
-                <strong>{p.name}</strong>
-                <span className="product-price">{formatAmount(p.price)}</span>
-                <span className="product-category">{p.category}</span>
+                {onAdd ? (
+                  <button type="button" className="product-button" aria-label={`Add ${p.name}`} disabled={disabled} onClick={() => onAdd(p)}>
+                    {p.icon ? <span aria-hidden="true" className="product-icon">{p.icon}</span> : null}
+                    <strong>{p.name}</strong>
+                    <span className="product-price">{formatAmount(p.price)}</span>
+                    <span className="product-category">{p.category}</span>
+                  </button>
+                ) : (
+                  <>
+                    {p.icon ? <span aria-hidden="true" className="product-icon">{p.icon}</span> : null}
+                    <strong>{p.name}</strong>
+                    <span className="product-price">{formatAmount(p.price)}</span>
+                    <span className="product-category">{p.category}</span>
+                  </>
+                )}
               </li>
             ))}
           </ul>

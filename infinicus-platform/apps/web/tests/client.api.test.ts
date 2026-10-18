@@ -24,6 +24,19 @@ describe('API client', () => {
     expect(second.body).toBe('{"a":1}');
   });
 
+  it('DELETE carries the same headers (bearer, workspace claim, idempotency key), sends no body and no cookies, and validates the answer', async () => {
+    const f = vi.fn(async () => res(200, { v: 1 }));
+    const out = await client(f as unknown as typeof fetch).delete('/v1/z', { scope, idempotencyKey: 'k-2', schema: z.object({ v: z.number() }) });
+    expect(out).toEqual({ v: 1 });
+    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://api.example.test/v1/z');
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+    expect(init.credentials).toBe('omit');
+    expect(init.headers).toMatchObject({ authorization: 'Bearer tok-1', 'x-tenant-id': scope.tenantId, 'x-workspace-id': scope.workspaceId, 'idempotency-key': 'k-2' });
+    await expect(client((async () => res(200, { v: 'x' })) as unknown as typeof fetch).delete('/v1/z', { schema: z.object({ v: z.number() }) })).rejects.toBeInstanceOf(ApiContractError);
+  });
+
   it('on a 401 asks for a NEW session once and retries once; success after the retry is returned', async () => {
     const seen: string[] = [];
     const f = vi.fn(async (_u: unknown, init?: RequestInit) => { seen.push((init!.headers as Record<string, string>).authorization); return seen.length === 1 ? res(401, { error: { code: 'S', message: 'm', correlationId: 'c' } }) : res(200, { v: 1 }); });

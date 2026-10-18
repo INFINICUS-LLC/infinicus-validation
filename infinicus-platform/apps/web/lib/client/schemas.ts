@@ -42,8 +42,23 @@ export const productSchema = z.object({
 });
 export const productListSchema = z.object({ products: z.array(productSchema) });
 
+/** Orders (apps/api/src/schemas/orders.ts). Dates travel as ISO strings. `operationalStatus` mirrors the platform vocabulary; the counter only builds `planned` orders. */
+export const orderLineItemSchema = z.object({
+  id: z.string().uuid(), lineNumber: z.number(), itemType: z.string(), productId: z.string().uuid().nullable(), description: z.string(),
+  quantity: z.number(), unitPrice: z.number(), lineTotal: z.number(),
+});
+export const orderSchema = z.object({
+  id: z.string().uuid(), businessId: z.string().uuid(), customerId: z.string().uuid().nullable(), orderNumber: z.string(), orderDate: z.string(),
+  totalAmount: z.number(), operationalStatus: z.enum(['planned', 'authorized', 'executed', 'completed', 'failed', 'reversed']),
+  createdAt: z.string(), updatedAt: z.string(), lineItems: z.array(orderLineItemSchema),
+});
+export const orderListSchema = z.object({ orders: z.array(orderSchema) });
+
 export type BusinessList = z.infer<typeof businessListSchema>;
 export type WorkflowView = z.infer<typeof workflowViewSchema>;
 export type DecisionHistory = z.infer<typeof decisionHistorySchema>;
 export type Product = z.infer<typeof productSchema>;
 export type ProductList = z.infer<typeof productListSchema>;
+export type OrderLineItem = z.infer<typeof orderLineItemSchema>;
+export type Order = z.infer<typeof orderSchema>;
+export type OrderList = z.infer<typeof orderListSchema>;

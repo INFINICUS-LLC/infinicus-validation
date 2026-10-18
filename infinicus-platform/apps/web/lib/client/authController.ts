@@ -68,6 +68,7 @@ export class AuthController {
     this.api = {
       get: (path, init) => this.guard(this.rawApi.get(path, init)),
       post: (path, init) => this.guard(this.rawApi.post(path, init)),
+      delete: (path, init) => this.guard(this.rawApi.delete(path, init)),
     };
   }
 

@@ -208,3 +208,15 @@ button.danger {
 .product-price { font-variant-numeric: tabular-nums; }
 .product-category { color: var(--color-muted); font-size: 0.875rem; }
 #product-search { min-height: 2.75rem; min-width: 12rem; }
+
+/* Counter order panel (POS-2) */
+.order-lines, .open-orders { list-style: none; margin: 0 0 var(--space-3); padding: 0; }
+.order-lines li, .open-orders li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); }
+.order-lines li > span:first-child, .open-orders li > span:first-child { flex: 1 1 8rem; }
+.line-total, .order-total strong { font-variant-numeric: tabular-nums; }
+.order-total { font-size: 1.25rem; }
+.counter-order button { min-height: 2.75rem; }
+.product-button { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); width: 100%; min-height: 6rem; padding: var(--space-3); border: 0; border-radius: var(--radius); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.product-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.product-button:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+.product-tile:has(.product-button) { padding: 0; }
