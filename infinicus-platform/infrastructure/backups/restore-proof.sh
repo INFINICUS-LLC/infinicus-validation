@@ -31,7 +31,7 @@
 #   RESTORE_GNUPGHOME         required. gpg home containing the PRIVATE key (decryption).
 #   RESTORE_ADMIN_URL         required. libpq URL of a maintenance database (normally .../postgres) on the THROWAWAY server, as a superuser. See the
 #                             fail-closed target rules above: loopback or local socket only, no password in the URL, server marked disposable.
-#   RESTORE_EXPECT_PG_MAJOR   optional, default 16. The target server must report this major version.
+#   RESTORE_EXPECT_SYSTEM_IDENTIFIER required. PostgreSQL system identifier for the independently provisioned disposable cluster.\n#   RESTORE_EXPECT_PG_MAJOR   optional, default 16. The target server must report this major version.
 #   RESTORE_DB_NAME           optional, default infinicus_restore_proof. Must not be "infinicus"; must not already exist.
 #   RESTORE_REPO_DIR          optional, default the repository this script lives in; used to find the discovery script.
 #   RESTORE_EXPECTATIONS      optional, default expectations/production-pre-0171.profile next to this script. The profile name and SHA-256 are printed.
@@ -109,6 +109,13 @@ validate_target() {
   [[ "$rec" == "false" ]] || refuse "the target is a replica or in recovery"
   [[ "$major" == "${RESTORE_EXPECT_PG_MAJOR:-16}" ]] || refuse "the target server major version is $major, expected ${RESTORE_EXPECT_PG_MAJOR:-16}"
   [[ "$prodcount" == "0" ]] || refuse "the target cluster contains a database named infinicus (the production database name)"
+  # An operator-controlled cluster identifier is required in addition to the server marker.
+  # The identifier must be obtained independently from the provisioned throwaway server.
+  [[ "${RESTORE_EXPECT_SYSTEM_IDENTIFIER:-}" =~ ^[0-9]{10,20}$ ]] || refuse "RESTORE_EXPECT_SYSTEM_IDENTIFIER (disposable cluster system identifier) is required"
+  local actual_identifier
+  actual_identifier="$(PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=15000' PGCONNECT_TIMEOUT=10 psql "$url" -X -At -c 'select system_identifier from pg_control_system()' 2>/dev/null)" \
+    || refuse "cannot verify the PostgreSQL cluster system identifier"
+  [[ "$actual_identifier" == "$RESTORE_EXPECT_SYSTEM_IDENTIFIER" ]] || refuse "the PostgreSQL cluster system identifier differs from the approved disposable cluster"
 }
 [[ -n "${RESTORE_ADMIN_URL:-}" ]] || fail "RESTORE_ADMIN_URL (maintenance database on the throwaway server) is required" 2
 if (( VALIDATE_ONLY )); then
@@ -231,7 +238,40 @@ sanitize_roles() { # sanitize_roles <in> <out>: allowlist every line of pg_dumpa
   (( bad == 0 )) || fail "roles.sql has $bad line(s) outside the allowlist of pg_dumpall --roles-only output (first at line $first_bad; the content is not printed); the restore was not attempted" 2
 }
 sanitize_roles "$WORK/roles.sql" "$WORK/roles.safe.sql"
-psql "$RESTORE_ADMIN_URL" -X -q -v ON_ERROR_STOP=0 -f "$WORK/roles.safe.sql" >/dev/null 2>"$WORK/roles.err" || true
+# Check EVERY role statement against the existing cluster before executing any of them.
+# A dump can contain ALTER ROLE, COMMENT ON ROLE or GRANT affecting a bootstrap
+# administrator. Even a sanitized password-free ALTER ROLE could remove SUPERUSER,
+# LOGIN or other privileges. Do not rely on psql's ignored errors for safety.
+# This is intentionally fail-closed on role-name collisions.
+check_role_is_new() {
+  local role="$1" normalized result
+  if [[ "$role" == \"*\" ]]; then
+    normalized="${role:1:${#role}-2}"
+  else
+    normalized="$(printf '%s' "$role" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  fi
+  # The sanitizer's identifier grammar excludes apostrophes, so this cannot
+  # escape the SQL literal. Query the existing cluster in read-only mode.
+  result="$(PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=15000' psql "$RESTORE_ADMIN_URL" -X -At -c "SELECT 1 FROM pg_roles WHERE rolname = '$normalized'" 2>/dev/null)" \
+    || fail "cannot verify existing PostgreSQL roles; refusing roles.sql" 2
+  [[ -z "$result" ]] || fail "roles.sql references an existing cluster role; refusing all role changes" 2
+}
+role_token='([A-Za-z_][A-Za-z0-9_$]*|"[^"]{1,63}")'
+while IFS= read -r role_line || [[ -n "$role_line" ]]; do
+  if [[ "$role_line" =~ ^(CREATE|ALTER)[[:space:]]ROLE[[:space:]]${role_token}([[:space:];]|$) ]]; then
+    check_role_is_new "${BASH_REMATCH[2]}"
+  elif [[ "$role_line" =~ ^COMMENT[[:space:]]ON[[:space:]]ROLE[[:space:]]${role_token}[[:space:]] ]]; then
+    check_role_is_new "${BASH_REMATCH[1]}"
+  elif [[ "$role_line" =~ ^GRANT[[:space:]]${role_token}[[:space:]]TO[[:space:]]${role_token} ]]; then
+    check_role_is_new "${BASH_REMATCH[1]}"
+    check_role_is_new "${BASH_REMATCH[2]}"
+  fi
+done < "$WORK/roles.safe.sql"
+# All SQL in roles.safe.sql was allowlisted and role collisions were rejected.
+# Stop on any SQL error instead of silently continuing with a partially
+# imported role configuration.
+psql "$RESTORE_ADMIN_URL" -X -q -v ON_ERROR_STOP=1 -f "$WORK/roles.safe.sql" >/dev/null 2>"$WORK/roles.err" \
+  || fail "safe roles.sql import failed (details withheld)" 2
 rm -f "$WORK/roles.sql" "$WORK/roles.safe.sql"
 post_roles="$(PGOPTIONS='-c default_transaction_read_only=on' psql "$RESTORE_ADMIN_URL" -X -At -F '|' -c "select (select count(*) from pg_authid where rolpassword is not null and rolname <> current_user), current_setting('is_superuser')" 2>/dev/null)" || fail "cannot inspect the restored roles"
 [[ "$post_roles" == "0|on" ]] || fail "after the roles were restored, a role carries a password or the connection lost superuser (restored $post_roles); the restore was stopped"
