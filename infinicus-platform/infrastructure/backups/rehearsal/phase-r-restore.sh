@@ -17,6 +17,8 @@
 #   PHASE_R_OBJECTS          default /objects. Directory holding the downloaded encrypted objects under their original key path.
 #   PHASE_R_KEYFILE          default /keys/subkeys.asc. Exported secret subkeys (still passphrase-protected).
 #   PHASE_R_DB_NAME          default phase_r_restore. The scratch database to create (must not exist; never "infinicus").
+#   PHASE_R_PROFILE          optional. A reviewed expectations profile (e.g. expectations/production-pre-0199.profile) with row-count rules, used instead of the
+#                            manifest-only profile. restore-proof.sh still checks the ledger and fingerprint against the manifest AND the profile.
 #   RESTORE_EXPECT_SYSTEM_IDENTIFIER  optional cluster pin (see restore-proof.sh).
 #   PHASE_R_PASSPHRASE_FD    test hook only: read the passphrase from this file descriptor instead of the terminal.
 # Result: last line PHASE_R=PASS or PHASE_R=FAIL (<reason>). Exit 0 only on PASS.
@@ -60,8 +62,14 @@ M="$OBJ/$MKEY"
 field() { sed -n "s/.*\"$1\": *\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p" "$M" | head -1; }
 LC="$(field ledger_count)"; LH="$(field ledger_head)"; SF="$(field schema_fingerprint)"
 [[ "$LC" =~ ^[0-9]+$ && "$LH" =~ ^[0-9A-Za-z_.-]+\.sql$ && "$SF" =~ ^[0-9a-f]{16}$ ]] || die "the manifest lacks a valid ledger count, head or schema fingerprint"
-printf 'ledger_count=%s\nledger_head=%s\nschema_fingerprint=%s\n' "$LC" "$LH" "$SF" > "$W/expectations.profile"
-echo "ledger_count=$LC ledger_head=$LH schema_fingerprint=$SF (all taken from the backup manifest)"
+if [[ -n "${PHASE_R_PROFILE:-}" ]]; then
+  [[ -f "$PHASE_R_PROFILE" ]] || die "profile not found: $PHASE_R_PROFILE"
+  cp "$PHASE_R_PROFILE" "$W/expectations.profile"
+  echo "using the reviewed profile $(basename "$PHASE_R_PROFILE") (ledger, fingerprint and row-count rules); the manifest values are ledger_count=$LC ledger_head=$LH schema_fingerprint=$SF"
+else
+  printf 'ledger_count=%s\nledger_head=%s\nschema_fingerprint=%s\n' "$LC" "$LH" "$SF" > "$W/expectations.profile"
+  echo "ledger_count=$LC ledger_head=$LH schema_fingerprint=$SF (all taken from the backup manifest; no row-count rules)"
+fi
 
 step "3. secret subkeys into a private temporary gpg home; passphrase to the temporary agent only"
 GH="$(mktemp -d)"; chmod 700 "$GH"
