@@ -8,11 +8,12 @@
  * Source data is a small synthetic database created by this test (isolated from every other test file).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createServer, type AddressInfo } from 'node:net';
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { Pool } from 'pg';
 
 // Each script run spawns pg_dump/gpg/psql (and the fingerprint query); allow for a loaded shared test server.
@@ -20,6 +21,21 @@ vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 
 const have = (cmd: string): boolean => spawnSync('bash', ['-c', `command -v ${cmd}`]).status === 0;
 const run = Boolean(process.env.ADMIN_DATABASE_URL) && ['gpg', 'pg_dump', 'pg_dumpall', 'pg_restore', 'psql'].every(have);
+
+// The restore proof refuses any target that is not a loopback PostgreSQL marked disposable, so these tests start their own throwaway cluster (initdb/pg_ctl).
+// In CI a missing initdb is a hard failure, never a silent skip: the restore proof must stay covered.
+function findPgBin(major: number): string | null {
+  const dir = `/usr/lib/postgresql/${major}/bin`;
+  if (existsSync(join(dir, 'initdb')) && existsSync(join(dir, 'pg_ctl'))) return dir;
+  const r = spawnSync('bash', ['-c', 'command -v initdb']);
+  return r.status === 0 ? dirname(r.stdout.toString().trim()) : null;
+}
+const disposableBin = findPgBin(16);
+const freePort = (): Promise<number> => new Promise((ok, bad) => { const srv = createServer(); srv.on('error', bad); srv.listen(0, '127.0.0.1', () => { const port = (srv.address() as AddressInfo).port; srv.close(() => ok(port)); }); });
+
+if (run && !disposableBin && process.env.CI) {
+  describe('restore target tests need initdb/pg_ctl', () => { it('the disposable PostgreSQL binaries are available in CI', () => { throw new Error('initdb/pg_ctl not found: the restore-proof tests cannot run, and would silently lose coverage'); }); });
+}
 
 const BACKUPS = resolve(__dirname, '../../../infrastructure/backups');
 const BACKUP = join(BACKUPS, 'backup-offsite.sh');
@@ -32,7 +48,7 @@ function urlFor(base: string, db: string): string {
   return u.toString();
 }
 
-describe.runIf(run)('off-VM encrypted backup and restore proof (real scripts, real PostgreSQL)', () => {
+describe.runIf(run && Boolean(disposableBin))('off-VM encrypted backup and restore proof (real scripts, real PostgreSQL)', () => {
   const suffix = randomBytes(4).toString('hex');
   const SRC = `bk_src_${suffix}`;
   const ROLE = `bk_owner_${suffix}`;
@@ -40,7 +56,12 @@ describe.runIf(run)('off-VM encrypted backup and restore proof (real scripts, re
   const admin = new URL(process.env.ADMIN_DATABASE_URL as string);
   const maintenance = urlFor(admin.toString(), 'postgres');
   const srcUrl = urlFor(admin.toString(), SRC);
+  const LOGIN_ROLE = `bk_login_${suffix}`;
   let pool: Pool;
+  let tpool: Pool; // the throwaway restore target (its own cluster)
+  let targetMaint: string;
+  let targetRoot: string;
+  let targetBin: string;
   let work: string;
   let sink: string;
   let stateDir: string;
@@ -106,7 +127,7 @@ describe.runIf(run)('off-VM encrypted backup and restore proof (real scripts, re
   const objects = (): string[] => (existsSync(sink) ? (readdirSync(sink, { recursive: true }) as string[]).filter((f) => statSync(join(sink, f)).isFile()) : []);
   const manifestKey = (): string => objects().filter((f) => f.endsWith('manifest.json')).sort().pop() as string;
   function restoreEnv(over: Record<string, string> = {}): Record<string, string> {
-    return { BACKUP_FETCH_CMD: `cat '${sink}/%KEY%'`, RESTORE_GNUPGHOME: restoreHome, RESTORE_ADMIN_URL: maintenance, RESTORE_DB_NAME: `bk_restore_${suffix}`, RESTORE_EXPECTATIONS: join(work, 'expectations.profile'), ...over };
+    return { BACKUP_FETCH_CMD: `cat '${sink}/%KEY%'`, RESTORE_GNUPGHOME: restoreHome, RESTORE_ADMIN_URL: targetMaint, RESTORE_DB_NAME: `bk_restore_${suffix}`, RESTORE_EXPECTATIONS: join(work, 'expectations.profile'), ...over };
   }
 
   beforeAll(async () => {
@@ -117,6 +138,21 @@ describe.runIf(run)('off-VM encrypted backup and restore proof (real scripts, re
     serverMajor = Math.floor(Number((await pool.query('show server_version_num')).rows[0].server_version_num) / 10000);
     binDir = join(work, 'bin'); mkdirSync(binDir); awsLog = join(work, 'aws.log');
     await pool.query(`CREATE ROLE ${ROLE} NOLOGIN`);
+    await pool.query(`CREATE ROLE ${LOGIN_ROLE} LOGIN PASSWORD 'synthetic-pw-${suffix}'`);
+    // throwaway restore target: its own cluster on loopback, marked disposable (as root, initdb refuses, so run it as the postgres user)
+    targetBin = (findPgBin(serverMajor) ?? disposableBin) as string;
+    targetRoot = mkdtempSync(join(tmpdir(), 'restore-target-'));
+    const asPg = process.getuid?.() === 0 ? ['runuser', '-u', 'postgres', '--'] : [];
+    if (asPg.length) { chmodSync(targetRoot, 0o755); expect(spawnSync('chown', ['postgres:postgres', targetRoot]).status).toBe(0); }
+    const tp = await freePort();
+    const pgRun = (bin: string, args: string[]) => (asPg.length ? spawnSync(asPg[0], [...asPg.slice(1), join(targetBin, bin), ...args], { encoding: 'utf8' }) : spawnSync(join(targetBin, bin), args, { encoding: 'utf8' }));
+    const init = pgRun('initdb', ['-D', join(targetRoot, 'data'), '-A', 'trust', '-U', 'postgres', '--no-sync', '-E', 'UTF8']);
+    expect(init.status, init.stderr).toBe(0);
+    writeFileSync(join(targetRoot, 'data', 'postgresql.conf'), `\nlisten_addresses = '127.0.0.1'\nport = ${tp}\nunix_socket_directories = '${targetRoot}'\nfsync = off\ninfinicus.restore_target = 'disposable'\n`, { flag: 'a' });
+    const st = pgRun('pg_ctl', ['-D', join(targetRoot, 'data'), '-l', join(targetRoot, 'log'), '-w', 'start']);
+    expect(st.status, st.stdout + st.stderr).toBe(0);
+    targetMaint = `postgresql://postgres@127.0.0.1:${tp}/postgres`;
+    tpool = new Pool({ connectionString: targetMaint });
     await pool.query(`CREATE DATABASE ${SRC} OWNER ${ROLE}`);
     const s = new Pool({ connectionString: srcUrl });
     await s.query(`CREATE TABLE public._migrations (id serial primary key, filename text not null unique)`);
@@ -162,10 +198,17 @@ esac`);
   });
 
   afterAll(async () => {
-    await pool?.query(`DROP DATABASE IF EXISTS bk_restore_${suffix}`).catch(() => undefined);
     await pool?.query(`DROP DATABASE IF EXISTS ${SRC}`).catch(() => undefined);
     await pool?.query(`DROP ROLE IF EXISTS ${ROLE}`).catch(() => undefined);
+    await pool?.query(`DROP ROLE IF EXISTS ${LOGIN_ROLE}`).catch(() => undefined);
     await pool?.end();
+    await tpool?.end().catch(() => undefined);
+    if (targetRoot) {
+      const asPg = process.getuid?.() === 0 ? ['runuser', '-u', 'postgres', '--'] : [];
+      const stopArgs = ['-D', join(targetRoot, 'data'), '-m', 'immediate', 'stop'];
+      if (asPg.length) spawnSync(asPg[0], [...asPg.slice(1), join(targetBin, 'pg_ctl'), ...stopArgs]); else spawnSync(join(targetBin, 'pg_ctl'), stopArgs);
+      rmSync(targetRoot, { recursive: true, force: true });
+    }
     if (work) rmSync(work, { recursive: true, force: true });
   });
 
@@ -342,12 +385,17 @@ esac`);
     expect(r.stdout).toMatch(/verified {3}outbox a\.done = 3/);
     expect(r.stdout).toMatch(/profile expectations\.profile sha256:[0-9a-f]{16}/);
     expect(r.status).toBe(0);
-    const t = new Pool({ connectionString: urlFor(admin.toString(), `bk_restore_${suffix}`) });
+    const t = new Pool({ connectionString: urlFor(targetMaint, `bk_restore_${suffix}`) });
     const owner = await t.query(`select pg_get_userbyid(relowner) o from pg_class where oid = 'tenancy.customers'::regclass`);
     expect(owner.rows[0].o).toBe(ROLE);
     expect((await t.query(`select count(*)::int n from tenancy.customers where name = $1`, [SECRET_MARKER])).rows[0].n).toBe(1);
     await t.end();
-    await pool.query(`DROP DATABASE bk_restore_${suffix}`);
+    // role protection: the login role was restored WITHOUT its password hash (the source still has it), and no plaintext is left behind
+    const lr = await tpool.query(`select rolcanlogin, rolpassword is null as nopw from pg_authid where rolname = $1`, [LOGIN_ROLE]);
+    expect(lr.rows[0]).toEqual({ rolcanlogin: true, nopw: true });
+    expect((await pool.query(`select rolpassword is not null as haspw from pg_authid where rolname = $1`, [LOGIN_ROLE])).rows[0].haspw).toBe(true);
+    expect(readdirSync(work).filter((f) => f.startsWith('restore-proof.'))).toEqual([]);
+    await tpool.query(`DROP DATABASE bk_restore_${suffix}`);
   });
 
   it('restore proof FAILS on a tampered object (SHA-256 mismatch), on the wrong private key, on a missing manifest, and on an existing or production-named target', async () => {
@@ -372,10 +420,173 @@ esac`);
 
     const d = sh('bash', [RESTORE, key], restoreEnv({ RESTORE_DB_NAME: 'infinicus' }));
     expect(d.stdout).toContain('RESTORE_PROOF=FAIL');
-    await pool.query(`CREATE DATABASE bk_restore_${suffix}`);
+    await tpool.query(`CREATE DATABASE bk_restore_${suffix}`);
     const e = sh('bash', [RESTORE, key], restoreEnv());
     expect(e.stdout).toContain('already exists');
-    await pool.query(`DROP DATABASE bk_restore_${suffix}`);
+    await tpool.query(`DROP DATABASE bk_restore_${suffix}`);
+  });
+
+  describe('H-5: fail-closed restore target, protected role restoration, private temporary files (synthetic data only)', () => {
+    const validate = (url: string, env: Record<string, string> = {}) => sh('bash', [RESTORE, '--validate-target'], { RESTORE_ADMIN_URL: url, ...env });
+    const withHost = (host: string): string => targetMaint.replace('127.0.0.1', host);
+    const refused = (r: ReturnType<typeof validate>, reason: RegExp) => {
+      expect(r.stdout).toMatch(/^RESTORE_TARGET=REFUSED/m);
+      expect(r.stdout).toMatch(reason);
+      expect(r.stdout).not.toContain('RESTORE_TARGET=OK');
+      expect(r.status).toBe(2);
+    };
+    const noScratch = async () => expect((await tpool.query(`select 1 from pg_database where datname = 'bk_restore_${suffix}'`)).rowCount).toBe(0);
+    const noTemp = () => expect(readdirSync(work).filter((f) => f.startsWith('restore-proof.'))).toEqual([]);
+    const settle = async (want: boolean) => { for (let i = 0; i < 30; i++) { if ((validate(targetMaint).status === 0) === want) return; await new Promise((r) => setTimeout(r, 200)); } };
+
+    it('accepts the disposable loopback target (TCP, localhost and a local socket) and fetches and writes nothing', () => {
+      for (const url of [targetMaint, withHost('localhost'), `postgresql://postgres@${encodeURIComponent(targetRoot)}:${new URL(targetMaint).port}/postgres`]) {
+        const r = validate(url);
+        expect(r.stdout).toContain('RESTORE_TARGET=OK');
+        expect(r.status).toBe(0);
+      }
+    });
+
+    it('refuses a password in the URL, a non-loopback host, host or hostaddr overrides, extra parameters, a missing or multiple hosts, a non-postgres URL and redirecting environment variables', () => {
+      const port = new URL(targetMaint).port;
+      refused(validate(`postgresql://postgres:hunter2@127.0.0.1:${port}/postgres`), /must not contain a password/);
+      expect(validate(`postgresql://postgres:hunter2@127.0.0.1:${port}/postgres`).stdout).not.toContain('hunter2');
+      refused(validate(withHost('db.example.invalid')), /host must be loopback/);
+      refused(validate(withHost('10.0.0.5')), /host must be loopback/);
+      refused(validate(withHost('127.0.0.1.evil.example')), /host must be loopback/);
+      refused(validate(`${targetMaint}?host=db.example.invalid`), /host must be loopback/);
+      refused(validate(`${targetMaint}?hostaddr=10.0.0.5`), /connection parameter that is not allowed/);
+      refused(validate(`${targetMaint}?options=-c%20x%3D1`), /connection parameter that is not allowed/);
+      refused(validate(`${targetMaint}?service=prod`), /connection parameter that is not allowed/);
+      refused(validate('postgresql:///postgres'), /explicit host is required/);
+      refused(validate(`postgresql://postgres@127.0.0.1:${port},db.example.invalid/postgres`), /exactly one host/);
+      refused(validate(`mysql://postgres@127.0.0.1:${port}/postgres`), /must be a postgresql:\/\/ URL/);
+      for (const v of ['PGHOSTADDR', 'PGSERVICE', 'PGSERVICEFILE']) refused(validate(targetMaint, { [v]: '10.1.1.1' }), /must be unset/);
+    });
+
+    it('refuses an unreachable target, an unmarked server, a non-superuser, a wrong major version, and a cluster that holds a database named infinicus', async () => {
+      refused(validate('postgresql://postgres@127.0.0.1:1/postgres'), /cannot connect to the target/);
+      refused(validate(targetMaint, { RESTORE_EXPECT_PG_MAJOR: '15' }), /major version is \d+, expected 15/);
+
+      await tpool.query(`CREATE ROLE lowpriv_${suffix} LOGIN`);
+      refused(validate(targetMaint.replace('postgres@', `lowpriv_${suffix}@`)), /not a superuser/);
+      await tpool.query(`DROP ROLE lowpriv_${suffix}`);
+
+      await tpool.query('CREATE DATABASE infinicus');
+      refused(validate(targetMaint), /database named infinicus/);
+      await tpool.query('DROP DATABASE infinicus');
+      expect(validate(targetMaint).status).toBe(0);
+
+      await tpool.query(`ALTER SYSTEM SET infinicus.restore_target = 'production'`);
+      await tpool.query('select pg_reload_conf()');
+      await settle(false);
+      refused(validate(targetMaint), /not marked disposable/);
+      await tpool.query('ALTER SYSTEM RESET infinicus.restore_target');
+      await tpool.query('select pg_reload_conf()');
+      await settle(true);
+      expect(validate(targetMaint).status).toBe(0);
+    });
+
+    it('a refused target stops the restore before anything is fetched, decrypted or created (password, remote host, production database name)', async () => {
+      const fetchLog = join(work, 'fetch.log');
+      const env = (url: string) => restoreEnv({ RESTORE_ADMIN_URL: url, BACKUP_FETCH_CMD: `echo called >> '${fetchLog}'; cat '${sink}/%KEY%'` });
+      const port = new URL(targetMaint).port;
+      for (const url of [`postgresql://postgres:hunter2@127.0.0.1:${port}/postgres`, withHost('db.example.invalid')]) {
+        const r = sh('bash', [RESTORE, manifestKey()], env(url));
+        expect(r.stdout).toContain('RESTORE_PROOF=FAIL (restore target refused:');
+        expect(r.status).toBe(2);
+        expect(r.stdout + r.stderr).not.toContain('hunter2');
+      }
+      await tpool.query('CREATE DATABASE infinicus');
+      const p = sh('bash', [RESTORE, manifestKey()], env(targetMaint));
+      await tpool.query('DROP DATABASE infinicus');
+      expect(p.stdout).toContain('database named infinicus');
+      expect(p.status).toBe(2);
+      expect(existsSync(fetchLog)).toBe(false);
+      await noScratch();
+      noTemp();
+    });
+
+    // forge a roles.sql inside an otherwise valid backup (decrypt with the private key, edit, re-encrypt, fix the manifest SHA-256 and size)
+    const rolesPath = (): string => join(sink, manifestKey().replace('manifest.json', 'roles.sql.gpg'));
+    const readRoles = (): string => spawnSync('gpg', ['--batch', '--quiet', '--homedir', restoreHome, '--decrypt'], { input: readFileSync(rolesPath()) }).stdout.toString('utf8');
+    const insertBeforeEnd = (plain: string, line: string): string => {
+      const i = plain.lastIndexOf('\n\\unrestrict');
+      return i < 0 ? `${plain}\n${line}\n` : `${plain.slice(0, i)}\n${line}${plain.slice(i)}`;
+    };
+    function forgeRoles(mutate: (plain: string) => string): () => void {
+      const obj = rolesPath(); const mf = join(sink, manifestKey());
+      const origObj = readFileSync(obj); const origMf = readFileSync(mf, 'utf8');
+      const enc = spawnSync('gpg', ['--batch', '--yes', '--trust-model', 'always', '--homedir', restoreHome, '--encrypt', '--recipient', recipient], { input: Buffer.from(mutate(readRoles())) }).stdout;
+      writeFileSync(obj, enc);
+      const oldSha = createHash('sha256').update(origObj).digest('hex');
+      writeFileSync(mf, origMf.replace(oldSha, createHash('sha256').update(enc).digest('hex')).replace(/("name":"roles\.sql\.gpg","bytes":)\d+/, `$1${enc.length}`));
+      return () => { writeFileSync(obj, origObj); writeFileSync(mf, origMf); };
+    }
+
+    it('a tampered roles.sql is refused before psql sees it: psql meta-commands, COPY PROGRAM, ALTER SYSTEM, DO, CREATE EXTENSION, unsafe role settings, multi-line statements, a wrong restrict token', async () => {
+      const marker = join(work, 'pwned-marker');
+      const hostile = [
+        `\\! touch '${marker}'`,
+        `COPY (select 1) TO PROGRAM 'touch ${marker}';`,
+        `ALTER SYSTEM SET archive_command TO 'touch ${marker}';`,
+        'DO $$ begin perform 1; end $$;',
+        'CREATE EXTENSION file_fdw;',
+        `ALTER ROLE ${ROLE} SET session_preload_libraries TO 'x';`,
+        'CREATE ROLE multi_line_role\n  NOLOGIN;',
+        `ALTER ROLE ${ROLE} WITH SUPERUSER; SELECT 1;`,
+      ];
+      for (const line of hostile) {
+        const undo = forgeRoles((plain) => insertBeforeEnd(plain, line));
+        try {
+          const r = sh('bash', [RESTORE, manifestKey()], restoreEnv());
+          expect(r.stdout, line).toMatch(/RESTORE_PROOF=FAIL \(roles\.sql has \d+ line\(s\) outside the allowlist/);
+          expect(r.stdout + r.stderr).not.toContain('PASSWORD');
+          expect(r.status, line).toBe(2);
+          expect(existsSync(marker), line).toBe(false);
+          await noScratch();
+          noTemp();
+        } finally { undo(); }
+      }
+      if (readRoles().includes('\\restrict')) {
+        for (const mutate of [(p: string) => insertBeforeEnd(p, '\\unrestrict WRONGTOKEN'), (p: string) => p.replace(/\n\\unrestrict [A-Za-z0-9]+\n/, '\n')]) {
+          const undo = forgeRoles(mutate);
+          try { expect(sh('bash', [RESTORE, manifestKey()], restoreEnv()).stdout).toMatch(/outside the allowlist/); } finally { undo(); }
+        }
+      }
+      expect(sh('bash', [RESTORE, manifestKey()], restoreEnv()).stdout).toContain('RESTORE_PROOF=PASS'); // the untouched backup still passes (control)
+      await tpool.query(`DROP DATABASE IF EXISTS bk_restore_${suffix}`);
+    });
+
+    it('allowed role statements still restore, but a password in them is stripped and the role setting is applied (mutation control)', async () => {
+      const undo = forgeRoles((plain) => insertBeforeEnd(insertBeforeEnd(plain, `ALTER ROLE ${LOGIN_ROLE} WITH LOGIN PASSWORD 'forged-pw-${suffix}';`), `ALTER ROLE ${ROLE} SET statement_timeout TO '30s';`));
+      try {
+        const r = sh('bash', [RESTORE, manifestKey()], restoreEnv());
+        expect(r.stdout + r.stderr).toContain('RESTORE_PROOF=PASS');
+        expect(r.stdout + r.stderr).not.toContain('forged-pw');
+        const lr = await tpool.query(`select rolpassword is null as nopw from pg_authid where rolname = $1`, [LOGIN_ROLE]);
+        expect(lr.rows[0].nopw).toBe(true);
+        const cfg = await tpool.query(`select setconfig from pg_db_role_setting s join pg_roles r on r.oid = s.setrole where r.rolname = $1`, [ROLE]);
+        expect(JSON.stringify(cfg.rows)).toContain('statement_timeout=30s');
+      } finally { undo(); await tpool.query(`DROP DATABASE IF EXISTS bk_restore_${suffix}`); }
+      noTemp();
+    });
+
+    it('wipes the temporary directory when interrupted (SIGTERM) and refuses to run with shell tracing on', async () => {
+      const child = spawn('bash', [RESTORE, manifestKey()], { env: { PATH: process.env.PATH as string, HOME: work, TMPDIR: work, ...restoreEnv({ BACKUP_FETCH_CMD: 'sleep 3 # %KEY%' }) } });
+      const exited = new Promise<number | null>((ok) => child.on('exit', (code) => ok(code)));
+      for (let i = 0; i < 50 && !readdirSync(work).some((f) => f.startsWith('restore-proof.')); i++) await new Promise((r) => setTimeout(r, 100));
+      expect(readdirSync(work).some((f) => f.startsWith('restore-proof.'))).toBe(true);
+      child.kill('SIGTERM');
+      expect(await exited).toBe(143);
+      noTemp();
+      await noScratch();
+
+      const x = sh('bash', ['-x', RESTORE, '--validate-target'], { RESTORE_ADMIN_URL: targetMaint });
+      expect(x.stdout).toContain('shell tracing is enabled');
+      expect(x.status).toBe(2);
+      expect(x.stdout + x.stderr).not.toMatch(/postgresql:\/\//);
+    });
   });
 
   it('restore proof FAILS when the restored schema or ledger does not equal what the manifest recorded (fingerprint / ledger mismatch)', async () => {
@@ -391,7 +602,7 @@ esac`);
     expect(b.stdout).toContain('ledger differs');
     writeFileSync(path, original);
     // the scratch database is dropped after a failed proof as well
-    expect((await pool.query(`select 1 from pg_database where datname = 'bk_restore_${suffix}'`)).rowCount).toBe(0);
+    expect((await tpool.query(`select 1 from pg_database where datname = 'bk_restore_${suffix}'`)).rowCount).toBe(0);
   });
 
   it('restore proof reports non-secret phase timings as evidence, and the backup run records its own timings (dump+encrypt streamed, upload) without printing the sink command', () => {
@@ -426,7 +637,7 @@ esac`);
       expect(r.stdout).toContain('RESTORE_PROOF=FAIL');
       expect(r.stdout).not.toContain('RESTORE_PROOF=PASS');
       expect(r.status).not.toBe(0);
-      expect((await pool.query(`select 1 from pg_database where datname = 'bk_restore_${suffix}'`)).rowCount).toBe(0); // scratch dropped
+      expect((await tpool.query(`select 1 from pg_database where datname = 'bk_restore_${suffix}'`)).rowCount).toBe(0); // scratch dropped
     };
 
     it('a restored row count that differs fails (and PASSES again with the true value)', async () => {
@@ -467,7 +678,7 @@ esac`);
       expect(b.status).toBe(2);
       const c = sh('bash', [RESTORE, manifestKey()], restoreEnv({ RESTORE_EXPECTATIONS: join(work, 'absent.profile') }));
       expect(c.status).toBe(2);
-      expect((await pool.query(`select 1 from pg_database where datname = 'bk_restore_${suffix}'`)).rowCount).toBe(0);
+      expect((await tpool.query(`select 1 from pg_database where datname = 'bk_restore_${suffix}'`)).rowCount).toBe(0);
     });
     it('the outbox is only counted: the SOURCE database rows are untouched by the whole proof', async () => {
       const s2 = new Pool({ connectionString: srcUrl });
