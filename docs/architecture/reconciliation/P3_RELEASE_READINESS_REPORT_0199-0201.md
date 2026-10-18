@@ -6,6 +6,7 @@
 | Status | **REPORT ONLY.** No migration, deployment, backup, restart or other production write was performed in preparing it. The evidence below was produced by the owner running read-only blocks A–F on `infinicus-prod-01` as `deploy`; Claude never had production access. |
 | Verdict | **NOT READY for Phase R or Phase W.** Schema, data integrity, exposure and role evidence are good. Backup, restore proof, image provenance, rollback compatibility and the owner decisions of §6 are open. |
 | Update (2026-10-18) | **Still NOT READY for Phase W.** A verified head-0198 backup now exists and its restore proof passed on a disposable machine (§3e). The Phase R *rehearsal* of the design (migrations, refusal, rollback, API compatibility; steps R4–R13) has **not** been run. |
+| Update (2026-10-18, Phase R) | The Phase R rehearsal (R3 to R11, R13) has now been run on a restored copy of the head-0198 backup and passed (§3f). **Still NOT READY for Phase W:** the release SHA, window, operators and roles are not decided; the production API image has no commit stamp (rollback identity unproven); the rehearsal ran the API with `NODE_ENV=staging`; bucket protection and key custody findings (§3e) are open. |
 | Builds on | `PRODUCTION_RELEASE_SEQUENCE_0199-0201_DESIGN.md` (phases, acceptance criteria A1–A10), `PHASE_R_REHEARSAL_DESIGN_0199-0201.md`, `production-discovery/*`, `infrastructure/backups/README.md` |
 | Evidence labels | `OWNER-RUN-OUTPUT` pasted tool output from the owner's session (checksums below identify the saved files, which are **not** in the repository); `REPO-VERIFIED`; `UNKNOWN` |
 
@@ -132,6 +133,39 @@ Evidence is `OWNER-RUN-OUTPUT` pasted into the working session. Claude had no pr
 4. **Retrieval path.** Because of finding 1, retrieval was done through the VM instead of a laptop-held credential. A true "VM lost" retrieval test with its own credential remains untested.
 5. **Production VM co-tenants unchanged.** `infinicus-restore-test-db` and `infinicus-api-smoke-test` still run next to the production database (§7).
 
+### 3f. Phase R rehearsal on a restored copy of the head-0198 backup (2026-10-18, owner-run)
+
+Evidence is `OWNER-RUN-OUTPUT` from the owner's drill laptop (Docker Desktop, PostgreSQL 16.15 in a disposable `postgres:16` container with no published port, marked `infinicus.restore_target=disposable` and pinned by system identifier). Claude had no production access; it supplied and tested the commands (synthetic data first) and read the results. Rehearsed commit: `ba02d163a1b574c79844311b8737c73939a2c3dc` (`main` after #169; migrations 0199-0201 unchanged since). Backup rehearsed: `infinicus-production/2026-10-18/20261018T173225Z-pre-release-0198` (§3e).
+
+| Step | Result |
+|---|---|
+| R3 restore with the strict profile `expectations/production-pre-0199.profile` (reviewed; counts from the owner's read-only production query) | `RESTORE_PROOF=PASS`: ledger 198, head `0198_…`, fingerprint `7fd4c419d738de8a` equal to the manifest and the profile, **10 row-count rules and 2 outbox rules satisfied**; restore 31.7 s, total 34.4 s (evidence only) |
+| R3b template and clones `_a`, `_b`, `_c` | created; ledger 198 and 16 tenants on each; roles `admin_role` (superuser, login) and `app_role` (login) restored |
+| R4 on clone `_a` | fingerprint `MATCHES_REPOSITORY_0198_PG16`; audit v2 every check 0, `K05` empty, head `0198_…` |
+| R5 gate (image built from the exact commit, as `admin_role`) | applied exactly 0199, 0200, 0201; `Migration gate passed.`; 1.8 s for the whole container run |
+| R6 grants (`grant-app-role.sh` from a `postgres:16` container; see below) | `Granted app_role access to 19 schemas.` … `Withheld direct writes of activation rows and protected reorder columns from app_role.` |
+| R7 verification | fingerprint `61ef99d74289c3b3`, `MATCHES_REPOSITORY_0201_PG16`; ledger 201 head `0201_…`; audit v2 all 0 and `K05` two validated rows; counts equal the profile; `tenancy.list_active_memberships` security definer, stable, `search_path=pg_catalog, pg_temp`, owner `admin_role`, no EXECUTE for PUBLIC, EXECUTE for `app_role`; `app_role` and PUBLIC hold no privilege on `_migrations` |
+| R8(a) new API (`NODE_ENV=staging`) | `/v1/ready` 200; `/v1/health` reports the exact commit; `GET /v1/auth/memberships` without token 401; OpenAPI lists it; a well-formed unauthenticated outcome POST 401 |
+| R8(b) old API (commit `130bf5a`, built from clean history) | `/v1/ready` 200 on the migrated schema; `/v1/health` reports `130bf5a…`; unauthenticated outcome POST 401 |
+| R8(c) repository integration suites on a second copy | **not run** (supporting evidence, not a gate); the same suites run against a fresh 0201 database in GitHub CI |
+| R9 refusal (clone `_b`, one observation moved to another business, throwaway only) | gate failed; server log: `0200 refused … observations orphan=0, mismatch=1; execution verifications orphan=0, mismatch=0. Nothing was changed.`; ledger head stays `0199_…`; no 0200/0201 constraint; `list_active_memberships` present; fingerprint `MATCHES_REPOSITORY_0199_PG16` |
+| R10 rollback (clone `_c`, Appendix C in one transaction as `admin_role`) | after apply `MATCHES_REPOSITORY_0201_PG16`; after rollback ledger 198 and `MATCHES_REPOSITORY_0198_PG16` (`7fd4c419d738de8a`); re-apply gives `MATCHES_REPOSITORY_0201_PG16` again |
+| R11 idempotency (clone `_a`) | second gate run: 0 applied, 201 skipped, passed |
+| R12 timings | restore 31.7 s; gate under 2 s per full run; lock durations not measured (idle copy) |
+| R13 destruction | containers with all clones and volumes, the exported key file, downloaded objects, old worktree and both rehearsal images removed and verified on the laptop |
+
+**Findings from the rehearsal (the design was corrected in `PHASE_R_REHEARSAL_DESIGN_0199-0201.md`):**
+1. A refusal at 0200 leaves **0199 applied** (head `0199_…`, verdict `MATCHES_REPOSITORY_0199_PG16`), not 0198. In the window a refusal means a database at 0199 until the owner acts.
+2. The API's own guard refuses `NODE_ENV=production` with a loopback or localhost database URL, so the drill ran the API with `NODE_ENV=staging`. That guard was therefore not exercised.
+3. Authentication runs after request-body validation (Fastify `preHandler`): an unauthenticated request with a malformed body gets 400, with a well-formed body 401. No data is exposed; noted for the design.
+4. The production API reports `"version":"unknown"`; the running image `sha256:4fba8110ac9c…19a7` (created 2026-10-14 21:34 UTC) carries no commit stamp. The VM build folders are exports, not Git checkouts. The folder `infinicus-release-130bf5a` (modified 21:25) makes `130bf5a` the likely source, **not proven**. The rollback image identity (A9 / P6) is therefore unproven; tagging the running image before the window is an owner decision.
+5. The API image has no `psql`; the design's R6 command would fail. The same unchanged script was run from a `postgres:16` container.
+6. Never truncate the gate's output (`| head`, `Select-Object -First`): it stops the gate mid-run (it applied only 0199 in a sandbox).
+
+**What this does not establish.** The rehearsal copy is idle; no lock contention or live-traffic behavior was observed. The production container build itself, Caddy/TLS/Cloudflare, and production unchanged-since-backup are not covered (W0/W1 re-check). Database role passwords were stripped by the restore and the API ran without secrets or identity-provider settings. The rehearsed commit is not yet a decided release SHA.
+
+**Acceptance criteria against the rehearsal:** A2 (audit v2 clean), A3 (restore-proven backup, now with count rules), A4-A7 (ledger, fingerprint, privileges, audit and RLS flags after migration) and A8 (partly: ready, health, route present, 401) are met **on the restored copy**; they must still be proven on production in W-phase. A9: logical rollback of the schema rehearsed and proven (R10); the rollback **image** identity is not proven (finding 4). A10: nothing in the rehearsal touched production configuration.
+
 ## 4. Acceptance criteria status (design §6)
 
 | # | Criterion | Status today | Basis |
@@ -184,3 +218,5 @@ These refine Phase W of the design; they change nothing until the owner adopts t
 No migration, deploy, merge, backup, restore, key creation, cleanup, `chmod`, container stop, reboot, Cloudflare/DNS/secret/role/grant change, or Phase R/W start. Each requires its own explicit authorisation from the owner.
 
 **Addendum (2026-10-18).** The owner ran Phase B (a head-0198 backup) and a restore proof of it, recorded in §3e. Still not done and not authorised by this report: Phase R rehearsal steps R4–R13, Phase W, any migration, deployment, merge, Cloudflare/DNS/secret/role/grant change, bucket-protection or credential change, and key-custody changes.
+
+**Addendum (2026-10-18, Phase R).** The owner ran the Phase R rehearsal (§3f). Still not done and not authorised by this report: Phase W, any production migration, deployment, merge by Claude, Cloudflare/DNS/secret/role/grant change, bucket-protection or credential change, tagging of the production API image, and key-custody changes.
