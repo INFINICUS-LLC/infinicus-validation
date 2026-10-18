@@ -7,6 +7,7 @@
 | Owner request | "Prepare Build the counter POS interface layer block later after the current builds." |
 | Layer owner | Business Operations (BO). The web application is a thin client; sale and order logic stays in the BO layer and the API. |
 | Evidence labels | `REPO-VERIFIED` read from the repository on `main`; `NOT VERIFIED` not checked or not decided. |
+| Survey | POS-0 survey completed in `BLOCK-POS-0-SURVEY-AND-DECISIONS.md`; it corrects §3 item 6 and adds findings F1–F12 (notably the USD currency default and the missing tender capture). |
 | Queue position | After the production release programme for migrations 0199–0201 (backup, restore rehearsal, release window and post-release checks) and after the open H-5 / backup-recovery work. It must not compete with the release for the single production VM, the owner's attention or the migration number sequence. |
 
 ## 1. Objective
@@ -29,7 +30,7 @@ Give a business a **counter screen** on a tablet or desktop where staff take a c
 3. **Tax and currency.** Quotation and order tables carry tax fields; the order API does not expose tax. Business currency declarations exist (migration 0185). How a counter sale states tax and currency is a decision, not an assumption.
 4. **Discount and void rules.** `discount` is a line item type and `void` takes a reason, but there is no per-role limit, approval or audit rule (NOT VERIFIED: what the authorization package would allow a cashier to do).
 5. **Kitchen tickets, tables, printing, tags, notes.** None exists in the API (the order has no notes or tags field). These are separate sub-blocks or explicit non-goals.
-6. **Idempotency.** `complete` rejects a second completion (conflict), but a network retry of "create order" or "add line item" could duplicate (NOT VERIFIED: no idempotency key exists on those routes).
+6. **Idempotency.** *(Corrected by POS-0, 2026-10-18.)* Every mutating route already requires an `Idempotency-Key` header and replays or conflicts correctly; the POS client must send and reuse a key per action. See `BLOCK-POS-0-SURVEY-AND-DECISIONS.md` §1.
 7. **Inventory effect.** A completed sale does not visibly decrement inventory (NOT VERIFIED; inventory writes are governed by migrations 0182–0198 and must not be bypassed).
 8. **Offline.** A counter must survive a short network loss. The architecture rules forbid browser storage as a source of truth; it may only hold an offline cache, drafts and UI state.
 
