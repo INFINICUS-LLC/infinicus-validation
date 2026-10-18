@@ -572,6 +572,30 @@ esac`);
       noTemp();
     });
 
+    it('a backup cannot alter the role the restore connects as: statements targeting it are skipped and the restore still passes (mutation control: it would otherwise lose superuser)', async () => {
+      const conn = (await tpool.query('select current_user as u')).rows[0].u as string;
+      const undo = forgeRoles((plain) => insertBeforeEnd(insertBeforeEnd(plain, `ALTER ROLE "${conn}" WITH NOSUPERUSER NOLOGIN;`), `COMMENT ON ROLE "${conn}" IS 'forged';`));
+      try {
+        const r = sh('bash', [RESTORE, manifestKey()], restoreEnv());
+        expect(r.stdout + r.stderr).toContain('RESTORE_PROOF=PASS');
+        expect(r.stdout + r.stderr).toMatch(/\d+ statement\(s\) targeting the restore connection role were skipped/);
+        const su = await tpool.query('select rolsuper, rolcanlogin from pg_roles where rolname = $1', [conn]);
+        expect(su.rows[0]).toEqual({ rolsuper: true, rolcanlogin: true });
+      } finally { undo(); await tpool.query(`DROP DATABASE IF EXISTS bk_restore_${suffix}`); }
+      noTemp();
+    });
+
+    it('RESTORE_EXPECT_SYSTEM_IDENTIFIER pins the target cluster: the right identifier passes, a wrong or malformed one is refused', async () => {
+      const id = (await tpool.query('select system_identifier::text as id from pg_control_system()')).rows[0].id as string;
+      const ok = validate(targetMaint, { RESTORE_EXPECT_SYSTEM_IDENTIFIER: id });
+      expect(ok.stdout).toContain('RESTORE_TARGET=OK');
+      for (const bad of [String(BigInt(id) + 1n), 'abc', '12345']) {
+        const r = validate(targetMaint, { RESTORE_EXPECT_SYSTEM_IDENTIFIER: bad });
+        expect(r.stdout, bad).toMatch(/RESTORE_TARGET=REFUSED .*(differs from RESTORE_EXPECT_SYSTEM_IDENTIFIER|must be the numeric)/);
+        expect(r.status, bad).toBe(2);
+      }
+    });
+
     it('wipes the temporary directory when interrupted (SIGTERM) and refuses to run with shell tracing on', async () => {
       const child = spawn('bash', [RESTORE, manifestKey()], { env: { PATH: process.env.PATH as string, HOME: work, TMPDIR: work, ...restoreEnv({ BACKUP_FETCH_CMD: 'sleep 3 # %KEY%' }) } });
       const exited = new Promise<number | null>((ok) => child.on('exit', (code) => ok(code)));

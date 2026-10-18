@@ -73,3 +73,10 @@ Destruction after a rehearsal: `docker rm -f -v infinicus-restore-target`; delet
 
 ## 6. Not done
 Block H-5 did **not**: access any backup or production system, create or restore a backup, change a bucket or credential, import or create a key, install a timer, run Phase R or W, deploy, merge, or touch Cloudflare/DNS. The laptop was not inspected (no access from the build environment); every laptop requirement above is NOT VERIFIED until the owner runs the checks.
+
+## H-5B addendum (2026-10-18) — connecting-role protection and optional cluster pin
+
+- **Connecting role is never changed by a backup.** After the allowlist, `restore-proof.sh` drops every `CREATE ROLE`, `ALTER ROLE`, `COMMENT ON ROLE` and `GRANT … TO` statement that targets the role the restore connects as, and logs how many it skipped. `pg_dumpall` always emits the source bootstrap role, so a blanket "refuse any existing role" rule would fail every real restore; skipping is compatible and still keeps the target administrator intact. Other roles restore as before.
+- **Optional cluster pin.** When `RESTORE_EXPECT_SYSTEM_IDENTIFIER` is set (the throwaway cluster's `select system_identifier from pg_control_system()`, recorded at provisioning), `--validate-target` and the restore refuse any cluster with a different identifier. It is optional so existing runbooks keep working; making it mandatory is an owner decision.
+- **Origin.** Informed by the unmerged branch `remediation/h5a-role-target-safety-20261018` (based on a pre-#159 commit, not merged here). Its required identifier and refuse-on-collision rule were not adopted as written.
+- **Evidence.** 37 integration tests pass against a local PostgreSQL 16 cluster with synthetic data; removing the new guard makes the new role test fail. No production backup, host or credential was used.
