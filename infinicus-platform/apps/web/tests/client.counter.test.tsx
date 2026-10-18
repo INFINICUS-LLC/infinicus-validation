@@ -8,8 +8,9 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: 
 import { AuthContext, type AuthContextValue } from '../app/(client)/auth-provider';
 import CounterPage from '../app/(client)/businesses/[businessId]/counter/page';
 import { CounterCatalogue } from '../app/(client)/businesses/[businessId]/counter/counter-view';
+import { OrderPanelView, type OrderPanelProps } from '../app/(client)/businesses/[businessId]/counter/order-panel';
 import { ALL_CATEGORIES, categoriesOf, filterProducts, formatAmount, visibleProducts } from '../lib/client/counter';
-import { productListSchema, type Product } from '../lib/client/schemas';
+import { productListSchema, type Order, type Product } from '../lib/client/schemas';
 import type { AuthState } from '../lib/client/authController';
 import { membership } from './helpers/fakes';
 
@@ -112,5 +113,76 @@ describe('counter page and catalogue (server-rendered output)', () => {
     const unconfigured = html({ status: 'unconfigured', missing: ['NEXT_PUBLIC_API_BASE_URL'], invalid: [] }, <CounterPage />);
     expect(unconfigured).toContain('role="alert"');
     expect(unconfigured).toContain('NEXT_PUBLIC_API_BASE_URL');
+  });
+});
+
+const line = (n: number, over: Partial<Order['lineItems'][number]> = {}): Order['lineItems'][number] => ({ id: id(100 + n), lineNumber: n, itemType: 'product', productId: id(n), description: `Item ${n}`, quantity: 1, unitPrice: n, lineTotal: n, ...over });
+const order = (over: Partial<Order> = {}): Order => ({ id: id(900), businessId: id(800), customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', totalAmount: 5.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [line(2, { description: 'Espresso', unitPrice: 3.5, lineTotal: 3.5 }), line(3, { description: 'Milk', unitPrice: 2, lineTotal: 2 })], ...over });
+const noop = () => undefined;
+const panel = (over: Partial<OrderPanelProps> = {}) => html(ready, <OrderPanelView state={{ order: null, busy: false, message: null, retryable: false }} openOrders={[]} onStart={noop} onRemove={noop} onRetry={noop} onDiscard={noop} onOpen={noop} {...over} />);
+
+describe('order panel and interactive catalogue (POS-2, server-rendered output)', () => {
+  it('with no order it explains what to do and offers New order; nothing else', () => {
+    const out = panel();
+    expect(out).toContain('No order open');
+    expect(out).toContain('New order');
+    expect(out).not.toContain('aria-label="Order lines"');
+    expect(out).not.toContain('Retry');
+  });
+
+  it('shows the lines, a labelled Remove button per line, the order number and status, and the server total', () => {
+    const out = panel({ state: { order: order(), busy: false, message: null, retryable: false } });
+    expect(out).toContain('ORD-TEST');
+    expect(out).toContain('planned');
+    expect(out).toContain('aria-label="Order lines"');
+    expect(out).toContain('aria-label="Remove Espresso"');
+    expect(out).toContain('aria-label="Remove Milk"');
+    expect(out).toContain('Total <strong>5.50</strong>');
+    expect(out).toContain('3.50');
+    expect(out).toContain('role="status"');
+  });
+
+  it('an order with no lines says so; a completed order cannot be edited (Remove disabled)', () => {
+    expect(panel({ state: { order: order({ lineItems: [], totalAmount: 0 }), busy: false, message: null, retryable: false } })).toContain('No items yet');
+    const done = panel({ state: { order: order({ operationalStatus: 'completed' }), busy: false, message: null, retryable: false } });
+    expect(done.match(/aria-label="Remove [^"]+"[^>]*disabled/g)).toHaveLength(2);
+  });
+
+  it('while an action runs every button is disabled and the region is marked busy', () => {
+    const out = panel({ state: { order: order(), busy: true, message: null, retryable: false }, openOrders: [order({ id: id(901), orderNumber: 'ORD-OTHER' })] });
+    expect(out).toContain('aria-busy="true"');
+    const buttons = out.match(/<button[^>]*>/g) ?? [];
+    expect(buttons.length).toBeGreaterThanOrEqual(4);
+    expect(buttons.every((b) => b.includes('disabled'))).toBe(true);
+  });
+
+  it('a retryable failure is announced with Retry and Discard and blocks other actions; a definite refusal shows the message without Retry', () => {
+    const unknownOutcome = panel({ state: { order: order(), busy: false, message: 'The service could not be reached. Check your connection and try again.', retryable: true } });
+    expect(unknownOutcome).toContain('role="alert"');
+    expect(unknownOutcome).toContain('Retry');
+    expect(unknownOutcome).toContain('Discard and reload');
+    expect((unknownOutcome.match(/<button[^>]*aria-label="Remove[^>]*>/g) ?? []).every((b) => b.includes('disabled'))).toBe(true);
+    expect(unknownOutcome).toMatch(/<button[^>]*disabled[^>]*>New order/);
+    const refused = panel({ state: { order: order(), busy: false, message: 'This conflicts with an existing record, or was already recorded.', retryable: false } });
+    expect(refused).toContain('role="alert"');
+    expect(refused).not.toContain('Retry');
+  });
+
+  it('lists other open orders to resume (not the current one), each with a labelled Open button', () => {
+    const out = panel({ state: { order: order(), busy: false, message: null, retryable: false }, openOrders: [order(), order({ id: id(901), orderNumber: 'ORD-OTHER', totalAmount: 9 })] });
+    expect(out).toContain('aria-label="Open orders"');
+    expect(out).toContain('aria-label="Open ORD-OTHER"');
+    expect(out).not.toContain('aria-label="Open ORD-TEST"');
+  });
+
+  it('the catalogue turns tiles into labelled buttons when adding is enabled, greys them out when disabled, and shows the supplied order panel instead of the placeholder', () => {
+    const on = html(ready, <CounterCatalogue products={catalogue} onAdd={noop} orderPanel={<p>PANEL</p>} />);
+    expect(on).toContain('aria-label="Add Espresso"');
+    expect(on).toContain('PANEL');
+    expect(on).not.toContain('Building an order comes in the next step');
+    expect(on).not.toMatch(/aria-label="Add [^"]+"[^>]*disabled/);
+    const off = html(ready, <CounterCatalogue products={catalogue} onAdd={noop} disabled />);
+    expect(off.match(/aria-label="Add [^"]+"[^>]*disabled/g)).toHaveLength(3);
+    expect(html(ready, <CounterCatalogue products={catalogue} />)).not.toContain('aria-label="Add ');   // read-only mode is unchanged
   });
 });
