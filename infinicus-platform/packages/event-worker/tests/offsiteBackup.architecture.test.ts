@@ -84,9 +84,9 @@ describe('off-VM backup scripts: structure and safety', () => {
     expect(restore).toMatch(/PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=15000' PGCONNECT_TIMEOUT=10 psql "\$url"/);
     expect(restore).not.toMatch(/^\s*(echo|printf|log)\b[^\n]*\$\{?(RESTORE_ADMIN_URL|url|SCRATCH_URL)\b/m);
     // roles.sql never reaches psql unfiltered: only the sanitized copy is applied, and the plaintext is removed right after
-    expect(restore).toMatch(/psql [^\n]*-f "\$WORK\/roles\.safe\.sql"/);
+    expect(restore).toMatch(/psql [^\n]*-f "\$WORK\/roles\.guarded\.sql"/);
     expect(restore).not.toMatch(/psql [^\n]*-f "\$WORK\/roles\.sql"/);
-    expect(restore).toMatch(/rm -f "\$WORK\/roles\.sql" "\$WORK\/roles\.safe\.sql"/);
+    expect(restore).toMatch(/rm -f "\$WORK\/roles\.sql" "\$WORK\/roles\.safe\.sql" "\$WORK\/roles\.guarded\.sql"/);
     expect(restore).toMatch(/rm -f "\$WORK\/db\.dump"/);
     expect(restore).toMatch(/s\/ PASSWORD '\[\^'\]\*'\/\//);
     // cleanup also runs on INT, TERM and HUP

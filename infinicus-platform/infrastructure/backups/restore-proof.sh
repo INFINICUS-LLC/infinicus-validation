@@ -109,6 +109,14 @@ validate_target() {
   [[ "$rec" == "false" ]] || refuse "the target is a replica or in recovery"
   [[ "$major" == "${RESTORE_EXPECT_PG_MAJOR:-16}" ]] || refuse "the target server major version is $major, expected ${RESTORE_EXPECT_PG_MAJOR:-16}"
   [[ "$prodcount" == "0" ]] || refuse "the target cluster contains a database named infinicus (the production database name)"
+  # Optional pin: the operator records the throwaway cluster's system identifier when provisioning it (select system_identifier from pg_control_system())
+  # and passes it here, so a URL that points at any other cluster is refused even if that cluster carries the marker.
+  if [[ -n "${RESTORE_EXPECT_SYSTEM_IDENTIFIER:-}" ]]; then
+    [[ "$RESTORE_EXPECT_SYSTEM_IDENTIFIER" =~ ^[0-9]{10,20}$ ]] || refuse "RESTORE_EXPECT_SYSTEM_IDENTIFIER must be the numeric PostgreSQL system identifier"
+    local actual_id
+    actual_id="$(PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=15000' PGCONNECT_TIMEOUT=10 psql "$url" -X -At -c 'select system_identifier from pg_control_system()' 2>/dev/null)" || refuse "cannot read the target system identifier"
+    [[ "$actual_id" == "$RESTORE_EXPECT_SYSTEM_IDENTIFIER" ]] || refuse "the target system identifier differs from RESTORE_EXPECT_SYSTEM_IDENTIFIER"
+  fi
 }
 [[ -n "${RESTORE_ADMIN_URL:-}" ]] || fail "RESTORE_ADMIN_URL (maintenance database on the throwaway server) is required" 2
 if (( VALIDATE_ONLY )); then
@@ -231,8 +239,28 @@ sanitize_roles() { # sanitize_roles <in> <out>: allowlist every line of pg_dumpa
   (( bad == 0 )) || fail "roles.sql has $bad line(s) outside the allowlist of pg_dumpall --roles-only output (first at line $first_bad; the content is not printed); the restore was not attempted" 2
 }
 sanitize_roles "$WORK/roles.sql" "$WORK/roles.safe.sql"
-psql "$RESTORE_ADMIN_URL" -X -q -v ON_ERROR_STOP=0 -f "$WORK/roles.safe.sql" >/dev/null 2>"$WORK/roles.err" || true
-rm -f "$WORK/roles.sql" "$WORK/roles.safe.sql"
+# The role this restore connects as is never modified by the backup: drop every statement that creates, alters, comments on or grants membership to it
+# (pg_dumpall always emits the source bootstrap role, which may share the name). Other roles are restored as before.
+conn_role="$(PGOPTIONS='-c default_transaction_read_only=on' psql "$RESTORE_ADMIN_URL" -X -At -c 'select current_user' 2>/dev/null)" || fail "cannot determine the restore connection role"
+protect_connecting_role() { # protect_connecting_role <in> <out>
+  local in="$1" out="$2" line subj="" grantee="" name='([A-Za-z_][A-Za-z0-9_$]*|"[^"]{1,63}")' dropped=0
+  : > "$out"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    subj=""; grantee=""
+    if [[ "$line" =~ ^(CREATE\ ROLE|ALTER\ ROLE|COMMENT\ ON\ ROLE)\ ${name}([\ ;]|$) ]]; then subj="${BASH_REMATCH[2]}"
+    elif [[ "$line" =~ ^GRANT\ ${name}\ TO\ ${name}([\ ;]|$) ]]; then grantee="${BASH_REMATCH[2]}"; fi
+    for n in "$subj" "$grantee"; do
+      [[ -n "$n" ]] || continue
+      if [[ "$n" == \"*\" ]]; then n="${n:1:${#n}-2}"; else n="$(printf '%s' "$n" | LC_ALL=C tr '[:upper:]' '[:lower:]')"; fi
+      if [[ "$n" == "$conn_role" ]]; then dropped=$((dropped + 1)); continue 2; fi
+    done
+    printf '%s\n' "$line" >> "$out"
+  done < "$in"
+  (( dropped == 0 )) || log "roles.sql: $dropped statement(s) targeting the restore connection role were skipped; that role is not modified by a backup"
+}
+protect_connecting_role "$WORK/roles.safe.sql" "$WORK/roles.guarded.sql"
+psql "$RESTORE_ADMIN_URL" -X -q -v ON_ERROR_STOP=0 -f "$WORK/roles.guarded.sql" >/dev/null 2>"$WORK/roles.err" || true
+rm -f "$WORK/roles.sql" "$WORK/roles.safe.sql" "$WORK/roles.guarded.sql"
 post_roles="$(PGOPTIONS='-c default_transaction_read_only=on' psql "$RESTORE_ADMIN_URL" -X -At -F '|' -c "select (select count(*) from pg_authid where rolpassword is not null and rolname <> current_user), current_setting('is_superuser')" 2>/dev/null)" || fail "cannot inspect the restored roles"
 [[ "$post_roles" == "0|on" ]] || fail "after the roles were restored, a role carries a password or the connection lost superuser (restored $post_roles); the restore was stopped"
 psql "$RESTORE_ADMIN_URL" -X -q -c "CREATE DATABASE \"$DB\"" || fail "cannot create the scratch database"
