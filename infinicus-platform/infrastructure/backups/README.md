@@ -1,6 +1,6 @@
 # infrastructure/backups - off-VM encrypted backups
 
-Status: **tooling delivered, not installed or run anywhere.** Nothing in this directory touches production until the owner authorises an installation and a first run. Plan, threat model, retention, restore drills and the first-run procedure: `docs/architecture/reconciliation/OFFSITE_BACKUP_PLAN.md`.
+Status: **tooling delivered; installed on the production VM and run once (2026-10-13, first-proof backup, per the VM state file) — no fresh head-0198 backup and no restore proof of one exist yet.** Nothing in this directory touches production until the owner authorises a run. Plan, threat model, retention, restore drills and the first-run procedure: `docs/architecture/reconciliation/OFFSITE_BACKUP_PLAN.md`.
 
 | File | Purpose |
 |---|---|
@@ -15,3 +15,17 @@ Status: **tooling delivered, not installed or run anywhere.** Nothing in this di
 Tested (`packages/database/tests/offsite-backup.integration.test.ts`, real PostgreSQL 16, real gpg, a file sink standing in for the S3 client) including failure paths; architecture-guarded by `packages/event-worker/tests/offsiteBackup.architecture.test.ts`. **Not tested against a real S3-compatible service** (none is reachable from the build environment): the first real run uses `--check`, then a `--verify` backup, then a restore proof on a separate machine.
 
 The older `database/scripts/backup.sh`/`restore.sh` (BUILD-22) remain for local use; they drop owners and privileges (`--no-owner --no-privileges`) and write plaintext to local disk, so they are not the production recovery path. The PITR scripts there assume a Debian host cluster and do not apply to the Docker PostgreSQL.
+
+## Restore target rules (fail-closed; `restore-proof.sh`)
+
+`restore-proof.sh` refuses, with exit 2 and before fetching or decrypting anything, any restore target that is not demonstrably disposable. Check a target without touching any backup: `RESTORE_ADMIN_URL=<url> restore-proof.sh --validate-target` prints `RESTORE_TARGET=OK` or `RESTORE_TARGET=REFUSED (<reason>)`.
+
+- The URL has **no password** (use `PGPASSFILE` or local socket authentication), one host, and only the parameters `sslmode`, `connect_timeout`, `application_name`, `host`, `port`. The host is loopback (`localhost`, `127.x.x.x`, `::1`) or a local socket directory. `PGHOSTADDR`, `PGSERVICE` and `PGSERVICEFILE` must be unset.
+- The server is **marked disposable by its builder**: started with `-c infinicus.restore_target=disposable`. It must be a superuser connection to a primary of the expected major version (`RESTORE_EXPECT_PG_MAJOR`, default 16) with no database named `infinicus`.
+- `roles.sql` from the backup is validated line by line against the output `pg_dumpall --roles-only` produces and has its password hashes removed before it runs; any other statement (psql meta-commands, `COPY`, `ALTER SYSTEM`, `DO`, `CREATE EXTENSION`, ...) refuses the restore. No restored role may carry a password afterwards.
+- Temporary files live in a private directory, are removed as soon as they are no longer needed and on exit, `INT`, `TERM` and `HUP`; shell tracing (`bash -x`) is refused.
+
+Throwaway server (local Docker, loopback only):
+`docker run --rm -d --name infinicus-restore-target -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=<random> postgres:16 -c infinicus.restore_target=disposable`
+then keep the password in a `PGPASSFILE` (mode 600) and set `RESTORE_ADMIN_URL=postgresql://postgres@127.0.0.1:55432/postgres`. Remove the container (`docker rm -f -v`) when done. Limits: the archive itself runs as a superuser on that server, so the server must hold no secrets and have no route to production; the target must sit on an encrypted disk. Details: `docs/architecture/reconciliation/H5_RESTORE_TARGET_VALIDATION.md`.
+

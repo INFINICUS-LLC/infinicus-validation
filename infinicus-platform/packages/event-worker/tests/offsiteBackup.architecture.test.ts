@@ -73,6 +73,28 @@ describe('off-VM backup scripts: structure and safety', () => {
     expect(restore).toMatch(/ledger differs after restore/);
   });
 
+  it('H-5: the restore target is validated fail-closed BEFORE anything is fetched, decrypted or written; roles.sql is allowlisted and stripped of password hashes', () => {
+    // order in the script: target validation runs before the temporary directory, the manifest fetch and the decrypt
+    const at = (re: RegExp): number => { const i = restore.search(re); expect(i, String(re)).toBeGreaterThan(-1); return i; };
+    expect(at(/^validate_target$/m)).toBeLessThan(at(/WORK="\$\(mktemp/));
+    expect(at(/^validate_target$/m)).toBeLessThan(at(/fetch "\$MANIFEST_KEY"/));
+    for (const re of [/infinicus\.restore_target/, /must not contain a password/, /host must be loopback/, /PGHOSTADDR/, /is_superuser/, /pg_is_in_recovery/, /database named infinicus/,
+      /--validate-target/, /RESTORE_TARGET=REFUSED/, /shell tracing is enabled/, /sanitize_roles/, /outside the allowlist/, /rolpassword is not null/]) expect(restore, String(re)).toMatch(re);
+    // the connection check pins PGOPTIONS so the caller's environment cannot spoof the marker, and never prints the URL or a role line
+    expect(restore).toMatch(/PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=15000' PGCONNECT_TIMEOUT=10 psql "\$url"/);
+    expect(restore).not.toMatch(/^\s*(echo|printf|log)\b[^\n]*\$\{?(RESTORE_ADMIN_URL|url|SCRATCH_URL)\b/m);
+    // roles.sql never reaches psql unfiltered: only the sanitized copy is applied, and the plaintext is removed right after
+    expect(restore).toMatch(/psql [^\n]*-f "\$WORK\/roles\.safe\.sql"/);
+    expect(restore).not.toMatch(/psql [^\n]*-f "\$WORK\/roles\.sql"/);
+    expect(restore).toMatch(/rm -f "\$WORK\/roles\.sql" "\$WORK\/roles\.safe\.sql"/);
+    expect(restore).toMatch(/rm -f "\$WORK\/db\.dump"/);
+    expect(restore).toMatch(/s\/ PASSWORD '\[\^'\]\*'\/\//);
+    // cleanup also runs on INT, TERM and HUP
+    expect(restore).toMatch(/trap 'exit 129' HUP/);
+    expect(restore).toMatch(/trap 'exit 130' INT/);
+    expect(restore).toMatch(/trap 'exit 143' TERM/);
+  });
+
   it('the freshness check is read-only', () => {
     expect(fresh).not.toMatch(/>\s*[\w"$/.]|\brm\b|\btouch\b|\bmv\b|\bcp\b|\bcurl\b|\bdocker\b/);
   });

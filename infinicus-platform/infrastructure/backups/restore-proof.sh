@@ -10,11 +10,28 @@
 # Only SELECT count(*) runs against the restored data: outbox events are never consumed, updated or replayed.
 #
 # Usage:   restore-proof.sh <manifest-key> [--keep]
+#          restore-proof.sh --validate-target        (checks the restore target only; fetches, decrypts and writes nothing)
 #   <manifest-key>  e.g. infinicus-prod/2026-10-13/20261013T020000Z-daily/manifest.json
+#
+# FAIL-CLOSED RESTORE TARGET (checked before anything is fetched, decrypted or written; any doubt refuses with exit 2):
+#   - RESTORE_ADMIN_URL must be a postgresql:// URL with NO password (use PGPASSFILE or local socket authentication: a password in the URL would show in
+#     process listings), exactly one host, and no query parameter other than sslmode, connect_timeout, application_name, host and port. The host must be
+#     loopback (localhost, 127.x.x.x, ::1) or a local socket directory. PGHOSTADDR, PGSERVICE and PGSERVICEFILE must be unset (they can redirect a connection).
+#   - The server must be marked disposable by whoever built it: start it with  -c infinicus.restore_target=disposable  (the marker is read from the server,
+#     so a production server cannot pass by accident). It must be a superuser connection to a primary (not a replica) of the expected major version
+#     (RESTORE_EXPECT_PG_MAJOR, default 16) and must not contain a database named infinicus.
+#   - roles.sql comes from an unauthenticated backup, so it is never run as is: every line must match a strict allowlist of what pg_dumpall --roles-only
+#     produces (any psql meta-command other than the matching restrict/unrestrict pair, COPY, ALTER SYSTEM, DO, CREATE EXTENSION and so on refuses the
+#     restore) and password hashes are removed before it runs. Afterwards no restored role may carry a password and the connection must still be a superuser.
+#   - Temporary files: private directory (mode 700, owned by the caller), shell tracing refused, decrypted dump and roles deleted as soon as they are no
+#     longer needed, directory wiped on exit, INT, TERM and HUP. Run it on an encrypted disk. pg_restore of the archive itself cannot be sandboxed by this
+#     script, so the throwaway server must also be isolated (no secrets, no route to production).
 # Environment:
 #   BACKUP_FETCH_CMD          required. Writes the object at %KEY% to stdout (e.g.  rclone cat offsite:infinicus-backups/%KEY%).
 #   RESTORE_GNUPGHOME         required. gpg home containing the PRIVATE key (decryption).
-#   RESTORE_ADMIN_URL         required. libpq URL of a maintenance database (normally .../postgres) on the THROWAWAY server, as a superuser.
+#   RESTORE_ADMIN_URL         required. libpq URL of a maintenance database (normally .../postgres) on the THROWAWAY server, as a superuser. See the
+#                             fail-closed target rules above: loopback or local socket only, no password in the URL, server marked disposable.
+#   RESTORE_EXPECT_PG_MAJOR   optional, default 16. The target server must report this major version.
 #   RESTORE_DB_NAME           optional, default infinicus_restore_proof. Must not be "infinicus"; must not already exist.
 #   RESTORE_REPO_DIR          optional, default the repository this script lives in; used to find the discovery script.
 #   RESTORE_EXPECTATIONS      optional, default expectations/production-pre-0171.profile next to this script. The profile name and SHA-256 are printed.
@@ -24,10 +41,14 @@
 set -euo pipefail
 umask 077
 
-KEEP=0; MANIFEST_KEY=""
+# shell tracing would print connection details and paths: refuse it before anything else
+if [[ "$-" == *x* || -n "${BASH_XTRACEFD:-}" ]]; then echo "RESTORE_PROOF=FAIL (shell tracing is enabled; refusing, because it would print connection details)"; exit 2; fi
+
+KEEP=0; MANIFEST_KEY=""; VALIDATE_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --keep) KEEP=1 ;;
+    --validate-target) VALIDATE_ONLY=1 ;;
     -*) echo "RESTORE_PROOF=FAIL (unknown argument $arg)"; exit 2 ;;
     *) MANIFEST_KEY="$arg" ;;
   esac
@@ -42,10 +63,63 @@ log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DISCOVERY="${BACKUP_DISCOVERY_SCRIPT:-$SCRIPT_DIR/../deployment/scripts/production-readonly-discovery.sh}"
+refuse() { # refuse <reason>: the restore target is not acceptable; nothing has been fetched, decrypted or written
+  if (( VALIDATE_ONLY )); then echo "RESTORE_TARGET=REFUSED ($1)"; else echo "RESTORE_PROOF=FAIL (restore target refused: $1)"; fi
+  exit 2
+}
+LOOPBACK_RE='^(localhost|127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|::1)$'
+validate_target() {
+  local url="$RESTORE_ADMIN_URL" authority="" query="" hostport="" host="" qhost="" pairs=() kv key val out marker su rec major prodcount h
+  [[ -z "${PGHOSTADDR:-}${PGSERVICE:-}${PGSERVICEFILE:-}" ]] || refuse "PGHOSTADDR, PGSERVICE and PGSERVICEFILE must be unset (they can redirect the connection)"
+  [[ "$url" =~ ^postgres(ql)?://([^/?#]*)(/[^?#]*)?(\?([^#]*))?$ ]] || refuse "RESTORE_ADMIN_URL must be a postgresql:// URL without a fragment"
+  authority="${BASH_REMATCH[2]}"; query="${BASH_REMATCH[5]}"
+  [[ "$authority" != *,* ]] || refuse "exactly one host is allowed"
+  if [[ "$authority" == *@* ]]; then
+    [[ "${authority%@*}" != *:* ]] || refuse "the URL must not contain a password (use PGPASSFILE or local socket authentication)"
+  fi
+  hostport="${authority##*@}"
+  if [[ "$hostport" =~ ^\[([0-9a-fA-F:]+)\](:[0-9]+)?$ ]]; then host="${BASH_REMATCH[1]}"
+  elif [[ "$hostport" =~ ^([^]:[]*)(:[0-9]+)?$ ]]; then host="${BASH_REMATCH[1]}"
+  else refuse "the host part of the URL cannot be parsed"; fi
+  if [[ -n "$query" ]]; then
+    IFS='&' read -r -a pairs <<< "$query"
+    for kv in "${pairs[@]}"; do
+      key="${kv%%=*}"; val="${kv#*=}"
+      case "$key" in
+        sslmode|connect_timeout|application_name) ;;
+        port) [[ "$val" =~ ^[0-9]{1,5}$ ]] || refuse "the port parameter is not a number" ;;
+        host) qhost="$val" ;;
+        *) refuse "the URL carries a connection parameter that is not allowed (only sslmode, connect_timeout, application_name, host and port)" ;;
+      esac
+    done
+  fi
+  [[ -n "$host" || -n "$qhost" ]] || refuse "an explicit host is required (a missing host would fall back to PGHOST or a default socket)"
+  for h in "$host" "$qhost"; do
+    [[ -n "$h" ]] || continue
+    h="${h//%2[Ff]//}"
+    if [[ "$h" == /* ]]; then [[ "$h" != *..* ]] || refuse "a socket directory must not contain .."
+    elif [[ ! "$h" =~ $LOOPBACK_RE ]]; then refuse "the host must be loopback (localhost, 127.x.x.x, ::1) or a local socket directory"; fi
+  done
+  command -v psql >/dev/null 2>&1 || refuse "psql is not installed"
+  out="$(PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=15000' PGCONNECT_TIMEOUT=10 psql "$url" -X -At -F '|' -c "select coalesce(current_setting('infinicus.restore_target', true), '<unset>'), current_setting('is_superuser'), pg_is_in_recovery()::text, (current_setting('server_version_num')::int / 10000)::text, (select count(*) from pg_database where datname = 'infinicus')::text" 2>/dev/null)" \
+    || refuse "cannot connect to the target (connection details are not printed)"
+  IFS='|' read -r marker su rec major prodcount <<< "$out"
+  [[ "$marker" == "disposable" ]] || refuse "the target server is not marked disposable (start the throwaway server with -c infinicus.restore_target=disposable)"
+  [[ "$su" == "on" ]] || refuse "the target connection is not a superuser"
+  [[ "$rec" == "false" ]] || refuse "the target is a replica or in recovery"
+  [[ "$major" == "${RESTORE_EXPECT_PG_MAJOR:-16}" ]] || refuse "the target server major version is $major, expected ${RESTORE_EXPECT_PG_MAJOR:-16}"
+  [[ "$prodcount" == "0" ]] || refuse "the target cluster contains a database named infinicus (the production database name)"
+}
+[[ -n "${RESTORE_ADMIN_URL:-}" ]] || fail "RESTORE_ADMIN_URL (maintenance database on the throwaway server) is required" 2
+if (( VALIDATE_ONLY )); then
+  validate_target
+  echo "RESTORE_TARGET=OK (loopback or local socket, marked disposable, superuser, primary, expected major version, no production database; nothing was fetched or written)"
+  exit 0
+fi
 [[ -n "$MANIFEST_KEY" && "$MANIFEST_KEY" =~ ^[A-Za-z0-9._/:-]{1,300}$ && "$MANIFEST_KEY" != *..* && "$MANIFEST_KEY" == */manifest.json ]] || fail "a manifest key ending in /manifest.json is required" 2
 [[ -n "${BACKUP_FETCH_CMD:-}" && "${BACKUP_FETCH_CMD}" == *%KEY%* ]] || fail "BACKUP_FETCH_CMD (containing %KEY%) is required" 2
 [[ -n "${RESTORE_GNUPGHOME:-}" && -d "$RESTORE_GNUPGHOME" ]] || fail "RESTORE_GNUPGHOME (a gpg home with the private key) is required" 2
-[[ -n "${RESTORE_ADMIN_URL:-}" ]] || fail "RESTORE_ADMIN_URL (maintenance database on the throwaway server) is required" 2
+validate_target
 DB="${RESTORE_DB_NAME:-infinicus_restore_proof}"
 [[ "$DB" =~ ^[a-z_][a-z0-9_]{0,62}$ && "$DB" != infinicus && "$DB" != postgres && "$DB" != template0 && "$DB" != template1 ]] || fail "unsafe or production scratch database name: $DB" 2
 [[ -f "$DISCOVERY" ]] || fail "discovery script not found: $DISCOVERY" 2
@@ -71,12 +145,22 @@ T_TOTAL="$(now)"
 fetch() { bash -c "${BACKUP_FETCH_CMD//%KEY%/$1}"; }
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/restore-proof.XXXXXX")"
 chmod 700 "$WORK"
+[[ "$(stat -c '%a %u' "$WORK")" == "700 $(id -u)" ]] || { rm -rf "$WORK"; fail "the temporary directory is not private to the caller" 2; }
 SCRATCH_CREATED=0
-cleanup() {
-  if [[ $SCRATCH_CREATED -eq 1 && $KEEP -eq 0 ]]; then psql "$RESTORE_ADMIN_URL" -X -q -c "DROP DATABASE IF EXISTS \"$DB\"" >/dev/null 2>&1 || true; fi
+# best-effort removal of plaintext (shred is not reliable on journaled or SSD storage: run on an encrypted disk)
+wipe_work() {
+  [[ -d "$WORK" ]] || return 0
+  if command -v shred >/dev/null 2>&1; then find "$WORK" -type f -exec shred -u {} + >/dev/null 2>&1 || true; fi
   rm -rf "$WORK"
 }
+cleanup() {
+  if [[ $SCRATCH_CREATED -eq 1 && $KEEP -eq 0 ]]; then psql "$RESTORE_ADMIN_URL" -X -q -c "DROP DATABASE IF EXISTS \"$DB\"" >/dev/null 2>&1 || true; fi
+  wipe_work
+}
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # 1. manifest
 T_DL="$(now)"
@@ -112,12 +196,50 @@ phase_done decrypt "$T_DEC"
 T_RES="$(now)"
 exists="$(psql "$RESTORE_ADMIN_URL" -X -At -c "select 1 from pg_database where datname = '$DB'")"
 [[ -z "$exists" ]] || fail "scratch database $DB already exists on the target server; refusing to touch it" 2
-# roles first (cluster-level objects: owners and grantees). Errors for roles that already exist (e.g. the bootstrap superuser) are expected and ignored.
-psql "$RESTORE_ADMIN_URL" -X -q -v ON_ERROR_STOP=0 -f "$WORK/roles.sql" >/dev/null 2>"$WORK/roles.err" || true
+# roles first (cluster-level objects: owners and grantees). roles.sql comes from an unauthenticated backup, so it is validated against a strict
+# allowlist and stripped of password hashes before psql sees it. Errors for roles that already exist (e.g. the bootstrap superuser) are expected and ignored.
+sanitize_roles() { # sanitize_roles <in> <out>: allowlist every line of pg_dumpall --roles-only output; strip password hashes; refuse anything else
+  local in="$1" out="$2" name='([A-Za-z_][A-Za-z0-9_$]*|"[^"]{1,63}")' n=0 bad=0 first_bad="" tok="" end_tok="" sawend=0 line
+  local re_set="^SET (default_transaction_read_only|client_encoding|standard_conforming_strings) = ('[A-Za-z0-9_-]+'|on|off);\$"
+  local re_create="^CREATE ROLE ${name};\$"
+  local re_alter="^ALTER ROLE ${name} WITH [A-Z ]+( CONNECTION LIMIT -?[0-9]+)?( PASSWORD '[^']*')?( VALID UNTIL '[^']*')?;\$"
+  local re_comment="^COMMENT ON ROLE ${name} IS '[^']*';\$"
+  local val="('[^']*'|[A-Za-z0-9_.-]+)"
+  local re_conf="^ALTER ROLE ${name} SET (search_path|statement_timeout|lock_timeout|idle_in_transaction_session_timeout|default_transaction_read_only|row_security|timezone) TO ${val}(, ${val})*;\$"
+  local re_grant="^GRANT ${name} TO ${name}( WITH [A-Z0-9 ,]+)?( GRANTED BY ${name})?;\$"
+  : > "$out"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    n=$((n + 1))
+    if [[ -z "$line" || "$line" == --* ]]; then printf '%s\n' "$line" >> "$out"; continue; fi
+    if [[ "$line" =~ ^\\restrict\ ([A-Za-z0-9]+)$ ]]; then
+      [[ -z "$tok" ]] || { bad=$((bad + 1)); [[ -n "$first_bad" ]] || first_bad="$n"; continue; }
+      tok="${BASH_REMATCH[1]}"; printf '%s\n' "$line" >> "$out"; continue
+    fi
+    if [[ "$line" =~ ^\\unrestrict\ ([A-Za-z0-9]+)$ ]]; then
+      if [[ -n "$tok" && "${BASH_REMATCH[1]}" == "$tok" ]]; then sawend=1; printf '%s\n' "$line" >> "$out"; else bad=$((bad + 1)); [[ -n "$first_bad" ]] || first_bad="$n"; fi
+      continue
+    fi
+    if [[ "$line" =~ $re_set || "$line" =~ $re_create || "$line" =~ $re_comment || "$line" =~ $re_conf || "$line" =~ $re_grant ]]; then
+      printf '%s\n' "$line" >> "$out"
+    elif [[ "$line" =~ $re_alter ]]; then
+      printf '%s\n' "$(printf '%s' "$line" | sed -E "s/ PASSWORD '[^']*'//")" >> "$out"
+    else
+      bad=$((bad + 1)); [[ -n "$first_bad" ]] || first_bad="$n"
+    fi
+  done < "$in"
+  if [[ -n "$tok" && $sawend -eq 0 ]]; then bad=$((bad + 1)); [[ -n "$first_bad" ]] || first_bad="end"; fi
+  (( bad == 0 )) || fail "roles.sql has $bad line(s) outside the allowlist of pg_dumpall --roles-only output (first at line $first_bad; the content is not printed); the restore was not attempted" 2
+}
+sanitize_roles "$WORK/roles.sql" "$WORK/roles.safe.sql"
+psql "$RESTORE_ADMIN_URL" -X -q -v ON_ERROR_STOP=0 -f "$WORK/roles.safe.sql" >/dev/null 2>"$WORK/roles.err" || true
+rm -f "$WORK/roles.sql" "$WORK/roles.safe.sql"
+post_roles="$(PGOPTIONS='-c default_transaction_read_only=on' psql "$RESTORE_ADMIN_URL" -X -At -F '|' -c "select (select count(*) from pg_authid where rolpassword is not null and rolname <> current_user), current_setting('is_superuser')" 2>/dev/null)" || fail "cannot inspect the restored roles"
+[[ "$post_roles" == "0|on" ]] || fail "after the roles were restored, a role carries a password or the connection lost superuser (restored $post_roles); the restore was stopped"
 psql "$RESTORE_ADMIN_URL" -X -q -c "CREATE DATABASE \"$DB\"" || fail "cannot create the scratch database"
 SCRATCH_CREATED=1
 SCRATCH_URL="$(printf '%s' "$RESTORE_ADMIN_URL" | sed -E "s#(postgres(ql)?://[^/]*)/[^?]*#\1/$DB#")"
 pg_restore --dbname="$SCRATCH_URL" --exit-on-error --no-comments "$WORK/db.dump" 2>"$WORK/restore.err" || fail "pg_restore failed: $(head -c 300 "$WORK/restore.err" | tr '\n' ' ')"
+rm -f "$WORK/db.dump"
 log "restored into scratch database $DB"
 phase_done restore "$T_RES"
 
