@@ -41,7 +41,7 @@ describe('apps/web has no server-side data access or identity path (NA-05)', () 
     expect(files.filter((f) => /searchParams|useSearchParams|location\.(search|hash)/.test(code(f))).map(rel)).toEqual([]);
     expect(files.filter((f) => /name=["'](userId|tenantId|workspaceId)["']|id=["'](userId|tenantId|workspaceId)["']/.test(code(f))).map(rel)).toEqual([]);
     const routeParams = files.filter((f) => /useParams/.test(code(f)));
-    expect(routeParams.map(rel).sort()).toEqual(['/app/(client)/businesses/[businessId]/history/page.tsx', '/app/(client)/businesses/[businessId]/workflow/page.tsx']);
+    expect(routeParams.map(rel).sort()).toEqual(['/app/(client)/businesses/[businessId]/counter/page.tsx', '/app/(client)/businesses/[businessId]/history/page.tsx', '/app/(client)/businesses/[businessId]/workflow/page.tsx']);   // counter added by POS-1: same single validated parameter
     for (const f of routeParams) {
       expect(code(f), rel(f)).toMatch(/useParams<\{ businessId: string \}>/);       // the only parameter
       expect(code(f), rel(f)).toMatch(/z\.string\(\)\.uuid\(\)/);                   // validated as an id before use
@@ -50,7 +50,7 @@ describe('apps/web has no server-side data access or identity path (NA-05)', () 
 
   it('every page that shows tenant data gets it through the scoped resource hook and the workspace guard', () => {
     const pages = files.filter((f) => /app\/\(client\)\/businesses\/.*page\.tsx$/.test(f));
-    expect(pages).toHaveLength(3);
+    expect(pages).toHaveLength(4);   // workflow, history, businesses list and the POS-1 counter
     for (const f of pages) {
       expect(code(f), rel(f)).toContain('useScopedResource');
       expect(code(f), rel(f)).toContain('useRequireWorkspace');

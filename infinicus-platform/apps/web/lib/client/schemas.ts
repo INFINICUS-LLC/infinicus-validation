@@ -36,6 +36,14 @@ export const decisionHistorySchema = z.object({
 export const decisionResultSchema = z.object({ id: z.string().uuid(), status: z.string(), decisionCode: z.string() });
 export const outcomeResultSchema = z.object({ id: z.string().uuid(), status: z.string(), observationCode: z.string() });
 
+/** GET /v1/businesses/:businessId/products (apps/api/src/schemas/products.ts). Inactive products are excluded by the server unless asked for. */
+export const productSchema = z.object({
+  id: z.string().uuid(), name: z.string(), price: z.number(), category: z.string(), icon: z.string().nullable(), active: z.boolean(), sortOrder: z.number(),
+});
+export const productListSchema = z.object({ products: z.array(productSchema) });
+
 export type BusinessList = z.infer<typeof businessListSchema>;
 export type WorkflowView = z.infer<typeof workflowViewSchema>;
 export type DecisionHistory = z.infer<typeof decisionHistorySchema>;
+export type Product = z.infer<typeof productSchema>;
+export type ProductList = z.infer<typeof productListSchema>;
