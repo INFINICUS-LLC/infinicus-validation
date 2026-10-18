@@ -117,3 +117,14 @@ DELETE FROM public._migrations WHERE filename IN ('0199_create_list_active_membe
 COMMIT;
 ```
 Rollback is for the rehearsal and, with separate owner authorisation, for the window (Section 5 of the parent design). It changes no data. If rollback is ever needed on production, the preferred route after verification failure with the API stopped is this transaction followed by the fingerprint check; a full restore from the window backup remains the last resort.
+
+## Corrections from the first real run (2026-10-18)
+The rehearsal was run on 2026-10-18 (evidence in `P3_RELEASE_READINESS_REPORT_0199-0201.md` §3f). It showed these points in this design are wrong or incomplete:
+- **R3:** use the reviewed profile `expectations/production-pre-0199.profile` (counts from the owner's read-only production query); `rehearsal/phase-r-restore.sh` accepts it as `PHASE_R_PROFILE`.
+- **R5:** build from the exact commit with a clean checkout. The runtime image contains the built repository; the gate runs as `bash /repo/infrastructure/deployment/scripts/migration-gate.sh`. Never truncate its output.
+- **R6:** the API image has no `psql`. Run the unchanged `grant-app-role.sh` from a `postgres:16` container on the same network.
+- **R8(a):** the API refuses `NODE_ENV=production` with a loopback or localhost database URL; run the drill with `NODE_ENV=staging` and record that this guard is not exercised. Authentication runs after body validation, so an unauthenticated request with a malformed body returns 400; use a well-formed body to see 401.
+- **R8(b):** the production API image carries no commit stamp (`/v1/health` reports `unknown`), so the "rollback image" cannot be reproduced from a SHA. Build the closest known commit (here `130bf5a`) and record that it is unproven; before the window tag the running image.
+- **R8(c):** optional supporting evidence; not run on the restored copy in the first run.
+- **R9 / Appendix B:** inject an **observation** whose business differs from its monitored action's (0200 checks observations and execution verifications); a version-row mismatch is caught by 0201, not 0200. The refusal text is in the server log as `ERROR:  0200 refused … observations orphan=0, mismatch=1 …`. After the refusal the ledger head is **`0199_…`** (0199 stays applied), the fingerprint verdict is `MATCHES_REPOSITORY_0199_PG16`, and no 0200 or 0201 constraint exists.
+
