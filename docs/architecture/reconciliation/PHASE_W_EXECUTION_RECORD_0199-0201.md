@@ -24,6 +24,16 @@
 
 API downtime: about 1 h 50 min (14:07 to about 15:58). Roughly 1 h 30 min of it was an SSH disconnect between W4 and W5; the database was untouched during that time.
 
+## Restore proof of the pre-window backup (2026-10-19, laptop)
+Backup `infinicus-production/2026-10-19/20261019T140816Z-pre-0199-window`, restored with `rehearsal/phase-r-restore.sh` and the reviewed profile `production-pre-0199.profile` (sha256 `3b68ca9b829c0d4a…`) into a throwaway `postgres:16` container (16.15, `infinicus.restore_target=disposable`, no published port, random password).
+
+- Objects copied from the offsite bucket to the VM, then to the laptop; sha256 of `db.dump.gpg` (`e62fc113…679a`), `roles.sql.gpg` (`4d237da1…f6d7`) and `manifest.json` (`64ed024c…17e7`) identical on bucket copy, VM and laptop and equal to the manifest; sizes 4,710,564 and 1,534 bytes.
+- Only the secret subkeys were exported (`--export-secret-subkeys`: primary stub plus encryption subkey `2379B8C95D86BB0B`); the passphrase was typed at a hidden prompt into the container's temporary agent. No key material or passphrase left the laptop.
+- Result: `RESTORE_PROOF=PASS` and `PHASE_R=PASS`. Ledger 198, head `0198_link_purchase_order_lines_to_inventory_items.sql`, schema fingerprint `7fd4c419d738de8a` equal to the manifest; 10 row-count rules and 2 outbox classification rules satisfied; 508 tables counted (tenants 16, users 6, businesses 16, outbox 59, `_migrations` 198). Timings (evidence only, not an RTO): download 0.2 s, decrypt 1.8 s, restore 36.8 s, verify 1.8 s, total 40.7 s.
+- Cleanup verified: container removed with `-v`; the laptop working folder (including the key export) deleted; `~/phr` and `~/phr.tgz` deleted on the VM; no `phr` container on the VM.
+
+Open item raised by the proof: the laptop keyring shows the backup key `6FA8FA10…F9141B` as **revoked on 2026-10-18**, yet the manifest of the 2026-10-19 backup names it as recipient. A revoked key still decrypts existing backups (proven above), but a revocation not known to the VM means new backups keep encrypting to it. Decision needed from the owner: confirm whether the revocation was intended (rotation) and, if so, rotate the recipient key before the next backup. No key or VM change was made here.
+
 ## Findings (none blocked the release)
 1. **W4 command needed `COMPOSE_DIR`.** The first `--check` from the home folder failed 6 of 15 checks (database not reachable, versions unreadable): the script reaches Postgres through `docker compose exec` from `COMPOSE_DIR`, which defaults to the current directory. With `COMPOSE_DIR` set to the live compose folder it passed. Nothing was written by either run. The plan (§3, §3b) is corrected in this change.
 2. **SSH variables are lost on reconnect** (`OCI`, `REL`, `C`). Twice a step was pasted with empty variables and failed harmlessly on missing paths. For a future window, every command should define its own variables.
@@ -34,10 +44,9 @@ API downtime: about 1 h 50 min (14:07 to about 15:58). Roughly 1 h 30 min of it 
 
 ## Safety net still in place
 - Rollback image `infinicus-api:rollback-pre-0199` (`4fba8110ac9c…`); the old API works on the migrated database (rehearsal R8(b)).
-- Pre-window backup `…/20261019T140816Z-pre-0199-window` (restore proof pending, see below).
+- Pre-window backup `…/20261019T140816Z-pre-0199-window` (restore-proven 2026-10-19, see "Restore proof" below).
 - Logical rollback of 0199-0201 (Phase R design, Appendix C) rehearsed in R10.
 
 ## Follow-ups
-- **Restore proof of the new backup** on the drill laptop (Phase R procedure, profile `production-pre-0199.profile`): not yet run. Until then the backup is verified (checksums, read-back) but not proven recoverable.
 - Plan a reboot window for the pending kernel and security updates.
 - POS-4/5 migrations (0202-0206) are in draft pull requests only and are NOT applied; they need their own window, authorization, fresh backup and the migration gate.
