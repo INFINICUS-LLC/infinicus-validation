@@ -19,7 +19,12 @@ export interface OrderSessionState {
   retryable: boolean;
 }
 
-interface Pending { key: string; run: (key: string) => Promise<Order> }
+interface Pending { key: string; run: (key: string) => Promise<Order>; /** Plain wording for a definite 409 refusal of this action. */ conflict?: string }
+
+/** The server's reason is never shown raw; a refusal of complete or void gets one plain sentence. */
+export const COMPLETE_CONFLICT = 'This order could not be completed. It may have no items, or it was already completed or voided. Reload the order to see its current state.';
+export const VOID_CONFLICT = 'This order could not be voided. It may already be completed or voided. Reload the order to see its current state.';
+export const VOID_REASON_MAX = 500;
 
 const orderPath = (businessId: string): string => `/v1/businesses/${encodeURIComponent(businessId)}/orders`;
 const IDEMPOTENT_UNKNOWN_OUTCOME = (error: unknown): boolean => error instanceof ApiUnavailableError || error instanceof ApiContractError || (error instanceof ApiError && error.status >= 500);
@@ -41,9 +46,9 @@ export class OrderSession {
   private set(patch: Partial<OrderSessionState>): void { this.state = { ...this.state, ...patch }; for (const l of this.listeners) l(); }
 
   /** Run one action: one key, one request. Ignored while another action runs or an unresolved one waits for a retry or discard. */
-  private async act(run: (key: string) => Promise<Order>): Promise<boolean> {
+  private async act(run: (key: string) => Promise<Order>, conflict?: string): Promise<boolean> {
     if (this.state.busy || this.pending) return false;
-    return this.execute({ key: this.newKey(), run });
+    return this.execute({ key: this.newKey(), run, conflict });
   }
 
   private async execute(action: Pending): Promise<boolean> {
@@ -56,7 +61,8 @@ export class OrderSession {
     } catch (error) {
       const unknown = IDEMPOTENT_UNKNOWN_OUTCOME(error);
       this.pending = unknown ? action : null;
-      this.set({ busy: false, message: describeRequestError(error), retryable: unknown });
+      const refused = error instanceof ApiError && error.status === 409 && action.conflict;
+      this.set({ busy: false, message: refused ? action.conflict! : describeRequestError(error), retryable: unknown });
       return false;
     }
   }
@@ -78,6 +84,26 @@ export class OrderSession {
     const order = this.state.order;
     if (!order || order.operationalStatus !== 'planned') return Promise.resolve(false);
     return this.act((key) => this.api.delete(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/line-items/${encodeURIComponent(lineItemId)}`, { scope: this.scope, idempotencyKey: key, schema: orderSchema }));
+  };
+
+  /** Complete the open order: the server records the sale and locks the order. Needs at least one line; nothing is sent otherwise. */
+  complete = (): Promise<boolean> => {
+    const order = this.state.order;
+    if (!order || order.operationalStatus !== 'planned' || order.lineItems.length === 0) return Promise.resolve(false);
+    return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/complete`, { body: {}, scope: this.scope, idempotencyKey: key, schema: orderSchema }), COMPLETE_CONFLICT);
+  };
+
+  /** Void the open order, with an optional reason (kept by the server in the order's history). */
+  voidOrder = (reason?: string): Promise<boolean> => {
+    const order = this.state.order;
+    if (!order || order.operationalStatus !== 'planned') return Promise.resolve(false);
+    const trimmed = reason?.trim() ?? '';
+    if (trimmed.length > VOID_REASON_MAX) {
+      this.set({ message: `The reason is too long (at most ${VOID_REASON_MAX} characters).` });
+      return Promise.resolve(false);
+    }
+    const body = trimmed ? { reason: trimmed } : {};
+    return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/void`, { body, scope: this.scope, idempotencyKey: key, schema: orderSchema }), VOID_CONFLICT);
   };
 
   /** Load an order by id (for example from the open-orders list). Reads carry no key and change nothing. */

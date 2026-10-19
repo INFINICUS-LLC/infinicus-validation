@@ -117,7 +117,7 @@ describe('counter page and catalogue (server-rendered output)', () => {
 });
 
 const line = (n: number, over: Partial<Order['lineItems'][number]> = {}): Order['lineItems'][number] => ({ id: id(100 + n), lineNumber: n, itemType: 'product', productId: id(n), description: `Item ${n}`, quantity: 1, unitPrice: n, lineTotal: n, ...over });
-const order = (over: Partial<Order> = {}): Order => ({ id: id(900), businessId: id(800), customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', totalAmount: 5.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [line(2, { description: 'Espresso', unitPrice: 3.5, lineTotal: 3.5 }), line(3, { description: 'Milk', unitPrice: 2, lineTotal: 2 })], ...over });
+const order = (over: Partial<Order> = {}): Order => ({ id: id(900), businessId: id(800), customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', currencyCode: 'KWD', totalAmount: 5.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [line(2, { description: 'Espresso', unitPrice: 3.5, lineTotal: 3.5 }), line(3, { description: 'Milk', unitPrice: 2, lineTotal: 2 })], ...over });
 const noop = () => undefined;
 const panel = (over: Partial<OrderPanelProps> = {}) => html(ready, <OrderPanelView state={{ order: null, busy: false, message: null, retryable: false }} openOrders={[]} onStart={noop} onRemove={noop} onRetry={noop} onDiscard={noop} onOpen={noop} {...over} />);
 
@@ -137,7 +137,7 @@ describe('order panel and interactive catalogue (POS-2, server-rendered output)'
     expect(out).toContain('aria-label="Order lines"');
     expect(out).toContain('aria-label="Remove Espresso"');
     expect(out).toContain('aria-label="Remove Milk"');
-    expect(out).toContain('Total <strong>5.50</strong>');
+    expect(out).toContain('Total <strong>KWD 5.50</strong>');
     expect(out).toContain('3.50');
     expect(out).toContain('role="status"');
   });
@@ -184,5 +184,58 @@ describe('order panel and interactive catalogue (POS-2, server-rendered output)'
     const off = html(ready, <CounterCatalogue products={catalogue} onAdd={noop} disabled />);
     expect(off.match(/aria-label="Add [^"]+"[^>]*disabled/g)).toHaveLength(3);
     expect(html(ready, <CounterCatalogue products={catalogue} />)).not.toContain('aria-label="Add ');   // read-only mode is unchanged
+  });
+});
+
+describe('complete and void on the order panel (POS-3, server-rendered output)', () => {
+  const open = (over: Partial<OrderPanelProps> = {}, o: Partial<Order> = {}, st: Partial<OrderPanelProps['state']> = {}) =>
+    panel({ state: { order: order(o), busy: false, message: null, retryable: false, ...st }, ...over });
+
+  it('an open order with lines offers Complete sale and Void order; with no lines Complete is disabled', () => {
+    const out = open();
+    expect(out).toContain('Complete sale');
+    expect(out).toContain('Void order');
+    expect(out).not.toMatch(/<button[^>]*disabled[^>]*>Complete sale/);
+    expect(open({}, { lineItems: [], totalAmount: 0 })).toMatch(/<button[^>]*disabled[^>]*>Complete sale/);
+  });
+
+  it('asking to complete shows a confirmation with the server total and currency, and hides the first-step buttons', () => {
+    const out = open({ confirm: 'complete' });
+    expect(out).toContain('aria-label="Confirm completing the sale"');
+    expect(out).toContain('KWD 5.50');
+    expect(out).toContain('Confirm: complete sale');
+    expect(out).not.toContain('>Complete sale<');
+  });
+
+  it('asking to void shows an optional reason field (limited to 500 characters) and a confirmation', () => {
+    const out = open({ confirm: 'void', voidReason: 'wrong table' });
+    expect(out).toContain('aria-label="Confirm voiding the order"');
+    expect(out).toContain('Reason (optional)');
+    expect(out).toContain('maxLength="500"');
+    expect(out).toContain('value="wrong table"');
+    expect(out).toContain('Confirm: void order');
+  });
+
+  it('while an action runs, the confirm buttons and the reason field are disabled (double-tap protection)', () => {
+    const out = open({ confirm: 'void' }, {}, { busy: true });
+    expect(out).toMatch(/<button[^>]*disabled[^>]*>Confirm: void order/);
+    expect(out).toMatch(/<input[^>]*id="void-reason"[^>]*disabled/);
+    expect(open({ confirm: 'complete' }, {}, { busy: true })).toMatch(/<button[^>]*disabled[^>]*>Confirm: complete sale/);
+  });
+
+  it('a completed order shows the recorded sale and no complete or void buttons; a voided order says no sale was recorded', () => {
+    const done = open({}, { operationalStatus: 'completed' });
+    expect(done).toContain('Sale recorded: ORD-TEST, KWD 5.50');
+    expect(done).not.toContain('Complete sale');
+    expect(done).not.toContain('Void order');
+    const voided = open({}, { operationalStatus: 'failed' });
+    expect(voided).toContain('was voided. No sale was recorded.');
+    expect(voided).not.toContain('Complete sale');
+  });
+
+  it('an unresolved (retryable) action disables Complete and Void', () => {
+    const out = open({}, {}, { retryable: true, message: 'The service could not be reached. Check your connection and try again.' });
+    expect(out).toMatch(/<button[^>]*disabled[^>]*>Complete sale/);
+    expect(out).toMatch(/<button[^>]*disabled[^>]*>Void order/);
   });
 });

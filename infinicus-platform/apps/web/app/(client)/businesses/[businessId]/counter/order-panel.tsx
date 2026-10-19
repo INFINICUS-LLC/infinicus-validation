@@ -3,7 +3,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import type { ApiClient, Scope } from '../../../../../lib/client/apiClient';
 import { formatAmount } from '../../../../../lib/client/counter';
-import { OrderSession, type OrderSessionState } from '../../../../../lib/client/orders';
+import { OrderSession, VOID_REASON_MAX, type OrderSessionState } from '../../../../../lib/client/orders';
 import type { Order } from '../../../../../lib/client/schemas';
 
 /** One order session per business and workspace; it is rebuilt when either changes. */
@@ -31,11 +31,23 @@ export interface OrderPanelProps {
   onRetry: () => void;
   onDiscard: () => void;
   onOpen: (orderId: string) => void;
+  /** Complete and void (POS-3). Optional so the earlier read-only uses of the panel keep working. */
+  confirm?: 'complete' | 'void' | null;
+  voidReason?: string;
+  onAsk?: (kind: 'complete' | 'void') => void;
+  onCancelAsk?: () => void;
+  onConfirm?: () => void;
+  onReasonChange?: (reason: string) => void;
 }
 
+const none = (): void => undefined;
+
 /** Presentational order panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
-export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen }: OrderPanelProps) {
+export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none }: OrderPanelProps) {
   const { order, busy, message, retryable } = state;
+  const planned = order?.operationalStatus === 'planned';
+  const locked = busy || retryable;
+  const money = (n: number): string => `${order?.currencyCode ?? ''} ${formatAmount(n)}`.trim();
   const resumable = openOrders.filter((o) => o.id !== order?.id);
   return (
     <section className="counter-order card" aria-labelledby="order-heading" aria-busy={busy}>
@@ -69,7 +81,37 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
               ))}
             </ul>
           )}
-          <p className="order-total" role="status" aria-live="polite">Total <strong>{formatAmount(order.totalAmount)}</strong></p>
+          <p className="order-total" role="status" aria-live="polite">Total <strong>{money(order.totalAmount)}</strong></p>
+          {order.operationalStatus === 'completed' ? (
+            <p className="notice" role="status">Sale recorded: {order.orderNumber}, {money(order.totalAmount)}. The order is closed.</p>
+          ) : null}
+          {order.operationalStatus === 'failed' ? (
+            <p className="notice" role="status">Order {order.orderNumber} was voided. No sale was recorded.</p>
+          ) : null}
+          {planned && !confirm ? (
+            <p>
+              <button type="button" onClick={() => onAsk('complete')} disabled={locked || order.lineItems.length === 0}>Complete sale</button>{' '}
+              <button type="button" className="secondary" onClick={() => onAsk('void')} disabled={locked}>Void order</button>
+            </p>
+          ) : null}
+          {planned && confirm === 'complete' ? (
+            <div className="confirm" role="group" aria-label="Confirm completing the sale">
+              <p>Complete this sale for <strong>{money(order.totalAmount)}</strong>? This records the sale and the order can no longer be changed.</p>
+              <button type="button" onClick={onConfirm} disabled={locked}>Confirm: complete sale</button>{' '}
+              <button type="button" className="secondary" onClick={onCancelAsk} disabled={busy}>Cancel</button>
+            </div>
+          ) : null}
+          {planned && confirm === 'void' ? (
+            <div className="confirm" role="group" aria-label="Confirm voiding the order">
+              <p>Void this order? No sale is recorded and the order can no longer be changed.</p>
+              <p>
+                <label htmlFor="void-reason">Reason (optional)</label>{' '}
+                <input id="void-reason" type="text" maxLength={VOID_REASON_MAX} autoComplete="off" value={voidReason} onChange={(e) => onReasonChange(e.target.value)} disabled={locked} />
+              </p>
+              <button type="button" onClick={onConfirm} disabled={locked}>Confirm: void order</button>{' '}
+              <button type="button" className="secondary" onClick={onCancelAsk} disabled={busy}>Cancel</button>
+            </div>
+          ) : null}
         </>
       )}
       <p><button type="button" onClick={onStart} disabled={busy || retryable}>New order</button></p>
@@ -79,7 +121,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
           <ul className="open-orders" aria-label="Open orders">
             {resumable.map((o) => (
               <li key={o.id}>
-                <span>{o.orderNumber}</span> <span className="line-total">{formatAmount(o.totalAmount)}</span>{' '}
+                <span>{o.orderNumber}</span> <span className="line-total">{o.currencyCode} {formatAmount(o.totalAmount)}</span>{' '}
                 <button type="button" className="secondary" aria-label={`Open ${o.orderNumber}`} onClick={() => onOpen(o.id)} disabled={busy || retryable}>Open</button>
               </li>
             ))}

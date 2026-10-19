@@ -1,6 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
+import { useState } from 'react';
 import { z } from 'zod';
 import { openOrdersPath } from '../../../../../lib/client/orders';
 import { orderListSchema, productListSchema } from '../../../../../lib/client/schemas';
@@ -21,12 +22,21 @@ export default function CounterPage() {
   const { resource, reload } = useScopedResource(scope && businessId ? `/v1/businesses/${businessId}/products` : null, productListSchema);
   const open = useScopedResource(scope && businessId ? openOrdersPath(businessId) : null, orderListSchema);
   const { session, state: orderState } = useOrderSession(api, scope, businessId);
+  const [ask, setAsk] = useState<{ kind: 'complete' | 'void'; orderId: string } | null>(null);
+  const [voidReason, setVoidReason] = useState('');
 
   if (!scope) return <StateNotice state={state} />;
   if (!businessId) return <div className="card"><p className="notice danger" role="alert">That business address is not valid.</p><p><a href="/businesses">&larr; All businesses</a></p></div>;
 
   const openOrders = open.resource.kind === 'ok' ? open.resource.data.orders : [];
   const act = (run: () => Promise<boolean>) => { void run().then((changed) => { if (changed) open.reload(); }); };
+  // The confirmation belongs to one order: switching orders drops it.
+  const confirm = ask && ask.orderId === orderState.order?.id ? ask.kind : null;
+  const onConfirm = () => {
+    if (!session || !confirm) return;
+    const run = confirm === 'complete' ? () => session.complete() : () => session.voidOrder(voidReason);
+    void run().then((changed) => { if (changed) { open.reload(); setAsk(null); setVoidReason(''); } });
+  };
   const orderPanel = (
     <OrderPanelView
       state={orderState}
@@ -36,6 +46,12 @@ export default function CounterPage() {
       onRetry={() => session && act(session.retry)}
       onDiscard={() => { if (session) void session.discard(); }}
       onOpen={(orderId) => session && act(() => session.open(orderId))}
+      confirm={confirm}
+      voidReason={voidReason}
+      onAsk={(kind) => { if (orderState.order) { setVoidReason(''); setAsk({ kind, orderId: orderState.order.id }); } }}
+      onCancelAsk={() => { setAsk(null); setVoidReason(''); }}
+      onConfirm={onConfirm}
+      onReasonChange={setVoidReason}
     />
   );
   const canAdd = Boolean(orderState.order) && orderState.order?.operationalStatus === 'planned' && !orderState.busy && !orderState.retryable;

@@ -48,7 +48,7 @@ export const orderLineItemSchema = z.object({
   quantity: z.number(), unitPrice: z.number(), lineTotal: z.number(),
 });
 export const orderSchema = z.object({
-  id: z.string().uuid(), businessId: z.string().uuid(), customerId: z.string().uuid().nullable(), orderNumber: z.string(), orderDate: z.string(),
+  id: z.string().uuid(), businessId: z.string().uuid(), customerId: z.string().uuid().nullable(), orderNumber: z.string(), orderDate: z.string(), currencyCode: z.string().regex(/^[A-Z]{3}$/),
   totalAmount: z.number(), operationalStatus: z.enum(['planned', 'authorized', 'executed', 'completed', 'failed', 'reversed']),
   createdAt: z.string(), updatedAt: z.string(), lineItems: z.array(orderLineItemSchema),
 });
