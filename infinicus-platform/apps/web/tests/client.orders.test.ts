@@ -40,7 +40,7 @@ class FakeOrdersApi implements ApiClient {
 
   private apply(method: Call['method'], path: string, body: unknown): Order {
     if (method === 'POST' && /\/orders$/.test(path)) {
-      this.order = { id: uuid(900), businessId: BUSINESS, customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', currencyCode: 'KWD', totalAmount: 0, operationalStatus: 'planned', createdAt: 'x', updatedAt: 'x', lineItems: [] };
+      this.order = { id: uuid(900), businessId: BUSINESS, customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', currencyCode: 'KWD', registerSessionId: null, totalAmount: 0, operationalStatus: 'planned', createdAt: 'x', updatedAt: 'x', lineItems: [] };
     } else if (method === 'POST' && /\/line-items$/.test(path)) {
       const b = body as { description: string; quantity: number; unitPrice: number; productId?: string; itemType?: string };
       this.order!.lineItems.push({ id: uuid(1000 + ++this.seq), lineNumber: this.seq, itemType: b.itemType ?? 'product', productId: b.productId ?? null, description: b.description, quantity: b.quantity, unitPrice: b.unitPrice, lineTotal: Math.round(b.quantity * b.unitPrice * 100) / 100 });
@@ -74,7 +74,7 @@ const apiError = (status: number) => new ApiError(status, 'X', 'x');
 
 describe('order session (POS-2): server-owned orders, one action at a time, safe retries', () => {
   it('the order schemas accept the API shape and reject drift', () => {
-    const order = { id: uuid(1), businessId: BUSINESS, customerId: null, orderNumber: 'ORD-1', orderDate: '2026-10-18', currencyCode: 'KWD', totalAmount: 7.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [] };
+    const order = { id: uuid(1), businessId: BUSINESS, customerId: null, orderNumber: 'ORD-1', orderDate: '2026-10-18', currencyCode: 'KWD', registerSessionId: null, totalAmount: 7.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [] };
     expect(orderSchema.safeParse(order).success).toBe(true);
     expect(orderListSchema.safeParse({ orders: [order] }).success).toBe(true);
     expect(orderSchema.safeParse({ ...order, totalAmount: '7.5' }).success).toBe(false);

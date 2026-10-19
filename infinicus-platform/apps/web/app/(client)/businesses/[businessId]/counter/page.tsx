@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { openOrdersPath } from '../../../../../lib/client/orders';
 import { orderListSchema, productListSchema } from '../../../../../lib/client/schemas';
@@ -11,6 +11,8 @@ import { useRequireWorkspace } from '../../../use-require-workspace';
 import { useScopedResource } from '../../../use-scoped-resource';
 import { CounterCatalogue } from './counter-view';
 import { OrderPanelView, useOrderSession } from './order-panel';
+import { RegisterPanelView, useRegister } from './register-panel';
+import { parseCashAmount } from '../../../../../lib/client/register';
 
 const idSchema = z.string().uuid();
 
@@ -22,6 +24,10 @@ export default function CounterPage() {
   const { resource, reload } = useScopedResource(scope && businessId ? `/v1/businesses/${businessId}/products` : null, productListSchema);
   const open = useScopedResource(scope && businessId ? openOrdersPath(businessId) : null, orderListSchema);
   const { session, state: orderState } = useOrderSession(api, scope, businessId);
+  const { controller: register, state: registerState } = useRegister(api, scope, businessId);
+  const [cashText, setCashText] = useState('');
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  useEffect(() => { if (register) void register.load(); }, [register]);
   const [ask, setAsk] = useState<{ kind: 'complete' | 'void'; orderId: string } | null>(null);
   const [voidReason, setVoidReason] = useState('');
 
@@ -29,13 +35,13 @@ export default function CounterPage() {
   if (!businessId) return <div className="card"><p className="notice danger" role="alert">That business address is not valid.</p><p><a href="/businesses">&larr; All businesses</a></p></div>;
 
   const openOrders = open.resource.kind === 'ok' ? open.resource.data.orders : [];
-  const act = (run: () => Promise<boolean>) => { void run().then((changed) => { if (changed) open.reload(); }); };
+  const act = (run: () => Promise<boolean>) => { void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); } }); };
   // The confirmation belongs to one order: switching orders drops it.
   const confirm = ask && ask.orderId === orderState.order?.id ? ask.kind : null;
   const onConfirm = () => {
     if (!session || !confirm) return;
     const run = confirm === 'complete' ? () => session.complete() : () => session.voidOrder(voidReason);
-    void run().then((changed) => { if (changed) { open.reload(); setAsk(null); setVoidReason(''); } });
+    void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); setAsk(null); setVoidReason(''); } });
   };
   const orderPanel = (
     <OrderPanelView
@@ -52,6 +58,23 @@ export default function CounterPage() {
       onCancelAsk={() => { setAsk(null); setVoidReason(''); }}
       onConfirm={onConfirm}
       onReasonChange={setVoidReason}
+      registerOpen={registerState.loaded ? registerState.session !== null : undefined}
+    />
+  );
+  const cashValid = parseCashAmount(cashText) !== null;
+  const registerPanel = (
+    <RegisterPanelView
+      state={registerState}
+      cashText={cashText}
+      cashValid={cashValid}
+      confirmingClose={confirmingClose}
+      onCashChange={(text) => { setCashText(text); setConfirmingClose(false); }}
+      onOpen={() => { const n = parseCashAmount(cashText); if (register && n !== null) void register.open(n).then((ok) => { if (ok) { setCashText(''); open.reload(); } }); }}
+      onAskClose={() => setConfirmingClose(true)}
+      onCancelClose={() => setConfirmingClose(false)}
+      onConfirmClose={() => { const n = parseCashAmount(cashText); if (register && n !== null) void register.close(n).then((ok) => { if (ok) { setCashText(''); setConfirmingClose(false); open.reload(); } }); }}
+      onRetry={() => { if (register) void register.retry(); }}
+      onDiscard={() => { if (register) void register.discard(); }}
     />
   );
   const canAdd = Boolean(orderState.order) && orderState.order?.operationalStatus === 'planned' && !orderState.busy && !orderState.retryable;
@@ -66,7 +89,7 @@ export default function CounterPage() {
       {resource.kind === 'ok' ? (
         <CounterCatalogue
           products={resource.data.products}
-          orderPanel={orderPanel}
+          orderPanel={<div className="counter-left">{registerPanel}{orderPanel}</div>}
           disabled={!canAdd}
           onAdd={(product) => session && act(() => session.add(product))}
         />

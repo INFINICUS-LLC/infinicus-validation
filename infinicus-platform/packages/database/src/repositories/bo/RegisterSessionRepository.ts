@@ -1,6 +1,16 @@
 import type { TenantContext } from '../../client.js';
 import { withTenantTransaction } from '../../client.js';
 import { NotFoundError, ConflictError } from './errors.js';
+import { BusinessDeclaredCurrencyReader } from '../onboarding/index.js';
+import { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from '../../currency/minorUnits.js';
+
+/** A refused amount (for example more decimals than the currency has). The API maps this name to 400. */
+export class RegisterAmountError extends Error {
+  constructor(reason: string) {
+    super(`RegisterSession amount invalid: ${reason}`);
+    this.name = 'ValidationError';
+  }
+}
 
 export interface OpenRegisterSessionInput {
   businessId: string;
@@ -22,6 +32,8 @@ export interface RegisterSession {
   workspaceId: string;
   businessId: string;
   registerName: string;
+  /** The session's currency (set from the business's declared currency at open). null = opened before migration 0202. */
+  currencyCode: string | null;
   status: 'open' | 'closed';
   openedBy: string | null;
   closedBy: string | null;
@@ -47,6 +59,7 @@ function rowToSession(row: Record<string, unknown>): RegisterSession {
     workspaceId: row.workspace_id as string,
     businessId: row.business_id as string,
     registerName: row.register_name as string,
+    currencyCode: (row.currency_code as string | null) ?? null,
     status: row.status as 'open' | 'closed',
     openedBy: row.opened_by as string | null,
     closedBy: row.closed_by as string | null,
@@ -72,8 +85,28 @@ function rowToSession(row: Record<string, unknown>): RegisterSession {
  * payment-method field yet, so a real cash/card split is a later
  * increment once orders/payments exist, not assumed here.
  */
+/** Money in the session's currency; sessions without a recorded currency (pre-0202) keep the old two-decimal rounding. */
+function roundCash(n: number, currencyCode: string | null): number {
+  return currencyCode === null ? round2(n) : roundToCurrency(n, currencyCode);
+}
+
 export class RegisterSessionRepository {
+  constructor(private readonly currencies: Pick<BusinessDeclaredCurrencyReader, 'getCurrent'> = new BusinessDeclaredCurrencyReader()) {}
+
+  /**
+   * Opening a register records the business's DECLARED currency on the session (Business Administration, migration 0185). An undeclared or
+   * unsupported currency fails closed; the opening cash must be exact in that currency (no hidden rounding).
+   */
   async open(ctx: TenantContext, input: OpenRegisterSessionInput): Promise<RegisterSession> {
+    const state = await this.currencies.getCurrent(ctx, input.businessId);
+    if (state.status !== 'DECLARED') {
+      throw new ConflictError('RegisterSession', `business ${input.businessId} has no declared currency; declare one before opening a register`);
+    }
+    const currencyCode = state.current.currency;
+    if (minorUnitsOf(currencyCode) === null) throw new UnsupportedCurrencyError(currencyCode);
+    if (roundToCurrency(input.openingCash, currencyCode) !== input.openingCash) {
+      throw new RegisterAmountError(`opening cash has more decimal places than ${currencyCode} allows (${minorUnitsOf(currencyCode)})`);
+    }
     return withTenantTransaction(ctx, async (client) => {
       const existing = await client.query(
         `SELECT id FROM business_operations.register_sessions WHERE business_id = $1 AND status = 'open'`,
@@ -84,13 +117,13 @@ export class RegisterSessionRepository {
       }
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO business_operations.register_sessions
-           (tenant_id, workspace_id, business_id, register_name, opened_by, opening_cash, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+           (tenant_id, workspace_id, business_id, register_name, opened_by, opening_cash, notes, currency_code)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          RETURNING *`,
         [
           ctx.tenantId, ctx.workspaceId, input.businessId,
           input.registerName ?? 'Main Register', input.openedBy ?? null,
-          input.openingCash, input.notes ?? null,
+          input.openingCash, input.notes ?? null, currencyCode,
         ]
       );
       return rowToSession(result.rows[0]);
@@ -125,9 +158,12 @@ export class RegisterSessionRepository {
          WHERE business_id = $1 AND event_type = 'sale' AND occurred_at >= $2`,
         [session.businessId, session.openedAt]
       );
-      const salesTotal = round2(Number(salesDuring.rows[0]?.total ?? 0));
-      const expectedCash = round2(session.openingCash + salesTotal);
-      const variance = round2(input.closingCash - expectedCash);
+      if (session.currencyCode !== null && roundToCurrency(input.closingCash, session.currencyCode) !== input.closingCash) {
+        throw new RegisterAmountError(`closing cash has more decimal places than ${session.currencyCode} allows`);
+      }
+      const salesTotal = roundCash(Number(salesDuring.rows[0]?.total ?? 0), session.currencyCode);
+      const expectedCash = roundCash(session.openingCash + salesTotal, session.currencyCode);
+      const variance = roundCash(input.closingCash - expectedCash, session.currencyCode);
 
       const result = await client.query<Record<string, unknown>>(
         `UPDATE business_operations.register_sessions SET
@@ -158,4 +194,39 @@ export class RegisterSessionRepository {
       return result.rows.map(rowToSession);
     });
   }
+
+  /**
+   * Orders taken in a session (POS-4). Totals are the SUM of completed orders linked to the session, in the session's currency. They are
+   * not split by tender type: that, and the cash reconciliation built on it, comes with payment capture (POS-5).
+   */
+  async summary(ctx: TenantContext, businessId: string, sessionId: string): Promise<RegisterSessionSummary> {
+    return withTenantTransaction(ctx, async (client) => {
+      const found = await client.query<Record<string, unknown>>(`SELECT * FROM business_operations.register_sessions WHERE id = $1 AND business_id = $2`, [sessionId, businessId]);
+      if (found.rows.length === 0) throw new NotFoundError('RegisterSession', sessionId);
+      const session = rowToSession(found.rows[0]);
+      const counts = await client.query<Record<string, unknown>>(
+        `SELECT operational_status AS status, count(*)::int AS n, COALESCE(SUM(total_amount), 0) AS total
+           FROM platform.orders WHERE register_session_id = $1 GROUP BY operational_status`,
+        [sessionId]
+      );
+      const byStatus = new Map(counts.rows.map((r) => [r.status as string, { n: Number(r.n), total: Number(r.total) }]));
+      const n = (status: string): number => byStatus.get(status)?.n ?? 0;
+      return {
+        session,
+        ordersPlanned: n('planned'),
+        ordersCompleted: n('completed'),
+        ordersVoided: n('failed'),
+        completedSalesTotal: roundCash(byStatus.get('completed')?.total ?? 0, session.currencyCode),
+      };
+    });
+  }
+}
+
+export interface RegisterSessionSummary {
+  session: RegisterSession;
+  ordersPlanned: number;
+  ordersCompleted: number;
+  ordersVoided: number;
+  /** Sum of completed orders linked to the session (all tender types together). */
+  completedSalesTotal: number;
 }

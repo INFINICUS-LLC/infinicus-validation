@@ -12,6 +12,7 @@ export const sessionIdParamsSchema = z.object({
 const registerSessionSchema = z.object({
   id: z.string().uuid(),
   registerName: z.string(),
+  currencyCode: z.string().regex(/^[A-Z]{3}$/).nullable(),
   status: z.enum(['open', 'closed']),
   openedBy: z.string().nullable(),
   closedBy: z.string().nullable(),
@@ -49,4 +50,12 @@ export const listRegisterSessionsResponseSchema = z.object({
 
 export const openRegisterSessionResponseSchema = z.object({
   session: registerSessionSchema.nullable(),
+});
+
+export const registerSessionSummaryResponseSchema = z.object({
+  session: registerSessionSchema,
+  ordersPlanned: z.number().int(),
+  ordersCompleted: z.number().int(),
+  ordersVoided: z.number().int(),
+  completedSalesTotal: z.number(),
 });

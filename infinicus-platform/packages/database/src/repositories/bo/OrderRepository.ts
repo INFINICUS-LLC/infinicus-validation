@@ -44,6 +44,8 @@ export interface Order {
   orderNumber: string;
   orderDate: Date;
   currencyCode: string;
+  /** The register session the order was taken in; null for orders taken before register linking (migration 0202). */
+  registerSessionId: string | null;
   totalAmount: number;
   operationalStatus: OrderOperationalStatus;
   createdAt: Date;
@@ -77,6 +79,7 @@ function rowToOrder(row: Record<string, unknown>, lineItems: OrderLineItem[]): O
     orderNumber: row.order_number as string,
     orderDate: row.order_date as Date,
     currencyCode: row.currency_code as string,
+    registerSessionId: (row.register_session_id as string | null) ?? null,
     totalAmount: parseFloat(String(row.total_amount)),
     operationalStatus: row.operational_status as OrderOperationalStatus,
     createdAt: row.created_at as Date,
@@ -114,12 +117,24 @@ export class OrderRepository {
     const currencyCode = state.current.currency;
     if (minorUnitsOf(currencyCode) === null) throw new UnsupportedCurrencyError(currencyCode);   // fail closed: an unknown exponent would mis-state money
     return withTenantTransaction(ctx, async (client) => {
+      // POS-4: an order is taken in the business's open register session. FOR SHARE keeps the session from being closed under us until this
+      // transaction ends. No open register, or a register whose currency is not the declared one (opened earlier, or before 0202), fails closed.
+      const open = await client.query<Record<string, unknown>>(
+        `SELECT id, currency_code FROM business_operations.register_sessions WHERE business_id = $1 AND status = 'open' FOR SHARE`,
+        [input.businessId]
+      );
+      if (open.rows.length === 0) {
+        throw new ConflictError('Order', `no register session is open for business ${input.businessId}; open the register first`);
+      }
+      if (open.rows[0].currency_code !== currencyCode) {
+        throw new ConflictError('Order', `the open register session is not in the business's declared currency ${currencyCode}; close it and open a new one`);
+      }
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO platform.orders
-           (tenant_id, workspace_id, business_id, customer_id, order_number, order_date, currency_code, operational_status, correlation_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,CURRENT_DATE,$6,'planned',$7,$8)
+           (tenant_id, workspace_id, business_id, customer_id, order_number, order_date, currency_code, register_session_id, operational_status, correlation_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,CURRENT_DATE,$6,$7,'planned',$8,$9)
          RETURNING *`,
-        [ctx.tenantId, ctx.workspaceId, input.businessId, input.customerId ?? null, generateOrderNumber(), currencyCode, randomUUID(), ctx.userId]
+        [ctx.tenantId, ctx.workspaceId, input.businessId, input.customerId ?? null, generateOrderNumber(), currencyCode, open.rows[0].id, randomUUID(), ctx.userId]
       );
       return rowToOrder(result.rows[0], []);
     });
@@ -229,6 +244,18 @@ export class OrderRepository {
       const lineItems = await this.loadLineItems(client, orderId);
       if (lineItems.length === 0) {
         throw new ConflictError('Order', `order ${orderId} has no line items to complete`);
+      }
+      // POS-4: a sale is recorded only into a register session that is still open. An order taken before register linking (no session) cannot be
+      // completed: void it and start a new one. FOR SHARE keeps the session from being closed while this transaction completes the sale.
+      if (order.register_session_id === null || order.register_session_id === undefined) {
+        throw new ConflictError('Order', `order ${orderId} was taken before register linking; void it and start a new order`);
+      }
+      const session = await client.query<Record<string, unknown>>(
+        `SELECT status FROM business_operations.register_sessions WHERE id = $1 FOR SHARE`,
+        [order.register_session_id]
+      );
+      if (session.rows.length === 0 || session.rows[0].status !== 'open') {
+        throw new ConflictError('Order', `the register session of order ${orderId} is closed; the sale cannot be recorded into it`);
       }
       await client.query(
         `UPDATE platform.orders SET operational_status = 'completed', version = version + 1 WHERE id = $1`,
