@@ -1,0 +1,43 @@
+# Phase W execution record: migrations 0199-0201 released to production
+
+| Item | Value |
+|---|---|
+| Date | Monday 19 October 2026, 13:56-15:58 UTC (16:56-18:58 Kuwait) |
+| Operator | the owner, alone, on the laptop; Claude guided one command at a time and read the output. Claude had no production access. |
+| Release SHA | `ba02d163a1b574c79844311b8737c73939a2c3dc` (CI run 437 green on that commit) |
+| Result | **VERIFIED COMPLETE.** Production is at ledger 201; the new API runs the release commit. |
+| Evidence | `OWNER-RUN-OUTPUT` pasted into the working session; values below are quoted from it, no secret or row data. |
+
+## Timeline and results
+| Step | UTC | Result |
+|---|---|---|
+| Pre-flight | 13:57 | Running image `4fba8110ac9c…`; `infinicus-api:rollback-pre-0199` and `candidate-20261014` = `4fba8110ac9c…`; `oci-api:latest` and `oci-tools:latest` = `f55bbfa6e73a…c286`; memory available 627 MB. Backup `--check`: first run failed (see Findings), then `CHECK PASSED`, 15/15. |
+| W0 | 13:59 | Fingerprint `7fd4c419d738de8a` = `MATCHES_REPOSITORY_0198_PG16`; counts equal `production-pre-0199.profile`: ledger 198, tenants 16, users 6, businesses 16, outbox 59 (48 + 11), six tables empty. |
+| W1 | ~14:03 | Audit v2 (`f-na05-2-om-integrity-audit-v2.sql`, sha256 `75c9d08d…456d`): read-only session, `infinicus`, PG 16.15, head 0198; every C check 0 (C12b 0); K05 empty. |
+| W3 | ~14:07 | `docker compose -p oci stop api`: API stopped; Postgres healthy. |
+| W4 | 14:08 | `BACKUP COMPLETE`, key prefix `infinicus-production/2026-10-19/20261019T140816Z-pre-0199-window`, ledger 198, head `0198_…`, fingerprint `7fd4c419d738de8a`, `db.dump.gpg` 4,710,564 bytes and `roles.sql.gpg` 1,534 bytes both read back (`verified`). W4b (laptop copy) skipped by decision (test data). |
+| W5 | ~15:48 | Migration gate from the release image: `apply`/`done` for 0199, 0200, 0201; `Migration gate passed.` |
+| W6 | ~15:50 | `grant-app-role.sh` from a `postgres:16` container (image pulled on the day): 19 schemas granted; final line `Withheld direct writes of activation rows and protected reorder columns from app_role.` |
+| W7 | ~15:55 | Fingerprint `61ef99d74289c3b3` = `MATCHES_REPOSITORY_0201_PG16`; ledger 201, head `0201_enforce_om_monitored_action_child_scope_integrity.sql`; `tenancy.list_active_memberships(uuid)`: security definer, stable, `search_path=pg_catalog, pg_temp`, owner `admin_role`, no EXECUTE for PUBLIC, EXECUTE for `app_role`; `app_role` and PUBLIC hold no privilege on `_migrations`; counts unchanged (16, 6, 16, 59); audit v2 all C checks 0; K05 two rows, both validated. |
+| W8 | ~15:57 | `up -d --no-deps api` (API only): `/v1/health` 200 with version `ba02d163a1b574c79844311b8737c73939a2c3dc` (was `unknown`); `/v1/ready` 200; unauthenticated `GET /v1/auth/memberships` 401. |
+| W9 | ~15:58 | `smoke-test.sh` against `https://api.infini-cus.com` with `EXPECTED_BUILD_SHA`: health 200, ready 200, `/documentation/json` 200, build matches; exit 0. |
+
+API downtime: about 1 h 50 min (14:07 to about 15:58). Roughly 1 h 30 min of it was an SSH disconnect between W4 and W5; the database was untouched during that time.
+
+## Findings (none blocked the release)
+1. **W4 command needed `COMPOSE_DIR`.** The first `--check` from the home folder failed 6 of 15 checks (database not reachable, versions unreadable): the script reaches Postgres through `docker compose exec` from `COMPOSE_DIR`, which defaults to the current directory. With `COMPOSE_DIR` set to the live compose folder it passed. Nothing was written by either run. The plan (§3, §3b) is corrected in this change.
+2. **SSH variables are lost on reconnect** (`OCI`, `REL`, `C`). Twice a step was pasted with empty variables and failed harmlessly on missing paths. For a future window, every command should define its own variables.
+3. **Verification query typing slip.** The first W7 query failed (`text || "char"`: `provolatile` needs a cast) and was re-run with casts. The W7 grep also counted the legitimate population counts C01/C01c as non-zero; excluded on the re-check.
+4. **`postgres:16` was pulled on the day** for the grants step (it was not on the VM).
+5. **The API image has no `wget`**; health and readiness were read with Node `fetch`.
+6. The VM reports **"System restart required"** and 13 pending updates (1 ESM). No reboot was done in the window.
+
+## Safety net still in place
+- Rollback image `infinicus-api:rollback-pre-0199` (`4fba8110ac9c…`); the old API works on the migrated database (rehearsal R8(b)).
+- Pre-window backup `…/20261019T140816Z-pre-0199-window` (restore proof pending, see below).
+- Logical rollback of 0199-0201 (Phase R design, Appendix C) rehearsed in R10.
+
+## Follow-ups
+- **Restore proof of the new backup** on the drill laptop (Phase R procedure, profile `production-pre-0199.profile`): not yet run. Until then the backup is verified (checksums, read-back) but not proven recoverable.
+- Plan a reboot window for the pending kernel and security updates.
+- POS-4/5 migrations (0202-0206) are in draft pull requests only and are NOT applied; they need their own window, authorization, fresh backup and the migration gate.
