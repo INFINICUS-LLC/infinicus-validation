@@ -5,6 +5,7 @@ import { withTenantTransaction } from '../../client.js';
 import { NotFoundError, ConflictError } from './errors.js';
 import { BusinessDeclaredCurrencyReader } from '../onboarding/index.js';
 import { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from '../../currency/minorUnits.js';
+import { planPayments, type PaymentInput, type TenderMethod } from './tender.js';
 
 export type OrderOperationalStatus = 'planned' | 'authorized' | 'executed' | 'completed' | 'failed' | 'reversed';
 
@@ -37,6 +38,18 @@ export interface OrderLineItem {
   lineTotal: number;
 }
 
+export interface OrderPayment {
+  id: string;
+  position: number;
+  method: TenderMethod;
+  currencyCode: string;
+  amountTendered: number;
+  amountApplied: number;
+  changeGiven: number;
+  reference: string | null;
+  createdAt: Date;
+}
+
 export interface Order {
   id: string;
   businessId: string;
@@ -51,6 +64,10 @@ export interface Order {
   createdAt: Date;
   updatedAt: Date;
   lineItems: OrderLineItem[];
+  /** The tender taken when the order was completed (empty until then). */
+  payments: OrderPayment[];
+  /** Change to hand back: the sum of the cash change of the payments (0 until completed). */
+  changeDue: number;
 }
 
 /** Quantities (not money) keep two decimals. Money is rounded to the order's currency with roundToCurrency (KWD 3, USD 2, JPY 0). */
@@ -71,7 +88,21 @@ function rowToLineItem(row: Record<string, unknown>): OrderLineItem {
   };
 }
 
-function rowToOrder(row: Record<string, unknown>, lineItems: OrderLineItem[]): Order {
+function rowToPayment(row: Record<string, unknown>): OrderPayment {
+  return {
+    id: row.id as string,
+    position: row.position as number,
+    method: row.method as TenderMethod,
+    currencyCode: row.currency_code as string,
+    amountTendered: parseFloat(String(row.amount_tendered)),
+    amountApplied: parseFloat(String(row.amount_applied)),
+    changeGiven: parseFloat(String(row.change_given)),
+    reference: (row.reference as string | null) ?? null,
+    createdAt: row.created_at as Date,
+  };
+}
+
+function rowToOrder(row: Record<string, unknown>, lineItems: OrderLineItem[], payments: OrderPayment[] = []): Order {
   return {
     id: row.id as string,
     businessId: row.business_id as string,
@@ -85,6 +116,8 @@ function rowToOrder(row: Record<string, unknown>, lineItems: OrderLineItem[]): O
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
     lineItems,
+    payments,
+    changeDue: payments.reduce((sum, p) => sum + p.changeGiven, 0),
   };
 }
 
@@ -148,6 +181,14 @@ export class OrderRepository {
     return result.rows.map(rowToLineItem);
   }
 
+  private async loadPayments(client: PoolClient, orderId: string): Promise<OrderPayment[]> {
+    const result = await client.query<Record<string, unknown>>(
+      `SELECT * FROM business_operations.order_payments WHERE order_id = $1 ORDER BY position`,
+      [orderId]
+    );
+    return result.rows.map(rowToPayment);
+  }
+
   private async loadOrderRow(client: PoolClient, orderId: string): Promise<Record<string, unknown>> {
     const result = await client.query<Record<string, unknown>>(`SELECT * FROM platform.orders WHERE id = $1`, [orderId]);
     if (result.rows.length === 0) throw new NotFoundError('Order', orderId);
@@ -158,7 +199,8 @@ export class OrderRepository {
     return withTenantTransaction(ctx, async (client) => {
       const row = await this.loadOrderRow(client, orderId);
       const lineItems = await this.loadLineItems(client, orderId);
-      return rowToOrder(row, lineItems);
+      const payments = await this.loadPayments(client, orderId);
+      return rowToOrder(row, lineItems, payments);
     });
   }
 
@@ -235,9 +277,17 @@ export class OrderRepository {
     );
   }
 
-  async complete(ctx: TenantContext, orderId: string, businessId: string): Promise<Order> {
+  /**
+   * Complete an order and record its tender in ONE transaction (POS-5). `payments` are what the cashier entered; the rows stored (applied amount,
+   * change) are computed here, exactly, in the order's currency. The database independently refuses an order whose applied payments do not equal
+   * its total (migration 0206). An order with a non-zero total cannot be completed without payment.
+   */
+  async complete(ctx: TenantContext, orderId: string, businessId: string, payments: readonly PaymentInput[] = []): Promise<Order> {
     return withTenantTransaction(ctx, async (client) => {
-      const order = await this.loadOrderRow(client, orderId);
+      // The order row is locked so two completions of the same order serialise; the second then sees it completed and is refused.
+      const locked = await client.query<Record<string, unknown>>(`SELECT * FROM platform.orders WHERE id = $1 FOR UPDATE`, [orderId]);
+      if (locked.rows.length === 0) throw new NotFoundError('Order', orderId);
+      const order = locked.rows[0];
       if (order.operational_status !== 'planned') {
         throw new ConflictError('Order', `order ${orderId} cannot be completed (status: ${order.operational_status})`);
       }
@@ -257,10 +307,21 @@ export class OrderRepository {
       if (session.rows.length === 0 || session.rows[0].status !== 'open') {
         throw new ConflictError('Order', `the register session of order ${orderId} is closed; the sale cannot be recorded into it`);
       }
+      const planned = planPayments(Number(order.total_amount), order.currency_code as string, payments);
       await client.query(
         `UPDATE platform.orders SET operational_status = 'completed', version = version + 1 WHERE id = $1`,
         [orderId]
       );
+      for (const p of planned) {
+        await client.query(
+          `INSERT INTO business_operations.order_payments
+             (tenant_id, workspace_id, business_id, order_id, register_session_id, position, method, currency_code,
+              amount_tendered, amount_applied, change_given, reference, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [ctx.tenantId, ctx.workspaceId, businessId, orderId, order.register_session_id, p.position, p.method, p.currencyCode,
+           p.amountTendered, p.amountApplied, p.changeGiven, p.reference, ctx.userId]
+        );
+      }
       await client.query(
         `INSERT INTO business_operations.order_events
            (tenant_id, workspace_id, business_id, order_id, event_type, previous_status, new_status, correlation_id)
@@ -279,7 +340,8 @@ export class OrderRepository {
         ]
       );
       const row = await this.loadOrderRow(client, orderId);
-      return rowToOrder(row, lineItems);
+      const stored = await this.loadPayments(client, orderId);
+      return rowToOrder(row, lineItems, stored);
     });
   }
 
