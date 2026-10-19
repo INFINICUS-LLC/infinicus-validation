@@ -58,4 +58,6 @@ export const registerSessionSummaryResponseSchema = z.object({
   ordersCompleted: z.number().int(),
   ordersVoided: z.number().int(),
   completedSalesTotal: z.number(),
+  tenders: z.object({ cash: z.number(), card: z.number(), other: z.number() }),
+  expectedCash: z.number(),
 });

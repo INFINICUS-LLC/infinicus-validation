@@ -13,6 +13,7 @@ import { CounterCatalogue } from './counter-view';
 import { OrderPanelView, useOrderSession } from './order-panel';
 import { RegisterPanelView, useRegister } from './register-panel';
 import { parseCashAmount } from '../../../../../lib/client/register';
+import { buildTender, type TenderEntry } from '../../../../../lib/client/tender';
 
 const idSchema = z.string().uuid();
 
@@ -30,6 +31,7 @@ export default function CounterPage() {
   useEffect(() => { if (register) void register.load(); }, [register]);
   const [ask, setAsk] = useState<{ kind: 'complete' | 'void'; orderId: string } | null>(null);
   const [voidReason, setVoidReason] = useState('');
+  const [tender, setTender] = useState<TenderEntry>({ method: 'cash', amountText: '', reference: '' });
 
   if (!scope) return <StateNotice state={state} />;
   if (!businessId) return <div className="card"><p className="notice danger" role="alert">That business address is not valid.</p><p><a href="/businesses">&larr; All businesses</a></p></div>;
@@ -40,8 +42,16 @@ export default function CounterPage() {
   const confirm = ask && ask.orderId === orderState.order?.id ? ask.kind : null;
   const onConfirm = () => {
     if (!session || !confirm) return;
-    const run = confirm === 'complete' ? () => session.complete() : () => session.voidOrder(voidReason);
-    void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); setAsk(null); setVoidReason(''); } });
+    let run: () => Promise<boolean>;
+    if (confirm === 'complete') {
+      const order = orderState.order;
+      const check = order ? buildTender(tender, order.totalAmount, order.currencyCode) : null;
+      if (!check || !check.ok) return;
+      run = () => session.complete([check.payment]);
+    } else {
+      run = () => session.voidOrder(voidReason);
+    }
+    void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); setAsk(null); setVoidReason(''); setTender({ method: 'cash', amountText: '', reference: '' }); } });
   };
   const orderPanel = (
     <OrderPanelView
@@ -54,10 +64,13 @@ export default function CounterPage() {
       onOpen={(orderId) => session && act(() => session.open(orderId))}
       confirm={confirm}
       voidReason={voidReason}
-      onAsk={(kind) => { if (orderState.order) { setVoidReason(''); setAsk({ kind, orderId: orderState.order.id }); } }}
+      onAsk={(kind) => { if (orderState.order) { setVoidReason(''); setTender({ method: 'cash', amountText: '', reference: '' }); setAsk({ kind, orderId: orderState.order.id }); } }}
       onCancelAsk={() => { setAsk(null); setVoidReason(''); }}
       onConfirm={onConfirm}
       onReasonChange={setVoidReason}
+      tender={tender}
+      tenderCheck={orderState.order ? buildTender(tender, orderState.order.totalAmount, orderState.order.currencyCode) : null}
+      onTenderChange={setTender}
       registerOpen={registerState.loaded ? registerState.session !== null : undefined}
     />
   );

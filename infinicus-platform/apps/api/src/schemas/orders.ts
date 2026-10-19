@@ -26,6 +26,18 @@ const orderLineItemSchema = z.object({
   lineTotal: z.number(),
 });
 
+const orderPaymentSchema = z.object({
+  id: z.string().uuid(),
+  position: z.number().int(),
+  method: z.enum(['cash', 'card', 'other']),
+  currencyCode: z.string().regex(/^[A-Z]{3}$/),
+  amountTendered: z.number(),
+  amountApplied: z.number(),
+  changeGiven: z.number(),
+  reference: z.string().nullable(),
+  createdAt: z.coerce.date(),
+});
+
 const orderSchema = z.object({
   id: z.string().uuid(),
   businessId: z.string().uuid(),
@@ -39,6 +51,8 @@ const orderSchema = z.object({
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
   lineItems: z.array(orderLineItemSchema),
+  payments: z.array(orderPaymentSchema),
+  changeDue: z.number(),
 });
 
 export const createOrderBodySchema = z.object({
@@ -52,6 +66,15 @@ export const addLineItemBodySchema = z.object({
   productId: z.string().uuid().optional(),
   itemType: z.enum(['product', 'service', 'fee', 'discount', 'other']).optional(),
 });
+
+/** Tender for completing an order. Unknown keys are refused (strict): the body carries no currency, no applied amount and no change; the server computes those. */
+export const completeOrderBodySchema = z.object({
+  payments: z.array(z.object({
+    method: z.enum(['cash', 'card', 'other']),
+    amountTendered: z.number().positive(),
+    reference: z.string().max(64).nullable().optional(),
+  }).strict()).max(10).optional().default([]),
+}).strict();
 
 export const voidOrderBodySchema = z.object({
   reason: z.string().max(500).optional(),
