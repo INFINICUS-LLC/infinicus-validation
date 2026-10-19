@@ -66,7 +66,9 @@ const openRegister = (s: Session, openingCash = 0) => app.inject({ method: 'POST
 const closeRegister = (s: Session, sessionId: string, closingCash = 0) => app.inject({ method: 'POST', url: `${sessionsUrl(s.bizId)}/${sessionId}/close`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { closingCash } });
 const createOrder = (s: Session) => app.inject({ method: 'POST', url: ordersUrl(s.bizId), headers: hdr(s, { 'idempotency-key': uc('key') }), payload: {} });
 const addLine = (s: Session, orderId: string, unitPrice: number) => app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/line-items`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { description: 'Item', quantity: 1, unitPrice } });
-const complete = (s: Session, orderId: string) => app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/complete`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: {} });
+const complete = (s: Session, orderId: string, payments: unknown[]) => app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/complete`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { payments } });
+const cash = (amountTendered: number) => ({ method: 'cash', amountTendered });
+const card = (amountTendered: number) => ({ method: 'card', amountTendered });
 const voidOrder = (s: Session, orderId: string) => app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/void`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: {} });
 const summary = (s: Session, sessionId: string, bizId = s.bizId) => app.inject({ method: 'GET', url: `${sessionsUrl(bizId)}/${sessionId}/summary`, headers: hdr(s) });
 const orderCount = async (bizId: string) => Number((await adminPool.query(`SELECT count(*)::int AS n FROM platform.orders WHERE business_id = $1`, [bizId])).rows[0].n);
@@ -126,7 +128,7 @@ describe.runIf(run)('POS-4 register link - live PostgreSQL + Fastify', () => {
     const order = (await createOrder(s)).json();
     await addLine(s, order.id, 4.5);
     expect((await closeRegister(s, session.id)).statusCode).toBe(200);
-    expect((await complete(s, order.id)).statusCode).toBe(409);
+    expect((await complete(s, order.id, [cash(4.5)])).statusCode).toBe(409);
     expect(await saleEvents(s.bizId)).toBe(0);
     expect((await voidOrder(s, order.id)).statusCode).toBe(200);
   });
@@ -137,7 +139,7 @@ describe.runIf(run)('POS-4 register link - live PostgreSQL + Fastify', () => {
     const legacy = randomUUID();
     await adminPool.query(`INSERT INTO platform.orders (id, tenant_id, workspace_id, business_id, order_number, order_date, currency_code, operational_status) VALUES ($1,$2,$3,$4,$5,CURRENT_DATE,'USD','planned')`, [legacy, s.ctx.tenantId, s.ctx.workspaceId, s.bizId, `LEG-${legacy.slice(0, 8)}`]);
     await addLine(s, legacy, 2);
-    expect((await complete(s, legacy)).statusCode).toBe(409);
+    expect((await complete(s, legacy, [cash(2)])).statusCode).toBe(409);
     expect(await saleEvents(s.bizId)).toBe(0);
     expect((await voidOrder(s, legacy)).statusCode).toBe(200);
   });
@@ -155,13 +157,13 @@ describe.runIf(run)('POS-4 register link - live PostgreSQL + Fastify', () => {
     const s = await setup('owner');
     await declare(s, 'KWD');
     const session = (await openRegister(s)).json();
-    const o1 = (await createOrder(s)).json(); await addLine(s, o1.id, 1.125); expect((await complete(s, o1.id)).statusCode).toBe(200);
-    const o2 = (await createOrder(s)).json(); await addLine(s, o2.id, 0.5); expect((await complete(s, o2.id)).statusCode).toBe(200);
+    const o1 = (await createOrder(s)).json(); await addLine(s, o1.id, 1.125); expect((await complete(s, o1.id, [cash(2)])).statusCode).toBe(200);
+    const o2 = (await createOrder(s)).json(); await addLine(s, o2.id, 0.5); expect((await complete(s, o2.id, [card(0.5)])).statusCode).toBe(200);
     const o3 = (await createOrder(s)).json(); await addLine(s, o3.id, 9); expect((await voidOrder(s, o3.id)).statusCode).toBe(200);
     (await createOrder(s)).json();                                              // left planned
     const r = await summary(s, session.id);
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toMatchObject({ ordersPlanned: 1, ordersCompleted: 2, ordersVoided: 1, completedSalesTotal: 1.625, session: { id: session.id, currencyCode: 'KWD' } });
+    expect(r.json()).toMatchObject({ ordersPlanned: 1, ordersCompleted: 2, ordersVoided: 1, completedSalesTotal: 1.625, tenders: { cash: 1.125, card: 0.5, other: 0 }, expectedCash: 1.125, session: { id: session.id, currencyCode: 'KWD' } });
   });
 
   it('the summary is business-scoped: another business\'s session id, or an unknown one, is 404; unauthenticated is 401', async () => {
