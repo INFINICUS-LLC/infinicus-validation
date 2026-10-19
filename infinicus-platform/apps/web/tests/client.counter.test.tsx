@@ -117,7 +117,7 @@ describe('counter page and catalogue (server-rendered output)', () => {
 });
 
 const line = (n: number, over: Partial<Order['lineItems'][number]> = {}): Order['lineItems'][number] => ({ id: id(100 + n), lineNumber: n, itemType: 'product', productId: id(n), description: `Item ${n}`, quantity: 1, unitPrice: n, lineTotal: n, ...over });
-const order = (over: Partial<Order> = {}): Order => ({ id: id(900), businessId: id(800), customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', currencyCode: 'USD', registerSessionId: null, totalAmount: 5.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [line(2, { description: 'Espresso', unitPrice: 3.5, lineTotal: 3.5 }), line(3, { description: 'Milk', unitPrice: 2, lineTotal: 2 })], ...over });
+const order = (over: Partial<Order> = {}): Order => ({ id: id(900), businessId: id(800), customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', currencyCode: 'USD', registerSessionId: null, payments: [], changeDue: 0, totalAmount: 5.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [line(2, { description: 'Espresso', unitPrice: 3.5, lineTotal: 3.5 }), line(3, { description: 'Milk', unitPrice: 2, lineTotal: 2 })], ...over });
 const noop = () => undefined;
 const panel = (over: Partial<OrderPanelProps> = {}) => html(ready, <OrderPanelView state={{ order: null, busy: false, message: null, retryable: false }} openOrders={[]} onStart={noop} onRemove={noop} onRetry={noop} onDiscard={noop} onOpen={noop} {...over} />);
 
@@ -265,6 +265,51 @@ describe('amounts use the currency decimal places (POS-1.6, server-rendered outp
     const out = html(ready, <CounterCatalogue products={[product(1, { name: 'Tea', price: 0.125 })]} />);
     expect(out).toContain('0.125');
     expect(out).not.toContain('0.13');
+  });
+});
+
+describe('tender step and the recorded sale (POS-5, server-rendered output)', () => {
+  const open = (over: Partial<OrderPanelProps> = {}, o: Partial<Order> = {}) =>
+    panel({ state: { order: order(o), busy: false, message: null, retryable: false }, ...over });
+  const cashOk = { ok: true as const, payment: { method: 'cash' as const, amountTendered: 10 }, changePreview: 4.5 };
+
+  it('the completion step shows the total, the three payment methods (the chosen one pressed) and a labelled optional slip field', () => {
+    const out = open({ confirm: 'complete', tender: { method: 'card', amountText: '', reference: '' }, tenderCheck: { ok: true, payment: { method: 'card', amountTendered: 5.5 }, changePreview: 0 } });
+    expect(out).toContain('Total to pay: <strong>USD 5.50</strong>');
+    expect(out).toContain('aria-label="Payment method"');
+    expect(out).toMatch(/aria-pressed="true"[^>]*>Card</);
+    expect(out).toMatch(/aria-pressed="false"[^>]*>Cash</);
+    expect(out).toContain('Slip number (optional, never a card number)');
+    expect(out).toContain('maxLength="64"');
+    expect(out).toContain('The customer pays exactly USD 5.50 by card.');
+    expect(out).not.toContain('Cash received');
+  });
+
+  it('cash asks for the amount received and shows the change as a preview; Confirm is off until the local check passes', () => {
+    const off = open({ confirm: 'complete', tender: { method: 'cash', amountText: '', reference: '' }, tenderCheck: { ok: false, reason: 'Enter the cash received as a number, for example 20 or 7.500.' } });
+    expect(off).toContain('Cash received');
+    expect(off).toMatch(/<button[^>]*disabled[^>]*>Confirm: complete sale/);
+    expect(off).not.toContain('role="alert"');                                   // nothing typed yet: no scolding
+    const on = open({ confirm: 'complete', tender: { method: 'cash', amountText: '10', reference: '' }, tenderCheck: cashOk });
+    expect(on).toContain('Change to give (preview): <strong>USD 4.50</strong>');
+    expect(on).not.toMatch(/<button[^>]*disabled[^>]*>Confirm: complete sale/);
+    const typo = open({ confirm: 'complete', tender: { method: 'cash', amountText: '4', reference: '' }, tenderCheck: { ok: false, reason: 'The cash received is less than the total.' } });
+    expect(typo).toContain('role="alert"');
+    expect(typo).toContain('The cash received is less than the total.');
+  });
+
+  it('after completion the panel shows each payment and the change to give, from the server', () => {
+    const done = open({}, {
+      operationalStatus: 'completed', changeDue: 4.5,
+      payments: [{ id: id(950), position: 1, method: 'cash', currencyCode: 'USD', amountTendered: 10, amountApplied: 5.5, changeGiven: 4.5, reference: 'SLIP-9', createdAt: 'x' }],
+    });
+    expect(done).toContain('Sale recorded: ORD-TEST, USD 5.50');
+    expect(done).toContain('aria-label="Payments"');
+    expect(done).toContain('Cash USD 5.50 (received USD 10.00), ref SLIP-9');
+    expect(done).toContain('Change to give: USD 4.50');
+    const card = open({}, { operationalStatus: 'completed', payments: [{ id: id(951), position: 1, method: 'card', currencyCode: 'USD', amountTendered: 5.5, amountApplied: 5.5, changeGiven: 0, reference: null, createdAt: 'x' }] });
+    expect(card).toContain('Card USD 5.50');
+    expect(card).not.toContain('Change to give');
   });
 });
 

@@ -87,6 +87,12 @@ export function RegisterPanelView(p: RegisterPanelProps) {
               {summary.ordersCompleted} completed, {summary.ordersPlanned} open, {summary.ordersVoided} voided. Sales {money(summary.completedSalesTotal, session.currencyCode)}
             </p>
           ) : null}
+          {summary ? (
+            <p role="status" aria-live="polite">
+              Taken: cash {money(summary.tenders.cash, session.currencyCode)}, card {money(summary.tenders.card, session.currencyCode)}, other {money(summary.tenders.other, session.currencyCode)}.
+              {' '}Cash that should be in the drawer: <strong>{money(summary.expectedCash, session.currencyCode)}</strong>
+            </p>
+          ) : null}
           {!p.confirmingClose ? (
             <p>
               <label htmlFor="register-cash">Counted cash</label>{' '}

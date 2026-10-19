@@ -40,3 +40,9 @@ export function formatMoney(value: number, currencyCode?: string | null): string
   const max = exponent ?? 4;
   return new Intl.NumberFormat('en', { minimumFractionDigits: min, maximumFractionDigits: max }).format(value);
 }
+
+/** An amount as a whole number of minor units (fils, cents, yen), or null for an unsupported currency. For exact comparisons; never for storing. */
+export function toMinorUnits(amount: number, currencyCode: string): number | null {
+  const exponent = minorUnitsOf(currencyCode);
+  return exponent === null ? null : Math.round(amount * 10 ** exponent);
+}
