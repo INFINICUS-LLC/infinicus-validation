@@ -152,16 +152,29 @@ export class RegisterSessionRepository {
         throw new ConflictError('RegisterSession', `session ${sessionId} is already closed`);
       }
 
-      const salesDuring = await client.query<Record<string, unknown>>(
-        `SELECT COALESCE(SUM(amount), 0) AS total
-         FROM business_operations.business_events
-         WHERE business_id = $1 AND event_type = 'sale' AND occurred_at >= $2`,
-        [session.businessId, session.openedAt]
-      );
+      // Expected cash. A session with a recorded currency (opened after 0202) is reconciled from the TENDER taken in it: opening cash plus the cash
+      // actually applied to orders (change already excluded); card and other payments are not cash. A session opened before 0202 has no tender
+      // records, so it keeps the old arithmetic (every sale of the business since it opened, counted as cash).
+      let salesTotal: number;
+      if (session.currencyCode !== null) {
+        const cash = await client.query<Record<string, unknown>>(
+          `SELECT COALESCE(SUM(amount_applied), 0) AS total FROM business_operations.order_payments WHERE register_session_id = $1 AND method = 'cash'`,
+          [sessionId]
+        );
+        salesTotal = Number(cash.rows[0]?.total ?? 0);
+      } else {
+        const salesDuring = await client.query<Record<string, unknown>>(
+          `SELECT COALESCE(SUM(amount), 0) AS total
+           FROM business_operations.business_events
+           WHERE business_id = $1 AND event_type = 'sale' AND occurred_at >= $2`,
+          [session.businessId, session.openedAt]
+        );
+        salesTotal = Number(salesDuring.rows[0]?.total ?? 0);
+      }
       if (session.currencyCode !== null && roundToCurrency(input.closingCash, session.currencyCode) !== input.closingCash) {
         throw new RegisterAmountError(`closing cash has more decimal places than ${session.currencyCode} allows`);
       }
-      const salesTotal = roundCash(Number(salesDuring.rows[0]?.total ?? 0), session.currencyCode);
+      salesTotal = roundCash(salesTotal, session.currencyCode);
       const expectedCash = roundCash(session.openingCash + salesTotal, session.currencyCode);
       const variance = roundCash(input.closingCash - expectedCash, session.currencyCode);
 
@@ -196,8 +209,7 @@ export class RegisterSessionRepository {
   }
 
   /**
-   * Orders taken in a session (POS-4). Totals are the SUM of completed orders linked to the session, in the session's currency. They are
-   * not split by tender type: that, and the cash reconciliation built on it, comes with payment capture (POS-5).
+   * Orders taken in a session (POS-4) and the tender taken against them (POS-5), in the session's currency.
    */
   async summary(ctx: TenantContext, businessId: string, sessionId: string): Promise<RegisterSessionSummary> {
     return withTenantTransaction(ctx, async (client) => {
@@ -209,6 +221,16 @@ export class RegisterSessionRepository {
            FROM platform.orders WHERE register_session_id = $1 GROUP BY operational_status`,
         [sessionId]
       );
+      const tender = await client.query<Record<string, unknown>>(
+        `SELECT method, COALESCE(SUM(amount_applied), 0) AS applied FROM business_operations.order_payments WHERE register_session_id = $1 GROUP BY method`,
+        [sessionId]
+      );
+      const applied = new Map(tender.rows.map((r) => [r.method as string, Number(r.applied)]));
+      const tenders = {
+        cash: roundCash(applied.get('cash') ?? 0, session.currencyCode),
+        card: roundCash(applied.get('card') ?? 0, session.currencyCode),
+        other: roundCash(applied.get('other') ?? 0, session.currencyCode),
+      };
       const byStatus = new Map(counts.rows.map((r) => [r.status as string, { n: Number(r.n), total: Number(r.total) }]));
       const n = (status: string): number => byStatus.get(status)?.n ?? 0;
       return {
@@ -217,6 +239,8 @@ export class RegisterSessionRepository {
         ordersCompleted: n('completed'),
         ordersVoided: n('failed'),
         completedSalesTotal: roundCash(byStatus.get('completed')?.total ?? 0, session.currencyCode),
+        tenders,
+        expectedCash: roundCash(session.openingCash + tenders.cash, session.currencyCode),
       };
     });
   }
@@ -229,4 +253,8 @@ export interface RegisterSessionSummary {
   ordersVoided: number;
   /** Sum of completed orders linked to the session (all tender types together). */
   completedSalesTotal: number;
+  /** Payments applied to orders in the session, by method (change already excluded). */
+  tenders: { cash: number; card: number; other: number };
+  /** Opening cash plus the cash applied so far: what the drawer should hold. */
+  expectedCash: number;
 }

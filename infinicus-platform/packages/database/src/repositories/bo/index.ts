@@ -34,7 +34,9 @@ export { RegisterSessionRepository, RegisterAmountError } from './RegisterSessio
 export type { RegisterSession, RegisterSessionSummary, OpenRegisterSessionInput, CloseRegisterSessionInput } from './RegisterSessionRepository.js';
 
 export { OrderRepository } from './OrderRepository.js';
-export type { Order, OrderLineItem, OrderOperationalStatus, CreateOrderInput, AddLineItemInput } from './OrderRepository.js';
+export type { Order, OrderLineItem, OrderPayment, OrderOperationalStatus, CreateOrderInput, AddLineItemInput } from './OrderRepository.js';
+export { planPayments, PaymentError, TENDER_METHODS, MAX_PAYMENTS_PER_ORDER, PAYMENT_REFERENCE_MAX } from './tender.js';
+export type { PaymentInput, PlannedPayment, TenderMethod } from './tender.js';
 
 export { AuthorizedActionIntakeRepository, MAX_RECEIPT_DOCUMENT_BYTES } from './AuthorizedActionIntakeRepository.js';
 export type {

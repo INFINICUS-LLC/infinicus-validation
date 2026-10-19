@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { BusinessRepository, OrderRepository } from '@infinicus/database';
 import {
   businessIdParamsSchema, orderIdParamsSchema, lineItemIdParamsSchema,
-  createOrderBodySchema, addLineItemBodySchema, voidOrderBodySchema,
+  createOrderBodySchema, addLineItemBodySchema, completeOrderBodySchema, voidOrderBodySchema,
   orderResponseSchema, listOrdersQuerySchema, listOrdersResponseSchema,
 } from '../schemas/orders.js';
 import { errorResponseSchema } from '../schemas/common.js';
@@ -103,11 +103,12 @@ export default async function ordersRoutes(app: FastifyInstance) {
   server.post('/v1/businesses/:businessId/orders/:orderId/complete', {
     schema: {
       tags: ['operations'],
-      summary: 'Complete an order — records the sale and locks the order for editing',
+      summary: 'Complete an order with its tender — records the sale and the payments and locks the order for editing',
       params: orderIdParamsSchema,
+      body: completeOrderBodySchema,
       response: {
         200: orderResponseSchema,
-        401: errorResponseSchema, 403: errorResponseSchema,
+        400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema,
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
@@ -115,7 +116,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
     await businesses.getById(request.ctx!, businessId);
-    const order = await orders.complete(request.ctx!, orderId, businessId);
+    const order = await orders.complete(request.ctx!, orderId, businessId, request.body.payments);
     return reply.status(200).send(order);
   });
 
