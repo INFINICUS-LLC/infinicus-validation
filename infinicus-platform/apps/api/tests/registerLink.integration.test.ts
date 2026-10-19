@@ -3,7 +3,6 @@
  * recorded only into a session that is still open; a session summary counts the orders taken in it.
  * Live PostgreSQL + real Fastify application (RLS enforced for the app role). Requires DATABASE_URL and ADMIN_DATABASE_URL, migrated through 0202.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any -- HTTP payloads are arbitrary JSON */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { Pool } from 'pg';

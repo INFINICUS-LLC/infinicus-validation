@@ -28,7 +28,9 @@ export const AMOUNT_REFUSED = 'That amount was not accepted. Check the digits an
 /** A cash amount typed by a person: digits with an optional decimal part (at most four digits: the currency decides the real limit on the server). */
 export function parseCashAmount(text: string): number | null {
   const t = text.trim();
-  if (!/^\d{1,12}(\.\d{1,4})?$/.test(t)) return null;
+  const [whole, fraction, ...rest] = t.split('.');
+  if (rest.length > 0 || !/^\d{1,12}$/.test(whole)) return null;
+  if (fraction !== undefined && !/^\d{1,4}$/.test(fraction)) return null;
   return Number(t);
 }
 
