@@ -222,3 +222,17 @@ button.danger {
 .product-button:disabled { opacity: 0.5; cursor: not-allowed; }
 .product-button:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
 .product-tile:has(.product-button) { padding: 0; }
+
+/* Receipt (POS-6a): readable on screen, and the only thing printed when the cashier prints it */
+.receipt { max-width: 22rem; font-variant-numeric: tabular-nums; }
+.receipt-lines { list-style: none; margin: 0 0 var(--space-3); padding: 0; }
+.receipt-row { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-1) 0; }
+.receipt-unit { color: var(--color-muted); font-size: 0.875rem; }
+.receipt-meta { color: var(--color-muted); }
+.receipt-actions button { min-height: 2.75rem; }
+@media print {
+  body * { visibility: hidden; }
+  .receipt, .receipt * { visibility: visible; }
+  .receipt { position: absolute; top: 0; left: 0; width: 100%; max-width: none; border: 0; box-shadow: none; background: #fff; color: #000; }
+  .receipt-actions { display: none; }
+}
