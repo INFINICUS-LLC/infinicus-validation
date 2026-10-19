@@ -151,13 +151,15 @@ PROFILE_SHA="$(sha256sum "$PROFILE" | cut -c1-16)"
 T_TOTAL="$(now)"
 
 fetch() { bash -c "${BACKUP_FETCH_CMD//%KEY%/$1}"; }
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/restore-proof.XXXXXX")"
-chmod 700 "$WORK"
-[[ "$(stat -c '%a %u' "$WORK")" == "700 $(id -u)" ]] || { rm -rf "$WORK"; fail "the temporary directory is not private to the caller" 2; }
+# The signal traps are installed BEFORE the temporary directory exists. If they were installed after it, a SIGTERM/INT/HUP arriving in that
+# window would hit bash's default action: the script would die at once (killed by the signal, not the documented exit code) and leave the
+# directory behind. Bash runs a trap only between commands, so a signal that arrives while the directory is being created is handled after the
+# assignment below, with WORK already set, and cleanup removes the directory.
+WORK=""
 SCRATCH_CREATED=0
 # best-effort removal of plaintext (shred is not reliable on journaled or SSD storage: run on an encrypted disk)
 wipe_work() {
-  [[ -d "$WORK" ]] || return 0
+  [[ -n "$WORK" && -d "$WORK" ]] || return 0
   if command -v shred >/dev/null 2>&1; then find "$WORK" -type f -exec shred -u {} + >/dev/null 2>&1 || true; fi
   rm -rf "$WORK"
 }
@@ -169,6 +171,10 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/restore-proof.XXXXXX")"
+chmod 700 "$WORK"
+[[ "$(stat -c '%a %u' "$WORK")" == "700 $(id -u)" ]] || { rm -rf "$WORK"; fail "the temporary directory is not private to the caller" 2; }
 
 # 1. manifest
 T_DL="$(now)"
