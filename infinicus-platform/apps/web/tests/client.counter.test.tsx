@@ -117,7 +117,7 @@ describe('counter page and catalogue (server-rendered output)', () => {
 });
 
 const line = (n: number, over: Partial<Order['lineItems'][number]> = {}): Order['lineItems'][number] => ({ id: id(100 + n), lineNumber: n, itemType: 'product', productId: id(n), description: `Item ${n}`, quantity: 1, unitPrice: n, lineTotal: n, ...over });
-const order = (over: Partial<Order> = {}): Order => ({ id: id(900), businessId: id(800), customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', currencyCode: 'KWD', totalAmount: 5.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [line(2, { description: 'Espresso', unitPrice: 3.5, lineTotal: 3.5 }), line(3, { description: 'Milk', unitPrice: 2, lineTotal: 2 })], ...over });
+const order = (over: Partial<Order> = {}): Order => ({ id: id(900), businessId: id(800), customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', currencyCode: 'USD', totalAmount: 5.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [line(2, { description: 'Espresso', unitPrice: 3.5, lineTotal: 3.5 }), line(3, { description: 'Milk', unitPrice: 2, lineTotal: 2 })], ...over });
 const noop = () => undefined;
 const panel = (over: Partial<OrderPanelProps> = {}) => html(ready, <OrderPanelView state={{ order: null, busy: false, message: null, retryable: false }} openOrders={[]} onStart={noop} onRemove={noop} onRetry={noop} onDiscard={noop} onOpen={noop} {...over} />);
 
@@ -137,7 +137,7 @@ describe('order panel and interactive catalogue (POS-2, server-rendered output)'
     expect(out).toContain('aria-label="Order lines"');
     expect(out).toContain('aria-label="Remove Espresso"');
     expect(out).toContain('aria-label="Remove Milk"');
-    expect(out).toContain('Total <strong>KWD 5.50</strong>');
+    expect(out).toContain('Total <strong>USD 5.50</strong>');
     expect(out).toContain('3.50');
     expect(out).toContain('role="status"');
   });
@@ -202,7 +202,7 @@ describe('complete and void on the order panel (POS-3, server-rendered output)',
   it('asking to complete shows a confirmation with the server total and currency, and hides the first-step buttons', () => {
     const out = open({ confirm: 'complete' });
     expect(out).toContain('aria-label="Confirm completing the sale"');
-    expect(out).toContain('KWD 5.50');
+    expect(out).toContain('USD 5.50');
     expect(out).toContain('Confirm: complete sale');
     expect(out).not.toContain('>Complete sale<');
   });
@@ -225,7 +225,7 @@ describe('complete and void on the order panel (POS-3, server-rendered output)',
 
   it('a completed order shows the recorded sale and no complete or void buttons; a voided order says no sale was recorded', () => {
     const done = open({}, { operationalStatus: 'completed' });
-    expect(done).toContain('Sale recorded: ORD-TEST, KWD 5.50');
+    expect(done).toContain('Sale recorded: ORD-TEST, USD 5.50');
     expect(done).not.toContain('Complete sale');
     expect(done).not.toContain('Void order');
     const voided = open({}, { operationalStatus: 'failed' });
@@ -239,3 +239,32 @@ describe('complete and void on the order panel (POS-3, server-rendered output)',
     expect(out).toMatch(/<button[^>]*disabled[^>]*>Void order/);
   });
 });
+
+describe('amounts use the currency decimal places (POS-1.6, server-rendered output)', () => {
+  it('formatAmount keeps the old two-decimal look without a currency and shows exactly the currency decimals with one', () => {
+    expect(formatAmount(3.5)).toBe('3.50');
+    expect(formatAmount(3.5, 'KWD')).toBe('3.500');
+    expect(formatAmount(300, 'JPY')).toBe('300');
+    expect(formatAmount(0.125)).toBe('0.125');     // a three-decimal price is never shown as 0.13
+  });
+
+  it('a KWD order panel shows lines and total with three decimals and the currency code', () => {
+    const kwd = order({ currencyCode: 'KWD', totalAmount: 0.5, lineItems: [line(1, { description: 'Tea', unitPrice: 0.125, quantity: 4, lineTotal: 0.5 })] });
+    const out = panel({ state: { order: kwd, busy: false, message: null, retryable: false }, openOrders: [order({ id: id(901), orderNumber: 'ORD-OTHER', currencyCode: 'KWD', totalAmount: 0.375 })] });
+    expect(out).toContain('0.500');
+    expect(out).toContain('Total <strong>KWD 0.500</strong>');
+    expect(out).toContain('KWD 0.375');
+  });
+
+  it('a JPY order panel shows whole units', () => {
+    const jpy = order({ currencyCode: 'JPY', totalAmount: 300, lineItems: [line(1, { description: 'Onigiri', unitPrice: 150, quantity: 2, lineTotal: 300 })] });
+    expect(panel({ state: { order: jpy, busy: false, message: null, retryable: false } })).toContain('Total <strong>JPY 300</strong>');
+  });
+
+  it('catalogue tiles do not round a three-decimal price up (the products API carries no currency)', () => {
+    const out = html(ready, <CounterCatalogue products={[product(1, { name: 'Tea', price: 0.125 })]} />);
+    expect(out).toContain('0.125');
+    expect(out).not.toContain('0.13');
+  });
+});
+
