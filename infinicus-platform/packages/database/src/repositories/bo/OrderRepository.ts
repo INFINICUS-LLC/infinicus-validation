@@ -4,6 +4,7 @@ import type { TenantContext } from '../../client.js';
 import { withTenantTransaction } from '../../client.js';
 import { NotFoundError, ConflictError } from './errors.js';
 import { BusinessDeclaredCurrencyReader } from '../onboarding/index.js';
+import { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from '../../currency/minorUnits.js';
 
 export type OrderOperationalStatus = 'planned' | 'authorized' | 'executed' | 'completed' | 'failed' | 'reversed';
 
@@ -50,7 +51,8 @@ export interface Order {
   lineItems: OrderLineItem[];
 }
 
-function round2(n: number): number {
+/** Quantities (not money) keep two decimals. Money is rounded to the order's currency with roundToCurrency (KWD 3, USD 2, JPY 0). */
+function roundQuantity(n: number): number {
   return Math.round((n || 0) * 100) / 100;
 }
 
@@ -110,6 +112,7 @@ export class OrderRepository {
       throw new ConflictError('Order', `business ${input.businessId} has no declared currency; declare one before creating orders`);
     }
     const currencyCode = state.current.currency;
+    if (minorUnitsOf(currencyCode) === null) throw new UnsupportedCurrencyError(currencyCode);   // fail closed: an unknown exponent would mis-state money
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO platform.orders
@@ -172,7 +175,7 @@ export class OrderRepository {
         [orderId]
       );
       const lineNumber = Number(nextLine.rows[0].next);
-      const lineTotal = round2(input.quantity * input.unitPrice);
+      const lineTotal = roundToCurrency(input.quantity * input.unitPrice, order.currency_code as string);
       await client.query(
         `INSERT INTO business_operations.order_line_items
            (tenant_id, workspace_id, business_id, order_id, line_number, item_type, product_id, description, quantity, unit_price, line_total)
@@ -237,7 +240,7 @@ export class OrderRepository {
          VALUES ($1,$2,$3,$4,'completed','planned','completed',$5)`,
         [ctx.tenantId, ctx.workspaceId, businessId, orderId, randomUUID()]
       );
-      const totalQuantity = round2(lineItems.reduce((sum, li) => sum + li.quantity, 0));
+      const totalQuantity = roundQuantity(lineItems.reduce((sum, li) => sum + li.quantity, 0));
       await client.query(
         `INSERT INTO business_operations.business_events
            (tenant_id, workspace_id, business_id, event_type, amount, quantity, customer_id, notes, correlation_id)

@@ -120,4 +120,37 @@ describe.runIf(run)('POS-1.5 order currency - live PostgreSQL + Fastify', () => 
     expect(r.json().currencyCode).toBe('KWD');
     expect(await storedCurrency(r.json().id)).toBe('KWD');
   });
+
+  const addLine = (s: Session, orderId: string, description: string, quantity: number, unitPrice: number) =>
+    app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/line-items`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { description, quantity, unitPrice } });
+
+  it('POS-1.6: a KWD order keeps three decimals (3 x 0.125 = 0.375, not 0.38) and the total is exact', async () => {
+    const s = await setup('owner');
+    await declare(s, 'KWD');
+    const order = (await createOrder(s)).json();
+    const r1 = await addLine(s, order.id, 'Tea', 3, 0.125);
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().lineItems[0].lineTotal).toBe(0.375);
+    const r2 = await addLine(s, order.id, 'Cake', 1, 0.1255);
+    expect(r2.json().lineItems[1].lineTotal).toBe(0.126);
+    expect(r2.json().totalAmount).toBeCloseTo(0.501, 6);
+  });
+
+  it('POS-1.6: USD rounds a line to cents and JPY to whole units, each by its own currency', async () => {
+    const usd = await setup('owner'); await declare(usd, 'USD');
+    const o1 = (await createOrder(usd)).json();
+    expect((await addLine(usd, o1.id, 'A', 1, 1.005)).json().lineItems[0].lineTotal).toBe(1.01);
+    const jpy = await setup('owner'); await declare(jpy, 'JPY');
+    const o2 = (await createOrder(jpy)).json();
+    expect((await addLine(jpy, o2.id, 'B', 1, 2.5)).json().lineItems[0].lineTotal).toBe(3);
+  });
+
+  it('POS-1.6: a declared currency this platform does not know fails closed with 409 and no order', async () => {
+    const s = await setup('owner');
+    expect((await declare(s, 'ZZZ')).statusCode).toBe(201);   // the declaration only checks the three-letter format
+    const r = await createOrder(s);
+    expect(r.statusCode).toBe(409);
+    expect(await orderCount(s.bizId)).toBe(0);
+  });
 });
+

@@ -548,3 +548,5 @@ export type {
   ReplayAuthorization,
   ReplayCandidate,
 } from './eventing/index.js';
+
+export { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from './currency/minorUnits.js';

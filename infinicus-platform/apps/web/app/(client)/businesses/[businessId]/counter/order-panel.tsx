@@ -47,7 +47,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
   const { order, busy, message, retryable } = state;
   const planned = order?.operationalStatus === 'planned';
   const locked = busy || retryable;
-  const money = (n: number): string => `${order?.currencyCode ?? ''} ${formatAmount(n)}`.trim();
+  const money = (n: number): string => `${order?.currencyCode ?? ''} ${formatAmount(n, order?.currencyCode)}`.trim();
   const resumable = openOrders.filter((o) => o.id !== order?.id);
   return (
     <section className="counter-order card" aria-labelledby="order-heading" aria-busy={busy}>
@@ -75,7 +75,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
               {order.lineItems.map((line) => (
                 <li key={line.id}>
                   <span>{line.quantity} &times; {line.description}</span>{' '}
-                  <span className="line-total">{formatAmount(line.lineTotal)}</span>{' '}
+                  <span className="line-total">{formatAmount(line.lineTotal, order.currencyCode)}</span>{' '}
                   <button type="button" className="secondary" aria-label={`Remove ${line.description}`} onClick={() => onRemove(line.id)} disabled={busy || retryable || order.operationalStatus !== 'planned'}>Remove</button>
                 </li>
               ))}
@@ -121,7 +121,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
           <ul className="open-orders" aria-label="Open orders">
             {resumable.map((o) => (
               <li key={o.id}>
-                <span>{o.orderNumber}</span> <span className="line-total">{o.currencyCode} {formatAmount(o.totalAmount)}</span>{' '}
+                <span>{o.orderNumber}</span> <span className="line-total">{o.currencyCode} {formatAmount(o.totalAmount, o.currencyCode)}</span>{' '}
                 <button type="button" className="secondary" aria-label={`Open ${o.orderNumber}`} onClick={() => onOpen(o.id)} disabled={busy || retryable}>Open</button>
               </li>
             ))}

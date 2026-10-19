@@ -2,6 +2,7 @@
  * Pure helpers for the counter (POS) catalogue. No hooks, no data access and no storage: the page fetches products through the /v1 API and
  * these functions only decide what to show. Prices are shown exactly as the server returned them; the counter never computes an order total.
  */
+import { formatMoney } from './currency';
 import type { Product } from './schemas';
 
 export const ALL_CATEGORIES = 'all';
@@ -21,7 +22,7 @@ export function filterProducts(products: readonly Product[], query: string, cate
   return products.filter((p) => (category === ALL_CATEGORIES || p.category === category) && (q === '' || p.name.toLowerCase().includes(q)));
 }
 
-/** Two-decimal amount without a currency symbol: the business currency is not part of the products API yet, so none is invented. */
-export function formatAmount(value: number): string {
-  return new Intl.NumberFormat('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+/** An amount without a currency symbol, with the decimal places of the currency when it is known (see currency.ts). */
+export function formatAmount(value: number, currencyCode?: string | null): string {
+  return formatMoney(value, currencyCode);
 }
