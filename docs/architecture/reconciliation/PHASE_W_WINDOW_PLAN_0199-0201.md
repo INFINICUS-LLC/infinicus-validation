@@ -7,6 +7,7 @@
 | Builds on | `PRODUCTION_RELEASE_SEQUENCE_0199-0201_DESIGN.md` (W0–W11, rollback table), `PHASE_R_REHEARSAL_DESIGN_0199-0201.md` (with its 2026-10-18 corrections), `P3_RELEASE_READINESS_REPORT_0199-0201.md` §3e–§3f |
 | Owner decisions accepted (2026-10-18, "go with your recommendations") | (1) release exactly the rehearsed commit; (2) one window, quiet weekday daytime, 90 minutes booked, second person reading along; (3) rollback image tagged before the window and a fresh verified backup right before the migration; (4) bucket protection understood and credentials treated as full access, ideally before the window; (5) private-key offline copy as a precondition |
 | Preconditions status (2026-10-19) | P1, P2, P4, P5 and P6 done (P5 confirmed by the owner on 2026-10-19: "I authorise"); P3 (window date, time, people) open; Phase W itself is not yet authorised |
+| Window booked (owner, 2026-10-19) | **Monday 19 October 2026, evening Kuwait time (UTC+3): the owner starts when home after 17:00 Kuwait time (14:00 UTC)**, about 90 minutes of work, on the laptop with the SSH key (not from a phone or from work). Earlier booking (Wednesday 21 October 19:00 Kuwait) superseded at the owner's request. The owner reports that all production accounts are the owner's own and the data is test data (6 users; consistent with the restored counts), so the impact of a failure is time, not customers; the extra laptop copy of the window backup (W4b) and the Object Lock bucket are therefore optional for now and become mandatory before real customer data. Operator: the owner, alone. This is an appointment only: the window runs only after the owner says "authorise Phase W" at the laptop |
 | Operators | the owner (or a named operator) on the VM as `deploy`, plus a second person reading along. Claude never operates on production; it can read pasted output and advise. |
 
 ## 1. What is released, and the evidence
@@ -68,6 +69,13 @@ $C up -d --no-deps api                                                # W8: the 
 `--no-deps` is used for the gate and the API start so that Compose does not recreate Postgres or Caddy because the release folder's bind-mount paths differ. The password is read from the existing `.env` by the shell and is never printed or copied. The grants step should be tried once on the day with output checked for the documented final line; if the `.env` password contains characters that break the URL, stop and decide (do not edit `.env` in the window).
 
 **Extra safety (W4b, added by decision P2):** after the W4 backup, copy that backup's three encrypted objects to the laptop through the VM (`rclone copy` to a private folder, `scp`, compare SHA-256 with the manifest, delete the VM temp copy), so a damaged bucket during the window does not lose the pre-migration backup.
+
+## 3b. Before the window starts (checks on the day, all read-only)
+1. GitHub CI on `ba02d163…` is still green and no newer commit is being released (read from GitHub).
+2. Production still matches: backup `--check` passes, the fingerprint hook still reports `MATCHES_REPOSITORY_0198_PG16`, audit v2 still all 0, the running image is still `4fba8110ac9c`, and `infinicus-api:rollback-pre-0199` and `oci-api:latest` (new image `f55bbfa6e73a…`) are still present.
+3. The key passphrases are at hand (OneNote) and the laptop is on a stable connection with the SSH key.
+4. Memory headroom on the VM is as before (about 600 MB available): no heavy work on the VM during the window.
+Any difference from this list stops the window before W0.
 
 ## 4. Rollback (decision table)
 | Situation | Action |
