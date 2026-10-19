@@ -48,11 +48,21 @@ export const orderLineItemSchema = z.object({
   quantity: z.number(), unitPrice: z.number(), lineTotal: z.number(),
 });
 export const orderSchema = z.object({
-  id: z.string().uuid(), businessId: z.string().uuid(), customerId: z.string().uuid().nullable(), orderNumber: z.string(), orderDate: z.string(), currencyCode: z.string().regex(/^[A-Z]{3}$/),
+  id: z.string().uuid(), businessId: z.string().uuid(), customerId: z.string().uuid().nullable(), orderNumber: z.string(), orderDate: z.string(), currencyCode: z.string().regex(/^[A-Z]{3}$/), registerSessionId: z.string().uuid().nullable(),
   totalAmount: z.number(), operationalStatus: z.enum(['planned', 'authorized', 'executed', 'completed', 'failed', 'reversed']),
   createdAt: z.string(), updatedAt: z.string(), lineItems: z.array(orderLineItemSchema),
 });
 export const orderListSchema = z.object({ orders: z.array(orderSchema) });
+
+export const registerSessionSchema = z.object({
+  id: z.string().uuid(), registerName: z.string(), currencyCode: z.string().regex(/^[A-Z]{3}$/).nullable(), status: z.enum(['open', 'closed']),
+  openingCash: z.number(), closingCash: z.number().nullable(), expectedCash: z.number().nullable(), variance: z.number().nullable(),
+  openedAt: z.string(), closedAt: z.string().nullable(),
+});
+export const openRegisterSchema = z.object({ session: registerSessionSchema.nullable() });
+export const registerSummarySchema = z.object({
+  session: registerSessionSchema, ordersPlanned: z.number(), ordersCompleted: z.number(), ordersVoided: z.number(), completedSalesTotal: z.number(),
+});
 
 export type BusinessList = z.infer<typeof businessListSchema>;
 export type WorkflowView = z.infer<typeof workflowViewSchema>;
@@ -62,3 +72,5 @@ export type ProductList = z.infer<typeof productListSchema>;
 export type OrderLineItem = z.infer<typeof orderLineItemSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type OrderList = z.infer<typeof orderListSchema>;
+export type RegisterSession = z.infer<typeof registerSessionSchema>;
+export type RegisterSummary = z.infer<typeof registerSummarySchema>;
