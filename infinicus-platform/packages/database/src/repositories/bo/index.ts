@@ -30,8 +30,8 @@ export type {
 export { ProductRepository } from './ProductRepository.js';
 export type { Product, CreateProductInput, UpdateProductInput } from './ProductRepository.js';
 
-export { RegisterSessionRepository } from './RegisterSessionRepository.js';
-export type { RegisterSession, OpenRegisterSessionInput, CloseRegisterSessionInput } from './RegisterSessionRepository.js';
+export { RegisterSessionRepository, RegisterAmountError } from './RegisterSessionRepository.js';
+export type { RegisterSession, RegisterSessionSummary, OpenRegisterSessionInput, CloseRegisterSessionInput } from './RegisterSessionRepository.js';
 
 export { OrderRepository } from './OrderRepository.js';
 export type { Order, OrderLineItem, OrderOperationalStatus, CreateOrderInput, AddLineItemInput } from './OrderRepository.js';

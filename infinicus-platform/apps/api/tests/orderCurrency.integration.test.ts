@@ -60,6 +60,15 @@ async function setup(role: string | { permissions: string[] } = 'owner'): Promis
 const hdr = (s: { ctx: TenantContext; token: string }, extra: Record<string, string> = {}) => ({
   authorization: `Bearer ${s.token}`, 'x-tenant-id': s.ctx.tenantId, 'x-workspace-id': s.ctx.workspaceId, ...extra,
 });
+const openRegister = (s: Session, openingCash = 0) => app.inject({ method: 'POST', url: `/v1/businesses/${s.bizId}/register-sessions`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { openingCash } });
+const closeRegister = (s: Session, sessionId: string, closingCash = 0) => app.inject({ method: 'POST', url: `/v1/businesses/${s.bizId}/register-sessions/${sessionId}/close`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { closingCash } });
+/** Declare a currency and open the register (orders need both). */
+const declareAndOpen = async (s: Session, currency: string): Promise<string> => {
+  expect((await declare(s, currency)).statusCode).toBe(201);
+  const r = await openRegister(s);
+  expect(r.statusCode).toBe(201);
+  return r.json().id as string;
+};
 const ordersUrl = (bizId: string) => `/v1/businesses/${bizId}/orders`;
 const declare = (s: Session, currency: string) => app.inject({ method: 'PUT', url: `/v1/businesses/${s.bizId}/declared-currency`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { currency, expectedVersion: null } });
 const createOrder = (s: Session, bizId = s.bizId) => app.inject({ method: 'POST', url: ordersUrl(bizId), headers: hdr(s, { 'idempotency-key': uc('key') }), payload: {} });
@@ -77,7 +86,7 @@ describe.runIf(run)('POS-1.5 order currency - live PostgreSQL + Fastify', () => 
 
   it('a business that declared a non-USD currency gets that currency on its new order (stored and returned)', async () => {
     const s = await setup('owner');
-    expect((await declare(s, 'KWD')).statusCode).toBe(201);
+    await declareAndOpen(s, 'KWD');
     const r = await createOrder(s);
     expect(r.statusCode).toBe(201);
     expect(r.json()).toMatchObject({ businessId: s.bizId, currencyCode: 'KWD', operationalStatus: 'planned' });
@@ -88,7 +97,7 @@ describe.runIf(run)('POS-1.5 order currency - live PostgreSQL + Fastify', () => 
 
   it('two businesses with different declared currencies get their own currency each', async () => {
     const a = await setup('owner'); const b = await setup('owner');
-    await declare(a, 'EUR'); await declare(b, 'USD');
+    await declareAndOpen(a, 'EUR'); await declareAndOpen(b, 'USD');
     expect((await createOrder(a)).json().currencyCode).toBe('EUR');
     expect((await createOrder(b)).json().currencyCode).toBe('USD');
   });
@@ -101,12 +110,15 @@ describe.runIf(run)('POS-1.5 order currency - live PostgreSQL + Fastify', () => 
     expect(await orderCount(s.bizId)).toBe(0);
   });
 
-  it('a later change of the declared currency applies to new orders only; existing orders keep theirs', async () => {
+  it('a later change of the declared currency applies to new orders only, after the register is reopened; existing orders keep theirs', async () => {
     const s = await setup('owner');
-    await declare(s, 'KWD');
+    const sessionId = await declareAndOpen(s, 'KWD');
     const first = (await createOrder(s)).json();
     const change = await app.inject({ method: 'PUT', url: `/v1/businesses/${s.bizId}/declared-currency`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { currency: 'EUR', expectedVersion: 1, reason: 'pos-1.5 test' } });
     expect(change.statusCode).toBe(201);
+    expect((await createOrder(s)).statusCode).toBe(409);        // the open register is still KWD: close it and open a new one
+    expect((await closeRegister(s, sessionId)).statusCode).toBe(200);
+    expect((await openRegister(s)).statusCode).toBe(201);
     const second = (await createOrder(s)).json();
     expect(second.currencyCode).toBe('EUR');
     expect(await storedCurrency(first.id)).toBe('KWD');
@@ -114,7 +126,7 @@ describe.runIf(run)('POS-1.5 order currency - live PostgreSQL + Fastify', () => 
 
   it('the caller cannot choose the currency: a currencyCode in the body is ignored and the declared one is stored', async () => {
     const s = await setup('owner');
-    await declare(s, 'KWD');
+    await declareAndOpen(s, 'KWD');
     const r = await app.inject({ method: 'POST', url: ordersUrl(s.bizId), headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { currencyCode: 'JPY' } as any });
     expect(r.statusCode).toBe(201);
     expect(r.json().currencyCode).toBe('KWD');
@@ -126,7 +138,7 @@ describe.runIf(run)('POS-1.5 order currency - live PostgreSQL + Fastify', () => 
 
   it('POS-1.6: a KWD order keeps three decimals (3 x 0.125 = 0.375, not 0.38) and the total is exact', async () => {
     const s = await setup('owner');
-    await declare(s, 'KWD');
+    await declareAndOpen(s, 'KWD');
     const order = (await createOrder(s)).json();
     const r1 = await addLine(s, order.id, 'Tea', 3, 0.125);
     expect(r1.statusCode).toBe(200);
@@ -137,10 +149,10 @@ describe.runIf(run)('POS-1.5 order currency - live PostgreSQL + Fastify', () => 
   });
 
   it('POS-1.6: USD rounds a line to cents and JPY to whole units, each by its own currency', async () => {
-    const usd = await setup('owner'); await declare(usd, 'USD');
+    const usd = await setup('owner'); await declareAndOpen(usd, 'USD');
     const o1 = (await createOrder(usd)).json();
     expect((await addLine(usd, o1.id, 'A', 1, 1.005)).json().lineItems[0].lineTotal).toBe(1.01);
-    const jpy = await setup('owner'); await declare(jpy, 'JPY');
+    const jpy = await setup('owner'); await declareAndOpen(jpy, 'JPY');
     const o2 = (await createOrder(jpy)).json();
     expect((await addLine(jpy, o2.id, 'B', 1, 2.5)).json().lineItems[0].lineTotal).toBe(3);
   });
@@ -148,6 +160,7 @@ describe.runIf(run)('POS-1.5 order currency - live PostgreSQL + Fastify', () => 
   it('POS-1.6: a declared currency this platform does not know fails closed with 409 and no order', async () => {
     const s = await setup('owner');
     expect((await declare(s, 'ZZZ')).statusCode).toBe(201);   // the declaration only checks the three-letter format
+    expect((await openRegister(s)).statusCode).toBe(409);       // the register cannot be opened in an unknown currency either
     const r = await createOrder(s);
     expect(r.statusCode).toBe(409);
     expect(await orderCount(s.bizId)).toBe(0);
