@@ -16,7 +16,7 @@ const SESSION_ID = '00000000-0000-4000-8000-000000000777';
 const html = (el: ReactElement) => renderToString(el).replace(/<!-- -->/g, '');
 
 const session = (over: Partial<RegisterSession> = {}): RegisterSession => ({ id: SESSION_ID, registerName: 'Main Register', currencyCode: 'KWD', status: 'open', openingCash: 25, closingCash: null, expectedCash: null, variance: null, openedAt: 'a', closedAt: null, ...over });
-const summaryOf = (s: RegisterSession, over: Partial<RegisterSummary> = {}): RegisterSummary => ({ session: s, ordersPlanned: 1, ordersCompleted: 2, ordersVoided: 0, completedSalesTotal: 1.625, ...over });
+const summaryOf = (s: RegisterSession, over: Partial<RegisterSummary> = {}): RegisterSummary => ({ session: s, ordersPlanned: 1, ordersCompleted: 2, ordersVoided: 0, completedSalesTotal: 1.625, tenders: { cash: 1.125, card: 0.5, other: 0 }, expectedCash: 26.125, ...over });
 
 interface Call { method: 'GET' | 'POST'; path: string; body: unknown; key: string | undefined }
 /** In-memory stand-in for the register API; a repeated Idempotency-Key replays the first answer like the real server. */
@@ -160,6 +160,8 @@ describe('register panel (POS-4, server-rendered output)', () => {
     expect(out).toContain('KWD 25.000');
     expect(out).toContain('2 completed, 1 open, 0 voided');
     expect(out).toContain('Sales KWD 1.625');
+    expect(out).toContain('Taken: cash KWD 1.125, card KWD 0.500, other KWD 0.000.');
+    expect(out).toContain('Cash that should be in the drawer: <strong>KWD 26.125</strong>');
     expect(out).toContain('Counted cash');
     expect(out).toMatch(/<button[^>]*disabled[^>]*>Close register/);
   });
