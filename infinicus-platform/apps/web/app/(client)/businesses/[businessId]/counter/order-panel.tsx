@@ -38,12 +38,14 @@ export interface OrderPanelProps {
   onCancelAsk?: () => void;
   onConfirm?: () => void;
   onReasonChange?: (reason: string) => void;
+  /** False when no register is open: new orders are refused by the server, so the button says why. Undefined = not known yet / not shown. */
+  registerOpen?: boolean;
 }
 
 const none = (): void => undefined;
 
 /** Presentational order panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
-export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none }: OrderPanelProps) {
+export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen }: OrderPanelProps) {
   const { order, busy, message, retryable } = state;
   const planned = order?.operationalStatus === 'planned';
   const locked = busy || retryable;
@@ -114,7 +116,10 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
           ) : null}
         </>
       )}
-      <p><button type="button" onClick={onStart} disabled={busy || retryable}>New order</button></p>
+      <p>
+        <button type="button" onClick={onStart} disabled={busy || retryable || registerOpen === false}>New order</button>
+        {registerOpen === false ? <span className="empty-state"> Open the register to take orders.</span> : null}
+      </p>
       {resumable.length > 0 ? (
         <>
           <h3>Open orders</h3>

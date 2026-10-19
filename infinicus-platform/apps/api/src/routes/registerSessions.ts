@@ -5,7 +5,7 @@ import {
   businessIdParamsSchema, sessionIdParamsSchema,
   openRegisterSessionBodySchema, closeRegisterSessionBodySchema,
   registerSessionResponseSchema, listRegisterSessionsQuerySchema,
-  listRegisterSessionsResponseSchema, openRegisterSessionResponseSchema,
+  listRegisterSessionsResponseSchema, openRegisterSessionResponseSchema, registerSessionSummaryResponseSchema,
 } from '../schemas/registerSessions.js';
 import { errorResponseSchema } from '../schemas/common.js';
 
@@ -85,4 +85,20 @@ export default async function registerSessionsRoutes(app: FastifyInstance) {
     const list = await registerSessions.list(request.ctx!, businessId, request.query.limit);
     return reply.status(200).send({ sessions: list });
   });
+
+  server.get('/v1/businesses/:businessId/register-sessions/:sessionId/summary', {
+    schema: {
+      tags: ['operations'],
+      summary: 'Orders taken in a register session: counts by status and the completed sales total (all tender types together)',
+      params: sessionIdParamsSchema,
+      response: { 200: registerSessionSummaryResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
+    },
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
+  }, async (request, reply) => {
+    const { businessId, sessionId } = request.params;
+    await businesses.getById(request.ctx!, businessId);
+    const summary = await registerSessions.summary(request.ctx!, businessId, sessionId);
+    return reply.status(200).send(summary);
+  });
 }
+

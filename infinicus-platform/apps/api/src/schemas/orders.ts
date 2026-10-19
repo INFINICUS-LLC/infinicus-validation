@@ -33,6 +33,7 @@ const orderSchema = z.object({
   orderNumber: z.string(),
   orderDate: z.coerce.date(),
   currencyCode: z.string().regex(/^[A-Z]{3}$/),
+  registerSessionId: z.string().uuid().nullable(),
   totalAmount: z.number(),
   operationalStatus: z.enum(['planned', 'authorized', 'executed', 'completed', 'failed', 'reversed']),
   createdAt: z.coerce.date(),
