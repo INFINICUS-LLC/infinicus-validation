@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { TenantContext } from '../../client.js';
 import { withTenantTransaction } from '../../client.js';
 import { NotFoundError, ConflictError } from './errors.js';
+import { BusinessDeclaredCurrencyReader } from '../onboarding/index.js';
 
 export type OrderOperationalStatus = 'planned' | 'authorized' | 'executed' | 'completed' | 'failed' | 'reversed';
 
@@ -41,6 +42,7 @@ export interface Order {
   customerId: string | null;
   orderNumber: string;
   orderDate: Date;
+  currencyCode: string;
   totalAmount: number;
   operationalStatus: OrderOperationalStatus;
   createdAt: Date;
@@ -72,6 +74,7 @@ function rowToOrder(row: Record<string, unknown>, lineItems: OrderLineItem[]): O
     customerId: row.customer_id as string | null,
     orderNumber: row.order_number as string,
     orderDate: row.order_date as Date,
+    currencyCode: row.currency_code as string,
     totalAmount: parseFloat(String(row.total_amount)),
     operationalStatus: row.operational_status as OrderOperationalStatus,
     createdAt: row.created_at as Date,
@@ -94,14 +97,26 @@ function generateOrderNumber(): string {
  * pick it up with no changes of their own.
  */
 export class OrderRepository {
+  constructor(private readonly currencies: Pick<BusinessDeclaredCurrencyReader, 'getCurrent'> = new BusinessDeclaredCurrencyReader()) {}
+
+  /**
+   * A new order takes the business's DECLARED currency (Business Administration, migration 0185), read through the governed read-only
+   * boundary. An undeclared business fails closed with a ConflictError: there is no default currency and the database column default is
+   * never relied on.
+   */
   async create(ctx: TenantContext, input: CreateOrderInput): Promise<Order> {
+    const state = await this.currencies.getCurrent(ctx, input.businessId);
+    if (state.status !== 'DECLARED') {
+      throw new ConflictError('Order', `business ${input.businessId} has no declared currency; declare one before creating orders`);
+    }
+    const currencyCode = state.current.currency;
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO platform.orders
-           (tenant_id, workspace_id, business_id, customer_id, order_number, order_date, operational_status, correlation_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,CURRENT_DATE,'planned',$6,$7)
+           (tenant_id, workspace_id, business_id, customer_id, order_number, order_date, currency_code, operational_status, correlation_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,CURRENT_DATE,$6,'planned',$7,$8)
          RETURNING *`,
-        [ctx.tenantId, ctx.workspaceId, input.businessId, input.customerId ?? null, generateOrderNumber(), randomUUID(), ctx.userId]
+        [ctx.tenantId, ctx.workspaceId, input.businessId, input.customerId ?? null, generateOrderNumber(), currencyCode, randomUUID(), ctx.userId]
       );
       return rowToOrder(result.rows[0], []);
     });
