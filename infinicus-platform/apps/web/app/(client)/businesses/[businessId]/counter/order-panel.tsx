@@ -45,6 +45,9 @@ export interface OrderPanelProps {
   tender?: TenderEntry;
   tenderCheck?: TenderResult | null;
   onTenderChange?: (entry: TenderEntry) => void;
+  /** Receipt of a completed sale (POS-6a): when given, a completed order offers a "View receipt" button (hidden while the receipt is already open). */
+  onViewReceipt?: () => void;
+  receiptOpen?: boolean;
 }
 
 const NO_TENDER: TenderEntry = { method: 'cash', amountText: '', reference: '' };
@@ -52,7 +55,7 @@ const NO_TENDER: TenderEntry = { method: 'cash', amountText: '', reference: '' }
 const none = (): void => undefined;
 
 /** Presentational order panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
-export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tender = NO_TENDER, tenderCheck = null, onTenderChange = none }: OrderPanelProps) {
+export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tender = NO_TENDER, tenderCheck = null, onTenderChange = none, onViewReceipt, receiptOpen = false }: OrderPanelProps) {
   const { order, busy, message, retryable } = state;
   const planned = order?.operationalStatus === 'planned';
   const locked = busy || retryable;
@@ -102,6 +105,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
                 </ul>
               ) : null}
               {order.changeDue > 0 ? <p><strong>Change to give: {money(order.changeDue)}</strong></p> : null}
+              {onViewReceipt && !receiptOpen ? <p><button type="button" className="secondary" onClick={onViewReceipt}>View receipt</button></p> : null}
             </div>
           ) : null}
           {order.operationalStatus === 'failed' ? (
