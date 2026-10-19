@@ -34,6 +34,13 @@ Backup `infinicus-production/2026-10-19/20261019T140816Z-pre-0199-window`, resto
 
 Open item raised by the proof: the laptop keyring shows the backup key `6FA8FA10…F9141B` as **revoked on 2026-10-18**, yet the manifest of the 2026-10-19 backup names it as recipient. A revoked key still decrypts existing backups (proven above), but a revocation not known to the VM means new backups keep encrypting to it. Decision needed from the owner: confirm whether the revocation was intended (rotation) and, if so, rotate the recipient key before the next backup. No key or VM change was made here.
 
+## VM reboot (2026-10-19, ~17:15-17:21 UTC)
+- Pre-flight (read-only): running kernel 6.8.0-142, installed 6.8.0-147; uptime about 17 days; `oci-api-1`, `oci-caddy-1`, `oci-postgres-1` all `restart=unless-stopped`; docker and containerd enabled; 15 GB free.
+- 13 pending packages applied with `apt-get upgrade` (including docker-ce, containerd.io, compose plugin, apparmor, snapd, tzdata); the Docker daemon restart brought the three `oci-*` containers back healthy within 30 s. The containers were NOT stopped by hand (an `unless-stopped` container stopped manually would not restart on boot).
+- `systemctl reboot` at 17:18:21 UTC. After reconnect: kernel 6.8.0-147-generic, uptime 3 minutes, no `reboot-required` file, the three `oci-*` containers up and healthy, `/v1/health` 200 with version `ba02d163a1b574c79844311b8737c73939a2c3dc`, `/v1/ready` 200. Downtime about 3 minutes.
+- Side effect: `infinicus-api-smoke-test` and `infinicus-restore-test-db` (`restart=no`, left from earlier rehearsals) stopped with the Docker restart and were not restarted. Neither was deleted; reviewing them (the restore-test one may hold a restored data copy) is a separate decision.
+- Open: no scheduled offsite backup timer was found on the VM (only the system `dpkg-db-backup` timer); a cron entry was not checked.
+
 ## Findings (none blocked the release)
 1. **W4 command needed `COMPOSE_DIR`.** The first `--check` from the home folder failed 6 of 15 checks (database not reachable, versions unreadable): the script reaches Postgres through `docker compose exec` from `COMPOSE_DIR`, which defaults to the current directory. With `COMPOSE_DIR` set to the live compose folder it passed. Nothing was written by either run. The plan (§3, §3b) is corrected in this change.
 2. **SSH variables are lost on reconnect** (`OCI`, `REL`, `C`). Twice a step was pasted with empty variables and failed harmlessly on missing paths. For a future window, every command should define its own variables.
@@ -48,5 +55,4 @@ Open item raised by the proof: the laptop keyring shows the backup key `6FA8FA10
 - Logical rollback of 0199-0201 (Phase R design, Appendix C) rehearsed in R10.
 
 ## Follow-ups
-- Plan a reboot window for the pending kernel and security updates.
 - POS-4/5 migrations (0202-0206) are in draft pull requests only and are NOT applied; they need their own window, authorization, fresh backup and the migration gate.
