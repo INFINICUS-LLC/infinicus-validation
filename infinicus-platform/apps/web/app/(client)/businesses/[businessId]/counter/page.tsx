@@ -4,8 +4,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { openOrdersPath } from '../../../../../lib/client/orders';
-import { businessListSchema, orderListSchema, productListSchema } from '../../../../../lib/client/schemas';
-import { buildReceipt } from '../../../../../lib/client/receipt';
+import { orderListSchema, productListSchema } from '../../../../../lib/client/schemas';
 import { StateNotice } from '../../../state-notice';
 import { useAuth } from '../../../auth-provider';
 import { useRequireWorkspace } from '../../../use-require-workspace';
@@ -13,7 +12,7 @@ import { useScopedResource } from '../../../use-scoped-resource';
 import { CounterCatalogue } from './counter-view';
 import { OrderPanelView, useOrderSession } from './order-panel';
 import { RegisterPanelView, useRegister } from './register-panel';
-import { ReceiptView } from './receipt-view';
+import { BusinessReceipt } from './business-receipt';
 import { parseCashAmount } from '../../../../../lib/client/register';
 import { buildTenderPlan, type TenderEntry } from '../../../../../lib/client/tender';
 
@@ -26,8 +25,6 @@ export default function CounterPage() {
   const businessId = idSchema.safeParse(params.businessId).success ? params.businessId : null;
   const { resource, reload } = useScopedResource(scope && businessId ? `/v1/businesses/${businessId}/products` : null, productListSchema);
   const open = useScopedResource(scope && businessId ? openOrdersPath(businessId) : null, orderListSchema);
-  // The business name only heads the receipt: if the list does not hold this business (or fails), the receipt simply has no name line.
-  const businesses = useScopedResource(scope ? '/v1/businesses' : null, businessListSchema);
   const { session, state: orderState } = useOrderSession(api, scope, businessId);
   const { controller: register, state: registerState } = useRegister(api, scope, businessId);
   const [cashText, setCashText] = useState('');
@@ -45,9 +42,8 @@ export default function CounterPage() {
   const act = (run: () => Promise<boolean>) => { void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); } }); };
   // The confirmation belongs to one order: switching orders drops it.
   const confirm = ask && ask.orderId === orderState.order?.id ? ask.kind : null;
-  const businessName = businesses.resource.kind === 'ok' ? businesses.resource.data.items.find((b) => b.id === businessId)?.legalName ?? null : null;
   // Like the confirmation, the open receipt belongs to one order: switching orders closes it.
-  const receipt = orderState.order && receiptFor === orderState.order.id ? buildReceipt(orderState.order, { businessName }) : null;
+  const receipt = orderState.order?.businessId === businessId && orderState.order.operationalStatus === 'completed' && receiptFor === orderState.order.id ? orderState.order : null;
   const onConfirm = () => {
     if (!session || !confirm) return;
     let run: () => Promise<boolean>;
@@ -114,7 +110,7 @@ export default function CounterPage() {
       {resource.kind === 'ok' ? (
         <CounterCatalogue
           products={resource.data.products}
-          orderPanel={<div className="counter-left">{registerPanel}{orderPanel}{receipt ? <ReceiptView receipt={receipt} onClose={() => setReceiptFor(null)} /> : null}</div>}
+          orderPanel={<div className="counter-left">{registerPanel}{orderPanel}{receipt ? <BusinessReceipt key={`${scope.tenantId}/${scope.workspaceId}/${businessId}`} order={receipt} onClose={() => setReceiptFor(null)} /> : null}</div>}
           disabled={!canAdd}
           onAdd={(product) => session && act(() => session.add(product))}
         />

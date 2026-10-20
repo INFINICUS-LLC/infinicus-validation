@@ -96,6 +96,37 @@ describe.runIf(run)('POS-5 tender capture - live PostgreSQL + Fastify', () => {
   });
   afterAll(async () => { await app?.close(); await adminPool?.end(); await closePool(); });
 
+  it('POS-6d reads the canonical summary beyond the first page using BO read alone', async () => {
+    const s = await setup({ permissions: ['bo:read'] });
+    await adminPool.query(`INSERT INTO platform.businesses (tenant_id, workspace_id, legal_name, business_code, status)
+      SELECT $1,$2,'AA Earlier ' || n,$3 || n,'active' FROM generate_series(1,25) n`, [s.ctx.tenantId, s.ctx.workspaceId, uc('earlier')]);
+    const list = await app.inject({ method: 'GET', url: '/v1/businesses?page=1&pageSize=20', headers: hdr(s) });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().items.some((b: any) => b.id === s.bizId)).toBe(false);
+    const result = await app.inject({ method: 'GET', url: '/v1/businesses/' + s.bizId, headers: hdr(s) });
+    expect(result.statusCode).toBe(200);
+    expect(result.json()).toEqual({ id: s.bizId, legalName: 'ZZ TN Biz', businessCode: expect.any(String), status: 'active', industry: null });
+  });
+
+  it('POS-6d refuses unauthenticated, unprivileged, foreign-tenant and foreign-workspace summary reads', async () => {
+    const s = await setup({ permissions: ['bo:read'] });
+    const url = '/v1/businesses/' + s.bizId;
+    expect((await app.inject({ method: 'GET', url })).statusCode).toBe(401);
+    const noRead = await setup({ permissions: ['bo:write'] });
+    expect((await app.inject({ method: 'GET', url: '/v1/businesses/' + noRead.bizId, headers: hdr(noRead) })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url, headers: hdr(noRead) })).statusCode).toBe(403);
+    const other = await setup({ permissions: ['bo:read'] });
+    expect((await app.inject({ method: 'GET', url, headers: hdr(other) })).statusCode).toBe(404);
+    const workspaceId = randomUUID();
+    await adminPool.query(`INSERT INTO tenancy.workspaces (id,tenant_id,name,slug,status) VALUES ($1,$2,'Other',$3,'active')`, [workspaceId, s.ctx.tenantId, uc('other-ws')]);
+    const sibling = { ...s, ctx: { ...s.ctx, workspaceId } };
+    await grantRole(sibling.ctx, s.ctx.userId, { permissions: ['bo:read'] });
+    expect((await app.inject({ method: 'GET', url, headers: hdr(sibling) })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/v1/businesses/not-a-uuid', headers: hdr(s) })).statusCode).toBe(400);
+    await adminPool.query('UPDATE platform.businesses SET deleted_at = now() WHERE id = $1', [s.bizId]);
+    expect((await app.inject({ method: 'GET', url, headers: hdr(s) })).statusCode).toBe(404);
+  });
+
   it('POS-6c records three entered tenders once and reconciles only applied cash, with KWD change', async () => {
     const { s, orderId, sessionId } = await ready('KWD', 1.375);
     const payments = [card(0.5, 'SLIP-6C'), { method: 'other', amountTendered: 0.25 }, cash(1)];
