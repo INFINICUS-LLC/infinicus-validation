@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Receipt } from '../../../../../lib/client/receipt';
-import { createOnceGuard, DEFAULT_PRINT_SETTINGS, PRINT_FAILED, PRINT_SENDING, PRINT_SENT, printReceiptNow, type PaperMm, type PrintOutcome } from '../../../../../lib/client/printing';
+import { createOnceGuard, DEFAULT_PRINT_SETTINGS, PRINT_FAILED, PRINT_SENDING, PRINT_SENT, type PaperMm, type PrintOutcome } from '../../../../../lib/client/printing';
+import { printReceiptOnDevice } from '../../../../../lib/client/deviceBridge';
 
 /** One automatic print per receipt for the life of the page, however often the receipt is re-shown or re-rendered. */
 const firstAutoPrint = createOnceGuard();
@@ -18,16 +19,16 @@ export function ReceiptView({ receipt, onClose, onPrint, autoPrint = false, pape
   const [status, setStatus] = useState<{ kind: 'idle' | 'sending' | 'sent' | 'failed'; text: string }>({ kind: 'idle', text: '' });
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const print = (): void => {
+  const print = (automatic = false): void => {
     setStatus({ kind: 'sending', text: PRINT_SENDING });
-    (onPrint ?? ((r) => printReceiptNow(r, paperMm)))(receipt).then(
+    (onPrint ?? ((r) => printReceiptOnDevice(r, paperMm, { automatic })))(receipt).then(
       (outcome) => { if (mounted.current) setStatus(outcome.ok ? { kind: 'sent', text: PRINT_SENT } : { kind: 'failed', text: PRINT_FAILED }); },
       () => { if (mounted.current) setStatus({ kind: 'failed', text: PRINT_FAILED }); },
     );
   };
   const printRef = useRef(print);
   printRef.current = print;
-  useEffect(() => { if (autoPrint && firstAutoPrint(receipt.orderNumber)) printRef.current(); }, [autoPrint, receipt.orderNumber]);
+  useEffect(() => { if (autoPrint && firstAutoPrint(receipt.orderNumber)) printRef.current(true); }, [autoPrint, receipt.orderNumber]);
   return (
     <section className="receipt card" aria-labelledby="receipt-heading">
       <h2 id="receipt-heading">Receipt</h2>
@@ -57,7 +58,7 @@ export function ReceiptView({ receipt, onClose, onPrint, autoPrint = false, pape
       {receipt.changeText ? <p className="receipt-row"><span>Change</span><span>{receipt.changeText}</span></p> : null}
       {status.kind !== 'idle' ? <p className={status.kind === 'failed' ? 'notice danger' : 'notice'} role={status.kind === 'failed' ? 'alert' : 'status'}>{status.text}</p> : null}
       <p className="receipt-actions">
-        <button type="button" onClick={print} disabled={status.kind === 'sending'}>Print receipt</button>{' '}
+        <button type="button" onClick={() => print()} disabled={status.kind === 'sending'}>Print receipt</button>{' '}
         <button type="button" className="secondary" onClick={onClose}>Close receipt</button>
       </p>
     </section>
