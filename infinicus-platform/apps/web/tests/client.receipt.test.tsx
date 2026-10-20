@@ -93,7 +93,7 @@ describe('receipt: discount lines (POS-6b)', () => {
 
   it('is printed as money off: description and amount, without "1 ×" or an "@ unit price"', () => {
     const r = buildReceipt(withDiscount, { formatDate: fixedDate })!;
-    const out = renderToString(<ReceiptView receipt={r} onClose={() => undefined} onPrint={() => undefined} />).replace(/<!-- -->/g, '');
+    const out = renderToString(<ReceiptView receipt={r} onClose={() => undefined} onPrint={async () => ({ ok: true as const })} />).replace(/<!-- -->/g, '');
     expect(out).toContain('Discount: Staff meal');
     expect(out).toContain('-2.000');
     expect(out).not.toContain('1 × Discount');
@@ -104,7 +104,7 @@ describe('receipt: discount lines (POS-6b)', () => {
 
 describe('ReceiptView (presentational)', () => {
   const receipt = buildReceipt(order(), { businessName: 'Acme Café', formatDate: fixedDate })!;
-  const html = renderToString(<ReceiptView receipt={receipt} onClose={() => undefined} onPrint={() => undefined} />).replace(/<!-- -->/g, '');
+  const html = renderToString(<ReceiptView receipt={receipt} onClose={() => undefined} onPrint={async () => ({ ok: true as const })} />).replace(/<!-- -->/g, '');
 
   it('shows the business, order, lines, total, payment, change and the print and close buttons', () => {
     for (const text of ['Receipt', 'Acme Café', 'ORD-0007', 'D(2026-10-19T17:30:00.000Z)', 'Espresso', 'KWD 4.250', 'Cash (received KWD 5.000)', 'Change', 'KWD 0.750', 'Print receipt', 'Close receipt']) expect(html).toContain(text);
@@ -113,7 +113,7 @@ describe('ReceiptView (presentational)', () => {
 
   it('omits the business line when there is no name and the change line when no change is due', () => {
     const bare = buildReceipt(order({ changeDue: 0 }), { formatDate: fixedDate })!;
-    const out = renderToString(<ReceiptView receipt={bare} onClose={() => undefined} onPrint={() => undefined} />).replace(/<!-- -->/g, '');
+    const out = renderToString(<ReceiptView receipt={bare} onClose={() => undefined} onPrint={async () => ({ ok: true as const })} />).replace(/<!-- -->/g, '');
     expect(out).not.toContain('receipt-business');
     expect(out).not.toContain('>Change<');
   });

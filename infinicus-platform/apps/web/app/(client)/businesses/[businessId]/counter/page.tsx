@@ -13,11 +13,13 @@ import { CounterCatalogue } from './counter-view';
 import { OrderPanelView, useOrderSession } from './order-panel';
 import { RegisterPanelView, useRegister } from './register-panel';
 import { BusinessReceipt } from './business-receipt';
+import { PrintSettingsPanel } from './print-settings';
 import { ConnectionBanner, shouldWarnBeforeLeave, useLeaveWarning, useOnline, useReconnectRetry } from './connection';
 import { parseCashAmount } from '../../../../../lib/client/register';
 import { buildTenderPlan, type TenderEntry } from '../../../../../lib/client/tender';
 import { buildDiscount, NO_DISCOUNT, type DiscountEntry } from '../../../../../lib/client/discount';
 import { buildNote } from '../../../../../lib/client/note';
+import { DEFAULT_PRINT_SETTINGS, type PrintSettings } from '../../../../../lib/client/printing';
 
 const idSchema = z.string().uuid();
 
@@ -50,6 +52,10 @@ export default function CounterPage() {
   const [voidReason, setVoidReason] = useState('');
   const [tenders, setTenders] = useState<TenderEntry[]>([]);
   const [receiptFor, setReceiptFor] = useState<string | null>(null);
+  // POS-8a: the receipt prints by itself only for the sale just confirmed by the server, and only while the cashier has automatic printing switched on.
+  // The choice lives in memory for this page load only (nothing stored in the browser, nothing read from the address).
+  const [printSettings, setPrintSettings] = useState<PrintSettings>(DEFAULT_PRINT_SETTINGS);
+  const [autoPrintFor, setAutoPrintFor] = useState<string | null>(null);
   // The note being typed belongs to one order: switching orders drops the draft and the box shows that order's saved note again.
   const [noteDraft, setNoteDraft] = useState<{ orderId: string; text: string } | null>(null);
 
@@ -80,7 +86,7 @@ export default function CounterPage() {
     } else {
       run = () => session.voidOrder(voidReason);
     }
-    void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); setAsk(null); setVoidReason(''); setDiscount(NO_DISCOUNT); setTenders([]); if (confirm === 'complete') setReceiptFor(orderId); } });
+    void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); setAsk(null); setVoidReason(''); setDiscount(NO_DISCOUNT); setTenders([]); if (confirm === 'complete') { setReceiptFor(orderId); setAutoPrintFor(printSettings.auto ? orderId : null); } } });
   };
   const orderPanel = (
     <OrderPanelView
@@ -145,7 +151,7 @@ export default function CounterPage() {
       {resource.kind === 'ok' ? (
         <CounterCatalogue
           products={resource.data.products}
-          orderPanel={<div className="counter-left">{registerPanel}{orderPanel}{receipt ? <BusinessReceipt key={`${scope.tenantId}/${scope.workspaceId}/${businessId}`} order={receipt} onClose={() => setReceiptFor(null)} /> : null}</div>}
+          orderPanel={<div className="counter-left">{registerPanel}<PrintSettingsPanel settings={printSettings} onChange={setPrintSettings} />{orderPanel}{receipt ? <BusinessReceipt key={`${scope.tenantId}/${scope.workspaceId}/${businessId}`} order={receipt} autoPrint={autoPrintFor === receipt.id} paperMm={printSettings.paperMm} onClose={() => setReceiptFor(null)} /> : null}</div>}
           disabled={!canAdd}
           onAdd={(product) => session && act(() => session.add(product))}
         />
