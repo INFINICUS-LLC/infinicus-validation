@@ -124,10 +124,9 @@ export default async function ordersRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:admin'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:admin'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
     const order = await orders.addDiscount(request.ctx!, orderId, businessId, request.body);
     return reply.status(200).send(order);
   });
