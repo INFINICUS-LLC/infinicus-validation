@@ -144,6 +144,71 @@ describe.runIf(run)('POS-5 tender capture - live PostgreSQL + Fastify', () => {
     expect((await summary(s, sessionId)).json()).toMatchObject({ tenders: { card: 0.5, other: 0.25, cash: 0.625 }, expectedCash: 0.625 });
   });
 
+  it('POS-6e refuses sibling-workspace and deleted-business history and receipt reads', async () => {
+    const { s, orderId } = await ready('USD', 1);
+    expect((await complete(s, orderId, { payments: [cash(1)] })).statusCode).toBe(200);
+    const workspaceId = randomUUID();
+    await adminPool.query(`INSERT INTO tenancy.workspaces (id,tenant_id,name,slug,status) VALUES ($1,$2,'History sibling',$3,'active')`, [workspaceId, s.ctx.tenantId, uc('history-ws')]);
+    const reader = await registerActiveUser();
+    const ctx = { ...s.ctx, workspaceId, userId: reader.userId };
+    await grantRole(ctx, reader.userId, { permissions: ['bo:read'] });
+    const foreign = { ctx, token: reader.token };
+    const paths = [ordersUrl(s.bizId) + '?status=completed', ordersUrl(s.bizId) + '?status=completed&before=' + orderId, ordersUrl(s.bizId) + '/' + orderId];
+    for (const url of paths) expect((await app.inject({ method: 'GET', url, headers: hdr(foreign) })).statusCode).toBe(404);
+    for (const url of paths) expect((await app.inject({ method: 'GET', url, headers: hdr(s) })).statusCode).toBe(200);
+    await adminPool.query('UPDATE platform.businesses SET deleted_at = now() WHERE id = $1', [s.bizId]);
+    for (const url of paths) expect((await app.inject({ method: 'GET', url, headers: hdr(s) })).statusCode).toBe(404);
+  });
+
+  it('POS-6b pages completed sales without skipping equal timestamps or duplicating rows when a new sale arrives', async () => {
+    const { s, orderId } = await ready('KWD', 1.375);
+    expect((await complete(s, orderId, { payments: [cash(2)] })).statusCode).toBe(200);
+    const ids = [orderId];
+    for (let n = 0; n < 6; n++) {
+      const created = await createOrder(s); expect(created.statusCode).toBe(201);
+      const id = created.json().id; ids.push(id);
+      expect((await addLine(s, id, 1.375)).statusCode).toBe(200);
+      expect((await complete(s, id, { payments: [cash(2)] })).statusCode).toBe(200);
+    }
+    // Identical timestamps with sub-millisecond precision exercise the ID tie-breaker and prevent JS Date truncation from hiding rows.
+    await adminPool.query(`UPDATE platform.orders SET created_at = '2026-01-01T00:00:00.123456Z' WHERE id = ANY($1::uuid[])`, [ids]);
+    const first = await app.inject({ method: 'GET', url: `${ordersUrl(s.bizId)}?status=completed&limit=2`, headers: hdr(s) });
+    expect(first.statusCode).toBe(200);
+    const expected = [...ids].sort().reverse();
+    expect(first.json().orders.map((o: { id: string }) => o.id)).toEqual(expected.slice(0, 2));
+    const newer = (await createOrder(s)).json().id;
+    await addLine(s, newer, 2); await complete(s, newer, { payments: [cash(2)] });
+    const seen: string[] = first.json().orders.map((o: { id: string }) => o.id);
+    for (let page = 0; page < 5; page++) {
+      const next = await app.inject({ method: 'GET', url: `${ordersUrl(s.bizId)}?status=completed&limit=2&before=${seen.at(-1)}`, headers: hdr(s) });
+      expect(next.statusCode).toBe(200);
+      const rows = next.json().orders as { id: string; operationalStatus: string; currencyCode: string; totalAmount: number }[];
+      expect(rows.every(row => row.operationalStatus === 'completed' && row.currencyCode === 'KWD' && row.totalAmount === 1.375)).toBe(true);
+      if (rows.length === 0) break;
+      seen.push(...rows.map(row => row.id));
+    }
+    expect(seen).toEqual(expected);
+    const refreshed = await app.inject({ method: 'GET', url: `${ordersUrl(s.bizId)}?status=completed&limit=2`, headers: hdr(s) });
+    expect(refreshed.json().orders[0].id).toBe(newer);
+    const detail = (await getOrder(s, orderId)).json();
+    expect(detail.lineItems).toHaveLength(1); expect(detail.payments).toHaveLength(1);
+    expect(detail).toMatchObject({ totalAmount: 1.375, changeDue: 0.625 });
+  });
+
+  it('POS-6b cursors are business/tenant-scoped, invalid IDs are refused and viewers may read history', async () => {
+    const { s, orderId } = await ready('USD', 1);
+    const another = await ready('USD', 1);
+    const otherBusiness = await adminPool.query(`INSERT INTO platform.businesses (tenant_id, workspace_id, legal_name, business_code) VALUES ($1,$2,'Other history business',$3) RETURNING id`, [s.ctx.tenantId, s.ctx.workspaceId, uc('hist')]);
+    const foreign = await adminPool.query(`INSERT INTO platform.orders (tenant_id, workspace_id, business_id, order_number, order_date) VALUES ($1,$2,$3,$4,CURRENT_DATE) RETURNING id`, [s.ctx.tenantId, s.ctx.workspaceId, otherBusiness.rows[0].id, uc('hist-order')]);
+    for (const cursor of [another.orderId, foreign.rows[0].id, randomUUID()]) {
+      expect((await app.inject({ method: 'GET', url: `${ordersUrl(s.bizId)}?status=completed&before=${cursor}`, headers: hdr(s) })).statusCode).toBe(404);
+    }
+    expect((await app.inject({ method: 'GET', url: `${ordersUrl(s.bizId)}?before=invalid`, headers: hdr(s) })).statusCode).toBe(400);
+    const viewer = await registerActiveUser(); await grantRole(s.ctx, viewer.userId, 'viewer');
+    expect((await app.inject({ method: 'GET', url: `${ordersUrl(s.bizId)}?status=completed&before=${orderId}`, headers: hdr({ ctx: s.ctx, token: viewer.token }) })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: `${ordersUrl(s.bizId)}?status=completed` })).statusCode).toBe(401);
+  });
+
   it('selects the BO catalog by its own ID, snapshots server pricing and records catalog provenance', async () => {
     const { s, orderId } = await ready('KWD', 1);
     const product = await app.inject({ method: 'POST', url: `/v1/businesses/${s.bizId}/products`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { name: 'Espresso', price: 1.375 } });

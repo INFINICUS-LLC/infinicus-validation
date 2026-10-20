@@ -42,7 +42,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
     preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
   }, async (request, reply) => {
     const { businessId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
+    await businesses.getForWorkspace(request.ctx!, businessId);
     const list = await orders.list(request.ctx!, businessId, request.query);
     return reply.status(200).send({ orders: list });
   });
@@ -57,7 +57,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
     preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
+    await businesses.getForWorkspace(request.ctx!, businessId);
     const order = await orders.getById(request.ctx!, orderId, businessId);
     return reply.status(200).send(order);
   });
