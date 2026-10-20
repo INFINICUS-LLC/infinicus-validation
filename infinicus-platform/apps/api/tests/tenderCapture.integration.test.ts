@@ -144,6 +144,22 @@ describe.runIf(run)('POS-5 tender capture - live PostgreSQL + Fastify', () => {
     expect((await summary(s, sessionId)).json()).toMatchObject({ tenders: { card: 0.5, other: 0.25, cash: 0.625 }, expectedCash: 0.625 });
   });
 
+  it('POS-6e refuses sibling-workspace and deleted-business history and receipt reads', async () => {
+    const { s, orderId } = await ready('USD', 1);
+    expect((await complete(s, orderId, { payments: [cash(1)] })).statusCode).toBe(200);
+    const workspaceId = randomUUID();
+    await adminPool.query(`INSERT INTO tenancy.workspaces (id,tenant_id,name,slug,status) VALUES ($1,$2,'History sibling',$3,'active')`, [workspaceId, s.ctx.tenantId, uc('history-ws')]);
+    const reader = await registerActiveUser();
+    const ctx = { ...s.ctx, workspaceId, userId: reader.userId };
+    await grantRole(ctx, reader.userId, { permissions: ['bo:read'] });
+    const foreign = { ctx, token: reader.token };
+    const paths = [ordersUrl(s.bizId) + '?status=completed', ordersUrl(s.bizId) + '?status=completed&before=' + orderId, ordersUrl(s.bizId) + '/' + orderId];
+    for (const url of paths) expect((await app.inject({ method: 'GET', url, headers: hdr(foreign) })).statusCode).toBe(404);
+    for (const url of paths) expect((await app.inject({ method: 'GET', url, headers: hdr(s) })).statusCode).toBe(200);
+    await adminPool.query('UPDATE platform.businesses SET deleted_at = now() WHERE id = $1', [s.bizId]);
+    for (const url of paths) expect((await app.inject({ method: 'GET', url, headers: hdr(s) })).statusCode).toBe(404);
+  });
+
   it('POS-6b pages completed sales without skipping equal timestamps or duplicating rows when a new sale arrives', async () => {
     const { s, orderId } = await ready('KWD', 1.375);
     expect((await complete(s, orderId, { payments: [cash(2)] })).statusCode).toBe(200);

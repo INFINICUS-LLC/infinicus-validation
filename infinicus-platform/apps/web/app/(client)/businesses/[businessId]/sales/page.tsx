@@ -4,11 +4,10 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useParams } from 'next/navigation';
 import { z } from 'zod';
 import { SalesHistoryController, type SalesHistoryState } from '../../../../../lib/client/salesHistory';
-import { businessListSchema } from '../../../../../lib/client/schemas';
 import { StateNotice } from '../../../state-notice';
 import { useAuth } from '../../../auth-provider';
 import { useRequireWorkspace } from '../../../use-require-workspace';
-import { useScopedResource } from '../../../use-scoped-resource';
+import { BusinessReceipt } from '../counter/business-receipt';
 import { SalesHistoryView } from './sales-view';
 
 const idSchema = z.string().uuid();
@@ -19,8 +18,6 @@ export default function SalesPage() {
   const { scope } = useRequireWorkspace();
   const params = useParams<{ businessId: string }>();
   const businessId = idSchema.safeParse(params.businessId).success ? params.businessId : null;
-  // Optional receipt heading only; no business name is guessed if the list does not contain this business.
-  const businesses = useScopedResource(scope && businessId ? '/v1/businesses' : null, businessListSchema);
   const history = useMemo(() => api && scope && businessId ? new SalesHistoryController(api, scope, businessId) : null, [api, scope, businessId]);
   const historyState = useSyncExternalStore(
     listener => history ? history.subscribe(listener) : () => undefined,
@@ -31,11 +28,10 @@ export default function SalesPage() {
 
   if (!scope) return <StateNotice state={state} />;
   if (!businessId) return <div className="card"><p className="notice danger" role="alert">That business address is not valid.</p><p><a href="/businesses">&larr; All businesses</a></p></div>;
-  const businessName = businesses.resource.kind === 'ok' ? businesses.resource.data.items.find(b => b.id === businessId)?.legalName ?? null : null;
   return <div>
     <h1>Sales history</h1>
     <p><a href={`/businesses/${businessId}/counter`}>&larr; Back to counter</a></p>
-    <SalesHistoryView state={historyState} businessName={businessName}
+    <SalesHistoryView state={historyState} receiptContent={historyState.receipt?.kind === 'ok' ? <BusinessReceipt key={`${scope.tenantId}/${scope.workspaceId}/${businessId}`} order={historyState.receipt.data} onClose={() => history?.closeReceipt()} /> : null}
       onRefresh={() => { if (history) void history.refresh(); }}
       onOlder={() => { if (history) void history.older(); }}
       onNewer={() => { if (history) void history.newer(); }}

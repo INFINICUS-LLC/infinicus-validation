@@ -48,11 +48,20 @@ describe('apps/web has no server-side data access or identity path (NA-05)', () 
     }
   });
 
-  it('every page that shows tenant data gets it through the scoped resource hook and the workspace guard', () => {
+  it('every tenant page uses a scoped API reader and the workspace guard', () => {
     const pages = files.filter((f) => /app\/\(client\)\/businesses\/.*page\.tsx$/.test(f));
     expect(pages).toHaveLength(5);   // workflow, history, businesses list, counter and completed sales
     for (const f of pages) {
-      expect(code(f), rel(f)).toContain('useScopedResource');
+      if (rel(f) === '/app/(client)/businesses/[businessId]/sales/page.tsx') {
+        // History has a scoped controller for cursor/selection races; business identity is read by BusinessReceipt.
+        expect(code(f), rel(f)).toContain('new SalesHistoryController(api, scope, businessId)');
+        expect(code(f), rel(f)).toContain('BusinessReceipt');
+        const controller = code(join(ROOT, 'lib/client/salesHistory.ts'));
+        expect(controller).toContain('this.api.get(');
+        expect(controller).toContain('scope: this.scope');
+      } else {
+        expect(code(f), rel(f)).toContain('useScopedResource');
+      }
       expect(code(f), rel(f)).toContain('useRequireWorkspace');
     }
   });

@@ -1,13 +1,13 @@
 'use client';
 
 import type { SalesHistoryState } from '../../../../../lib/client/salesHistory';
-import { buildReceipt, defaultFormatDate } from '../../../../../lib/client/receipt';
+import type { ReactNode } from 'react';
+import { defaultFormatDate } from '../../../../../lib/client/receipt';
 import { formatMoney } from '../../../../../lib/client/currency';
-import { ReceiptView } from '../counter/receipt-view';
 
 interface Props {
   state: SalesHistoryState;
-  businessName?: string | null;
+  receiptContent?: ReactNode;
   onRefresh: () => void;
   onOlder: () => void;
   onNewer: () => void;
@@ -16,8 +16,7 @@ interface Props {
 }
 
 /** Read-only: uses server totals and the existing receipt renderer, with no sale/payment mutation controls. */
-export function SalesHistoryView({ state, businessName, onRefresh, onOlder, onNewer, onReceipt, onCloseReceipt }: Props) {
-  const receipt = state.receipt?.kind === 'ok' ? buildReceipt(state.receipt.data, { businessName }) : null;
+export function SalesHistoryView({ state, receiptContent, onRefresh, onOlder, onNewer, onReceipt, onCloseReceipt }: Props) {
   return <div className="sales-history">
     <section className="card" aria-labelledby="sales-heading" aria-busy={state.busy}>
       <h2 id="sales-heading">Completed sales</h2>
@@ -43,6 +42,6 @@ export function SalesHistoryView({ state, businessName, onRefresh, onOlder, onNe
       <button type="button" className="secondary" onClick={() => { if (state.selectedId) onReceipt(state.selectedId); }}>Retry receipt</button>{' '}
       <button type="button" className="secondary" onClick={onCloseReceipt}>Close receipt</button>
     </p> : null}
-    {receipt ? <ReceiptView receipt={receipt} onClose={onCloseReceipt} /> : null}
+    {state.receipt?.kind === 'ok' ? receiptContent : null}
   </div>;
 }

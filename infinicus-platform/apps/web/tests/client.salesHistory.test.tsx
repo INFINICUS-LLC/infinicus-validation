@@ -4,8 +4,12 @@ import { ApiError, type ApiClient, type RequestInitLite, type Scope } from '../l
 import { SalesHistoryController, SALES_PAGE_SIZE, salesHistoryPath, type SalesHistoryState } from '../lib/client/salesHistory';
 import type { Order } from '../lib/client/schemas';
 import { SalesHistoryView } from '../app/(client)/businesses/[businessId]/sales/sales-view';
+import { BusinessReceipt } from '../app/(client)/businesses/[businessId]/counter/business-receipt';
 import SalesPage from '../app/(client)/businesses/[businessId]/sales/page';
 import { AuthContext, type AuthContextValue } from '../app/(client)/auth-provider';
+
+const identity = vi.hoisted(() => ({ resource: { kind: 'loading' } as any, path: '' }));
+vi.mock('../app/(client)/use-scoped-resource', () => ({ useScopedResource: (path: string) => { identity.path = path; return { resource: identity.resource, reload: vi.fn() }; } }));
 
 let businessParam = '00000000-0000-4000-8000-000000000002';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn() }), useParams: () => ({ businessId: businessParam }) }));
@@ -146,10 +150,33 @@ describe('sales history view', () => {
     expect(out).toContain('KWD 1.375');
     expect(out).toContain('View receipt for ORD-100');
     expect(out).not.toContain('Print receipt');
-    expect(view({ receipt: { kind: 'ok', data: order(100) } })).toContain('Print receipt');
+    expect(view({ receipt: { kind: 'ok', data: order(100) } })).not.toContain('Print receipt');
     expect(view({ receipt: { kind: 'error', message: 'Could not read receipt.' }, selectedId: id(100) })).toContain('Retry receipt');
     expect(out).not.toMatch(/Complete sale|Void order|New order|Refund/);
   });
+  it('historical reprints wait for the exact business identity and preserve full server receipt details', () => {
+    const sale = order(100, {
+      lineItems: [{ id: id(77), lineNumber: 1, itemType: 'product', productId: null, description: 'Recorded product', quantity: 1.2345, unitPrice: 1, lineTotal: 1.375 }],
+      payments: [{ id: id(78), position: 1, method: 'card', currencyCode: 'KWD', amountTendered: 1.375, amountApplied: 1.375, changeGiven: 0, reference: 'SLIP-HISTORY', createdAt: '2026-10-20T12:00:00Z' }],
+    });
+    const render = () => renderToString(<SalesHistoryView state={{ orders: [sale], busy: false, message: null, hasOlder: false, hasNewer: false, selectedId: sale.id, receipt: { kind: 'ok', data: sale } }}
+      receiptContent={<BusinessReceipt order={sale} onClose={noop} />} onRefresh={noop} onOlder={noop} onNewer={noop} onReceipt={noop} onCloseReceipt={noop} />).replace(/<!-- -->/g, '');
+    identity.resource = { kind: 'loading' };
+    expect(render()).toContain('Loading receipt business details');
+    expect(render()).not.toContain('Print receipt');
+    expect(identity.path).toBe('/v1/businesses/' + BUSINESS);
+    identity.resource = { kind: 'ok', data: { id: BUSINESS, legalName: 'Verified History Café', businessCode: 'HIST', status: 'active', industry: null } };
+    const html = render();
+    expect(html).toContain('Verified History Café');
+    expect(html).toContain('Recorded product');
+    expect(html).toContain('1.2345');
+    expect(html).toContain('SLIP-HISTORY');
+    expect(html).toContain('Print receipt');
+    identity.resource = { kind: 'error', message: 'Not found in this workspace' };
+    expect(render()).toContain('Retry receipt');
+    expect(render()).not.toContain('Print receipt');
+  });
+
   it('the route rejects invalid business IDs and signed-out state before showing sales', () => {
     const value: AuthContextValue = { state: { status: 'ready', email: 'staff@example.test', scope, memberships: [] }, api: null, signIn: async () => ({ ok: true }), signOut: async () => undefined, selectWorkspace: () => true, retry: noop };
     businessParam = 'invalid';

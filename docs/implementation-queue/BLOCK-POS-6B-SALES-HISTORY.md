@@ -1,5 +1,7 @@
 # POS-6b — Completed sales history and receipt reprints
 
+Integration note (POS-6e): this original specification is retained for history. The active dependency is now PR #192, and receipt headers use its exact verified business lookup. The original first-page header limitation and original unmerged-PR dependency below are superseded by BLOCK-POS-6E-SALES-HISTORY-INTEGRATION.md.
+
 Date: 2026-10-20. Authorization: owner request, "next build", following POS-01 foundation fixes in PR #189. This block is stacked on that unmerged PR; neither PR is merged automatically.
 
 Layer/domain: BO / COMMERCE. The web application reads the existing authenticated `/v1` API; BO remains authoritative. No migration, production action, H-5A/recovery change or locked-spec amendment.
