@@ -20,6 +20,7 @@ import { buildTenderPlan, type TenderEntry } from '../../../../../lib/client/ten
 import { buildDiscount, NO_DISCOUNT, type DiscountEntry } from '../../../../../lib/client/discount';
 import { buildNote } from '../../../../../lib/client/note';
 import { DEFAULT_PRINT_SETTINGS, type PrintSettings } from '../../../../../lib/client/printing';
+import { loadPrintPrefs, savePrintPrefs, tabStorage } from '../../../../../lib/client/printPrefs';
 
 const idSchema = z.string().uuid();
 
@@ -53,8 +54,10 @@ export default function CounterPage() {
   const [tenders, setTenders] = useState<TenderEntry[]>([]);
   const [receiptFor, setReceiptFor] = useState<string | null>(null);
   // POS-8a: the receipt prints by itself only for the sale just confirmed by the server, and only while the cashier has automatic printing switched on.
-  // The choice lives in memory for this page load only (nothing stored in the browser, nothing read from the address).
+  // The choice is remembered for this tab session only (sessionStorage: two harmless fields); it is read after the page mounts, never from the address.
   const [printSettings, setPrintSettings] = useState<PrintSettings>(DEFAULT_PRINT_SETTINGS);
+  useEffect(() => { setPrintSettings(loadPrintPrefs(tabStorage())); }, []);
+  const changePrintSettings = (next: PrintSettings) => { setPrintSettings(next); savePrintPrefs(tabStorage(), next); };
   const [autoPrintFor, setAutoPrintFor] = useState<string | null>(null);
   // The note being typed belongs to one order: switching orders drops the draft and the box shows that order's saved note again.
   const [noteDraft, setNoteDraft] = useState<{ orderId: string; text: string } | null>(null);
@@ -151,7 +154,7 @@ export default function CounterPage() {
       {resource.kind === 'ok' ? (
         <CounterCatalogue
           products={resource.data.products}
-          orderPanel={<div className="counter-left">{registerPanel}<PrintSettingsPanel settings={printSettings} onChange={setPrintSettings} />{orderPanel}{receipt ? <BusinessReceipt key={`${scope.tenantId}/${scope.workspaceId}/${businessId}`} order={receipt} autoPrint={autoPrintFor === receipt.id} paperMm={printSettings.paperMm} onClose={() => setReceiptFor(null)} /> : null}</div>}
+          orderPanel={<div className="counter-left">{registerPanel}<PrintSettingsPanel settings={printSettings} onChange={changePrintSettings} />{orderPanel}{receipt ? <BusinessReceipt key={`${scope.tenantId}/${scope.workspaceId}/${businessId}`} order={receipt} autoPrint={autoPrintFor === receipt.id} paperMm={printSettings.paperMm} onClose={() => setReceiptFor(null)} /> : null}</div>}
           disabled={!canAdd}
           onAdd={(product) => session && act(() => session.add(product))}
         />

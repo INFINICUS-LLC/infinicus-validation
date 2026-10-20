@@ -126,6 +126,6 @@ describe('PrintSettingsPanel', () => {
     expect(html(false, 80)).not.toContain('checked');
     expect(html(true, 80)).toContain('checked');
     expect(html(false, 58)).toMatch(/<option value="58" selected/);
-    expect(html(false, 80)).toContain('until the page is reloaded');
+    expect(html(false, 80)).toContain('until this tab is closed');
   });
 });

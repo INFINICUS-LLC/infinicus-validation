@@ -24,14 +24,17 @@ describe('browser-side client boundary (NA-04)', () => {
     expect(files.filter((f) => banned.test(code(f))).map(rel)).toEqual([]);
   });
 
-  it('uses no cookie access and no persistent browser storage; only the tab-scoped workspace selection is stored', () => {
+  it('uses no cookie access and no persistent browser storage; only the tab-scoped workspace selection and print choices are stored', () => {
     expect(files.filter((f) => /document\.cookie|cookies\(|indexedDB|localStorage/.test(code(f))).map(rel)).toEqual([]);
     const writers = files.filter((f) => /\.setItem\(/.test(code(f))).map(rel);
-    expect(writers).toEqual(['/lib/client/workspaces.ts']);
+    expect(writers).toEqual(['/lib/client/printPrefs.ts', '/lib/client/workspaces.ts']);
     const ws = code(join(ROOT, 'lib/client/workspaces.ts'));
     expect(ws.match(/\.setItem\(/g)).toHaveLength(1);
     expect(ws).toContain('.setItem(SCOPE_STORAGE_KEY, JSON.stringify(scope))');       // the selection (two ids) is the only thing ever stored
-    expect(files.filter((f) => /sessionStorage/.test(code(f))).map(rel)).toEqual(['/app/(client)/auth-provider.tsx']);
+    expect(files.filter((f) => /sessionStorage/.test(code(f))).map(rel).sort()).toEqual(['/app/(client)/auth-provider.tsx', '/lib/client/printPrefs.ts']);
+    const pp = code(join(ROOT, 'lib/client/printPrefs.ts'));
+    expect(pp.match(/\.setItem\(/g)).toHaveLength(1);
+    expect(pp).toContain('.setItem(PRINT_PREFS_KEY, JSON.stringify({ auto: settings.auto, paperMm: settings.paperMm }))');   // two harmless fields, nothing else
   });
 
   it('the backend session token is referenced only inside the session manager', () => {
