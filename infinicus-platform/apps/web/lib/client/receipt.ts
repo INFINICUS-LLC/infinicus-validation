@@ -8,7 +8,8 @@ import { formatMoney } from './currency';
 import type { Order } from './schemas';
 import { looksLikeCardNumber, TENDER_LABELS } from './tender';
 
-export interface ReceiptLine { description: string; quantityText: string; unitText: string; totalText: string }
+/** `discount` lines (POS-6b) are money off: they are shown as a description and a negative amount, without a quantity or unit price. */
+export interface ReceiptLine { kind: 'item' | 'discount'; description: string; quantityText: string; unitText: string; totalText: string }
 export interface ReceiptPayment { label: string; appliedText: string; receivedText: string | null; referenceText: string | null }
 export interface Receipt {
   businessName: string | null;
@@ -50,6 +51,7 @@ export function buildReceipt(order: Order, options: ReceiptOptions = {}): Receip
     dateText: (options.formatDate ?? defaultFormatDate)(order.orderDate),
     currencyCode: ccy,
     lines: order.lineItems.map((l) => ({
+      kind: l.itemType === 'discount' ? 'discount' as const : 'item' as const,
       description: l.description,
       quantityText: quantityFormat.format(l.quantity),
       unitText: plain(l.unitPrice),

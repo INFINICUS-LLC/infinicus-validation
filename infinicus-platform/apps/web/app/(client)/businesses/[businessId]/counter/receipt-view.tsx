@@ -12,7 +12,9 @@ export function ReceiptView({ receipt, onClose, onPrint = () => window.print() }
       <ul className="receipt-lines" aria-label="Receipt lines">
         {receipt.lines.map((l, i) => (
           <li key={i} className="receipt-row">
-            <span>{l.quantityText} &times; {l.description} <span className="receipt-unit">@ {l.unitText}</span></span>
+            {l.kind === 'discount'
+              ? <span>{l.description}</span>
+              : <span>{l.quantityText} &times; {l.description} <span className="receipt-unit">@ {l.unitText}</span></span>}
             <span>{l.totalText}</span>
           </li>
         ))}

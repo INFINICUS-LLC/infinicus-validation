@@ -6,6 +6,7 @@ import { NotFoundError, ConflictError } from './errors.js';
 import { BusinessDeclaredCurrencyReader } from '../onboarding/index.js';
 import { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from '../../currency/minorUnits.js';
 import { planPayments, type PaymentInput, type TenderMethod } from './tender.js';
+import { planDiscount } from './discount.js';
 
 export type OrderOperationalStatus = 'planned' | 'authorized' | 'executed' | 'completed' | 'failed' | 'reversed';
 
@@ -306,6 +307,8 @@ export class OrderRepository {
       );
       if (!line.rows[0]) throw new NotFoundError('OrderLineItem', lineItemId);
       const item = line.rows[0];
+      // POS-6b: a discount is created only through addDiscount (owner/admin); changing its quantity would multiply it past that check.
+      if (item.item_type === 'discount') throw new ConflictError('OrderLineItem', 'a discount line cannot be edited; remove it and add a new discount');
       // Keep the captured price and any existing line discount/tax; never reprice an existing order from the catalog.
       const total = roundToCurrency(quantity * Number(item.unit_price) * (1 - Number(item.discount_rate)) * (1 + Number(item.tax_rate)), order.currency_code as string);
       await client.query(
@@ -317,13 +320,50 @@ export class OrderRepository {
     });
   }
 
+  /**
+   * Take an amount off an open order (POS-6b). Stored as a SIGNED line (item_type 'discount'), so the total stays the sum of the lines. The order row
+   * is locked so two discounts added at once cannot together take the total below zero. Who may do this is decided by the API (permission bo:admin).
+   */
+  async addDiscount(ctx: TenantContext, orderId: string, businessId: string, input: { amount: number; reason?: string | null }): Promise<Order> {
+    return withTenantTransaction(ctx, async (client) => {
+      const order = await this.loadOrderRow(client, orderId, businessId, true);
+      if (order.operational_status !== 'planned') {
+        throw new ConflictError('Order', `order ${orderId} is not open for editing (status: ${order.operational_status})`);
+      }
+      const existing = await client.query<Record<string, unknown>>(
+        `SELECT count(*)::int AS n FROM business_operations.order_line_items WHERE order_id = $1 AND item_type = 'discount'`,
+        [orderId]
+      );
+      const planned = planDiscount(Number(order.total_amount), order.currency_code as string, input.amount, input.reason, Number(existing.rows[0].n));
+      const nextLine = await client.query<Record<string, unknown>>(
+        `SELECT COALESCE(MAX(line_number), 0) + 1 AS next FROM business_operations.order_line_items WHERE order_id = $1`,
+        [orderId]
+      );
+      await client.query(
+        `INSERT INTO business_operations.order_line_items
+           (tenant_id, workspace_id, business_id, order_id, line_number, item_type, product_id, description, quantity, unit_price, line_total)
+         VALUES ($1,$2,$3,$4,$5,'discount',NULL,$6,$7,$8,$9)`,
+        [ctx.tenantId, ctx.workspaceId, businessId, orderId, Number(nextLine.rows[0].next), planned.description, planned.quantity, planned.unitPrice, planned.lineTotal]
+      );
+      await this.recomputeTotal(client, orderId);
+      const row = await this.loadOrderRow(client, orderId, businessId);
+      const lineItems = await this.loadLineItems(client, orderId);
+      return rowToOrder(row, lineItems);
+    });
+  }
+
   private async recomputeTotal(client: PoolClient, orderId: string): Promise<void> {
-    await client.query(
+    const updated = await client.query<{ total_amount: string }>(
       `UPDATE platform.orders SET total_amount = (
          SELECT COALESCE(SUM(line_total), 0) FROM business_operations.order_line_items WHERE order_id = $1
-       ) WHERE id = $1`,
+       ) WHERE id = $1 RETURNING total_amount`,
       [orderId]
     );
+    // POS-6b: with discounts on the order, removing a line or lowering a quantity could leave the discounts larger than the rest. Every edit path ends
+    // here, so one check covers them all; the throw rolls the whole transaction back, so the edit does not happen and the cashier removes the discount first.
+    if (updated.rows[0] && Number(updated.rows[0].total_amount) < 0) {
+      throw new ConflictError('Order', 'this change would leave the discounts larger than the order; remove the discount first');
+    }
   }
 
   /**
@@ -375,7 +415,8 @@ export class OrderRepository {
          VALUES ($1,$2,$3,$4,'completed','planned','completed',$5)`,
         [ctx.tenantId, ctx.workspaceId, businessId, orderId, randomUUID()]
       );
-      const totalQuantity = roundQuantity(lineItems.reduce((sum, li) => sum + li.quantity, 0));
+      // A discount line is money off, not a unit sold: it does not count towards the quantity of the sale.
+      const totalQuantity = roundQuantity(lineItems.filter((li) => li.itemType !== 'discount').reduce((sum, li) => sum + li.quantity, 0));
       await client.query(
         `INSERT INTO business_operations.business_events
            (tenant_id, workspace_id, business_id, event_type, amount, quantity, customer_id, notes, correlation_id)

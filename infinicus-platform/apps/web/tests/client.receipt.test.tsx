@@ -30,8 +30,8 @@ describe('buildReceipt (pure: re-arranges the server order, adds up nothing)', (
     expect(r).not.toBeNull();
     expect(r).toMatchObject({ businessName: 'Acme Café', orderNumber: 'ORD-0007', dateText: 'D(2026-10-19T17:30:00.000Z)', currencyCode: 'KWD', totalText: 'KWD 4.250', changeText: 'KWD 0.750' });
     expect(r!.lines).toEqual([
-      { description: 'Espresso', quantityText: '2', unitText: '1.125', totalText: '2.250' },
-      { description: 'Cake', quantityText: '1', unitText: '2.000', totalText: '2.000' },
+      { kind: 'item', description: 'Espresso', quantityText: '2', unitText: '1.125', totalText: '2.250' },
+      { kind: 'item', description: 'Cake', quantityText: '1', unitText: '2.000', totalText: '2.000' },
     ]);
     expect(r!.payments).toEqual([{ label: 'Cash', appliedText: 'KWD 4.250', receivedText: 'KWD 5.000', referenceText: null }]);
   });
@@ -75,6 +75,30 @@ describe('buildReceipt (pure: re-arranges the server order, adds up nothing)', (
     expect(r.lines[0].quantityText).toBe('1.5');
     expect(r.dateText).toBe('not a date');
     expect(defaultFormatDate('2026-10-19T17:30:00.000Z')).toMatch(/2026/);
+  });
+});
+
+describe('receipt: discount lines (POS-6b)', () => {
+  const withDiscount = order({
+    totalAmount: 2.25,
+    lineItems: [...order().lineItems, { id: id(12), lineNumber: 3, itemType: 'discount', productId: null, description: 'Discount: Staff meal', quantity: 1, unitPrice: -2, lineTotal: -2 }],
+  });
+
+  it('a discount line is marked as a discount and shows its negative amount; product lines are unchanged', () => {
+    const r = buildReceipt(withDiscount, { formatDate: fixedDate })!;
+    expect(r.lines.map((l) => l.kind)).toEqual(['item', 'item', 'discount']);
+    expect(r.lines[2]).toMatchObject({ description: 'Discount: Staff meal', totalText: '-2.000' });
+    expect(r.totalText).toBe('KWD 2.250');   // the server's total, not a sum computed here
+  });
+
+  it('is printed as money off: description and amount, without "1 ×" or an "@ unit price"', () => {
+    const r = buildReceipt(withDiscount, { formatDate: fixedDate })!;
+    const out = renderToString(<ReceiptView receipt={r} onClose={() => undefined} onPrint={() => undefined} />).replace(/<!-- -->/g, '');
+    expect(out).toContain('Discount: Staff meal');
+    expect(out).toContain('-2.000');
+    expect(out).not.toContain('1 × Discount');
+    expect(out).not.toContain('@ -2.000');
+    expect(out).toContain('2 × Espresso');
   });
 });
 

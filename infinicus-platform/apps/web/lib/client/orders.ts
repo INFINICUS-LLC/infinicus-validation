@@ -10,6 +10,7 @@
 import { ApiContractError, ApiError, ApiUnavailableError, type ApiClient, type Scope } from './apiClient';
 import { describeRequestError } from './lifecycle';
 import { orderSchema, type Order, type Product } from './schemas';
+import { DISCOUNT_REASON_MAX } from './discount';
 import type { TenderPayment } from './tender';
 
 export interface OrderSessionState {
@@ -20,12 +21,15 @@ export interface OrderSessionState {
   retryable: boolean;
 }
 
-interface Pending { key: string; run: (key: string) => Promise<Order>; /** Plain wording for a definite 409 refusal of this action. */ conflict?: string; /** Plain wording for a definite 400 refusal. */ invalid?: string }
+interface Pending { key: string; run: (key: string) => Promise<Order>; /** Plain wording for a definite 409 refusal of this action. */ conflict?: string; /** Plain wording for a definite 400 refusal. */ invalid?: string; /** Plain wording for a 403 (not allowed to do this action). */ forbidden?: string }
 
 /** The server's reason is never shown raw; a refusal of complete or void gets one plain sentence. */
 export const COMPLETE_CONFLICT = 'This order could not be completed. It may have no items, or it was already completed or voided. Reload the order to see its current state.';
 export const VOID_CONFLICT = 'This order could not be voided. It may already be completed or voided. Reload the order to see its current state.';
 export const VOID_REASON_MAX = 500;
+export const DISCOUNT_CONFLICT = 'The discount could not be added. The order may already be completed or voided, or removing a line would leave the discounts larger than the order. Reload the order to see its current state.';
+export const DISCOUNT_REFUSED = 'The discount was not accepted. Check the amount: it must be more than zero, exact in the currency, no more than the order total, and at most five discounts per order.';
+export const DISCOUNT_FORBIDDEN = 'Only an owner or admin can give discounts. Ask a manager to sign in and apply it.';
 export const PAYMENT_REFUSED = 'The payment was not accepted. Check that the payments cover the total and that only cash includes change.';
 
 const orderPath = (businessId: string): string => `/v1/businesses/${encodeURIComponent(businessId)}/orders`;
@@ -48,9 +52,9 @@ export class OrderSession {
   private set(patch: Partial<OrderSessionState>): void { this.state = { ...this.state, ...patch }; for (const l of this.listeners) l(); }
 
   /** Run one action: one key, one request. Ignored while another action runs or an unresolved one waits for a retry or discard. */
-  private async act(run: (key: string) => Promise<Order>, conflict?: string, invalid?: string): Promise<boolean> {
+  private async act(run: (key: string) => Promise<Order>, conflict?: string, invalid?: string, forbidden?: string): Promise<boolean> {
     if (this.state.busy || this.pending) return false;
-    return this.execute({ key: this.newKey(), run, conflict, invalid });
+    return this.execute({ key: this.newKey(), run, conflict, invalid, forbidden });
   }
 
   private async execute(action: Pending): Promise<boolean> {
@@ -63,8 +67,8 @@ export class OrderSession {
     } catch (error) {
       const unknown = IDEMPOTENT_UNKNOWN_OUTCOME(error);
       this.pending = unknown ? action : null;
-      const refused = error instanceof ApiError && ((error.status === 409 && action.conflict) || (error.status === 400 && action.invalid));
-      const plain = error instanceof ApiError && error.status === 400 ? action.invalid : action.conflict;
+      const refused = error instanceof ApiError && ((error.status === 409 && action.conflict) || (error.status === 400 && action.invalid) || (error.status === 403 && action.forbidden));
+      const plain = error instanceof ApiError && error.status === 400 ? action.invalid : error instanceof ApiError && error.status === 403 ? action.forbidden : action.conflict;
       this.set({ busy: false, message: refused && plain ? plain : describeRequestError(error), retryable: unknown });
       return false;
     }
@@ -117,6 +121,19 @@ export class OrderSession {
     }
     const body = trimmed ? { reason: trimmed } : {};
     return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/void`, { body, scope: this.scope, idempotencyKey: key, schema: orderSchema }), VOID_CONFLICT);
+  };
+
+  /** Take an amount off the open order (POS-6b; owners and admins only). The new total is the server's answer. */
+  discount = (amount: number, reason?: string | null): Promise<boolean> => {
+    const order = this.state.order;
+    if (!order || order.operationalStatus !== 'planned') return Promise.resolve(false);
+    const trimmed = reason?.trim() ?? '';
+    if (trimmed.length > DISCOUNT_REASON_MAX) {
+      this.set({ message: `The reason is too long (at most ${DISCOUNT_REASON_MAX} characters).` });
+      return Promise.resolve(false);
+    }
+    const body = trimmed ? { amount, reason: trimmed } : { amount };
+    return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/discounts`, { body, scope: this.scope, idempotencyKey: key, schema: orderSchema }), DISCOUNT_CONFLICT, DISCOUNT_REFUSED, DISCOUNT_FORBIDDEN);
   };
 
   /** Load an order by id (for example from the open-orders list). Reads carry no key and change nothing. */
