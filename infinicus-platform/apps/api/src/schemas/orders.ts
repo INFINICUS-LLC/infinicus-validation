@@ -64,8 +64,15 @@ export const addLineItemBodySchema = z.object({
   quantity: z.number().positive(),
   unitPrice: z.number().min(0),
   productId: z.string().uuid().optional(),
-  itemType: z.enum(['product', 'service', 'fee', 'discount', 'other']).optional(),
+  // 'discount' is not offered here: a discount is a signed line created only through the discount route (POS-6b), which is limited to owners and admins.
+  itemType: z.enum(['product', 'service', 'fee', 'other']).optional(),
 });
+
+/** A discount on an open order (POS-6b). The amount is positive and in the order's currency; the server stores it as a signed line and computes the new total. */
+export const discountBodySchema = z.object({
+  amount: z.number().positive(),
+  reason: z.string().max(200).nullable().optional(),
+}).strict();
 
 /** Tender for completing an order. Unknown keys are refused (strict): the body carries no currency, no applied amount and no change; the server computes those. */
 export const completeOrderBodySchema = z.object({

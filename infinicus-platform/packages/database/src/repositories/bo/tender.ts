@@ -71,6 +71,7 @@ export function planPayments(totalAmount: number, currencyCode: string, inputs: 
   if (exponent === null) throw new UnsupportedCurrencyError(currencyCode);
   if (roundToCurrency(totalAmount, currencyCode) !== totalAmount) throw new PaymentError(`the order total has more decimal places than ${currencyCode} allows`);
   const totalMinor = toMinor(totalAmount, exponent);
+  if (totalMinor < 0) throw new PaymentError('the order total is below zero (discounts larger than the order); remove a discount first');
 
   if (totalMinor === 0) {
     if (inputs.length > 0) throw new PaymentError('this order total is zero, so no payment is taken');

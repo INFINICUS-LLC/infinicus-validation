@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { BusinessRepository, OrderRepository } from '@infinicus/database';
 import {
   businessIdParamsSchema, orderIdParamsSchema, lineItemIdParamsSchema,
-  createOrderBodySchema, addLineItemBodySchema, completeOrderBodySchema, voidOrderBodySchema,
+  createOrderBodySchema, addLineItemBodySchema, completeOrderBodySchema, voidOrderBodySchema, discountBodySchema,
   orderResponseSchema, listOrdersQuerySchema, listOrdersResponseSchema,
 } from '../schemas/orders.js';
 import { errorResponseSchema } from '../schemas/common.js';
@@ -97,6 +97,27 @@ export default async function ordersRoutes(app: FastifyInstance) {
     const { businessId, orderId, lineItemId } = request.params;
     await businesses.getById(request.ctx!, businessId);
     const order = await orders.removeLineItem(request.ctx!, orderId, lineItemId);
+    return reply.status(200).send(order);
+  });
+
+  // POS-6b: money off an open order. Limited to owners and admins (bo:admin; the cashier role `member` does not hold it): a discount lowers what the business takes.
+  server.post('/v1/businesses/:businessId/orders/:orderId/discounts', {
+    schema: {
+      tags: ['operations'],
+      summary: 'Take an amount off an open order (signed discount line; owner or admin only)',
+      params: orderIdParamsSchema,
+      body: discountBodySchema,
+      response: {
+        200: orderResponseSchema,
+        400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema,
+        404: errorResponseSchema, 409: errorResponseSchema,
+      },
+    },
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:admin'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+  }, async (request, reply) => {
+    const { businessId, orderId } = request.params;
+    await businesses.getById(request.ctx!, businessId);
+    const order = await orders.addDiscount(request.ctx!, orderId, businessId, request.body);
     return reply.status(200).send(order);
   });
 

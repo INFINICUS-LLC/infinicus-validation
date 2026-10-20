@@ -6,6 +6,7 @@ import { NotFoundError, ConflictError } from './errors.js';
 import { BusinessDeclaredCurrencyReader } from '../onboarding/index.js';
 import { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from '../../currency/minorUnits.js';
 import { planPayments, type PaymentInput, type TenderMethod } from './tender.js';
+import { planDiscount } from './discount.js';
 
 export type OrderOperationalStatus = 'planned' | 'authorized' | 'executed' | 'completed' | 'failed' | 'reversed';
 
@@ -262,6 +263,46 @@ export class OrderRepository {
       );
       if (deleted.rowCount === 0) throw new NotFoundError('OrderLineItem', lineItemId);
       await this.recomputeTotal(client, orderId);
+      // POS-6b: with a discount on the order, removing a product line could leave the discounts larger than the rest. Refuse (the transaction rolls
+      // back, so the line stays); the cashier removes the discount first.
+      const after = await client.query<Record<string, unknown>>(`SELECT total_amount FROM platform.orders WHERE id = $1`, [orderId]);
+      if (Number(after.rows[0].total_amount) < 0) {
+        throw new ConflictError('Order', `removing this line would leave the discounts larger than the order; remove the discount first`);
+      }
+      const row = await this.loadOrderRow(client, orderId);
+      const lineItems = await this.loadLineItems(client, orderId);
+      return rowToOrder(row, lineItems);
+    });
+  }
+
+  /**
+   * Take an amount off an open order (POS-6b). Stored as a SIGNED line (item_type 'discount'), so the total stays the sum of the lines. The order row
+   * is locked so two discounts added at once cannot together take the total below zero. Who may do this is decided by the API (permission bo:admin).
+   */
+  async addDiscount(ctx: TenantContext, orderId: string, businessId: string, input: { amount: number; reason?: string | null }): Promise<Order> {
+    return withTenantTransaction(ctx, async (client) => {
+      const locked = await client.query<Record<string, unknown>>(`SELECT * FROM platform.orders WHERE id = $1 FOR UPDATE`, [orderId]);
+      if (locked.rows.length === 0) throw new NotFoundError('Order', orderId);
+      const order = locked.rows[0];
+      if (order.operational_status !== 'planned') {
+        throw new ConflictError('Order', `order ${orderId} is not open for editing (status: ${order.operational_status})`);
+      }
+      const existing = await client.query<Record<string, unknown>>(
+        `SELECT count(*)::int AS n FROM business_operations.order_line_items WHERE order_id = $1 AND item_type = 'discount'`,
+        [orderId]
+      );
+      const planned = planDiscount(Number(order.total_amount), order.currency_code as string, input.amount, input.reason, Number(existing.rows[0].n));
+      const nextLine = await client.query<Record<string, unknown>>(
+        `SELECT COALESCE(MAX(line_number), 0) + 1 AS next FROM business_operations.order_line_items WHERE order_id = $1`,
+        [orderId]
+      );
+      await client.query(
+        `INSERT INTO business_operations.order_line_items
+           (tenant_id, workspace_id, business_id, order_id, line_number, item_type, product_id, description, quantity, unit_price, line_total)
+         VALUES ($1,$2,$3,$4,$5,'discount',NULL,$6,$7,$8,$9)`,
+        [ctx.tenantId, ctx.workspaceId, businessId, orderId, Number(nextLine.rows[0].next), planned.description, planned.quantity, planned.unitPrice, planned.lineTotal]
+      );
+      await this.recomputeTotal(client, orderId);
       const row = await this.loadOrderRow(client, orderId);
       const lineItems = await this.loadLineItems(client, orderId);
       return rowToOrder(row, lineItems);
@@ -328,7 +369,8 @@ export class OrderRepository {
          VALUES ($1,$2,$3,$4,'completed','planned','completed',$5)`,
         [ctx.tenantId, ctx.workspaceId, businessId, orderId, randomUUID()]
       );
-      const totalQuantity = roundQuantity(lineItems.reduce((sum, li) => sum + li.quantity, 0));
+      // A discount line is money off, not a unit sold: it does not count towards the quantity of the sale.
+      const totalQuantity = roundQuantity(lineItems.filter((li) => li.itemType !== 'discount').reduce((sum, li) => sum + li.quantity, 0));
       await client.query(
         `INSERT INTO business_operations.business_events
            (tenant_id, workspace_id, business_id, event_type, amount, quantity, customer_id, notes, correlation_id)

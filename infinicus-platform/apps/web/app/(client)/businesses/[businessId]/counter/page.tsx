@@ -14,6 +14,7 @@ import { OrderPanelView, useOrderSession } from './order-panel';
 import { RegisterPanelView, useRegister } from './register-panel';
 import { parseCashAmount } from '../../../../../lib/client/register';
 import { buildTender, type TenderEntry } from '../../../../../lib/client/tender';
+import { buildDiscount, NO_DISCOUNT, type DiscountEntry } from '../../../../../lib/client/discount';
 
 const idSchema = z.string().uuid();
 
@@ -29,7 +30,8 @@ export default function CounterPage() {
   const [cashText, setCashText] = useState('');
   const [confirmingClose, setConfirmingClose] = useState(false);
   useEffect(() => { if (register) void register.load(); }, [register]);
-  const [ask, setAsk] = useState<{ kind: 'complete' | 'void'; orderId: string } | null>(null);
+  const [ask, setAsk] = useState<{ kind: 'complete' | 'void' | 'discount'; orderId: string } | null>(null);
+  const [discount, setDiscount] = useState<DiscountEntry>(NO_DISCOUNT);
   const [voidReason, setVoidReason] = useState('');
   const [tender, setTender] = useState<TenderEntry>({ method: 'cash', amountText: '', reference: '' });
 
@@ -48,10 +50,15 @@ export default function CounterPage() {
       const check = order ? buildTender(tender, order.totalAmount, order.currencyCode) : null;
       if (!check || !check.ok) return;
       run = () => session.complete([check.payment]);
+    } else if (confirm === 'discount') {
+      const order = orderState.order;
+      const check = order ? buildDiscount(discount, order.totalAmount, order.currencyCode) : null;
+      if (!check || !check.ok) return;
+      run = () => session.discount(check.amount, check.reason);
     } else {
       run = () => session.voidOrder(voidReason);
     }
-    void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); setAsk(null); setVoidReason(''); setTender({ method: 'cash', amountText: '', reference: '' }); } });
+    void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); setAsk(null); setVoidReason(''); setDiscount(NO_DISCOUNT); setTender({ method: 'cash', amountText: '', reference: '' }); } });
   };
   const orderPanel = (
     <OrderPanelView
@@ -64,13 +71,16 @@ export default function CounterPage() {
       onOpen={(orderId) => session && act(() => session.open(orderId))}
       confirm={confirm}
       voidReason={voidReason}
-      onAsk={(kind) => { if (orderState.order) { setVoidReason(''); setTender({ method: 'cash', amountText: '', reference: '' }); setAsk({ kind, orderId: orderState.order.id }); } }}
-      onCancelAsk={() => { setAsk(null); setVoidReason(''); }}
+      onAsk={(kind) => { if (orderState.order) { setVoidReason(''); setDiscount(NO_DISCOUNT); setTender({ method: 'cash', amountText: '', reference: '' }); setAsk({ kind, orderId: orderState.order.id }); } }}
+      onCancelAsk={() => { setAsk(null); setVoidReason(''); setDiscount(NO_DISCOUNT); }}
       onConfirm={onConfirm}
       onReasonChange={setVoidReason}
       tender={tender}
       tenderCheck={orderState.order ? buildTender(tender, orderState.order.totalAmount, orderState.order.currencyCode) : null}
       onTenderChange={setTender}
+      discount={discount}
+      discountCheck={orderState.order ? buildDiscount(discount, orderState.order.totalAmount, orderState.order.currencyCode) : null}
+      onDiscountChange={setDiscount}
       registerOpen={registerState.loaded ? registerState.session !== null : undefined}
     />
   );

@@ -5,6 +5,8 @@ import type { ApiClient, Scope } from '../../../../../lib/client/apiClient';
 import { formatAmount } from '../../../../../lib/client/counter';
 import { OrderSession, VOID_REASON_MAX, type OrderSessionState } from '../../../../../lib/client/orders';
 import type { Order } from '../../../../../lib/client/schemas';
+import type { DiscountEntry, DiscountResult } from '../../../../../lib/client/discount';
+import { DISCOUNT_REASON_MAX } from '../../../../../lib/client/discount';
 import { REFERENCE_MAX, TENDER_LABELS, TENDER_METHODS, type TenderEntry, type TenderResult } from '../../../../../lib/client/tender';
 
 /** One order session per business and workspace; it is rebuilt when either changes. */
@@ -33,9 +35,9 @@ export interface OrderPanelProps {
   onDiscard: () => void;
   onOpen: (orderId: string) => void;
   /** Complete and void (POS-3). Optional so the earlier read-only uses of the panel keep working. */
-  confirm?: 'complete' | 'void' | null;
+  confirm?: 'complete' | 'void' | 'discount' | null;
   voidReason?: string;
-  onAsk?: (kind: 'complete' | 'void') => void;
+  onAsk?: (kind: 'complete' | 'void' | 'discount') => void;
   onCancelAsk?: () => void;
   onConfirm?: () => void;
   onReasonChange?: (reason: string) => void;
@@ -45,14 +47,19 @@ export interface OrderPanelProps {
   tender?: TenderEntry;
   tenderCheck?: TenderResult | null;
   onTenderChange?: (entry: TenderEntry) => void;
+  /** Discount entry (POS-6b): what the cashier typed, the local check of it, and the change handler. Owners and admins only; the server decides. */
+  discount?: DiscountEntry;
+  discountCheck?: DiscountResult | null;
+  onDiscountChange?: (entry: DiscountEntry) => void;
 }
 
 const NO_TENDER: TenderEntry = { method: 'cash', amountText: '', reference: '' };
+const NO_DISCOUNT_ENTRY: DiscountEntry = { amountText: '', reason: '' };
 
 const none = (): void => undefined;
 
 /** Presentational order panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
-export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tender = NO_TENDER, tenderCheck = null, onTenderChange = none }: OrderPanelProps) {
+export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tender = NO_TENDER, tenderCheck = null, onTenderChange = none, discount = NO_DISCOUNT_ENTRY, discountCheck = null, onDiscountChange = none }: OrderPanelProps) {
   const { order, busy, message, retryable } = state;
   const planned = order?.operationalStatus === 'planned';
   const locked = busy || retryable;
@@ -83,7 +90,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
             <ul className="order-lines" aria-label="Order lines">
               {order.lineItems.map((line) => (
                 <li key={line.id}>
-                  <span>{line.quantity} &times; {line.description}</span>{' '}
+                  <span>{line.itemType === 'discount' ? line.description : <>{line.quantity} &times; {line.description}</>}</span>{' '}
                   <span className="line-total">{formatAmount(line.lineTotal, order.currencyCode)}</span>{' '}
                   <button type="button" className="secondary" aria-label={`Remove ${line.description}`} onClick={() => onRemove(line.id)} disabled={busy || retryable || order.operationalStatus !== 'planned'}>Remove</button>
                 </li>
@@ -110,6 +117,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
           {planned && !confirm ? (
             <p>
               <button type="button" onClick={() => onAsk('complete')} disabled={locked || order.lineItems.length === 0}>Complete sale</button>{' '}
+              <button type="button" className="secondary" onClick={() => onAsk('discount')} disabled={locked || order.lineItems.length === 0 || order.totalAmount <= 0}>Discount</button>{' '}
               <button type="button" className="secondary" onClick={() => onAsk('void')} disabled={locked}>Void order</button>
             </p>
           ) : null}
@@ -138,6 +146,22 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
               ) : null}
               {tenderCheck && !tenderCheck.ok && (tender.amountText !== '' || tender.reference !== '') ? <p className="notice danger" role="alert">{tenderCheck.reason}</p> : null}
               <button type="button" onClick={onConfirm} disabled={locked || !tenderCheck || !tenderCheck.ok}>Confirm: complete sale</button>{' '}
+              <button type="button" className="secondary" onClick={onCancelAsk} disabled={busy}>Cancel</button>
+            </div>
+          ) : null}
+          {planned && confirm === 'discount' ? (
+            <div className="confirm" role="group" aria-label="Give a discount">
+              <p>Take an amount off this order. Order total: <strong>{money(order.totalAmount)}</strong>. Only an owner or admin can give a discount.</p>
+              <p>
+                <label htmlFor="discount-amount">Amount off</label>{' '}
+                <input id="discount-amount" inputMode="decimal" autoComplete="off" value={discount.amountText} disabled={locked} onChange={(e) => onDiscountChange({ ...discount, amountText: e.target.value })} />
+              </p>
+              <p>
+                <label htmlFor="discount-reason">Reason (optional)</label>{' '}
+                <input id="discount-reason" type="text" maxLength={DISCOUNT_REASON_MAX} autoComplete="off" value={discount.reason} disabled={locked} onChange={(e) => onDiscountChange({ ...discount, reason: e.target.value })} />
+              </p>
+              {discountCheck && !discountCheck.ok && (discount.amountText !== '' || discount.reason !== '') ? <p className="notice danger" role="alert">{discountCheck.reason}</p> : null}
+              <button type="button" onClick={onConfirm} disabled={locked || !discountCheck || !discountCheck.ok}>Confirm: give discount</button>{' '}
               <button type="button" className="secondary" onClick={onCancelAsk} disabled={busy}>Cancel</button>
             </div>
           ) : null}

@@ -37,6 +37,8 @@ export { OrderRepository } from './OrderRepository.js';
 export type { Order, OrderLineItem, OrderPayment, OrderOperationalStatus, CreateOrderInput, AddLineItemInput } from './OrderRepository.js';
 export { planPayments, PaymentError, TENDER_METHODS, MAX_PAYMENTS_PER_ORDER, PAYMENT_REFERENCE_MAX } from './tender.js';
 export type { PaymentInput, PlannedPayment, TenderMethod } from './tender.js';
+export { planDiscount, DiscountError, MAX_DISCOUNTS_PER_ORDER, DISCOUNT_REASON_MAX } from './discount.js';
+export type { PlannedDiscount } from './discount.js';
 
 export { AuthorizedActionIntakeRepository, MAX_RECEIPT_DOCUMENT_BYTES } from './AuthorizedActionIntakeRepository.js';
 export type {
