@@ -30,6 +30,8 @@ export type {
 export { ProductRepository } from './ProductRepository.js';
 export type { Product, CreateProductInput, UpdateProductInput } from './ProductRepository.js';
 
+export { PrinterRepository } from './PrinterRepository.js';
+export type { Printer, PrinterKind, PrinterConnection, PaperWidth, CreatePrinterInput } from './PrinterRepository.js';
 export { RegisterSessionRepository, RegisterAmountError } from './RegisterSessionRepository.js';
 export type { RegisterSession, RegisterSessionSummary, OpenRegisterSessionInput, CloseRegisterSessionInput } from './RegisterSessionRepository.js';
 
