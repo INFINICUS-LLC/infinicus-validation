@@ -21,6 +21,10 @@ const order = (over: Partial<Order> = {}): Order => ({
 });
 
 describe('buildReceipt (pure: re-arranges the server order, adds up nothing)', () => {
+  it('retains all four supported quantity decimal places on original receipts and reprints', () => {
+    const r = buildReceipt(order({ lineItems: [{ ...order().lineItems[0], quantity: 0.0001 }] }));
+    expect(r!.lines[0].quantityText).toBe('0.0001');
+  });
   it('a completed KWD sale shows three-decimal amounts, the cash received and the change', () => {
     const r = buildReceipt(order(), { businessName: 'Acme Café', formatDate: fixedDate });
     expect(r).not.toBeNull();

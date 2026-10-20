@@ -28,7 +28,7 @@ export interface ReceiptOptions {
   formatDate?: (iso: string) => string;
 }
 
-const quantityFormat = new Intl.NumberFormat('en', { maximumFractionDigits: 3 });
+const quantityFormat = new Intl.NumberFormat('en', { maximumFractionDigits: 4 });
 const REFERENCE_HIDDEN = 'reference hidden';
 
 /** Day and time in the reader's own time zone, or the raw text when it is not a date. */
