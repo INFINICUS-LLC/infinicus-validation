@@ -68,6 +68,7 @@ export default function CounterPage() {
       openOrders={openOrders}
       onStart={() => session && act(session.start)}
       onRemove={(lineItemId) => session && act(() => session.remove(lineItemId))}
+      onQuantity={(lineItemId, quantity) => session && act(() => session.setQuantity(lineItemId, quantity))}
       onRetry={() => session && act(session.retry)}
       onDiscard={() => { if (session) void session.discard(); }}
       onOpen={(orderId) => session && act(() => session.open(orderId))}

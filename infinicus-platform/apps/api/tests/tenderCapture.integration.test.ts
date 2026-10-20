@@ -96,6 +96,129 @@ describe.runIf(run)('POS-5 tender capture - live PostgreSQL + Fastify', () => {
   });
   afterAll(async () => { await app?.close(); await adminPool?.end(); await closePool(); });
 
+  it('selects the BO catalog by its own ID, snapshots server pricing and records catalog provenance', async () => {
+    const { s, orderId } = await ready('KWD', 1);
+    const product = await app.inject({ method: 'POST', url: `/v1/businesses/${s.bizId}/products`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { name: 'Espresso', price: 1.375 } });
+    expect(product.statusCode).toBe(201);
+    const productId = product.json().id;
+    const path = `${ordersUrl(s.bizId)}/${orderId}/line-items`;
+    const key = uc('catalog');
+    const request = { method: 'POST' as const, url: path, headers: hdr(s, { 'idempotency-key': key }), payload: { catalogProductId: productId, quantity: 2 } };
+    const result = await app.inject(request);
+    expect(result.statusCode).toBe(200);
+    const line = result.json().lineItems.at(-1);
+    expect(line).toMatchObject({ productId: null, description: 'Espresso', quantity: 2, unitPrice: 1.375, lineTotal: 2.75 });
+    expect((await app.inject(request)).json()).toEqual(result.json());
+    const events = await adminPool.query(`SELECT payload FROM business_operations.order_events WHERE order_id = $1 AND payload->>'kind' = 'catalog_line_added'`, [orderId]);
+    expect(events.rows).toEqual([{ payload: { kind: 'catalog_line_added', catalogProductId: productId, lineItemId: line.id } }]);
+    // A cached tile cannot override the price or smuggle a canonical product identity.
+    expect((await app.inject({ ...request, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { ...request.payload, unitPrice: 0 } })).statusCode).toBe(400);
+    await adminPool.query(`UPDATE business_operations.products SET active = false WHERE id = $1`, [productId]);
+    expect((await app.inject({ ...request, headers: hdr(s, { 'idempotency-key': uc('key') }) })).statusCode).toBe(404);
+  });
+
+  it('rejects a catalog selection from another business in the same workspace', async () => {
+    const { s, orderId, sessionId } = await ready('USD', 1);
+    const another = await adminPool.query(`INSERT INTO platform.businesses (tenant_id, workspace_id, legal_name, business_code) VALUES ($1,$2,'Other',$3) RETURNING id`, [s.ctx.tenantId, s.ctx.workspaceId, uc('other')]);
+    const product = await adminPool.query(`INSERT INTO business_operations.products (tenant_id, workspace_id, business_id, name, price) VALUES ($1,$2,$3,'Other product',5) RETURNING id`, [s.ctx.tenantId, s.ctx.workspaceId, another.rows[0].id]);
+    expect((await app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/line-items`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { catalogProductId: product.rows[0].id, quantity: 1 } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'PATCH', url: `/v1/businesses/${s.bizId}/products/${product.rows[0].id}`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { price: 0 } })).statusCode).toBe(404);
+    expect((await closeRegister({ ...s, bizId: another.rows[0].id }, sessionId, 0)).statusCode).toBe(404);
+    expect(Number((await adminPool.query(`SELECT price FROM business_operations.products WHERE id = $1`, [product.rows[0].id])).rows[0].price)).toBe(5);
+    expect((await getOrder(s, orderId)).json().lineItems).toHaveLength(1);
+  });
+
+  it('refuses every order read/mutation through the wrong business URL, including within one workspace', async () => {
+    const { s, orderId } = await ready('USD', 2);
+    const lineId = (await getOrder(s, orderId)).json().lineItems[0].id;
+    const other = await adminPool.query(`INSERT INTO platform.businesses (tenant_id, workspace_id, legal_name, business_code) VALUES ($1,$2,'Other',$3) RETURNING id`, [s.ctx.tenantId, s.ctx.workspaceId, uc('other')]);
+    const base = `${ordersUrl(other.rows[0].id)}/${orderId}`;
+    const requests = [
+      { method: 'GET' as const, url: base },
+      { method: 'POST' as const, url: `${base}/line-items`, payload: { description: 'Forged', quantity: 1, unitPrice: 2 } },
+      { method: 'DELETE' as const, url: `${base}/line-items/${lineId}` },
+      { method: 'POST' as const, url: `${base}/line-items/${lineId}/quantity`, payload: { quantity: 2 } },
+      { method: 'POST' as const, url: `${base}/void`, payload: {} },
+      { method: 'POST' as const, url: `${base}/complete`, payload: { payments: [cash(10)] } },
+    ];
+    for (const request of requests) expect((await app.inject({ ...request, headers: hdr(s, { 'idempotency-key': uc('key') }) })).statusCode, request.url).toBe(404);
+    expect((await getOrder(s, orderId)).json()).toMatchObject({ operationalStatus: 'planned', totalAmount: 2 });
+    expect(await paymentCount(s.bizId)).toBe(0);
+  });
+
+  it('sets quantities atomically with currency rounding, replays retries and retains captured discounts/tax', async () => {
+    const { s, orderId } = await ready('KWD', 1.375);
+    const lineId = (await getOrder(s, orderId)).json().lineItems[0].id;
+    const url = `${ordersUrl(s.bizId)}/${orderId}/line-items/${lineId}/quantity`;
+    const key = uc('qty');
+    const request = { method: 'POST' as const, url, headers: hdr(s, { 'idempotency-key': key }), payload: { quantity: 3 } };
+    const changed = await app.inject(request);
+    expect(changed.statusCode).toBe(200);
+    expect(changed.json()).toMatchObject({ totalAmount: 4.125 });
+    expect(changed.json().lineItems[0]).toMatchObject({ id: lineId, quantity: 3, unitPrice: 1.375, lineTotal: 4.125 });
+    expect((await app.inject(request)).json()).toEqual(changed.json());
+    expect((await app.inject({ ...request, payload: { quantity: 4 } })).statusCode).toBe(409);
+    for (const quantity of [0, -1, 0.00001, 1_000_000_001]) {
+      expect((await app.inject({ ...request, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { quantity } })).statusCode).toBe(400);
+    }
+    await adminPool.query(`UPDATE business_operations.order_line_items SET discount_rate = 0.1, tax_rate = 0.05 WHERE id = $1`, [lineId]);
+    const adjusted = await app.inject({ ...request, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { quantity: 2 } });
+    expect(adjusted.json().totalAmount).toBe(2.599);
+    expect((await complete(s, orderId, { payments: [cash(3)] })).statusCode).toBe(200);
+    expect((await app.inject({ ...request, headers: hdr(s, { 'idempotency-key': uc('key') }) })).statusCode).toBe(409);
+    expect((await getOrder(s, orderId)).json()).toMatchObject({ totalAmount: 2.599, changeDue: 0.401 });
+  });
+
+  it('quantity writes require permission and an idempotency key; foreign lines and tenants remain inaccessible', async () => {
+    const { s, orderId } = await ready('USD', 1);
+    const lineId = (await getOrder(s, orderId)).json().lineItems[0].id;
+    const url = `${ordersUrl(s.bizId)}/${orderId}/line-items/${lineId}/quantity`;
+    expect((await app.inject({ method: 'POST', url, headers: hdr(s), payload: { quantity: 2 } })).statusCode).toBe(400);
+    const viewer = await registerActiveUser();
+    await grantRole(s.ctx, viewer.userId, 'viewer');
+    expect((await app.inject({ method: 'POST', url, headers: hdr({ ctx: s.ctx, token: viewer.token }, { 'idempotency-key': uc('key') }), payload: { quantity: 2 } })).statusCode).toBe(403);
+    const another = await setup();
+    expect((await app.inject({ method: 'POST', url, headers: hdr(another, { 'idempotency-key': uc('key') }), payload: { quantity: 2 } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/line-items/${randomUUID()}/quantity`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { quantity: 2 } })).statusCode).toBe(404);
+  });
+
+  it('serializes competing complete/void requests: one terminal result, at most one sale and payment', async () => {
+    const { s, orderId } = await ready('USD', 2);
+    const results = await Promise.all([
+      complete(s, orderId, { payments: [cash(10)] }),
+      app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/void`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { reason: 'Cancel' } }),
+    ]);
+    expect(results.map(r => r.statusCode).sort()).toEqual([200, 409]);
+    const order = (await getOrder(s, orderId)).json();
+    const count = Number((await adminPool.query(`SELECT count(*) n FROM business_operations.business_events WHERE correlation_id = $1 AND event_type = 'sale'`, [orderId])).rows[0].n);
+    expect(count).toBe(order.operationalStatus === 'completed' ? 1 : 0);
+    expect(order.payments).toHaveLength(count);
+  });
+
+  it('serializes cart edits with completion so the sale, total and payment describe the same cart', async () => {
+    const { s, orderId } = await ready('KWD', 1.375);
+    const lineId = (await getOrder(s, orderId)).json().lineItems[0].id;
+    const results = await Promise.all([
+      app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/line-items/${lineId}/quantity`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { quantity: 2 } }),
+      complete(s, orderId, { payments: [cash(10)] }),
+    ]);
+    expect(results[1].statusCode).toBe(200);
+    expect([200, 409]).toContain(results[0].statusCode);
+    const order = (await getOrder(s, orderId)).json();
+    expect(order.totalAmount).toBe(order.lineItems[0].lineTotal);
+    expect(order.payments[0].amountApplied).toBe(order.totalAmount);
+    expect(Number((await adminPool.query(`SELECT amount FROM business_operations.business_events WHERE correlation_id = $1 AND event_type = 'sale'`, [orderId])).rows[0].amount)).toBe(order.totalAmount);
+  });
+
+  it('serializes register close with cash completion so counted cash never omits a committed sale', async () => {
+    const { s, orderId, sessionId } = await ready('USD', 2, 10);
+    const [sale, close] = await Promise.all([complete(s, orderId, { payments: [cash(5)] }), closeRegister(s, sessionId, 12)]);
+    expect(close.statusCode).toBe(200);
+    expect([200, 409]).toContain(sale.statusCode);
+    const stored = (await getOrder(s, orderId)).json();
+    expect(close.json().expectedCash).toBe(10 + stored.payments.reduce((sum: number, p: { amountApplied: number }) => sum + p.amountApplied, 0));
+  });
+
   it('the migrations are recorded and the table is row-level-secured (forced) with its policy', async () => {
     const rec = await adminPool.query(`SELECT filename FROM _migrations WHERE filename ~ '^020[3-6]_' ORDER BY filename`);
     expect(rec.rows.map((r) => r.filename)).toEqual(['0203_create_order_payments.sql', '0204_create_order_payments_indexes.sql', '0205_create_order_payments_rls.sql', '0206_order_payments_append_only_and_consistency.sql']);

@@ -59,13 +59,20 @@ export const createOrderBodySchema = z.object({
   customerId: z.string().uuid().optional(),
 });
 
-export const addLineItemBodySchema = z.object({
+export const orderQuantitySchema = z.number().finite().positive().max(1_000_000_000).multipleOf(0.0001);
+
+export const updateLineQuantityBodySchema = z.object({ quantity: orderQuantitySchema }).strict();
+
+export const addLineItemBodySchema = z.union([z.object({
+  catalogProductId: z.string().uuid(),
+  quantity: orderQuantitySchema,
+}).strict(), z.object({
   description: z.string().min(1).max(500),
-  quantity: z.number().positive(),
+  quantity: orderQuantitySchema,
   unitPrice: z.number().min(0),
   productId: z.string().uuid().optional(),
   itemType: z.enum(['product', 'service', 'fee', 'discount', 'other']).optional(),
-});
+}).strict()]);
 
 /** Tender for completing an order. Unknown keys are refused (strict): the body carries no currency, no applied amount and no change; the server computes those. */
 export const completeOrderBodySchema = z.object({

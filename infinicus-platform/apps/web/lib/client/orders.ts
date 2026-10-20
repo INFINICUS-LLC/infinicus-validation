@@ -74,11 +74,11 @@ export class OrderSession {
   start = (): Promise<boolean> =>
     this.act((key) => this.api.post(orderPath(this.businessId), { body: {}, scope: this.scope, idempotencyKey: key, schema: orderSchema }));
 
-  /** Add one unit of a product as a new line, at the catalogue price (the server does not look the price up yet: see the POS-0 survey, F2). */
+  /** Select a BO catalog product. BO resolves its current name and price, independently of the tile's cached display values. */
   add = (product: Product): Promise<boolean> => {
     const order = this.state.order;
     if (!order || order.operationalStatus !== 'planned') return Promise.resolve(false);
-    const body = { description: product.name, quantity: 1, unitPrice: product.price, productId: product.id, itemType: 'product' as const };
+    const body = { catalogProductId: product.id, quantity: 1 };
     return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/line-items`, { body, scope: this.scope, idempotencyKey: key, schema: orderSchema }));
   };
 
@@ -87,6 +87,15 @@ export class OrderSession {
     const order = this.state.order;
     if (!order || order.operationalStatus !== 'planned') return Promise.resolve(false);
     return this.act((key) => this.api.delete(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/line-items/${encodeURIComponent(lineItemId)}`, { scope: this.scope, idempotencyKey: key, schema: orderSchema }));
+  };
+
+  /** Set a line's quantity without removing/recreating it. Totals and captured pricing remain server-owned. */
+  setQuantity = (lineItemId: string, quantity: number): Promise<boolean> => {
+    const order = this.state.order;
+    if (!order || order.operationalStatus !== 'planned' || !order.lineItems.some((line) => line.id === lineItemId)
+      || !Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000_000) return Promise.resolve(false);
+    return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/line-items/${encodeURIComponent(lineItemId)}/quantity`,
+      { body: { quantity }, scope: this.scope, idempotencyKey: key, schema: orderSchema }));
   };
 
   /** Complete the open order with its tender: the server records the sale and the payment and locks the order. Needs at least one line and a payment; nothing is sent otherwise. */

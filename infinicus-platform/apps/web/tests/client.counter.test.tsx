@@ -122,6 +122,24 @@ const noop = () => undefined;
 const panel = (over: Partial<OrderPanelProps> = {}) => html(ready, <OrderPanelView state={{ order: null, busy: false, message: null, retryable: false }} openOrders={[]} onStart={noop} onRemove={noop} onRetry={noop} onDiscard={noop} onOpen={noop} {...over} />);
 
 describe('order panel and interactive catalogue (POS-2, server-rendered output)', () => {
+  it('offers labelled quantity controls and disables changes at the lower bound, during confirmation, retries and after completion', () => {
+    const state = { order: order(), busy: false, message: null, retryable: false };
+    const out = panel({ state, onQuantity: noop });
+    expect(out).toContain('aria-label="Increase quantity of Espresso"');
+    expect(out).toMatch(/aria-label="Decrease quantity of Espresso"[^>]*disabled/);
+    expect(out).not.toMatch(/aria-label="Increase quantity of Espresso"[^>]*disabled/);
+    for (const props of [
+      { state: { ...state, busy: true } },
+      { state: { ...state, retryable: true } },
+      { state, confirm: 'complete' as const },
+      { state: { ...state, order: order({ operationalStatus: 'completed' }) } },
+    ]) {
+      const buttons = panel({ ...props, onQuantity: noop }).match(/<button[^>]*aria-label="(?:Increase|Decrease) quantity[^>]*>/g) ?? [];
+      expect(buttons).toHaveLength(4);
+      expect(buttons.every(button => button.includes('disabled'))).toBe(true);
+    }
+  });
+
   it('with no order it explains what to do and offers New order; nothing else', () => {
     const out = panel();
     expect(out).toContain('No order open');

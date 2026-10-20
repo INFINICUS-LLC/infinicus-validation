@@ -66,7 +66,7 @@ export default async function registerSessionsRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { businessId, sessionId } = request.params;
     await businesses.getById(request.ctx!, businessId);
-    const session = await registerSessions.close(request.ctx!, sessionId, request.body);
+    const session = await registerSessions.close(request.ctx!, sessionId, request.body, businessId);
     return reply.status(200).send(session);
   });
 
