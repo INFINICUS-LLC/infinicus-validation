@@ -54,10 +54,15 @@ class FakeOrdersApi implements ApiClient {
     } else if (method === 'POST' && /\/complete$/.test(path)) {
       if (this.order!.operationalStatus !== 'planned' || this.order!.lineItems.length === 0) throw new ApiError(409, 'X', 'x');
       const sent = (body as { payments?: { method: string; amountTendered: number }[] }).payments ?? [];
-      if (sent.length === 0 || sent[0].amountTendered < this.order!.totalAmount) throw new ApiError(400, 'X', 'x');
-      const tendered = sent[0].amountTendered;
-      this.order!.payments = [{ id: uuid(2000), position: 1, method: sent[0].method as 'cash', currencyCode: 'KWD', amountTendered: tendered, amountApplied: this.order!.totalAmount, changeGiven: Math.round((tendered - this.order!.totalAmount) * 1000) / 1000, reference: null, createdAt: 'x' }];
-      this.order!.changeDue = this.order!.payments[0].changeGiven;
+      let remaining = this.order!.totalAmount;
+      this.order!.payments = sent.map((payment, n) => {
+        if (remaining <= 0 || (payment.method !== 'cash' && payment.amountTendered > remaining)) throw new ApiError(400, 'X', 'x');
+        const applied = Math.min(remaining, payment.amountTendered);
+        remaining = Math.round((remaining - applied) * 1000) / 1000;
+        return { id: uuid(2000 + n), position: n + 1, method: payment.method as 'cash', currencyCode: 'KWD', amountTendered: payment.amountTendered, amountApplied: applied, changeGiven: Math.round((payment.amountTendered - applied) * 1000) / 1000, reference: null, createdAt: 'x' };
+      });
+      if (remaining !== 0) throw new ApiError(400, 'X', 'x');
+      this.order!.changeDue = this.order!.payments.reduce((sum, payment) => sum + payment.changeGiven, 0);
       this.order!.operationalStatus = 'completed';
     } else if (method === 'POST' && /\/void$/.test(path)) {
       if (this.order!.operationalStatus !== 'planned') throw new ApiError(409, 'X', 'x');
@@ -268,6 +273,32 @@ describe('order session (POS-2): server-owned orders, one action at a time, safe
 const pay = (amountTendered: number) => [{ method: 'cash' as const, amountTendered }];
 
 describe('complete and void (POS-3)', () => {
+  it('captures every split payment for a stable retry even if the caller later edits its draft', async () => {
+    const { api, session } = setup(); await session.start(); await session.add(product(1));
+    const payments = [{ method: 'card' as const, amountTendered: 1 }, { method: 'cash' as const, amountTendered: 5 }];
+    api.failNext = { error: new ApiUnavailableError(), applied: true, times: 1 };
+    expect(await session.complete(payments)).toBe(false);
+    const key = api.calls.at(-1)?.key;
+    payments[0].amountTendered = 99;
+    expect(await session.complete(payments)).toBe(false);
+    expect(await session.retry()).toBe(true);
+    expect(api.calls.at(-1)).toMatchObject({ key, body: { payments: [{ method: 'card', amountTendered: 1 }, { method: 'cash', amountTendered: 5 }] } });
+    expect(session.getState().order).toMatchObject({ operationalStatus: 'completed', changeDue: 2.5 });
+    expect(session.getState().order?.payments).toHaveLength(2);
+    expect(api.order?.payments).toHaveLength(2);
+  });
+  it('completes a nonempty zero-total order with no payment and refuses a tender on that order', async () => {
+    const { api, session } = setup(); await session.start();
+    expect(await session.complete([])).toBe(false); // An empty order is still refused.
+    await session.add(product(1));
+    api.order!.totalAmount = 0;
+    api.order!.lineItems = api.order!.lineItems.map(line => ({ ...line, unitPrice: 0, lineTotal: 0 }));
+    await session.open(api.order!.id);
+    expect(await session.complete(pay(1))).toBe(false);
+    expect(await session.complete([])).toBe(true);
+    expect(api.calls.at(-1)?.body).toEqual({ payments: [] });
+    expect(session.getState().order).toMatchObject({ operationalStatus: 'completed', payments: [], changeDue: 0 });
+  });
   it('completes an order with lines: one POST with its own key, the server answer shows the closed sale, and the total is unchanged', async () => {
     const { api, session } = setup();
     await session.start(); await session.add(product(1, { price: 3.5 }));
