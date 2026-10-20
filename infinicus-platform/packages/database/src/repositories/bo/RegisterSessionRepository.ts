@@ -140,11 +140,11 @@ export class RegisterSessionRepository {
     });
   }
 
-  async close(ctx: TenantContext, sessionId: string, input: CloseRegisterSessionInput): Promise<RegisterSession> {
+  async close(ctx: TenantContext, sessionId: string, input: CloseRegisterSessionInput, businessId: string): Promise<RegisterSession> {
     return withTenantTransaction(ctx, async (client) => {
       const existing = await client.query<Record<string, unknown>>(
-        `SELECT * FROM business_operations.register_sessions WHERE id = $1`,
-        [sessionId]
+        `SELECT * FROM business_operations.register_sessions WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+        [sessionId, businessId]
       );
       if (existing.rows.length === 0) throw new NotFoundError('RegisterSession', sessionId);
       const session = rowToSession(existing.rows[0]);

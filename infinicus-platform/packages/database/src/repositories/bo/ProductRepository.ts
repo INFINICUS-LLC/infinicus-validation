@@ -99,7 +99,7 @@ export class ProductRepository {
     });
   }
 
-  async update(ctx: TenantContext, productId: string, input: UpdateProductInput): Promise<Product> {
+  async update(ctx: TenantContext, productId: string, input: UpdateProductInput, businessId: string): Promise<Product> {
     return withTenantTransaction(ctx, async (client) => {
       const result = await client.query<Record<string, unknown>>(
         `UPDATE business_operations.products SET
@@ -109,12 +109,12 @@ export class ProductRepository {
            icon       = COALESCE($5, icon),
            active     = COALESCE($6, active),
            sort_order = COALESCE($7, sort_order)
-         WHERE id = $1
+         WHERE id = $1 AND business_id = $8
          RETURNING *`,
         [
           productId, input.name ?? null, input.price ?? null,
           input.category ?? null, input.icon ?? null,
-          input.active ?? null, input.sortOrder ?? null,
+          input.active ?? null, input.sortOrder ?? null, businessId,
         ]
       );
       if (result.rows.length === 0) throw new NotFoundError('Product', productId);

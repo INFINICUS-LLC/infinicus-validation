@@ -42,8 +42,14 @@ class FakeOrdersApi implements ApiClient {
     if (method === 'POST' && /\/orders$/.test(path)) {
       this.order = { id: uuid(900), businessId: BUSINESS, customerId: null, orderNumber: 'ORD-TEST', orderDate: '2026-10-18', currencyCode: 'KWD', registerSessionId: null, payments: [], changeDue: 0, totalAmount: 0, operationalStatus: 'planned', createdAt: 'x', updatedAt: 'x', lineItems: [] };
     } else if (method === 'POST' && /\/line-items$/.test(path)) {
-      const b = body as { description: string; quantity: number; unitPrice: number; productId?: string; itemType?: string };
-      this.order!.lineItems.push({ id: uuid(1000 + ++this.seq), lineNumber: this.seq, itemType: b.itemType ?? 'product', productId: b.productId ?? null, description: b.description, quantity: b.quantity, unitPrice: b.unitPrice, lineTotal: Math.round(b.quantity * b.unitPrice * 100) / 100 });
+      const b = body as { catalogProductId: string; quantity: number };
+      const catalog = b.catalogProductId === uuid(1) ? { name: 'Espresso', price: 3.5 } : { name: 'Milk', price: 2 };
+      this.order!.lineItems.push({ id: uuid(1000 + ++this.seq), lineNumber: this.seq, itemType: 'product', productId: null, description: catalog.name, quantity: b.quantity, unitPrice: catalog.price, lineTotal: Math.round(b.quantity * catalog.price * 100) / 100 });
+      this.recompute();
+    } else if (method === 'POST' && /\/quantity$/.test(path)) {
+      const line = this.order!.lineItems.find((l) => l.id === path.split('/').at(-2))!;
+      line.quantity = (body as { quantity: number }).quantity;
+      line.lineTotal = Math.round(line.unitPrice * line.quantity * 100) / 100;
       this.recompute();
     } else if (method === 'POST' && /\/complete$/.test(path)) {
       if (this.order!.operationalStatus !== 'planned' || this.order!.lineItems.length === 0) throw new ApiError(409, 'X', 'x');
@@ -78,6 +84,42 @@ function setup() {
 const apiError = (status: number) => new ApiError(status, 'X', 'x');
 
 describe('order session (POS-2): server-owned orders, one action at a time, safe retries', () => {
+  it('selects by catalog identity only; changing cached name/price cannot override the server', async () => {
+    const { api, session } = setup();
+    await session.start();
+    expect(await session.add(product(1, { name: 'Tampered', price: 0 }))).toBe(true);
+    expect(api.calls.at(-1)?.body).toEqual({ catalogProductId: uuid(1), quantity: 1 });
+    expect(session.getState().order?.lineItems[0]).toMatchObject({ description: 'Espresso', unitPrice: 3.5 });
+  });
+
+  it('sets quantity through the API and safely retries a lost answer without duplicating the line', async () => {
+    const { api, session } = setup();
+    await session.start(); await session.add(product(1));
+    const id = session.getState().order!.lineItems[0].id;
+    api.failNext = { error: new ApiUnavailableError(), applied: true, times: 1 };
+    expect(await session.setQuantity(id, 3)).toBe(false);
+    const action = api.calls.at(-1)!;
+    expect(action).toMatchObject({ method: 'POST', path: `/v1/businesses/${BUSINESS}/orders/${uuid(900)}/line-items/${id}/quantity`, body: { quantity: 3 }, scope });
+    expect(await session.setQuantity(id, 4)).toBe(false);
+    expect(await session.retry()).toBe(true);
+    expect(api.calls.at(-1)?.key).toBe(action.key);
+    expect(session.getState().order?.lineItems).toHaveLength(1);
+    expect(session.getState().order).toMatchObject({ totalAmount: 10.5, lineItems: [{ id, quantity: 3, unitPrice: 3.5 }] });
+  });
+
+  it('refuses invalid quantities, missing lines and closed orders without a request', async () => {
+    const { api, session } = setup();
+    expect(await session.setQuantity(uuid(1), 2)).toBe(false);
+    await session.start(); await session.add(product(1));
+    const id = session.getState().order!.lineItems[0].id;
+    const before = api.calls.length;
+    for (const quantity of [0, -1, NaN, Infinity, 1_000_000_001]) expect(await session.setQuantity(id, quantity)).toBe(false);
+    expect(await session.setQuantity(uuid(1), 2)).toBe(false);
+    expect(api.calls).toHaveLength(before);
+    await session.voidOrder();
+    expect(await session.setQuantity(id, 2)).toBe(false);
+  });
+
   it('the order schemas accept the API shape and reject drift', () => {
     const order = { id: uuid(1), businessId: BUSINESS, customerId: null, orderNumber: 'ORD-1', orderDate: '2026-10-18', currencyCode: 'KWD', registerSessionId: null, payments: [], changeDue: 0, totalAmount: 7.5, operationalStatus: 'planned', createdAt: 'a', updatedAt: 'b', lineItems: [] };
     expect(orderSchema.safeParse(order).success).toBe(true);
@@ -102,7 +144,7 @@ describe('order session (POS-2): server-owned orders, one action at a time, safe
     expect(session.getState().order?.totalAmount).toBe(3.5);
     expect(session.getState().order?.lineItems.map((l) => l.description)).toEqual(['Espresso']);
     const add = api.calls[1];
-    expect(add).toMatchObject({ method: 'POST', path: `/v1/businesses/${BUSINESS}/orders/${uuid(900)}/line-items`, body: { description: 'Espresso', quantity: 1, unitPrice: 3.5, productId: uuid(1), itemType: 'product' } });
+    expect(add).toMatchObject({ method: 'POST', path: `/v1/businesses/${BUSINESS}/orders/${uuid(900)}/line-items`, body: { catalogProductId: uuid(1), quantity: 1 } });
     expect(api.calls[3]).toMatchObject({ method: 'DELETE', path: `/v1/businesses/${BUSINESS}/orders/${uuid(900)}/line-items/${milk.id}` });
   });
 

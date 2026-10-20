@@ -29,6 +29,7 @@ export interface OrderPanelProps {
   openOrders: readonly Order[];
   onStart: () => void;
   onRemove: (lineItemId: string) => void;
+  onQuantity?: (lineItemId: string, quantity: number) => void;
   onRetry: () => void;
   onDiscard: () => void;
   onOpen: (orderId: string) => void;
@@ -55,7 +56,7 @@ const NO_TENDER: TenderEntry = { method: 'cash', amountText: '', reference: '' }
 const none = (): void => undefined;
 
 /** Presentational order panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
-export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tender = NO_TENDER, tenderCheck = null, onTenderChange = none, onViewReceipt, receiptOpen = false }: OrderPanelProps) {
+export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantity, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tender = NO_TENDER, tenderCheck = null, onTenderChange = none, onViewReceipt, receiptOpen = false }: OrderPanelProps) {
   const { order, busy, message, retryable } = state;
   const planned = order?.operationalStatus === 'planned';
   const locked = busy || retryable;
@@ -88,6 +89,10 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
                 <li key={line.id}>
                   <span>{line.quantity} &times; {line.description}</span>{' '}
                   <span className="line-total">{formatAmount(line.lineTotal, order.currencyCode)}</span>{' '}
+                  {onQuantity ? <>
+                    <button type="button" className="secondary" aria-label={`Decrease quantity of ${line.description}`} onClick={() => onQuantity(line.id, line.quantity - 1)} disabled={locked || !planned || confirm !== null || line.quantity <= 1}>−</button>{' '}
+                    <button type="button" className="secondary" aria-label={`Increase quantity of ${line.description}`} onClick={() => onQuantity(line.id, line.quantity + 1)} disabled={locked || !planned || confirm !== null || line.quantity >= 1_000_000_000}>+</button>{' '}
+                  </> : null}
                   <button type="button" className="secondary" aria-label={`Remove ${line.description}`} onClick={() => onRemove(line.id)} disabled={busy || retryable || order.operationalStatus !== 'planned'}>Remove</button>
                 </li>
               ))}

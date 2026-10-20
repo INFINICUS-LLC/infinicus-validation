@@ -58,7 +58,7 @@ export default async function productsRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { businessId, productId } = request.params;
     await businesses.getById(request.ctx!, businessId);
-    const product = await products.update(request.ctx!, productId, request.body);
+    const product = await products.update(request.ctx!, productId, request.body, businessId);
     return reply.status(200).send(product);
   });
 }
