@@ -206,7 +206,7 @@ export class OrderRepository {
     });
   }
 
-  async list(ctx: TenantContext, businessId: string, opts: { status?: OrderOperationalStatus; limit?: number } = {}): Promise<Order[]> {
+  async list(ctx: TenantContext, businessId: string, opts: { status?: OrderOperationalStatus; limit?: number; before?: string } = {}): Promise<Order[]> {
     return withTenantTransaction(ctx, async (client) => {
       const conditions = ['business_id = $1'];
       const params: unknown[] = [businessId];
@@ -214,9 +214,15 @@ export class OrderRepository {
         params.push(opts.status);
         conditions.push(`operational_status = $${params.length}`);
       }
+      if (opts.before) {
+        await this.loadOrderRow(client, opts.before, businessId);
+        params.push(opts.before);
+        // Keep timestamp precision in PostgreSQL and break ties by ID. A concurrent new sale cannot shift older pages.
+        conditions.push(`(created_at, id) < (SELECT created_at, id FROM platform.orders WHERE id = $${params.length} AND business_id = $1)`);
+      }
       params.push(opts.limit ?? 20);
       const result = await client.query<Record<string, unknown>>(
-        `SELECT * FROM platform.orders WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC LIMIT $${params.length}`,
+        `SELECT * FROM platform.orders WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
         params
       );
       return result.rows.map((row) => rowToOrder(row, []));
