@@ -474,9 +474,12 @@ describe.runIf(run)('AC-3 Block 2 - J-1 business scope + J-6 approver grantee me
       const labels = app.printRoutes({ commonPrefix: false }).split('\n')
         .map((l) => /──\s+(\/\S+ \([A-Z, ]+\))\s*$/.exec(l)?.[1]).filter((x): x is string => !!x)
         .filter((l) => /\((?:[A-Z, ]*)(POST|PUT|PATCH|DELETE)/.test(l))
-        .filter((l) => /approv|authorized-action|decision|execut|reorder|policy|operations\/intake/.test(l))
-        .sort();
-      expect(labels).toEqual(GOVERNED);
+        .filter((l) => /approv|authorized-action|decision|execut|reorder|policy|operations\/intake/.test(l));
+      // Fastify prints its routes as a tree. Once a route exists at exactly /:businessId (GET /v1/businesses/:businessId), that segment becomes a shared parent
+      // node and the labels of its children no longer repeat it. The SET of governed routes is what this test pins, so both sides drop the leading business
+      // segment before they are compared; every other part of the label and the HTTP methods still have to match exactly.
+      const withoutBusinessSegment = (l: string): string => l.replace(/^\/:businessId(?=\/)/, '');
+      expect(labels.map(withoutBusinessSegment).sort()).toEqual(GOVERNED.map(withoutBusinessSegment).sort());
     });
 
     it('there is no route that accepts an approved action, an approval claim or an execution command for BO; guessed paths are 404', async () => {
