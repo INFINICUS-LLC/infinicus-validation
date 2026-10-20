@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderToString } from 'react-dom/server';
-import type { ReactElement } from 'react';
+import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 
 let routeParams: Record<string, string> = { businessId: '33333333-3333-4333-8333-333333333333' };
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useParams: () => routeParams }));
@@ -122,6 +122,24 @@ const noop = () => undefined;
 const panel = (over: Partial<OrderPanelProps> = {}) => html(ready, <OrderPanelView state={{ order: null, busy: false, message: null, retryable: false }} openOrders={[]} onStart={noop} onRemove={noop} onRetry={noop} onDiscard={noop} onOpen={noop} {...over} />);
 
 describe('order panel and interactive catalogue (POS-2, server-rendered output)', () => {
+  it('offers labelled quantity controls and disables changes at the lower bound, during confirmation, retries and after completion', () => {
+    const state = { order: order(), busy: false, message: null, retryable: false };
+    const out = panel({ state, onQuantity: noop });
+    expect(out).toContain('aria-label="Increase quantity of Espresso"');
+    expect(out).toMatch(/aria-label="Decrease quantity of Espresso"[^>]*disabled/);
+    expect(out).not.toMatch(/aria-label="Increase quantity of Espresso"[^>]*disabled/);
+    for (const props of [
+      { state: { ...state, busy: true } },
+      { state: { ...state, retryable: true } },
+      { state, confirm: 'complete' as const },
+      { state: { ...state, order: order({ operationalStatus: 'completed' }) } },
+    ]) {
+      const buttons = panel({ ...props, onQuantity: noop }).match(/<button[^>]*aria-label="(?:Increase|Decrease) quantity[^>]*>/g) ?? [];
+      expect(buttons).toHaveLength(4);
+      expect(buttons.every(button => button.includes('disabled'))).toBe(true);
+    }
+  });
+
   it('with no order it explains what to do and offers New order; nothing else', () => {
     const out = panel();
     expect(out).toContain('No order open');
@@ -271,10 +289,68 @@ describe('amounts use the currency decimal places (POS-1.6, server-rendered outp
 describe('tender step and the recorded sale (POS-5, server-rendered output)', () => {
   const open = (over: Partial<OrderPanelProps> = {}, o: Partial<Order> = {}) =>
     panel({ state: { order: order(o), busy: false, message: null, retryable: false }, ...over });
-  const cashOk = { ok: true as const, payment: { method: 'cash' as const, amountTendered: 10 }, changePreview: 4.5 };
+  const cashOk = { ok: true as const, payments: [{ method: 'cash' as const, amountTendered: 10 }], changePreview: 4.5 };
+
+  it('editing, adding and removing tender rows changes only the intended draft without mutating earlier values', () => {
+    const rows = [{ method: 'card' as const, amountText: '1', reference: 'A' }, { method: 'cash' as const, amountText: '2', reference: 'B' }];
+    const changed = vi.fn();
+    const elements = (node: ReactNode): ReactElement<Record<string, unknown>>[] => Children.toArray(node).flatMap(child => {
+      if (!isValidElement<{ children?: ReactNode }>(child)) return [];
+      return [child as ReactElement<Record<string, unknown>>, ...elements(child.props.children)];
+    });
+    const tree = elements(OrderPanelView({ state: { order: order(), busy: false, message: null, retryable: false }, openOrders: [], onStart: noop, onRemove: noop, onRetry: noop, onDiscard: noop, onOpen: noop, confirm: 'complete', tenders: rows, onTendersChange: changed }));
+    const amount = tree.find(element => element.props.id === 'tender-amount-1')!;
+    (amount.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '3' } });
+    expect(changed.mock.calls.at(-1)?.[0]).toEqual([rows[0], { ...rows[1], amountText: '3' }]);
+    const remove = tree.find(element => element.props['aria-label'] === 'Remove payment 1')!;
+    (remove.props.onClick as () => void)();
+    expect(changed.mock.calls.at(-1)?.[0]).toEqual([rows[1]]);
+    const add = tree.find(element => element.type === 'button' && element.props.children === 'Add payment')!;
+    (add.props.onClick as () => void)();
+    expect(changed.mock.calls.at(-1)?.[0]).toEqual([...rows, { method: 'cash', amountText: '', reference: '' }]);
+    expect(rows).toEqual([{ method: 'card', amountText: '1', reference: 'A' }, { method: 'cash', amountText: '2', reference: 'B' }]);
+  });
+
+  it('offers separate labelled split-payment rows, add/remove controls and a change preview', () => {
+    const out = open({ confirm: 'complete', tenders: [
+      { method: 'card', amountText: '1', reference: 'SLIP-1' },
+      { method: 'other', amountText: '1', reference: '' },
+      { method: 'cash', amountText: '5', reference: '' },
+    ], tenderCheck: { ok: true, payments: [{ method: 'card', amountTendered: 1 }, { method: 'other', amountTendered: 1 }, { method: 'cash', amountTendered: 5 }], changePreview: 1.5 } });
+    for (let n = 0; n < 3; n++) {
+      expect(out).toContain(`for="tender-amount-${n}"`);
+      expect(out).toContain(`id="tender-reference-${n}"`);
+      expect(out).toContain(`aria-label="Remove payment ${n + 1}"`);
+    }
+    expect(out).toContain('Add payment');
+    expect(out).toContain('Change to give (preview): <strong>USD 1.50</strong>');
+    expect(out).toMatch(/aria-label="Remove Espresso"[^>]*disabled/);
+    expect(out).not.toMatch(/disabled[^>]*>Confirm: complete sale/);
+  });
+
+  it('limits the rows to ten and locks tender inputs and actions during busy or unresolved checkout', () => {
+    const rows = Array.from({ length: 10 }, () => ({ method: 'card' as const, amountText: '0.55', reference: '' }));
+    expect(open({ confirm: 'complete', tenders: rows })).toMatch(/disabled[^>]*>Add payment/);
+    for (const flags of [{ busy: true, retryable: false }, { busy: false, retryable: true }]) {
+      const out = panel({ state: { order: order(), message: null, ...flags }, confirm: 'complete', tenders: rows });
+      const inputs = out.match(/<input[^>]*id="tender-[^"]+"[^>]*>/g) ?? [];
+      expect(inputs).toHaveLength(20);
+      expect(inputs.every(input => input.includes('disabled'))).toBe(true);
+      expect(out).toMatch(/disabled[^>]*>Add payment/);
+      expect(out).toMatch(/disabled[^>]*>Confirm: complete sale/);
+    }
+  });
+
+  it('confirms a nonempty zero-total order without offering payment fields', () => {
+    const out = open({ confirm: 'complete', tenders: [], tenderCheck: { ok: true, payments: [], changePreview: 0 } }, { totalAmount: 0 });
+    expect(out).toContain('No payment is taken for a zero-total order.');
+    expect(out).not.toContain('Add payment');
+    expect(out).not.toContain('tender-amount-');
+    expect(out).not.toMatch(/disabled[^>]*>Confirm: complete sale/);
+  });
 
   it('the completion step shows the total, the three payment methods (the chosen one pressed) and a labelled optional slip field', () => {
-    const out = open({ confirm: 'complete', tender: { method: 'card', amountText: '', reference: '' }, tenderCheck: { ok: true, payment: { method: 'card', amountTendered: 5.5 }, changePreview: 0 } });
+    const out = open({ confirm: 'complete', tenders: [{ method: 'card', amountText: '', reference: '' }], tenderCheck: { ok: true, payments: [{ method: 'card', amountTendered: 5.5 }], changePreview: 0 } });
     expect(out).toContain('Total to pay: <strong>USD 5.50</strong>');
     expect(out).toContain('aria-label="Payment method"');
     expect(out).toMatch(/aria-pressed="true"[^>]*>Card</);
@@ -286,14 +362,14 @@ describe('tender step and the recorded sale (POS-5, server-rendered output)', ()
   });
 
   it('cash asks for the amount received and shows the change as a preview; Confirm is off until the local check passes', () => {
-    const off = open({ confirm: 'complete', tender: { method: 'cash', amountText: '', reference: '' }, tenderCheck: { ok: false, reason: 'Enter the cash received as a number, for example 20 or 7.500.' } });
+    const off = open({ confirm: 'complete', tenders: [{ method: 'cash', amountText: '', reference: '' }], tenderCheck: { ok: false, reason: 'Enter the cash received as a number, for example 20 or 7.500.' } });
     expect(off).toContain('Cash received');
     expect(off).toMatch(/<button[^>]*disabled[^>]*>Confirm: complete sale/);
     expect(off).not.toContain('role="alert"');                                   // nothing typed yet: no scolding
-    const on = open({ confirm: 'complete', tender: { method: 'cash', amountText: '10', reference: '' }, tenderCheck: cashOk });
+    const on = open({ confirm: 'complete', tenders: [{ method: 'cash', amountText: '10', reference: '' }], tenderCheck: cashOk });
     expect(on).toContain('Change to give (preview): <strong>USD 4.50</strong>');
     expect(on).not.toMatch(/<button[^>]*disabled[^>]*>Confirm: complete sale/);
-    const typo = open({ confirm: 'complete', tender: { method: 'cash', amountText: '4', reference: '' }, tenderCheck: { ok: false, reason: 'The cash received is less than the total.' } });
+    const typo = open({ confirm: 'complete', tenders: [{ method: 'cash', amountText: '4', reference: '' }], tenderCheck: { ok: false, reason: 'The cash received is less than the total.' } });
     expect(typo).toContain('role="alert"');
     expect(typo).toContain('The cash received is less than the total.');
   });

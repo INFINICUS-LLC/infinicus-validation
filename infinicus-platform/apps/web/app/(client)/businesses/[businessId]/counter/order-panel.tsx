@@ -7,7 +7,7 @@ import { OrderSession, VOID_REASON_MAX, type OrderSessionState } from '../../../
 import type { Order } from '../../../../../lib/client/schemas';
 import type { DiscountEntry, DiscountResult } from '../../../../../lib/client/discount';
 import { DISCOUNT_REASON_MAX } from '../../../../../lib/client/discount';
-import { REFERENCE_MAX, TENDER_LABELS, TENDER_METHODS, type TenderEntry, type TenderResult } from '../../../../../lib/client/tender';
+import { MAX_TENDERS, REFERENCE_MAX, TENDER_LABELS, TENDER_METHODS, type TenderEntry, type TenderPlanResult } from '../../../../../lib/client/tender';
 
 /** One order session per business and workspace; it is rebuilt when either changes. */
 export function useOrderSession(api: ApiClient | null, scope: Scope | null, businessId: string | null): { session: OrderSession | null; state: OrderSessionState } {
@@ -31,6 +31,7 @@ export interface OrderPanelProps {
   openOrders: readonly Order[];
   onStart: () => void;
   onRemove: (lineItemId: string) => void;
+  onQuantity?: (lineItemId: string, quantity: number) => void;
   onRetry: () => void;
   onDiscard: () => void;
   onOpen: (orderId: string) => void;
@@ -44,9 +45,12 @@ export interface OrderPanelProps {
   /** False when no register is open: new orders are refused by the server, so the button says why. Undefined = not known yet / not shown. */
   registerOpen?: boolean;
   /** Tender entry for the completion step (POS-5): what the cashier typed, the local check of it, and the change handler. */
-  tender?: TenderEntry;
-  tenderCheck?: TenderResult | null;
-  onTenderChange?: (entry: TenderEntry) => void;
+  tenders?: readonly TenderEntry[];
+  tenderCheck?: TenderPlanResult | null;
+  onTendersChange?: (entries: TenderEntry[]) => void;
+  /** Receipt of a completed sale (POS-6a): when given, a completed order offers a "View receipt" button (hidden while the receipt is already open). */
+  onViewReceipt?: () => void;
+  receiptOpen?: boolean;
   /** Discount entry (POS-6b): what the cashier typed, the local check of it, and the change handler. Owners and admins only; the server decides. */
   discount?: DiscountEntry;
   discountCheck?: DiscountResult | null;
@@ -54,12 +58,13 @@ export interface OrderPanelProps {
 }
 
 const NO_TENDER: TenderEntry = { method: 'cash', amountText: '', reference: '' };
+const INITIAL_TENDERS: readonly TenderEntry[] = [NO_TENDER];
 const NO_DISCOUNT_ENTRY: DiscountEntry = { amountText: '', reason: '' };
 
 const none = (): void => undefined;
 
 /** Presentational order panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
-export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tender = NO_TENDER, tenderCheck = null, onTenderChange = none, discount = NO_DISCOUNT_ENTRY, discountCheck = null, onDiscountChange = none }: OrderPanelProps) {
+export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantity, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tenders = INITIAL_TENDERS, tenderCheck = null, onTendersChange = none, onViewReceipt, receiptOpen = false, discount = NO_DISCOUNT_ENTRY, discountCheck = null, onDiscountChange = none }: OrderPanelProps) {
   const { order, busy, message, retryable } = state;
   const planned = order?.operationalStatus === 'planned';
   const locked = busy || retryable;
@@ -92,7 +97,11 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
                 <li key={line.id}>
                   <span>{line.itemType === 'discount' ? line.description : <>{line.quantity} &times; {line.description}</>}</span>{' '}
                   <span className="line-total">{formatAmount(line.lineTotal, order.currencyCode)}</span>{' '}
-                  <button type="button" className="secondary" aria-label={`Remove ${line.description}`} onClick={() => onRemove(line.id)} disabled={busy || retryable || order.operationalStatus !== 'planned'}>Remove</button>
+                  {onQuantity && line.itemType !== 'discount' ? <>
+                    <button type="button" className="secondary" aria-label={`Decrease quantity of ${line.description}`} onClick={() => onQuantity(line.id, line.quantity - 1)} disabled={locked || !planned || confirm !== null || line.quantity <= 1}>−</button>{' '}
+                    <button type="button" className="secondary" aria-label={`Increase quantity of ${line.description}`} onClick={() => onQuantity(line.id, line.quantity + 1)} disabled={locked || !planned || confirm !== null || line.quantity >= 1_000_000_000}>+</button>{' '}
+                  </> : null}
+                  <button type="button" className="secondary" aria-label={`Remove ${line.description}`} onClick={() => onRemove(line.id)} disabled={locked || !planned || confirm !== null}>Remove</button>
                 </li>
               ))}
             </ul>
@@ -109,6 +118,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
                 </ul>
               ) : null}
               {order.changeDue > 0 ? <p><strong>Change to give: {money(order.changeDue)}</strong></p> : null}
+              {onViewReceipt && !receiptOpen ? <p><button type="button" className="secondary" onClick={onViewReceipt}>View receipt</button></p> : null}
             </div>
           ) : null}
           {order.operationalStatus === 'failed' ? (
@@ -124,27 +134,33 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onRetry, 
           {planned && confirm === 'complete' ? (
             <div className="confirm" role="group" aria-label="Confirm completing the sale">
               <p>Total to pay: <strong>{money(order.totalAmount)}</strong>. Choose how the customer pays; the sale is recorded and the order can no longer be changed.</p>
-              <div role="group" aria-label="Payment method">
-                {TENDER_METHODS.map((m) => (
-                  <button key={m} type="button" className="secondary" aria-pressed={tender.method === m} disabled={locked} onClick={() => onTenderChange({ ...tender, method: m })}>{TENDER_LABELS[m]}</button>
-                ))}
-              </div>
-              {tender.method === 'cash' ? (
-                <p>
-                  <label htmlFor="tender-cash">Cash received</label>{' '}
-                  <input id="tender-cash" inputMode="decimal" autoComplete="off" value={tender.amountText} disabled={locked} onChange={(e) => onTenderChange({ ...tender, amountText: e.target.value })} />
-                </p>
-              ) : (
-                <p>The customer pays exactly {money(order.totalAmount)} by {TENDER_LABELS[tender.method].toLowerCase()}.</p>
-              )}
-              <p>
-                <label htmlFor="tender-reference">Slip number (optional, never a card number)</label>{' '}
-                <input id="tender-reference" type="text" maxLength={REFERENCE_MAX} autoComplete="off" value={tender.reference} disabled={locked} onChange={(e) => onTenderChange({ ...tender, reference: e.target.value })} />
-              </p>
-              {tenderCheck && tenderCheck.ok && tender.method === 'cash' ? (
+              {order.totalAmount === 0 ? <p>No payment is taken for a zero-total order.</p> : <>
+                <p>Enter each payment in the order received. Split payments need an amount on every row; cash change can only be given on the final payment.</p>
+                {tenders.map((tender, index) => {
+                  const update = (patch: Partial<TenderEntry>) => onTendersChange(tenders.map((row, n) => n === index ? { ...row, ...patch } : row));
+                  return <fieldset key={index} className="tender-row" disabled={locked}>
+                    <legend>Payment {index + 1}</legend>
+                    <div role="group" aria-label={index === 0 ? 'Payment method' : `Payment method ${index + 1}`}>
+                      {TENDER_METHODS.map(m => <button key={m} type="button" className="secondary" aria-pressed={tender.method === m} disabled={locked} onClick={() => update({ method: m })}>{TENDER_LABELS[m]}</button>)}
+                    </div>
+                    {tenders.length === 1 && tender.method !== 'cash' && tender.amountText.trim() === '' ? <p>The customer pays exactly {money(order.totalAmount)} by {TENDER_LABELS[tender.method].toLowerCase()}. Enter a partial amount to split the payment.</p> : null}
+                    <p>
+                      <label htmlFor={`tender-amount-${index}`}>{tender.method === 'cash' ? 'Cash received' : 'Amount paid'} (payment {index + 1})</label>{' '}
+                      <input id={`tender-amount-${index}`} inputMode="decimal" autoComplete="off" value={tender.amountText} disabled={locked} onChange={e => update({ amountText: e.target.value })} />
+                    </p>
+                    <p>
+                      <label htmlFor={`tender-reference-${index}`}>Slip number (optional, never a card number)</label>{' '}
+                      <input id={`tender-reference-${index}`} type="text" maxLength={REFERENCE_MAX} autoComplete="off" value={tender.reference} disabled={locked} onChange={e => update({ reference: e.target.value })} />
+                    </p>
+                    <button type="button" className="secondary" aria-label={`Remove payment ${index + 1}`} disabled={locked || tenders.length === 1} onClick={() => onTendersChange(tenders.filter((_, n) => n !== index))}>Remove payment</button>
+                  </fieldset>;
+                })}
+                <p><button type="button" className="secondary" disabled={locked || tenders.length >= MAX_TENDERS} onClick={() => onTendersChange([...tenders, { ...NO_TENDER }])}>Add payment</button></p>
+              </>}
+              {tenderCheck && tenderCheck.ok && tenders.some(tender => tender.method === 'cash') ? (
                 <p role="status" aria-live="polite">Change to give (preview): <strong>{money(tenderCheck.changePreview)}</strong></p>
               ) : null}
-              {tenderCheck && !tenderCheck.ok && (tender.amountText !== '' || tender.reference !== '') ? <p className="notice danger" role="alert">{tenderCheck.reason}</p> : null}
+              {tenderCheck && !tenderCheck.ok && (tenders.length !== 1 || tenders.some(tender => tender.amountText !== '' || tender.reference !== '')) ? <p className="notice danger" role="alert">{tenderCheck.reason}</p> : null}
               <button type="button" onClick={onConfirm} disabled={locked || !tenderCheck || !tenderCheck.ok}>Confirm: complete sale</button>{' '}
               <button type="button" className="secondary" onClick={onCancelAsk} disabled={busy}>Cancel</button>
             </div>

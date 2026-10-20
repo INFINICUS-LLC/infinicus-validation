@@ -1,5 +1,10 @@
 # Off-VM encrypted backup (runs backup-offsite.sh). Install as /etc/systemd/system/infinicus-backup.service - TEMPLATE, not installed by anything in this repository.
 # Adjust WorkingDirectory to the compose directory that PRODUCTION RUNS (currently .../infrastructure/deployment/oci) and ExecStart to the repo checkout path.
+# Production (installed and proven on infinicus-prod-01, 2026-10-19; see PHASE_W_EXECUTION_RECORD_0199-0201.md): ExecStartPre/ExecStart point at the
+# backups folder of the CURRENT RELEASE folder (the VM's /opt/infinicus/repo checkout is stale), so repoint them after each release.
+# Lessons from the first run: (1) SupplementaryGroups=docker, NOT Group=docker - Group= replaces the primary group, and the env file (/etc/infinicus/backup.env)
+# and its folder are readable only through the deploy group, so the script silently skipped the file; (2) ReadWritePaths must name the gpg home
+# (BACKUP_GNUPGHOME) because ProtectHome=read-only otherwise stops gpg from inspecting the keyring; (3) COMPOSE_DIR must be set explicitly.
 [Unit]
 Description=INFINICUS off-VM encrypted PostgreSQL backup
 Wants=network-online.target
@@ -9,12 +14,13 @@ OnFailure=infinicus-backup-failed.service
 [Service]
 Type=oneshot
 User=deploy
-Group=docker
+SupplementaryGroups=docker
 WorkingDirectory=/opt/infinicus/repo/infinicus-platform/infrastructure/deployment/oci
 Environment=BACKUP_ENV_FILE=/etc/infinicus/backup.env
+Environment=COMPOSE_DIR=/opt/infinicus/repo/infinicus-platform/infrastructure/deployment/oci
 Environment=BACKUP_LABEL=daily
 ExecStartPre=/opt/infinicus/repo/infinicus-platform/infrastructure/backups/backup-offsite.sh --check
-ExecStart=/opt/infinicus/repo/infinicus-platform/infrastructure/backups/backup-offsite.sh
+ExecStart=/opt/infinicus/repo/infinicus-platform/infrastructure/backups/backup-offsite.sh --verify
 TimeoutStartSec=2h
 Nice=10
 IOSchedulingClass=idle
@@ -26,4 +32,6 @@ ProtectHome=read-only
 ProtectSystem=strict
 # /var/lib/infinicus-backup (state) is created and made writable by StateDirectory; encrypted temp files go to the private /tmp
 StateDirectory=infinicus-backup
+# the gpg home named by BACKUP_GNUPGHOME in /etc/infinicus/backup.env (production: /etc/infinicus/gnupg)
+ReadWritePaths=/etc/infinicus/gnupg
 Environment=BACKUP_TMP_DIR=/tmp/infinicus-backup

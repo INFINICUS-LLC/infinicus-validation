@@ -59,14 +59,21 @@ export const createOrderBodySchema = z.object({
   customerId: z.string().uuid().optional(),
 });
 
-export const addLineItemBodySchema = z.object({
+export const orderQuantitySchema = z.number().finite().positive().max(1_000_000_000).multipleOf(0.0001);
+
+export const updateLineQuantityBodySchema = z.object({ quantity: orderQuantitySchema }).strict();
+
+export const addLineItemBodySchema = z.union([z.object({
+  catalogProductId: z.string().uuid(),
+  quantity: orderQuantitySchema,
+}).strict(), z.object({
   description: z.string().min(1).max(500),
-  quantity: z.number().positive(),
+  quantity: orderQuantitySchema,
   unitPrice: z.number().min(0),
   productId: z.string().uuid().optional(),
   // 'discount' is not offered here: a discount is a signed line created only through the discount route (POS-6b), which is limited to owners and admins.
   itemType: z.enum(['product', 'service', 'fee', 'other']).optional(),
-});
+}).strict()]);
 
 /** A discount on an open order (POS-6b). The amount is positive and in the order's currency; the server stores it as a signed line and computes the new total. */
 export const discountBodySchema = z.object({
@@ -91,6 +98,7 @@ export const orderResponseSchema = orderSchema;
 
 export const listOrdersQuerySchema = z.object({
   status: z.enum(['planned', 'authorized', 'executed', 'completed', 'failed', 'reversed']).optional(),
+  before: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });
 

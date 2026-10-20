@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTender, looksLikeCardNumber, parseMoneyText } from '../lib/client/tender';
+import { buildTender, buildTenderPlan, MAX_TENDERS, looksLikeCardNumber, parseMoneyText } from '../lib/client/tender';
 import { toMinorUnits } from '../lib/client/currency';
 
 const entry = (over: Partial<{ method: 'cash' | 'card' | 'other'; amountText: string; reference: string }> = {}) => ({ method: 'cash' as const, amountText: '', reference: '', ...over });
@@ -46,5 +46,59 @@ describe('tender entry (POS-5)', () => {
     expect(buildTender(entry({ method: 'card' }), 5, 'ZZZ')).toMatchObject({ ok: false });
     expect(toMinorUnits(1.5, 'ZZZ')).toBeNull();
     expect(toMinorUnits(1.375, 'KWD')).toBe(1375);
+  });
+});
+
+describe('split tender preview (POS-6c, advisory only)', () => {
+  it('builds ordered card/other/cash inputs with exact KWD change and trimmed references', () => {
+    expect(buildTenderPlan([
+      entry({ method: 'card', amountText: '0.500', reference: ' SLIP-A ' }),
+      entry({ method: 'other', amountText: '0.250' }),
+      entry({ method: 'cash', amountText: '1.000' }),
+    ], 1.375, 'KWD')).toEqual({ ok: true, payments: [
+      { method: 'card', amountTendered: 0.5, reference: 'SLIP-A' },
+      { method: 'other', amountTendered: 0.25 },
+      { method: 'cash', amountTendered: 1 },
+    ], changePreview: 0.375 });
+  });
+  it('preserves the single-card/other shortcut but requires amounts on every split row', () => {
+    expect(buildTenderPlan([entry({ method: 'card' })], 5, 'USD')).toMatchObject({ ok: true, payments: [{ method: 'card', amountTendered: 5 }] });
+    expect(buildTenderPlan([entry({ method: 'other' })], 5, 'USD')).toMatchObject({ ok: true });
+    expect(buildTenderPlan([entry({ method: 'card' }), entry({ amountText: '3' })], 5, 'USD')).toMatchObject({ ok: false });
+    expect(buildTenderPlan([entry({ method: 'card', amountText: '2' })], 5, 'USD')).toMatchObject({ ok: false });
+  });
+  it('takes no payment for zero-total orders, and refuses payments or missing tender where inappropriate', () => {
+    expect(buildTenderPlan([], 0, 'KWD')).toEqual({ ok: true, payments: [], changePreview: 0 });
+    expect(buildTenderPlan([entry({ amountText: '1' })], 0, 'KWD')).toMatchObject({ ok: false });
+    expect(buildTenderPlan([], 1, 'KWD')).toMatchObject({ ok: false });
+  });
+  it('refuses underpayment, non-cash overpayment and an extra payment after full settlement', () => {
+    for (const rows of [
+      [entry({ method: 'card', amountText: '1' }), entry({ amountText: '1' })],
+      [entry({ amountText: '1' }), entry({ method: 'card', amountText: '5' })],
+      [entry({ amountText: '5' }), entry({ method: 'other', amountText: '1' })],
+      [entry({ amountText: '3' }), entry({ method: 'other', amountText: '1' })],
+    ]) expect(buildTenderPlan(rows, 3, 'USD')).toMatchObject({ ok: false });
+  });
+  it('supports cash first or last and integer minor units without floating-point drift', () => {
+    expect(buildTenderPlan([entry({ amountText: '0.10' }), entry({ method: 'card', amountText: '0.20' })], 0.3, 'USD')).toMatchObject({ ok: true, changePreview: 0 });
+    expect(buildTenderPlan([entry({ method: 'card', amountText: '200' }), entry({ amountText: '500' })], 300, 'JPY')).toMatchObject({ ok: true, changePreview: 400 });
+    expect(buildTenderPlan([entry({ amountText: '0.25' }), entry({ amountText: '1' })], 1, 'USD')).toMatchObject({ ok: true, changePreview: 0.25 });
+  });
+  it('checks precision, bounds and malformed amounts independently for each row', () => {
+    for (const amountText of ['', '0', '-1', '1e3', 'abc', '0.0001']) {
+      expect(buildTenderPlan([entry({ method: 'card', amountText: '0.5' }), entry({ amountText })], 1, 'USD')).toMatchObject({ ok: false });
+    }
+    for (const total of [NaN, Infinity, -1, 0.001, Number.MAX_SAFE_INTEGER]) expect(buildTenderPlan([entry({ method: 'card' })], total, 'USD')).toMatchObject({ ok: false });
+    expect(buildTenderPlan([], 0, 'ZZZ')).toMatchObject({ ok: false });
+    expect(buildTenderPlan([entry({ amountText: '1.5' })], 1, 'JPY')).toMatchObject({ ok: false });
+  });
+  it('enforces the existing ten-payment bound and reference checks on every row', () => {
+    const rows = Array.from({ length: MAX_TENDERS }, () => entry({ method: 'card', amountText: '1' }));
+    expect(buildTenderPlan(rows, 10, 'USD')).toMatchObject({ ok: true });
+    expect(buildTenderPlan([...rows, rows[0]], 11, 'USD')).toMatchObject({ ok: false });
+    for (const reference of ['4111 1111 1111 1111', 'x'.repeat(65)]) {
+      expect(buildTenderPlan([entry({ method: 'card', amountText: '1' }), entry({ amountText: '1', reference })], 2, 'USD')).toMatchObject({ ok: false });
+    }
   });
 });

@@ -56,3 +56,22 @@ Open item raised by the proof: the laptop keyring shows the backup key `6FA8FA10
 
 ## Follow-ups
 - POS-4/5 migrations (0202-0206) are in draft pull requests only and are NOT applied; they need their own window, authorization, fresh backup and the migration gate.
+
+## Scheduled daily backup (2026-10-19, ~18:05-18:25 UTC)
+Finding that started it: no cron entry, no systemd timer and no `/etc/cron.d` or `/etc/cron.daily` entry ran a backup; the bucket held four manual backups only (two proof runs on 10-13, `pre-release-0198`, `pre-0199-window`). Root's own crontab was not readable by `deploy` and was not checked.
+
+What was installed (owner-run on the VM, `sudo`): `infinicus-backup.service` (written from the reviewed template, see the lessons below), `infinicus-backup.timer` and `infinicus-backup-failed.service` (copied unchanged from the release folder); `systemd-analyze verify` exit 0. Both scripts used are the release-folder copies; their SHA-256 prefixes equal `main` (`backup-offsite.sh` `e111f447851a529d`, `check-backup-freshness.sh` `6591416e2ca387e6`).
+
+First runs through systemd, before the timer was enabled:
+1. Failed at once: `BACKUP_GPG_RECIPIENT is required`. Cause: the template's `Group=docker` replaced the primary group `deploy`; the env file and its folder are readable only through the `deploy` group and the script skips an unreadable file silently (`[[ -f ]]`). Fix: `SupplementaryGroups=docker`.
+2. `CHECK FAILED` on one item: `the gpg secret keyring could not be inspected` (`ProtectHome=read-only` stops gpg from writing its lock files). Fix: `ReadWritePaths=/etc/infinicus/gnupg` (the `BACKUP_GNUPGHOME` folder named in the env file). The other 13 checks passed.
+3. Third run: `Result=success`, `BACKUP COMPLETE`, key `infinicus-production/2026-10-19/20261019T181534Z-daily`, `db.dump.gpg` 4,719,230 bytes and `roles.sql.gpg` 1,534 bytes, both read back (`verified`), manifest uploaded; `check-backup-freshness.sh` `OK`. This backup has **not** had a restore proof.
+
+Then `systemctl enable --now infinicus-backup.timer`: `enabled`, first scheduled run **2026-10-20 02:39:39 UTC** (the template's 02:30 plus up to 10 minutes' random delay, `Persistent=true`).
+
+Limits that remain:
+- The failure alert is the template's `logger` stub (journal only); a real channel (email, chat, uptime monitor) is still the owner's decision (D6 of `OFFSITE_BACKUP_PLAN.md`). Until then a failed run is visible only through `check-backup-freshness.sh` or the journal.
+- The units point at the current release folder (`/home/deploy/infinicus-release-ba02d16`); repoint `ExecStartPre`/`ExecStart` after each release, or the next release folder deletion breaks the job.
+- No retention rule exists (owner ruling: none until approved); about 5 MB is added per day.
+- The backup recipient key is revoked in the owner's laptop keyring but valid on the VM; rotation is pending (separate decision).
+- Confirmation of the first unattended run: `check-backup-freshness.sh` on 2026-10-20 morning (not yet done).

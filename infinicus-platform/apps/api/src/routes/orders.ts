@@ -5,6 +5,7 @@ import {
   businessIdParamsSchema, orderIdParamsSchema, lineItemIdParamsSchema,
   createOrderBodySchema, addLineItemBodySchema, completeOrderBodySchema, voidOrderBodySchema, discountBodySchema,
   orderResponseSchema, listOrdersQuerySchema, listOrdersResponseSchema,
+  updateLineQuantityBodySchema,
 } from '../schemas/orders.js';
 import { errorResponseSchema } from '../schemas/common.js';
 
@@ -41,7 +42,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
     preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
   }, async (request, reply) => {
     const { businessId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
+    await businesses.getForWorkspace(request.ctx!, businessId);
     const list = await orders.list(request.ctx!, businessId, request.query);
     return reply.status(200).send({ orders: list });
   });
@@ -56,8 +57,8 @@ export default async function ordersRoutes(app: FastifyInstance) {
     preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
-    const order = await orders.getById(request.ctx!, orderId);
+    await businesses.getForWorkspace(request.ctx!, businessId);
+    const order = await orders.getById(request.ctx!, orderId, businessId);
     return reply.status(200).send(order);
   });
 
@@ -96,7 +97,23 @@ export default async function ordersRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { businessId, orderId, lineItemId } = request.params;
     await businesses.getById(request.ctx!, businessId);
-    const order = await orders.removeLineItem(request.ctx!, orderId, lineItemId);
+    const order = await orders.removeLineItem(request.ctx!, orderId, lineItemId, businessId);
+    return reply.status(200).send(order);
+  });
+
+  server.post('/v1/businesses/:businessId/orders/:orderId/line-items/:lineItemId/quantity', {
+    schema: {
+      tags: ['operations'],
+      summary: 'Set the quantity of a line in an open order',
+      params: lineItemIdParamsSchema,
+      body: updateLineQuantityBodySchema,
+      response: { 200: orderResponseSchema, 400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema, 409: errorResponseSchema },
+    },
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+  }, async (request, reply) => {
+    const { businessId, orderId, lineItemId } = request.params;
+    await businesses.getById(request.ctx!, businessId);
+    const order = await orders.updateLineQuantity(request.ctx!, orderId, lineItemId, businessId, request.body.quantity);
     return reply.status(200).send(order);
   });
 

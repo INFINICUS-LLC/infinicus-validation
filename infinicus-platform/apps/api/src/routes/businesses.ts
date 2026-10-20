@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
+import { BusinessRepository } from '@infinicus/database';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { DecisionWorkflowService, SimulationOrchestrationService, DEFAULT_APPROVER_ASSIGNMENT_CODE } from '@infinicus/workflow';
 import {
   businessListResponseSchema, businessIdParamsSchema, workflowViewResponseSchema, decisionHistoryResponseSchema,
-  createBusinessBodySchema, createBusinessResponseSchema,
+  createBusinessBodySchema, createBusinessResponseSchema, businessSummarySchema,
   createDecisionBodySchema, decisionResponseSchema,
   grantApproverAuthorityBodySchema, grantApproverAuthorityResponseSchema,
   approverAssignmentParamsSchema, revokeApproverAuthorityBodySchema, revokeApproverAuthorityResponseSchema,
@@ -44,6 +45,19 @@ export default async function businessRoutes(app: FastifyInstance) {
       items: items.map((b) => ({ id: b.id, legalName: b.legalName, businessCode: b.businessCode, status: b.status, industry: b.industry })),
       page, pageSize, total,
     });
+  });
+
+  server.get('/v1/businesses/:businessId', {
+    schema: {
+      tags: ['businesses'],
+      summary: 'Read a business summary in the caller\'s workspace',
+      params: businessIdParamsSchema,
+      response: { 200: businessSummarySchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
+    },
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
+  }, async (request, reply) => {
+    const b = await new BusinessRepository().getForWorkspace(request.ctx!, request.params.businessId);
+    return reply.status(200).send({ id: b.id, legalName: b.legalName, businessCode: b.businessCode, status: b.status, industry: b.industry });
   });
 
   server.post('/v1/businesses', {

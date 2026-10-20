@@ -86,6 +86,7 @@ async function ready(currency: string, price: number, openingCash = 0): Promise<
 const discountUrl = (s: Session, orderId: string) => `${ordersUrl(s.bizId)}/${orderId}/discounts`;
 const discount = (s: Session, orderId: string, body: unknown, key = uc('key')) => app.inject({ method: 'POST', url: discountUrl(s, orderId), headers: hdr(s, { 'idempotency-key': key }), payload: body as any });
 const removeLine = (s: Session, orderId: string, lineId: string) => app.inject({ method: 'DELETE', url: `${ordersUrl(s.bizId)}/${orderId}/line-items/${lineId}`, headers: hdr(s, { 'idempotency-key': uc('key') }) });
+const setQuantity = (s: Session, orderId: string, lineId: string, quantity: number) => app.inject({ method: 'POST', url: `${ordersUrl(s.bizId)}/${orderId}/line-items/${lineId}/quantity`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { quantity } });
 const discountRows = async (orderId: string) => (await adminPool.query(`SELECT item_type, description, quantity::float8 AS qty, unit_price::float8 AS unit, line_total::float8 AS total FROM business_operations.order_line_items WHERE order_id = $1 AND item_type = 'discount' ORDER BY line_number`, [orderId])).rows;
 const totalOf = async (orderId: string) => Number((await adminPool.query(`SELECT total_amount::float8 AS t FROM platform.orders WHERE id = $1`, [orderId])).rows[0].t);
 
@@ -191,6 +192,22 @@ describe.runIf(run)('POS-6b discounts - live PostgreSQL + Fastify', () => {
     expect((await getOrder(s, orderId)).json().lineItems).toHaveLength(3);
     expect((await removeLine(s, orderId, discountLineId)).json().totalAmount).toBe(11);
     expect((await removeLine(s, orderId, lineId)).json().totalAmount).toBe(1);
+  });
+
+  it('the quantity route cannot edit a discount line (409), and a quantity cut that would leave the discounts larger than the order is refused (409) and changes nothing', async () => {
+    const { s, orderId } = await ready('USD', 5);
+    const lineId = (await getOrder(s, orderId)).json().lineItems[0].id as string;
+    expect((await setQuantity(s, orderId, lineId, 4)).json().totalAmount).toBe(20);
+    const d = await discount(s, orderId, { amount: 15 });
+    expect(d.json().totalAmount).toBe(5);
+    const discountLineId = d.json().lineItems.find((l: any) => l.itemType === 'discount').id as string;
+    expect((await setQuantity(s, orderId, discountLineId, 3)).statusCode).toBe(409);   // would turn 15 off into 45 off past the owner/admin check
+    expect((await setQuantity(s, orderId, lineId, 2)).statusCode).toBe(409);            // 10 - 15 would be below zero
+    const after = (await getOrder(s, orderId)).json();
+    expect(after.totalAmount).toBe(5);
+    expect(after.lineItems.find((l: any) => l.id === lineId).quantity).toBe(4);
+    expect(after.lineItems.find((l: any) => l.id === discountLineId)).toMatchObject({ quantity: 1, lineTotal: -15 });
+    expect((await setQuantity(s, orderId, lineId, 3)).json().totalAmount).toBe(0);      // exactly zero is allowed
   });
 
   it('the generic add-line route no longer accepts item type discount (400); the discount route is the only way', async () => {

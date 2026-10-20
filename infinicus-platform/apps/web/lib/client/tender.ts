@@ -13,6 +13,44 @@ export const REFERENCE_MAX = 64;
 export interface TenderEntry { method: TenderMethod; amountText: string; reference: string }
 export interface TenderPayment { method: TenderMethod; amountTendered: number; reference?: string }
 export type TenderResult = { ok: true; payment: TenderPayment; changePreview: number } | { ok: false; reason: string };
+export const MAX_TENDERS = 10;
+export type TenderPlanResult = { ok: true; payments: TenderPayment[]; changePreview: number } | { ok: false; reason: string };
+
+/** Advisory preview of the existing BO split-tender contract. BO independently validates and records all applied amounts and change. */
+export function buildTenderPlan(entries: readonly TenderEntry[], orderTotal: number, currencyCode: string): TenderPlanResult {
+  const exponent = minorUnitsOf(currencyCode);
+  const total = toMinorUnits(orderTotal, currencyCode);
+  if (exponent === null || total === null || !Number.isFinite(orderTotal) || orderTotal < 0 || !Number.isSafeInteger(total)
+    || Math.abs(orderTotal * 10 ** exponent - total) > 1e-6) return { ok: false, reason: 'The order total cannot be represented safely in this currency.' };
+  if (total === 0) return entries.length === 0 ? { ok: true, payments: [], changePreview: 0 }
+    : { ok: false, reason: 'No payment is taken for a zero-total order.' };
+  if (entries.length === 0 || entries.length > MAX_TENDERS) return { ok: false, reason: `Enter between 1 and ${MAX_TENDERS} payments.` };
+  const factor = 10 ** exponent;
+  let remaining = total;
+  let change = 0;
+  const payments: TenderPayment[] = [];
+  for (const [index, entry] of entries.entries()) {
+    if (!TENDER_METHODS.includes(entry.method)) return { ok: false, reason: 'Choose cash, card or other for each payment.' };
+    if (remaining === 0) return { ok: false, reason: 'The total is already covered. Remove the extra payment.' };
+    const reference = entry.reference.trim();
+    if (reference.length > REFERENCE_MAX) return { ok: false, reason: `The reference is too long (at most ${REFERENCE_MAX} characters).` };
+    if (looksLikeCardNumber(reference)) return { ok: false, reason: 'The reference looks like a card number. Enter a slip number only, never a card number.' };
+    // Preserve the one-card/other shortcut. Split payments require an explicit amount on every row.
+    const amount = entries.length === 1 && entry.method !== 'cash' && entry.amountText.trim() === '' ? orderTotal : parseMoneyText(entry.amountText);
+    if (amount === null || amount <= 0) return { ok: false, reason: `Enter the amount received for payment ${index + 1}.` };
+    const minor = toMinorUnits(amount, currencyCode);
+    if (minor === null || !Number.isSafeInteger(minor) || Math.abs(amount * factor - minor) > 1e-6) {
+      return { ok: false, reason: `${currencyCode} has ${exponent} decimal place${exponent === 1 ? '' : 's'}. Check payment ${index + 1}.` };
+    }
+    if (entry.method !== 'cash' && minor > remaining) return { ok: false, reason: `Payment ${index + 1} exceeds the amount still due. Only cash can include change.` };
+    const applied = Math.min(minor, remaining);
+    remaining -= applied;
+    change += minor - applied;
+    payments.push({ method: entry.method, amountTendered: amount, ...(reference ? { reference } : {}) });
+  }
+  if (remaining > 0) return { ok: false, reason: 'The payments do not cover the total. Add or adjust a payment.' };
+  return { ok: true, payments, changePreview: change / factor };
+}
 
 /** 13 or more digits in a row, each pair optionally separated by one space or hyphen (the same rule as the server and the database). */
 export function looksLikeCardNumber(text: string): boolean {

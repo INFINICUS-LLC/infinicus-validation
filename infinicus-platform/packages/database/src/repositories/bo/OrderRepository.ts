@@ -15,18 +15,18 @@ export interface CreateOrderInput {
   customerId?: string;
 }
 
-// productId, when given, links to the canonical platform.products catalog —
-// a separate, richer entity from business_operations.products (the
-// lightweight tap-to-sell catalog built for the Foodics-style Catalog tab).
-// Reconciling the two catalogs is out of scope here: the Catalog UI adds
-// line items by description/price only, leaving productId unset.
-export interface AddLineItemInput {
+// The sellable BO catalog and platform.products have distinct identities.
+// Catalog selections are resolved by BO; canonical product references remain separate.
+export type AddLineItemInput = {
+  catalogProductId: string;
+  quantity: number;
+} | {
   description: string;
   quantity: number;
   unitPrice: number;
   productId?: string;
   itemType?: 'product' | 'service' | 'fee' | 'discount' | 'other';
-}
+};
 
 export interface OrderLineItem {
   id: string;
@@ -190,22 +190,24 @@ export class OrderRepository {
     return result.rows.map(rowToPayment);
   }
 
-  private async loadOrderRow(client: PoolClient, orderId: string): Promise<Record<string, unknown>> {
-    const result = await client.query<Record<string, unknown>>(`SELECT * FROM platform.orders WHERE id = $1`, [orderId]);
+  private async loadOrderRow(client: PoolClient, orderId: string, businessId: string, lock = false): Promise<Record<string, unknown>> {
+    const result = await client.query<Record<string, unknown>>(
+      `SELECT * FROM platform.orders WHERE id = $1 AND business_id = $2${lock ? ' FOR UPDATE' : ''}`, [orderId, businessId]
+    );
     if (result.rows.length === 0) throw new NotFoundError('Order', orderId);
     return result.rows[0];
   }
 
-  async getById(ctx: TenantContext, orderId: string): Promise<Order> {
+  async getById(ctx: TenantContext, orderId: string, businessId: string): Promise<Order> {
     return withTenantTransaction(ctx, async (client) => {
-      const row = await this.loadOrderRow(client, orderId);
+      const row = await this.loadOrderRow(client, orderId, businessId);
       const lineItems = await this.loadLineItems(client, orderId);
       const payments = await this.loadPayments(client, orderId);
       return rowToOrder(row, lineItems, payments);
     });
   }
 
-  async list(ctx: TenantContext, businessId: string, opts: { status?: OrderOperationalStatus; limit?: number } = {}): Promise<Order[]> {
+  async list(ctx: TenantContext, businessId: string, opts: { status?: OrderOperationalStatus; limit?: number; before?: string } = {}): Promise<Order[]> {
     return withTenantTransaction(ctx, async (client) => {
       const conditions = ['business_id = $1'];
       const params: unknown[] = [businessId];
@@ -213,9 +215,15 @@ export class OrderRepository {
         params.push(opts.status);
         conditions.push(`operational_status = $${params.length}`);
       }
+      if (opts.before) {
+        await this.loadOrderRow(client, opts.before, businessId);
+        params.push(opts.before);
+        // Keep timestamp precision in PostgreSQL and break ties by ID. A concurrent new sale cannot shift older pages.
+        conditions.push(`(created_at, id) < (SELECT created_at, id FROM platform.orders WHERE id = $${params.length} AND business_id = $1)`);
+      }
       params.push(opts.limit ?? 20);
       const result = await client.query<Record<string, unknown>>(
-        `SELECT * FROM platform.orders WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC LIMIT $${params.length}`,
+        `SELECT * FROM platform.orders WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
         params
       );
       return result.rows.map((row) => rowToOrder(row, []));
@@ -224,36 +232,57 @@ export class OrderRepository {
 
   async addLineItem(ctx: TenantContext, orderId: string, businessId: string, input: AddLineItemInput): Promise<Order> {
     return withTenantTransaction(ctx, async (client) => {
-      const order = await this.loadOrderRow(client, orderId);
+      const order = await this.loadOrderRow(client, orderId, businessId, true);
       if (order.operational_status !== 'planned') {
         throw new ConflictError('Order', `order ${orderId} is not open for editing (status: ${order.operational_status})`);
+      }
+      let selected: Exclude<AddLineItemInput, { catalogProductId: string }>;
+      if ('catalogProductId' in input) {
+        const catalog = await client.query<Record<string, unknown>>(
+          `SELECT name, price FROM business_operations.products WHERE id = $1 AND business_id = $2 AND active = true FOR SHARE`,
+          [input.catalogProductId, businessId]
+        );
+        if (!catalog.rows[0]) throw new NotFoundError('Product', input.catalogProductId);
+        selected = { description: catalog.rows[0].name as string, unitPrice: Number(catalog.rows[0].price), quantity: input.quantity, itemType: 'product' };
+      } else {
+        selected = input;
       }
       const nextLine = await client.query<Record<string, unknown>>(
         `SELECT COALESCE(MAX(line_number), 0) + 1 AS next FROM business_operations.order_line_items WHERE order_id = $1`,
         [orderId]
       );
       const lineNumber = Number(nextLine.rows[0].next);
-      const lineTotal = roundToCurrency(input.quantity * input.unitPrice, order.currency_code as string);
-      await client.query(
+      const lineTotal = roundToCurrency(selected.quantity * selected.unitPrice, order.currency_code as string);
+      const added = await client.query<{ id: string }>(
         `INSERT INTO business_operations.order_line_items
            (tenant_id, workspace_id, business_id, order_id, line_number, item_type, product_id, description, quantity, unit_price, line_total)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
         [
           ctx.tenantId, ctx.workspaceId, businessId, orderId, lineNumber,
-          input.itemType ?? 'product', input.productId ?? null, input.description,
-          input.quantity, input.unitPrice, lineTotal,
+          selected.itemType ?? 'product', selected.productId ?? null, selected.description,
+          selected.quantity, selected.unitPrice, lineTotal,
         ]
       );
+      if ('catalogProductId' in input) {
+        // Persist catalog provenance with the snapshot, without putting a BO ID in the canonical FK.
+        await client.query(
+          `INSERT INTO business_operations.order_events
+             (tenant_id, workspace_id, business_id, order_id, event_type, payload, correlation_id)
+           VALUES ($1,$2,$3,$4,'note',$5,$6)`,
+          [ctx.tenantId, ctx.workspaceId, businessId, orderId,
+            JSON.stringify({ kind: 'catalog_line_added', lineItemId: added.rows[0].id, catalogProductId: input.catalogProductId }), randomUUID()]
+        );
+      }
       await this.recomputeTotal(client, orderId);
-      const row = await this.loadOrderRow(client, orderId);
+      const row = await this.loadOrderRow(client, orderId, businessId);
       const lineItems = await this.loadLineItems(client, orderId);
       return rowToOrder(row, lineItems);
     });
   }
 
-  async removeLineItem(ctx: TenantContext, orderId: string, lineItemId: string): Promise<Order> {
+  async removeLineItem(ctx: TenantContext, orderId: string, lineItemId: string, businessId: string): Promise<Order> {
     return withTenantTransaction(ctx, async (client) => {
-      const order = await this.loadOrderRow(client, orderId);
+      const order = await this.loadOrderRow(client, orderId, businessId, true);
       if (order.operational_status !== 'planned') {
         throw new ConflictError('Order', `order ${orderId} is not open for editing (status: ${order.operational_status})`);
       }
@@ -263,15 +292,31 @@ export class OrderRepository {
       );
       if (deleted.rowCount === 0) throw new NotFoundError('OrderLineItem', lineItemId);
       await this.recomputeTotal(client, orderId);
-      // POS-6b: with a discount on the order, removing a product line could leave the discounts larger than the rest. Refuse (the transaction rolls
-      // back, so the line stays); the cashier removes the discount first.
-      const after = await client.query<Record<string, unknown>>(`SELECT total_amount FROM platform.orders WHERE id = $1`, [orderId]);
-      if (Number(after.rows[0].total_amount) < 0) {
-        throw new ConflictError('Order', `removing this line would leave the discounts larger than the order; remove the discount first`);
-      }
-      const row = await this.loadOrderRow(client, orderId);
+      const row = await this.loadOrderRow(client, orderId, businessId);
       const lineItems = await this.loadLineItems(client, orderId);
       return rowToOrder(row, lineItems);
+    });
+  }
+
+  async updateLineQuantity(ctx: TenantContext, orderId: string, lineItemId: string, businessId: string, quantity: number): Promise<Order> {
+    return withTenantTransaction(ctx, async (client) => {
+      const order = await this.loadOrderRow(client, orderId, businessId, true);
+      if (order.operational_status !== 'planned') throw new ConflictError('Order', 'only planned orders can be edited');
+      const line = await client.query<Record<string, unknown>>(
+        `SELECT * FROM business_operations.order_line_items WHERE id = $1 AND order_id = $2`, [lineItemId, orderId]
+      );
+      if (!line.rows[0]) throw new NotFoundError('OrderLineItem', lineItemId);
+      const item = line.rows[0];
+      // POS-6b: a discount is created only through addDiscount (owner/admin); changing its quantity would multiply it past that check.
+      if (item.item_type === 'discount') throw new ConflictError('OrderLineItem', 'a discount line cannot be edited; remove it and add a new discount');
+      // Keep the captured price and any existing line discount/tax; never reprice an existing order from the catalog.
+      const total = roundToCurrency(quantity * Number(item.unit_price) * (1 - Number(item.discount_rate)) * (1 + Number(item.tax_rate)), order.currency_code as string);
+      await client.query(
+        `UPDATE business_operations.order_line_items SET quantity = $3, line_total = $4 WHERE id = $1 AND order_id = $2`,
+        [lineItemId, orderId, quantity, total]
+      );
+      await this.recomputeTotal(client, orderId);
+      return rowToOrder(await this.loadOrderRow(client, orderId, businessId), await this.loadLineItems(client, orderId));
     });
   }
 
@@ -281,9 +326,7 @@ export class OrderRepository {
    */
   async addDiscount(ctx: TenantContext, orderId: string, businessId: string, input: { amount: number; reason?: string | null }): Promise<Order> {
     return withTenantTransaction(ctx, async (client) => {
-      const locked = await client.query<Record<string, unknown>>(`SELECT * FROM platform.orders WHERE id = $1 FOR UPDATE`, [orderId]);
-      if (locked.rows.length === 0) throw new NotFoundError('Order', orderId);
-      const order = locked.rows[0];
+      const order = await this.loadOrderRow(client, orderId, businessId, true);
       if (order.operational_status !== 'planned') {
         throw new ConflictError('Order', `order ${orderId} is not open for editing (status: ${order.operational_status})`);
       }
@@ -303,19 +346,24 @@ export class OrderRepository {
         [ctx.tenantId, ctx.workspaceId, businessId, orderId, Number(nextLine.rows[0].next), planned.description, planned.quantity, planned.unitPrice, planned.lineTotal]
       );
       await this.recomputeTotal(client, orderId);
-      const row = await this.loadOrderRow(client, orderId);
+      const row = await this.loadOrderRow(client, orderId, businessId);
       const lineItems = await this.loadLineItems(client, orderId);
       return rowToOrder(row, lineItems);
     });
   }
 
   private async recomputeTotal(client: PoolClient, orderId: string): Promise<void> {
-    await client.query(
+    const updated = await client.query<{ total_amount: string }>(
       `UPDATE platform.orders SET total_amount = (
          SELECT COALESCE(SUM(line_total), 0) FROM business_operations.order_line_items WHERE order_id = $1
-       ) WHERE id = $1`,
+       ) WHERE id = $1 RETURNING total_amount`,
       [orderId]
     );
+    // POS-6b: with discounts on the order, removing a line or lowering a quantity could leave the discounts larger than the rest. Every edit path ends
+    // here, so one check covers them all; the throw rolls the whole transaction back, so the edit does not happen and the cashier removes the discount first.
+    if (updated.rows[0] && Number(updated.rows[0].total_amount) < 0) {
+      throw new ConflictError('Order', 'this change would leave the discounts larger than the order; remove the discount first');
+    }
   }
 
   /**
@@ -326,9 +374,7 @@ export class OrderRepository {
   async complete(ctx: TenantContext, orderId: string, businessId: string, payments: readonly PaymentInput[] = []): Promise<Order> {
     return withTenantTransaction(ctx, async (client) => {
       // The order row is locked so two completions of the same order serialise; the second then sees it completed and is refused.
-      const locked = await client.query<Record<string, unknown>>(`SELECT * FROM platform.orders WHERE id = $1 FOR UPDATE`, [orderId]);
-      if (locked.rows.length === 0) throw new NotFoundError('Order', orderId);
-      const order = locked.rows[0];
+      const order = await this.loadOrderRow(client, orderId, businessId, true);
       if (order.operational_status !== 'planned') {
         throw new ConflictError('Order', `order ${orderId} cannot be completed (status: ${order.operational_status})`);
       }
@@ -381,7 +427,7 @@ export class OrderRepository {
           `Order ${order.order_number as string}`, orderId,
         ]
       );
-      const row = await this.loadOrderRow(client, orderId);
+      const row = await this.loadOrderRow(client, orderId, businessId);
       const stored = await this.loadPayments(client, orderId);
       return rowToOrder(row, lineItems, stored);
     });
@@ -389,7 +435,7 @@ export class OrderRepository {
 
   async void(ctx: TenantContext, orderId: string, businessId: string, reason?: string): Promise<Order> {
     return withTenantTransaction(ctx, async (client) => {
-      const order = await this.loadOrderRow(client, orderId);
+      const order = await this.loadOrderRow(client, orderId, businessId, true);
       if (order.operational_status !== 'planned') {
         throw new ConflictError('Order', `order ${orderId} cannot be voided (status: ${order.operational_status})`);
       }
@@ -403,7 +449,7 @@ export class OrderRepository {
          VALUES ($1,$2,$3,$4,'failed','planned','failed',$5,$6)`,
         [ctx.tenantId, ctx.workspaceId, businessId, orderId, reason ?? null, randomUUID()]
       );
-      const row = await this.loadOrderRow(client, orderId);
+      const row = await this.loadOrderRow(client, orderId, businessId);
       const lineItems = await this.loadLineItems(client, orderId);
       return rowToOrder(row, lineItems);
     });

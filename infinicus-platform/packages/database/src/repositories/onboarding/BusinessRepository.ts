@@ -89,6 +89,18 @@ export class BusinessRepository {
     });
   }
 
+  /** Read the same workspace-visible, non-deleted business selected by listForWorkspace. Tenant isolation is additionally enforced by RLS. */
+  async getForWorkspace(ctx: TenantContext, id: string): Promise<Business> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        'SELECT * FROM platform.businesses WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL',
+        [id, ctx.workspaceId]
+      );
+      if (result.rows.length === 0) throw new BusinessNotFoundError('Business', id);
+      return rowToBusiness(result.rows[0]);
+    });
+  }
+
   /**
    * Business selection: lists non-deleted businesses in the caller's workspace,
    * alphabetically by legal name, bounded by LIMIT/OFFSET rather than fetched
