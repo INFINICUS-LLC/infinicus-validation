@@ -16,6 +16,7 @@ import { BusinessReceipt } from './business-receipt';
 import { parseCashAmount } from '../../../../../lib/client/register';
 import { buildTenderPlan, type TenderEntry } from '../../../../../lib/client/tender';
 import { buildDiscount, NO_DISCOUNT, type DiscountEntry } from '../../../../../lib/client/discount';
+import { buildNote } from '../../../../../lib/client/note';
 
 const idSchema = z.string().uuid();
 
@@ -36,6 +37,8 @@ export default function CounterPage() {
   const [voidReason, setVoidReason] = useState('');
   const [tenders, setTenders] = useState<TenderEntry[]>([]);
   const [receiptFor, setReceiptFor] = useState<string | null>(null);
+  // The note being typed belongs to one order: switching orders drops the draft and the box shows that order's saved note again.
+  const [noteDraft, setNoteDraft] = useState<{ orderId: string; text: string } | null>(null);
 
   if (!scope) return <StateNotice state={state} />;
   if (!businessId) return <div className="card"><p className="notice danger" role="alert">That business address is not valid.</p><p><a href="/businesses">&larr; All businesses</a></p></div>;
@@ -44,6 +47,7 @@ export default function CounterPage() {
   const act = (run: () => Promise<boolean>) => { void run().then((changed) => { if (changed) { open.reload(); void register?.refreshSummary(); } }); };
   // The confirmation belongs to one order: switching orders drops it.
   const confirm = ask && ask.orderId === orderState.order?.id ? ask.kind : null;
+  const noteText = noteDraft && noteDraft.orderId === orderState.order?.id ? noteDraft.text : undefined;
   // Like the confirmation, the open receipt belongs to one order: switching orders closes it.
   const receipt = orderState.order?.businessId === businessId && orderState.order.operationalStatus === 'completed' && receiptFor === orderState.order.id ? orderState.order : null;
   const onConfirm = () => {
@@ -87,6 +91,10 @@ export default function CounterPage() {
       discount={discount}
       discountCheck={orderState.order ? buildDiscount(discount, orderState.order.totalAmount, orderState.order.currencyCode) : null}
       onDiscountChange={setDiscount}
+      noteText={noteText}
+      noteCheck={noteText !== undefined ? buildNote(noteText) : null}
+      onNoteChange={(text) => { if (orderState.order) setNoteDraft({ orderId: orderState.order.id, text }); }}
+      onSaveNote={() => { if (session && noteText !== undefined) void session.setNote(noteText).then((saved) => { if (saved) { setNoteDraft(null); open.reload(); } }); }}
       registerOpen={registerState.loaded ? registerState.session !== null : undefined}
       onViewReceipt={() => { if (orderState.order) setReceiptFor(orderState.order.id); }}
       receiptOpen={receipt !== null}

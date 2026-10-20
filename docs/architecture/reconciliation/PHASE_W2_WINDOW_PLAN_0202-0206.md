@@ -1,4 +1,6 @@
-# Phase W2 — production window plan, migrations 0202 → 0206 (POS-4 register link, POS-5 tender capture) (PLAN ONLY)
+# Phase W2 — production window plan, migrations 0202 → 0207 (POS-4 register link, POS-5 tender capture, POS-6c order note) (PLAN ONLY)
+
+> File name kept from the first version of this plan (0202-0206). **2026-10-20: 0207 (order note) was added to the same window**, so one backup, one gate run and one verification cover all six migrations.
 
 | Field | Value |
 |---|---|
@@ -9,19 +11,20 @@
 | Data | Test data only (owner statement, 2026-10-19): 6 users, 16 tenants and businesses. The impact of a failure is time, not customers. |
 
 ## 1. What is released, and the evidence
-- **Five additive migrations** (each file is its own transaction; none rewrites or backfills data):
+- **Six additive migrations** (each file is its own transaction; none rewrites or backfills data):
   - `0202` adds nullable `business_operations.register_sessions.currency_code` and nullable `platform.orders.register_session_id`, a same-business foreign key (`ON DELETE RESTRICT`), a format check, `UNIQUE (id, business_id)` on `register_sessions`, and an index.
   - `0203` adds `UNIQUE (id, business_id)` on `platform.orders` and the new, empty table `business_operations.order_payments` (16 columns).
   - `0204` adds two indexes on it (4 indexes in total with the primary key and the per-order position key).
   - `0205` enables and forces row level security with one tenant + workspace policy.
   - `0206` makes it append-only (`forbid_mutation` / `forbid_truncate` triggers; `forbid_mutation()` is re-declared identically) and adds the deferred consistency constraint trigger (`order_payments_consistency`).
-- **New API image** carrying POS-1.6 (currency minor units), POS-4 (register link) and POS-5 (tender capture) routes. The web counter UI is a separate artifact (see section 6, question 1).
-- **Candidate release SHA:** the merge commit of **this** pull request on `main` (it adds the reference fingerprints for 0202–0206 to the discovery script that the window runs from the release folder; the API code is that of `571a6ea7f02ea8c8934b61dd7b5da7793eb6a86d`, #184, whose PR checks were all `success`: `validate`, `operations-runtime`, `build-and-smoke-test-image`, Cloudflare Pages). The exact SHA is named in the authorisation. **Order of work: merge this PR first, then release from that commit.**
+  - `0207` (POS-6c) adds the nullable `platform.orders.note` text column and the check `orders_note_format` (1 to 500 characters, never a card number: the same 13-digit rule payment references have). The note is internal, editable only while the order is open, and is not printed on the receipt.
+- **New API image** carrying POS-1.6 (currency minor units), POS-4 (register link), POS-5 (tender capture), POS-6b (discounts: no migration, owner/admin only) and POS-6c (order note) routes. The web counter UI is a separate artifact (see section 6, question 1).
+- **Candidate release SHA:** the merge commit of the POS-6c pull request on `main`. It adds migration 0207 and its reference fingerprint; the window runs the discovery script from the release folder, so that script must contain the 0207 reference. The exact SHA is named in the authorisation, and CI on that commit (including the push run on `main`) is re-read on the day. **Order of work: merge the POS-6c PR (and #197, #198) first, then release from that merge commit.**
 - **Evidence produced for this plan (2026-10-19, local PostgreSQL 16.15, no production access):**
-  - Reference schema fingerprints for heads 0202, 0203, 0204, 0205 and 0206 were generated from clean migrations with exactly the committed `schema-fingerprint.sql` / `function-fingerprint.sql`, and the **method was validated first**: the same procedure at 0201 reproduces the committed `reference-0201.pg16.*` files byte for byte (hash `61ef99d74289c3b3`, which is also what production reports).
-  - Head hashes: 0202 `670efa2071aece99`, 0203 `4754f82304066378`, 0204 `e63dc272f3feb3cc`, 0205 `b1f501d79c6fd600`, **0206 `c0b9988865306004`**. The discovery script and its guard test know all five.
-  - **Logical rollback proven** (Appendix A): applying 0206 and then the rollback script returns exactly the committed 0201 reference (hash `61ef99d74289c3b3`) and removes the five ledger rows.
-- **Not rehearsed:** a run of the gate against a restored copy of production, and the old API (`ba02d16`) against the 0206 schema. The second is expected to work because every change is additive and nothing the old API writes touches `order_payments`, but that is reasoning, not a test.
+  - Reference schema fingerprints for heads 0202, 0203, 0204, 0205, 0206 and 0207 were generated from clean migrations with exactly the committed `schema-fingerprint.sql` / `function-fingerprint.sql`, and the **method was validated first**: the same procedure at 0201 reproduces the committed `reference-0201.pg16.*` files byte for byte (hash `61ef99d74289c3b3`, which is also what production reports).
+  - Head hashes: 0202 `670efa2071aece99`, 0203 `4754f82304066378`, 0204 `e63dc272f3feb3cc`, 0205 `b1f501d79c6fd600`, 0206 `c0b9988865306004`, **0207 `bbd6bd1f31ad9ea9`**. The discovery script and its guard test know all six. 0207 differs from 0206 by exactly one column and one constraint in `platform`.
+  - **Logical rollback proven** (Appendix A, run from the SQL in this document): rolling back 0207 returns exactly the committed 0206 reference (`c0b9988865306004`); rolling back 0202–0206 after that returns exactly the committed 0201 reference (`61ef99d74289c3b3`); the ledger is back to 201.
+- **Not rehearsed:** a run of the gate against a restored copy of production, and the old API (`ba02d16`) against the 0207 schema. The second is expected to work because every change is additive, nothing the old API writes touches `order_payments`, and it ignores the new `note` column, but that is reasoning, not a test.
 
 ## 2. Preconditions (all must be true before the window is authorised)
 | # | Precondition | Who | Evidence |
@@ -45,12 +48,12 @@
 | W2 | `[READ]` record `docker inspect oci-api-1`, `docker compose images`, `/v1/health`; confirm the rollback tag from P5 points at the running image | tag equals the running image id |
 | W3 | Quiesce: `$C stop api` | `postgres` healthy, `api` stopped. **Do not stop postgres or caddy by hand** (`unless-stopped` containers stopped manually do not return after a reboot) |
 | W4 | Backup: `COMPOSE_DIR=$OCI BACKUP_LABEL=pre-0202-window BACKUP_ENV_FILE=/etc/infinicus/backup.env bash $REL/infrastructure/backups/backup-offsite.sh --check`, then `--verify`; read the manifest back | `BACKUP COMPLETE`, manifest ledger 201, head `0201_…`, fingerprint `61ef99d74289c3b3`, both objects `verified`. Profile for a later restore proof: `production-pre-0202.profile` |
-| W5 | Gate from the release image: `$C --profile tools run --rm --no-deps tools`. **Never pipe or truncate the output** | exactly `apply`/`done` for 0202, 0203, 0204, 0205, 0206 and `Migration gate passed.`; an `apply` without `done`, or `FAILED` → **STOP**, read the PostgreSQL server log, no blind retry |
+| W5 | Gate from the release image: `$C --profile tools run --rm --no-deps tools`. **Never pipe or truncate the output** | exactly `apply`/`done` for 0202, 0203, 0204, 0205, 0206, 0207 and `Migration gate passed.`; an `apply` without `done`, or `FAILED` → **STOP**, read the PostgreSQL server log, no blind retry |
 | W6 | Grants: `grant-app-role.sh` from a `postgres:16` container (same command as Phase W; the admin URL is read from `.env` by the shell and never printed) | ends `Withheld direct writes of activation rows and protected reorder columns from app_role.` The new table also inherits `app_role` privileges from the default privileges set in Phase W; the script is idempotent and re-run for completeness |
-| W7 | `[READ]` verify | fingerprint hook → **`MATCHES_REPOSITORY_0206_PG16` (`c0b9988865306004`)**; ledger 206, head `0206_order_payments_append_only_and_consistency.sql`; `order_payments`: RLS enabled and forced, 1 policy, 3 triggers (`forbid_mutation_order_payments`, `forbid_truncate_order_payments`, `order_payments_consistency`), 4 indexes, 16 columns, 0 rows; `has_table_privilege('app_role','business_operations.order_payments','TRUNCATE')` false; `orders.register_session_id` and `register_sessions.currency_code` exist; audit v2 as W1; counts equal the profile. Any mismatch → **STOP**, decide rollback (§4) with the API still stopped |
+| W7 | `[READ]` verify | fingerprint hook → **`MATCHES_REPOSITORY_0207_PG16` (`bbd6bd1f31ad9ea9`)**; ledger 207, head `0207_add_order_note.sql`; `platform.orders.note` exists (text, nullable), `orders_note_format` exists, and no order carries a note yet; `order_payments`: RLS enabled and forced, 1 policy, 3 triggers (`forbid_mutation_order_payments`, `forbid_truncate_order_payments`, `order_payments_consistency`), 4 indexes, 16 columns, 0 rows; `has_table_privilege('app_role','business_operations.order_payments','TRUNCATE')` false; `orders.register_session_id` and `register_sessions.currency_code` exist; audit v2 as W1; counts equal the profile. Any mismatch → **STOP**, decide rollback (§4) with the API still stopped |
 | **Stop point** | If W0–W7 passed the database is migrated. The currently running image (`ba02d16`) is expected to work on it (additive change, section 1). If anything about the new API is in doubt, start the tagged rollback image and stop here. | — |
 | W8 | `$C up -d --no-deps api` (the API only) | `/v1/ready` 200; `/v1/health` reports the release SHA; external `/v1/ready` ok |
-| W9 | `smoke-test.sh` with `EXPECTED_BUILD_SHA=<release sha>`. Optional W9b: the owner takes one test sale in the counter (open register, one order, cash tender), then a read-only check: `order_payments` has one row and `sum(amount_applied)` equals the order total | pass. **A completed payment cannot be deleted afterwards** (append-only); only the tenant-data delete script removes such rows, so do W9b only with a test business |
+| W9 | `smoke-test.sh` with `EXPECTED_BUILD_SHA=<release sha>`. Optional W9b: the owner takes one test sale in the counter (open register, one order with a note, cash tender; an owner or admin may also add a discount), then a read-only check: `order_payments` has one row and `sum(amount_applied)` equals the order total | pass. **A completed payment cannot be deleted afterwards** (append-only); only the tenant-data delete script removes such rows, so do W9b only with a test business |
 | W10 | Close: keep the output without values; a restore proof of the W4 backup is recommended afterwards (same procedure as the Phase W proof) | — |
 
 Expected API downtime: W3 to W8, minutes (image built in advance).
@@ -68,7 +71,7 @@ Cloudflare, DNS, secrets, roles, bucket protection, backup-key rotation, Gate D 
 
 ## 6. Questions for the owner (with a recommendation)
 1. **Web counter UI hosting.** The POS counter pages call the new endpoints. If production web is built from `main` automatically (Cloudflare Pages), it may already show the new UI against the old API. *Recommendation:* tell me how the production web is deployed so the plan can order web and API releases; do not change Cloudflare in this window.
-2. **Rehearsal (P7).** *Recommendation:* skip it; the five migrations are additive, empty-table, and ran in CI on clean databases and on the validated scratch copy; the W4 backup plus Appendix A cover the risk. Do it only if you want the same assurance as Phase W.
+2. **Rehearsal (P7).** *Recommendation:* skip it; the six migrations are additive, empty-table, and ran in CI on clean databases and on the validated scratch copy; the W4 backup plus Appendix A cover the risk. Do it only if you want the same assurance as Phase W.
 3. **W9b test sale.** *Recommendation:* do one, in a test business, because it is the only check that proves tender capture on production; accept that the payment row is permanent.
 4. **Release timing.** *Recommendation:* the same quiet-evening pattern as Phase W; about 90 minutes booked, 30 expected.
 
@@ -78,7 +81,19 @@ Cloudflare, DNS, secrets, roles, bucket protection, backup-key rotation, Gate D 
 - The old-API-on-0206 behaviour is reasoned, not rehearsed (section 1).
 - The VM has little memory headroom (about 600 MB): no builds or heavy work on it.
 
-## Appendix A — logical rollback of 0202–0206 (API stopped; run as `admin_role`)
+## Appendix A — logical rollback of 0202–0207 (API stopped; run as `admin_role`)
+Two blocks, run in this order when the whole release is rolled back: **A1** undoes 0207 only (use it alone if only the note is the problem), **A2** then undoes 0202–0206. Both were run from this document's text on a scratch PostgreSQL 16.15 database (see section 1 for the fingerprints reached).
+
+**A1 — 0207 only** (returns exactly the 0206 schema; dropping the column discards any notes):
+```sql
+BEGIN;
+ALTER TABLE platform.orders DROP CONSTRAINT IF EXISTS orders_note_format;
+ALTER TABLE platform.orders DROP COLUMN IF EXISTS note;
+DELETE FROM _migrations WHERE filename = '0207_add_order_note.sql';
+COMMIT;
+```
+
+**A2 — 0202–0206**
 Tested on a scratch PostgreSQL 16.15 database after a clean 0206 migration: schema fingerprint afterwards `61ef99d74289c3b3` (equal to the committed 0201 reference), five ledger rows deleted. `forbid_mutation()` is intentionally kept (0206 re-declares it identically to the earlier definition). Dropping `order_payments` discards any payment rows it holds.
 ```sql
 BEGIN;

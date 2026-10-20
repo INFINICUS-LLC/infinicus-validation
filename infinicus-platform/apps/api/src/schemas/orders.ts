@@ -46,6 +46,7 @@ const orderSchema = z.object({
   orderDate: z.coerce.date(),
   currencyCode: z.string().regex(/^[A-Z]{3}$/),
   registerSessionId: z.string().uuid().nullable(),
+  note: z.string().nullable(),
   totalAmount: z.number(),
   operationalStatus: z.enum(['planned', 'authorized', 'executed', 'completed', 'failed', 'reversed']),
   createdAt: z.coerce.date(),
@@ -74,6 +75,9 @@ export const addLineItemBodySchema = z.union([z.object({
   // 'discount' is not offered here: a discount is a signed line created only through the discount route (POS-6b), which is limited to owners and admins.
   itemType: z.enum(['product', 'service', 'fee', 'other']).optional(),
 }).strict()]);
+
+/** The note of an open order (POS-6c): text, or null to clear it. The repository trims it, treats an empty note as cleared and enforces the 500-character and no-card-number rules. */
+export const orderNoteBodySchema = z.object({ note: z.string().max(1000).nullable() }).strict();
 
 /** A discount on an open order (POS-6b). The amount is positive and in the order's currency; the server stores it as a signed line and computes the new total. */
 export const discountBodySchema = z.object({
