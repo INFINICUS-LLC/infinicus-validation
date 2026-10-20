@@ -11,6 +11,7 @@ import { ApiContractError, ApiError, ApiUnavailableError, type ApiClient, type S
 import { describeRequestError } from './lifecycle';
 import { orderSchema, type Order, type Product } from './schemas';
 import { DISCOUNT_REASON_MAX } from './discount';
+import { buildNote } from './note';
 import type { TenderPayment } from './tender';
 
 export interface OrderSessionState {
@@ -30,6 +31,8 @@ export const VOID_REASON_MAX = 500;
 export const DISCOUNT_CONFLICT = 'The discount could not be added. The order may already be completed or voided, or removing a line would leave the discounts larger than the order. Reload the order to see its current state.';
 export const DISCOUNT_REFUSED = 'The discount was not accepted. Check the amount: it must be more than zero, exact in the currency, no more than the order total, and at most five discounts per order.';
 export const DISCOUNT_FORBIDDEN = 'Only an owner or admin can give discounts. Ask a manager to sign in and apply it.';
+export const NOTE_CONFLICT = 'The note could not be saved. The order may already be completed or voided; its note can no longer be changed. Reload the order to see its current state.';
+export const NOTE_REFUSED = 'The note was not accepted. Keep it to 500 characters and never write a card number in it.';
 export const PAYMENT_REFUSED = 'The payment was not accepted. Check that the payments cover the total and that only cash includes change.';
 
 const orderPath = (businessId: string): string => `/v1/businesses/${encodeURIComponent(businessId)}/orders`;
@@ -121,6 +124,18 @@ export class OrderSession {
     }
     const body = trimmed ? { reason: trimmed } : {};
     return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/void`, { body, scope: this.scope, idempotencyKey: key, schema: orderSchema }), VOID_CONFLICT);
+  };
+
+  /** Set or clear the note of the open order (POS-6c). An empty note clears it. The saved note is the server's answer. */
+  setNote = (text: string): Promise<boolean> => {
+    const order = this.state.order;
+    if (!order || order.operationalStatus !== 'planned') return Promise.resolve(false);
+    const checked = buildNote(text);
+    if (!checked.ok) {
+      this.set({ message: checked.reason });
+      return Promise.resolve(false);
+    }
+    return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/note`, { body: { note: checked.note }, scope: this.scope, idempotencyKey: key, schema: orderSchema }), NOTE_CONFLICT, NOTE_REFUSED);
   };
 
   /** Take an amount off the open order (POS-6b; owners and admins only). The new total is the server's answer. */

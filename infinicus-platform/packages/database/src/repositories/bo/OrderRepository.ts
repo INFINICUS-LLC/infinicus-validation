@@ -7,6 +7,7 @@ import { BusinessDeclaredCurrencyReader } from '../onboarding/index.js';
 import { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from '../../currency/minorUnits.js';
 import { planPayments, type PaymentInput, type TenderMethod } from './tender.js';
 import { planDiscount } from './discount.js';
+import { planNote } from './note.js';
 
 export type OrderOperationalStatus = 'planned' | 'authorized' | 'executed' | 'completed' | 'failed' | 'reversed';
 
@@ -60,6 +61,8 @@ export interface Order {
   currencyCode: string;
   /** The register session the order was taken in; null for orders taken before register linking (migration 0202). */
   registerSessionId: string | null;
+  /** The cashier's internal note on the order (POS-6c, migration 0207); null when there is none. Editable only while the order is open. */
+  note: string | null;
   totalAmount: number;
   operationalStatus: OrderOperationalStatus;
   createdAt: Date;
@@ -112,6 +115,7 @@ function rowToOrder(row: Record<string, unknown>, lineItems: OrderLineItem[], pa
     orderDate: row.order_date as Date,
     currencyCode: row.currency_code as string,
     registerSessionId: (row.register_session_id as string | null) ?? null,
+    note: (row.note as string | null | undefined) ?? null,
     totalAmount: parseFloat(String(row.total_amount)),
     operationalStatus: row.operational_status as OrderOperationalStatus,
     createdAt: row.created_at as Date,
@@ -317,6 +321,32 @@ export class OrderRepository {
       );
       await this.recomputeTotal(client, orderId);
       return rowToOrder(await this.loadOrderRow(client, orderId, businessId), await this.loadLineItems(client, orderId));
+    });
+  }
+
+  /**
+   * Set or clear the note of an open order (POS-6c). The text is planned first (trimmed, empty clears, at most 500 characters, never a card number); the order
+   * row is locked so the status check and the write cannot interleave with a completion. A note is read-only once the order is completed or voided. Each change
+   * leaves an order event recording that a note was set or cleared (not its text).
+   */
+  async setNote(ctx: TenantContext, orderId: string, businessId: string, input: string | null): Promise<Order> {
+    const note = planNote(input);
+    return withTenantTransaction(ctx, async (client) => {
+      const order = await this.loadOrderRow(client, orderId, businessId, true);
+      if (order.operational_status !== 'planned') {
+        throw new ConflictError('Order', `order ${orderId} is not open for editing (status: ${order.operational_status})`);
+      }
+      await client.query(`UPDATE platform.orders SET note = $2 WHERE id = $1`, [orderId, note]);
+      await client.query(
+        `INSERT INTO business_operations.order_events
+           (tenant_id, workspace_id, business_id, order_id, event_type, payload, correlation_id)
+         VALUES ($1,$2,$3,$4,'note',$5,$6)`,
+        [ctx.tenantId, ctx.workspaceId, businessId, orderId,
+          JSON.stringify({ kind: note === null ? 'order_note_cleared' : 'order_note_set', length: note === null ? 0 : note.length }), randomUUID()]
+      );
+      const row = await this.loadOrderRow(client, orderId, businessId);
+      const lineItems = await this.loadLineItems(client, orderId);
+      return rowToOrder(row, lineItems);
     });
   }
 

@@ -7,6 +7,8 @@ import { OrderSession, VOID_REASON_MAX, type OrderSessionState } from '../../../
 import type { Order } from '../../../../../lib/client/schemas';
 import type { DiscountEntry, DiscountResult } from '../../../../../lib/client/discount';
 import { DISCOUNT_REASON_MAX } from '../../../../../lib/client/discount';
+import type { NoteResult } from '../../../../../lib/client/note';
+import { NOTE_MAX, notePreview } from '../../../../../lib/client/note';
 import { MAX_TENDERS, REFERENCE_MAX, TENDER_LABELS, TENDER_METHODS, type TenderEntry, type TenderPlanResult } from '../../../../../lib/client/tender';
 
 /** One order session per business and workspace; it is rebuilt when either changes. */
@@ -57,6 +59,11 @@ export interface OrderPanelProps {
   discount?: DiscountEntry;
   discountCheck?: DiscountResult | null;
   onDiscountChange?: (entry: DiscountEntry) => void;
+  /** Order note (POS-6c): the text in the box (the saved note until the cashier edits it), the local check of it, and the handlers. Editable on open orders only. */
+  noteText?: string;
+  noteCheck?: NoteResult | null;
+  onNoteChange?: (text: string) => void;
+  onSaveNote?: () => void;
 }
 
 const NO_TENDER: TenderEntry = { method: 'cash', amountText: '', reference: '' };
@@ -66,7 +73,7 @@ const NO_DISCOUNT_ENTRY: DiscountEntry = { amountText: '', reason: '' };
 const none = (): void => undefined;
 
 /** Presentational order panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
-export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantity, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tenders = INITIAL_TENDERS, tenderCheck = null, onTendersChange = none, onViewReceipt, receiptOpen = false, discount = NO_DISCOUNT_ENTRY, discountCheck = null, onDiscountChange = none, offline = false }: OrderPanelProps) {
+export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantity, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tenders = INITIAL_TENDERS, tenderCheck = null, onTendersChange = none, onViewReceipt, receiptOpen = false, discount = NO_DISCOUNT_ENTRY, discountCheck = null, onDiscountChange = none, noteText, noteCheck = null, onNoteChange, onSaveNote, offline = false }: OrderPanelProps) {
   const { order, busy, message, retryable } = state;
   const planned = order?.operationalStatus === 'planned';
   const locked = busy || retryable || offline;
@@ -109,6 +116,14 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantit
             </ul>
           )}
           <p className="order-total" role="status" aria-live="polite">Total <strong>{money(order.totalAmount)}</strong></p>
+          {planned && onNoteChange ? (
+            <p className="order-note">
+              <label htmlFor="order-note">Note</label>{' '}
+              <input id="order-note" type="text" maxLength={NOTE_MAX} autoComplete="off" placeholder="For example: table 4, pick up at 6" value={noteText ?? order.note ?? ''} disabled={locked || confirm !== null} onChange={(e) => onNoteChange(e.target.value)} />{' '}
+              <button type="button" className="secondary" onClick={onSaveNote} disabled={locked || confirm !== null || !onSaveNote || noteText === undefined || noteText.trim() === (order.note ?? '') || !noteCheck || !noteCheck.ok}>Save note</button>
+              {noteCheck && !noteCheck.ok ? <span className="notice danger" role="alert"> {noteCheck.reason}</span> : null}
+            </p>
+          ) : order.note ? <p className="order-note">Note: {order.note}</p> : null}
           {order.operationalStatus === 'completed' ? (
             <div className="notice" role="status">
               <p>Sale recorded: {order.orderNumber}, {money(order.totalAmount)}. The order is closed.</p>
@@ -206,7 +221,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantit
           <ul className="open-orders" aria-label="Open orders">
             {resumable.map((o) => (
               <li key={o.id}>
-                <span>{o.orderNumber}</span> <span className="line-total">{o.currencyCode} {formatAmount(o.totalAmount, o.currencyCode)}</span>{' '}
+                <span>{o.orderNumber}{o.note ? <span className="order-note-preview"> &ndash; {notePreview(o.note)}</span> : null}</span> <span className="line-total">{o.currencyCode} {formatAmount(o.totalAmount, o.currencyCode)}</span>{' '}
                 <button type="button" className="secondary" aria-label={`Open ${o.orderNumber}`} onClick={() => onOpen(o.id)} disabled={busy || retryable || offline}>Open</button>
               </li>
             ))}

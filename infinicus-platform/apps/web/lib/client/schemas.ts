@@ -52,7 +52,9 @@ export const orderPaymentSchema = z.object({
   amountTendered: z.number(), amountApplied: z.number(), changeGiven: z.number(), reference: z.string().nullable(), createdAt: z.string(),
 });
 export const orderSchema = z.object({
-  id: z.string().uuid(), businessId: z.string().uuid(), customerId: z.string().uuid().nullable(), orderNumber: z.string(), orderDate: z.string(), currencyCode: z.string().regex(/^[A-Z]{3}$/), registerSessionId: z.string().uuid().nullable(),
+  id: z.string().uuid(), businessId: z.string().uuid(), customerId: z.string().uuid().nullable(), orderNumber: z.string(),
+  /** The cashier's internal note (POS-6c); absent from an API that predates migration 0207. */
+  note: z.string().nullish(), orderDate: z.string(), currencyCode: z.string().regex(/^[A-Z]{3}$/), registerSessionId: z.string().uuid().nullable(),
   totalAmount: z.number(), operationalStatus: z.enum(['planned', 'authorized', 'executed', 'completed', 'failed', 'reversed']),
   createdAt: z.string(), updatedAt: z.string(), lineItems: z.array(orderLineItemSchema),
   payments: z.array(orderPaymentSchema), changeDue: z.number(),

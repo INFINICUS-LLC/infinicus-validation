@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { OrderRepository } from '@infinicus/database';
 import {
   businessIdParamsSchema, orderIdParamsSchema, lineItemIdParamsSchema,
-  createOrderBodySchema, addLineItemBodySchema, completeOrderBodySchema, voidOrderBodySchema, discountBodySchema,
+  createOrderBodySchema, addLineItemBodySchema, completeOrderBodySchema, voidOrderBodySchema, discountBodySchema, orderNoteBodySchema,
   orderResponseSchema, listOrdersQuerySchema, listOrdersResponseSchema,
   updateLineQuantityBodySchema,
 } from '../schemas/orders.js';
@@ -108,6 +108,26 @@ export default async function ordersRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { businessId, orderId, lineItemId } = request.params;
     const order = await orders.updateLineQuantity(request.ctx!, orderId, lineItemId, businessId, request.body.quantity);
+    return reply.status(200).send(order);
+  });
+
+  // POS-6c: the internal note of an open order. Same permission as editing the order (bo:write); read-only once the order is completed or voided.
+  server.post('/v1/businesses/:businessId/orders/:orderId/note', {
+    schema: {
+      tags: ['operations'],
+      summary: 'Set or clear the note of an open order',
+      params: orderIdParamsSchema,
+      body: orderNoteBodySchema,
+      response: {
+        200: orderResponseSchema,
+        400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema,
+        404: errorResponseSchema, 409: errorResponseSchema,
+      },
+    },
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+  }, async (request, reply) => {
+    const { businessId, orderId } = request.params;
+    const order = await orders.setNote(request.ctx!, orderId, businessId, request.body.note);
     return reply.status(200).send(order);
   });
 

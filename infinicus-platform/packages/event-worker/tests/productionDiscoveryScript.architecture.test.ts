@@ -121,7 +121,7 @@ describe('production discovery script: fingerprint stays tied to the committed r
   });
 
   it('the reference hashes in the script are the SHA-256 prefixes of the committed reference outputs (0169, 0170 - the verified live production head -, 0198 and the release targets 0199, 0200, 0201, PostgreSQL 16)', () => {
-    for (const head of ['0169', '0170', '0198', '0199', '0200', '0201', '0202', '0203', '0204', '0205', '0206']) {
+    for (const head of ['0169', '0170', '0198', '0199', '0200', '0201', '0202', '0203', '0204', '0205', '0206', '0207']) {
       const h = createHash('sha256').update(file(`reference-${head}.pg16.fingerprint.txt`) + file(`reference-${head}.pg16.functions.txt`)).digest('hex').slice(0, 16);
       expect(text, head).toContain(`REF_${head}_PG16="${h}"`);
     }
@@ -146,7 +146,7 @@ describe('production discovery script: fingerprint verdict behaviour (stubbed da
     return { out: r.stdout + r.stderr, status: r.status };
   }
 
-  it.each(['0169', '0170', '0198', '0199', '0200', '0201', '0202', '0203', '0204', '0205', '0206'])('the clean PG16 reference for %s is accepted with its own verdict', (head) => {
+  it.each(['0169', '0170', '0198', '0199', '0200', '0201', '0202', '0203', '0204', '0205', '0206', '0207'])('the clean PG16 reference for %s is accepted with its own verdict', (head) => {
     const r = verdict(stub(`ok${head}`, file(`reference-${head}.pg16.fingerprint.txt`), file(`reference-${head}.pg16.functions.txt`)));
     expect(r.status).toBe(0);
     expect(r.out).toContain(`fingerprint-verdict=MATCHES_REPOSITORY_${head}_PG16`);
@@ -174,12 +174,12 @@ describe('production discovery script: fingerprint verdict behaviour (stubbed da
 describe('production discovery references are clean PostgreSQL 16 states', () => {
   const file = (n: string): string => readFileSync(join(REF_DIR, n), 'utf8');
 
-  it.each(['0169', '0170', '0198', '0199', '0200', '0201', '0202', '0203', '0204', '0205', '0206'])('%s: a clean database has exactly one non-extension function in public, 12 function groups and the expected group count', (head) => {
+  it.each(['0169', '0170', '0198', '0199', '0200', '0201', '0202', '0203', '0204', '0205', '0206', '0207'])('%s: a clean database has exactly one non-extension function in public, 12 function groups and the expected group count', (head) => {
     const fp = file(`reference-${head}.pg16.fingerprint.txt`).trim().split('\n');
     expect(fp.filter((l) => l.startsWith('public|functions|1|')).length).toBe(1); // test leftovers (extra functions) change this
     expect(fp.some((l) => /^public\|functions\|(?!1\|)/.test(l))).toBe(false);
     expect(file(`reference-${head}.pg16.functions.txt`).trim().split('\n').length).toBe(12);
-    expect(fp.length).toBe(['0199', '0200', '0201', '0202', '0203', '0204', '0205', '0206'].includes(head) ? 134 : head === '0198' ? 133 : 130);
+    expect(fp.length).toBe(['0199', '0200', '0201', '0202', '0203', '0204', '0205', '0206', '0207'].includes(head) ? 134 : head === '0198' ? 133 : 130);
   });
 
   it('the per-migration chain is contiguous 0170..0201, has 32 distinct hashes, and agrees with the 0170, 0198, 0199, 0200 and 0201 references in the script', () => {
