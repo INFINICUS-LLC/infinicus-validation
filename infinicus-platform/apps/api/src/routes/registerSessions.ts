@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { BusinessRepository, RegisterSessionRepository } from '@infinicus/database';
+import { RegisterSessionRepository } from '@infinicus/database';
 import {
   businessIdParamsSchema, sessionIdParamsSchema,
   openRegisterSessionBodySchema, closeRegisterSessionBodySchema,
@@ -8,8 +8,8 @@ import {
   listRegisterSessionsResponseSchema, openRegisterSessionResponseSchema, registerSessionSummaryResponseSchema,
 } from '../schemas/registerSessions.js';
 import { errorResponseSchema } from '../schemas/common.js';
+import { requireBusinessWorkspace } from '../guards/businessWorkspace.js';
 
-const businesses = new BusinessRepository();
 const registerSessions = new RegisterSessionRepository();
 
 export default async function registerSessionsRoutes(app: FastifyInstance) {
@@ -27,10 +27,9 @@ export default async function registerSessionsRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
     const session = await registerSessions.open(request.ctx!, { businessId, ...request.body });
     return reply.status(201).send(session);
   });
@@ -42,10 +41,9 @@ export default async function registerSessionsRoutes(app: FastifyInstance) {
       params: businessIdParamsSchema,
       response: { 200: openRegisterSessionResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read'), requireBusinessWorkspace],
   }, async (request, reply) => {
     const { businessId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
     const session = await registerSessions.getOpen(request.ctx!, businessId);
     return reply.status(200).send({ session });
   });
@@ -62,10 +60,9 @@ export default async function registerSessionsRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, sessionId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
     const session = await registerSessions.close(request.ctx!, sessionId, request.body, businessId);
     return reply.status(200).send(session);
   });
@@ -78,10 +75,9 @@ export default async function registerSessionsRoutes(app: FastifyInstance) {
       querystring: listRegisterSessionsQuerySchema,
       response: { 200: listRegisterSessionsResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read'), requireBusinessWorkspace],
   }, async (request, reply) => {
     const { businessId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
     const list = await registerSessions.list(request.ctx!, businessId, request.query.limit);
     return reply.status(200).send({ sessions: list });
   });
@@ -93,10 +89,9 @@ export default async function registerSessionsRoutes(app: FastifyInstance) {
       params: sessionIdParamsSchema,
       response: { 200: registerSessionSummaryResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read'), requireBusinessWorkspace],
   }, async (request, reply) => {
     const { businessId, sessionId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
     const summary = await registerSessions.summary(request.ctx!, businessId, sessionId);
     return reply.status(200).send(summary);
   });

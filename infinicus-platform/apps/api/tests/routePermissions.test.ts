@@ -42,8 +42,9 @@ vi.mock('fastify', async (importOriginal) => {
 
 import { loadConfig } from '@infinicus/configuration';
 import { buildApp } from '../src/app.js';
+import { requireBusinessWorkspace } from '../src/guards/businessWorkspace.js';
 
-type Step = 'authenticate' | 'resolveTenantContext' | 'subscription' | 'idempotency' | `perm:${string}` | 'other';
+type Step = 'authenticate' | 'resolveTenantContext' | 'subscription' | 'idempotency' | 'businessWorkspace' | `perm:${string}` | 'other';
 interface RouteInfo { key: string; method: string; url: string; steps: Step[]; perms: string[]; bodyKeys: string[]; paramKeys: string[] }
 
 /** Routes that are intentionally not tenant-permission gated, each with the reason. Keyed `METHOD url`. */
@@ -80,6 +81,7 @@ function describeRoutes(a: any): RouteInfo[] {
         f === a.authenticate ? 'authenticate'
           : f === a.resolveTenantContext ? 'resolveTenantContext'
             : f?.__perms ? (`perm:${f.__perms.join('+')}` as Step)
+              : f === requireBusinessWorkspace ? 'businessWorkspace'
               : f === a.requireIdempotencyKey ? 'idempotency'
                 : 'other');
       const perms = handlers.flatMap((f) => f?.__perms ?? []);
@@ -128,6 +130,17 @@ describe('route-permission regression audit', () => {
       if (meta.kind === 'session' || meta.kind === 'onboarding') expect(r!.steps).toContain('authenticate');
       // A classified route must never silently gain tenant scope without a permission.
       if (r!.steps.includes('resolveTenantContext')) expect(r!.perms.length, `${key} resolves tenant scope but has no permission`).toBeGreaterThan(0);
+    }
+  });
+
+  it('POS-6f checks workspace visibility after permission and before any cached POS replay', () => {
+    const pos = routes.filter(r => /^\/v1\/businesses\/:businessId\/(orders|products|register-sessions)(\/|$)/.test(r.url));
+    expect(pos.length).toBeGreaterThanOrEqual(16);
+    for (const r of pos) {
+      const guard = r.steps.indexOf('businessWorkspace');
+      const permission = r.steps.findIndex(step => step.startsWith('perm:'));
+      expect(guard, r.key).toBeGreaterThan(permission);
+      if (r.steps.includes('idempotency')) expect(guard, r.key).toBeLessThan(r.steps.indexOf('idempotency'));
     }
   });
 

@@ -96,6 +96,72 @@ describe.runIf(run)('POS-5 tender capture - live PostgreSQL + Fastify', () => {
   });
   afterAll(async () => { await app?.close(); await adminPool?.end(); await closePool(); });
 
+  it.each(['sibling workspace', 'foreign tenant', 'deleted business'])('POS-6f rejects all POS operations for a %s without operational writes', async (boundary) => {
+    const { s, orderId, sessionId } = await ready('USD', 1);
+    const productKey = uc('product');
+    const product = await app.inject({ method: 'POST', url: '/v1/businesses/' + s.bizId + '/products', headers: hdr(s, { 'idempotency-key': productKey }), payload: { name: 'Scoped product', price: 1 } });
+    expect(product.statusCode).toBe(201);
+    const productId = product.json().id;
+    const lineId = (await getOrder(s, orderId)).json().lineItems[0].id;
+    let caller = s;
+    if (boundary === 'sibling workspace') {
+      const workspaceId = randomUUID();
+      await adminPool.query(`INSERT INTO tenancy.workspaces (id,tenant_id,name,slug,status) VALUES ($1,$2,'POS sibling',$3,'active')`, [workspaceId, s.ctx.tenantId, uc('pos-sibling')]);
+      caller = { ...s, ctx: { ...s.ctx, workspaceId } };
+      await grantRole(caller.ctx, s.ctx.userId, 'owner');
+    } else if (boundary === 'foreign tenant') {
+      caller = await setup('owner');
+    } else {
+      await adminPool.query('UPDATE platform.businesses SET deleted_at = now() WHERE id = $1', [s.bizId]);
+    }
+    const base = ordersUrl(s.bizId);
+    const products = '/v1/businesses/' + s.bizId + '/products';
+    const registers = sessionsUrl(s.bizId);
+    const requests: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; url: string; payload?: any; key?: string }[] = [
+      { method: 'POST', url: base, payload: {} },
+      { method: 'POST', url: base + '/' + orderId + '/line-items', payload: { description: 'Injected', quantity: 1, unitPrice: 1 } },
+      { method: 'DELETE', url: base + '/' + orderId + '/line-items/' + lineId },
+      { method: 'POST', url: base + '/' + orderId + '/line-items/' + lineId + '/quantity', payload: { quantity: 2 } },
+      { method: 'POST', url: base + '/' + orderId + '/complete', payload: { payments: [cash(1)] } },
+      { method: 'POST', url: base + '/' + orderId + '/void', payload: { reason: 'Unauthorized' } },
+      { method: 'GET', url: products },
+      { method: 'POST', url: products, payload: { name: 'Injected', price: 1 } },
+      { method: 'PATCH', url: products + '/' + productId, payload: { price: 99 } },
+      // A tenant-scoped cached success must not bypass the selected workspace or deleted-business check.
+      { method: 'POST', url: products, payload: { name: 'Scoped product', price: 1 }, key: productKey },
+      { method: 'GET', url: registers },
+      { method: 'GET', url: registers + '/open' },
+      { method: 'GET', url: registers + '/' + sessionId + '/summary' },
+      { method: 'POST', url: registers, payload: { openingCash: 5, registerName: 'Injected' } },
+      { method: 'POST', url: registers + '/' + sessionId + '/close', payload: { closingCash: 5 } },
+      { method: 'GET', url: base + '?status=planned' },
+      { method: 'GET', url: base + '/' + orderId },
+    ];
+    const snapshot = async () => {
+      const tables = ['platform.orders', 'business_operations.products', 'business_operations.register_sessions', 'business_operations.business_events'];
+      const children = ['business_operations.order_line_items', 'business_operations.order_events', 'business_operations.order_payments'];
+      const result = [];
+      for (const table of tables) result.push((await adminPool.query('SELECT to_jsonb(t) AS row FROM ' + table + ' t WHERE business_id = $1 ORDER BY id', [s.bizId])).rows);
+      for (const table of children) result.push((await adminPool.query('SELECT to_jsonb(t) AS row FROM ' + table + ' t WHERE order_id IN (SELECT id FROM platform.orders WHERE business_id = $1) ORDER BY id', [s.bizId])).rows);
+      return result;
+    };
+    const before = await snapshot();
+    for (const request of requests) {
+      const result = await app.inject({ ...request, headers: hdr(caller, { 'idempotency-key': request.key ?? uc('forbidden') }) });
+      expect(result.statusCode, request.method + ' ' + request.url).toBe(404);
+    }
+    expect(await snapshot()).toEqual(before);
+    if (boundary !== 'deleted business') {
+      const replay = await app.inject({ method: 'POST', url: products, headers: hdr(s, { 'idempotency-key': productKey }), payload: { name: 'Scoped product', price: 1 } });
+      expect(replay.statusCode).toBe(201);
+      expect(replay.json()).toEqual(product.json());
+      expect((await getOrder(s, orderId)).statusCode).toBe(200);
+      expect((await complete(s, orderId, { payments: [cash(1)] })).statusCode).toBe(200);
+      expect(await paymentCount(s.bizId)).toBe(1);
+      expect((await summary(s, sessionId)).json()).toMatchObject({ expectedCash: 1 });
+    }
+  });
+
   it('POS-6d reads the canonical summary beyond the first page using BO read alone', async () => {
     const s = await setup({ permissions: ['bo:read'] });
     await adminPool.query(`INSERT INTO platform.businesses (tenant_id, workspace_id, legal_name, business_code, status)
