@@ -42,6 +42,7 @@ interface Pending { key: string; run: (key: string) => Promise<void>; conflict: 
 export class RegisterController {
   private state: RegisterState = { loaded: false, session: null, summary: null, justClosed: null, busy: false, message: null, retryable: false };
   private pending: Pending | null = null;
+  private summaryVersion = 0;
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -58,12 +59,14 @@ export class RegisterController {
   /** Read the open session (if any) and its summary. Reads carry no key and change nothing. */
   load = async (): Promise<void> => {
     if (this.state.busy) return;
+    ++this.summaryVersion;
     this.set({ busy: true, message: null });
     try {
       const open = await this.api.get(`${path(this.businessId)}/open`, { scope: this.scope, schema: openRegisterSchema });
       const summary = open.session
         ? await this.api.get(`${path(this.businessId)}/${encodeURIComponent(open.session.id)}/summary`, { scope: this.scope, schema: registerSummarySchema })
         : null;
+      if (open.session && summary?.session.id !== open.session.id) throw new ApiContractError();
       this.set({ loaded: true, session: open.session, summary, busy: false });
     } catch (error) {
       this.set({ busy: false, message: describeRequestError(error) });
@@ -97,8 +100,9 @@ export class RegisterController {
   open = (openingCash: number): Promise<boolean> => {
     if (this.state.session) return Promise.resolve(false);
     return this.act(async (key) => {
+      ++this.summaryVersion;
       const session = await this.api.post(path(this.businessId), { body: { openingCash }, scope: this.scope, idempotencyKey: key, schema: registerSessionSchema });
-      this.set({ session, justClosed: null });
+      this.set({ session, summary: null, justClosed: null });
       await this.refreshSummary(session);
     }, OPEN_CONFLICT);
   };
@@ -108,6 +112,7 @@ export class RegisterController {
     const session = this.state.session;
     if (!session) return Promise.resolve(false);
     return this.act(async (key) => {
+      ++this.summaryVersion;
       const closed = await this.api.post(`${path(this.businessId)}/${encodeURIComponent(session.id)}/close`, { body: { closingCash }, scope: this.scope, idempotencyKey: key, schema: registerSessionSchema });
       this.set({ session: null, summary: null, justClosed: closed });
     }, CLOSE_CONFLICT);
@@ -116,10 +121,11 @@ export class RegisterController {
   /** Re-read the summary of the open session (for example after an order was completed). Best effort: a failed read keeps what is shown. */
   refreshSummary = async (known?: RegisterSession): Promise<void> => {
     const session = known ?? this.state.session;
-    if (!session) return;
+    if (!session || this.state.session?.id !== session.id || (this.state.busy && !known)) return;
+    const version = ++this.summaryVersion;
     try {
       const summary = await this.api.get(`${path(this.businessId)}/${encodeURIComponent(session.id)}/summary`, { scope: this.scope, schema: registerSummarySchema });
-      this.set({ summary });
+      if (version === this.summaryVersion && this.state.session?.id === session.id && summary.session.id === session.id) this.set({ summary });
     } catch { /* keep the previous summary */ }
   };
 

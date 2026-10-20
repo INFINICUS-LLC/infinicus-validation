@@ -5,8 +5,12 @@ import { IdempotencyKeyRepository } from '@infinicus/database';
 
 const idempotencyKeys = new IdempotencyKeyRepository();
 
-function hashBody(body: unknown): string {
-  return createHash('sha256').update(JSON.stringify(body ?? null)).digest('hex');
+export function idempotencyRequestHash(body: unknown, params: Record<string, unknown>): string {
+  const entries = Object.entries(params).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  // Keep parameterless requests compatible. Resource-bound hashes cannot match legacy body-only hashes.
+  const input = entries.length === 0 ? JSON.stringify(body ?? null)
+    : `resource:v1:${JSON.stringify({ params: entries, body: body ?? null })}`;
+  return createHash('sha256').update(input).digest('hex');
 }
 
 /**
@@ -15,7 +19,7 @@ function hashBody(body: unknown): string {
  * + route (request.ctx must already be set — run after
  * resolveTenantContext). A replayed request (same key, same body) short-
  * circuits with the original response instead of re-executing the route
- * handler; the same key with a different body is rejected as a conflict
+ * handler; the same key with different validated path parameters or body is rejected as a conflict
  * (IdempotencyConflictError, mapped to 409).
  *
  * Completion is recorded by a matching onSend hook registered by the
@@ -36,7 +40,7 @@ export default fp(async function idempotencyPlugin(app: FastifyInstance) {
       throw err;
     }
     const route = `${request.method} ${request.routeOptions.url ?? request.url}`;
-    const requestHash = hashBody(request.body);
+    const requestHash = idempotencyRequestHash(request.body, (request.params ?? {}) as Record<string, unknown>);
 
     const result = await idempotencyKeys.begin(request.ctx, key, route, requestHash);
     if (!result.claimed) {

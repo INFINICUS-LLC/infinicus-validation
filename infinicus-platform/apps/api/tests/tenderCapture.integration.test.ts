@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { Pool } from 'pg';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { loadConfig } from '@infinicus/configuration';
 import { createPool, closePool, UserRepository, MembershipRepository, type TenantContext } from '@infinicus/database';
 import { buildApp } from '../src/app.js';
@@ -95,6 +95,52 @@ describe.runIf(run)('POS-5 tender capture - live PostgreSQL + Fastify', () => {
     await app.ready();
   });
   afterAll(async () => { await app?.close(); await adminPool?.end(); await closePool(); });
+
+  it('resource binding rejects another order while preserving the original completion replay', async () => {
+    const { s, orderId } = await ready('USD', 1);
+    const second = await createOrder(s);
+    expect(second.statusCode).toBe(201);
+    const secondId = second.json().id;
+    expect((await addLine(s, secondId, 1)).statusCode).toBe(200);
+    const key = uc('debug-replay');
+    expect((await complete(s, orderId, { payments: [cash(1)] }, key)).statusCode).toBe(200);
+    const replay = await complete(s, secondId, { payments: [cash(1)] }, key);
+    // Reusing a key for another resource must be refused, not reported as that resource's successful completion.
+    expect(replay.statusCode).toBe(409);
+    expect(await statusOf(secondId)).toBe('planned');
+    expect(await paymentRows(secondId)).toEqual([]);
+    expect((await complete(s, orderId, { payments: [cash(1)] }, key)).json().id).toBe(orderId);
+    expect((await complete(s, orderId, { payments: [cash(2)] }, key)).statusCode).toBe(409);
+    expect(await paymentCount(s.bizId)).toBe(1);
+  });
+
+  it('resource binding refuses a creation key reused for another business in the same workspace', async () => {
+    const { s } = await ready('USD', 1);
+    const key = uc('business-key');
+    const first = await app.inject({ method: 'POST', url: ordersUrl(s.bizId), headers: hdr(s, { 'idempotency-key': key }), payload: {} });
+    expect(first.statusCode).toBe(201);
+    const row = await adminPool.query(`INSERT INTO platform.businesses (tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,'Replay sibling',$3,'active') RETURNING id`, [s.ctx.tenantId, s.ctx.workspaceId, uc('sibling')]);
+    const sibling = { ...s, bizId: row.rows[0].id as string };
+    expect((await declare(sibling, 'USD')).statusCode).toBe(201);
+    expect((await openRegister(sibling)).statusCode).toBe(201);
+    const refused = await app.inject({ method: 'POST', url: ordersUrl(sibling.bizId), headers: hdr(sibling, { 'idempotency-key': key }), payload: {} });
+    expect(refused.statusCode).toBe(409);
+    expect((await adminPool.query('SELECT id FROM platform.orders WHERE business_id = $1', [sibling.bizId])).rows).toEqual([]);
+    expect((await app.inject({ method: 'POST', url: ordersUrl(s.bizId), headers: hdr(s, { 'idempotency-key': key }), payload: {} })).json()).toEqual(first.json());
+  });
+
+  it('legacy parameterized cache entries fail closed without recording another payment', async () => {
+    const { s, orderId } = await ready('USD', 1);
+    const body = { payments: [cash(1)] };
+    const completed = await complete(s, orderId, body);
+    expect(completed.statusCode).toBe(200);
+    const key = uc('legacy-key');
+    const oldHash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
+    await adminPool.query(`INSERT INTO api.idempotency_keys (tenant_id,idempotency_key,route,request_hash,status,response_status,response_body) VALUES ($1,$2,$3,$4,'completed',200,$5::jsonb)`, [s.ctx.tenantId, key, 'POST /v1/businesses/:businessId/orders/:orderId/complete', oldHash, completed.body]);
+    expect((await complete(s, orderId, body, key)).statusCode).toBe(409);
+    expect(await paymentCount(s.bizId)).toBe(1);
+    expect(await statusOf(orderId)).toBe('completed');
+  });
 
   it.each(['sibling workspace', 'foreign tenant', 'deleted business'])('POS-6f rejects all POS operations for a %s without operational writes', async (boundary) => {
     const { s, orderId, sessionId } = await ready('USD', 1);
