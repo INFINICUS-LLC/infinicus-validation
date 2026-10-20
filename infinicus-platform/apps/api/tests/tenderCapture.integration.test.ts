@@ -96,6 +96,23 @@ describe.runIf(run)('POS-5 tender capture - live PostgreSQL + Fastify', () => {
   });
   afterAll(async () => { await app?.close(); await adminPool?.end(); await closePool(); });
 
+  it('POS-6c records three entered tenders once and reconciles only applied cash, with KWD change', async () => {
+    const { s, orderId, sessionId } = await ready('KWD', 1.375);
+    const payments = [card(0.5, 'SLIP-6C'), { method: 'other', amountTendered: 0.25 }, cash(1)];
+    const key = uc('split-checkout');
+    const result = await complete(s, orderId, { payments }, key);
+    expect(result.statusCode).toBe(200);
+    expect(result.json()).toMatchObject({ operationalStatus: 'completed', totalAmount: 1.375, changeDue: 0.375 });
+    expect(await paymentRows(orderId)).toEqual([
+      { position: 1, method: 'card', tendered: 0.5, applied: 0.5, change: 0, reference: 'SLIP-6C' },
+      { position: 2, method: 'other', tendered: 0.25, applied: 0.25, change: 0, reference: null },
+      { position: 3, method: 'cash', tendered: 1, applied: 0.625, change: 0.375, reference: null },
+    ]);
+    expect((await complete(s, orderId, { payments }, key)).json()).toEqual(result.json());
+    expect(await paymentCount(s.bizId)).toBe(3);
+    expect((await summary(s, sessionId)).json()).toMatchObject({ tenders: { card: 0.5, other: 0.25, cash: 0.625 }, expectedCash: 0.625 });
+  });
+
   it('selects the BO catalog by its own ID, snapshots server pricing and records catalog provenance', async () => {
     const { s, orderId } = await ready('KWD', 1);
     const product = await app.inject({ method: 'POST', url: `/v1/businesses/${s.bizId}/products`, headers: hdr(s, { 'idempotency-key': uc('key') }), payload: { name: 'Espresso', price: 1.375 } });

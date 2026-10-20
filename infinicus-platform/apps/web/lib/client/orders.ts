@@ -26,7 +26,7 @@ interface Pending { key: string; run: (key: string) => Promise<Order>; /** Plain
 export const COMPLETE_CONFLICT = 'This order could not be completed. It may have no items, or it was already completed or voided. Reload the order to see its current state.';
 export const VOID_CONFLICT = 'This order could not be voided. It may already be completed or voided. Reload the order to see its current state.';
 export const VOID_REASON_MAX = 500;
-export const PAYMENT_REFUSED = 'The payment was not accepted. Check the method and the amount (cash must cover the total; card and other pay the total exactly).';
+export const PAYMENT_REFUSED = 'The payment was not accepted. Check that the payments cover the total and that only cash includes change.';
 
 const orderPath = (businessId: string): string => `/v1/businesses/${encodeURIComponent(businessId)}/orders`;
 const IDEMPOTENT_UNKNOWN_OUTCOME = (error: unknown): boolean => error instanceof ApiUnavailableError || error instanceof ApiContractError || (error instanceof ApiError && error.status >= 500);
@@ -98,11 +98,12 @@ export class OrderSession {
       { body: { quantity }, scope: this.scope, idempotencyKey: key, schema: orderSchema }));
   };
 
-  /** Complete the open order with its tender: the server records the sale and the payment and locks the order. Needs at least one line and a payment; nothing is sent otherwise. */
+  /** Complete with tender: BO records the sale/payments and locks the order. A nonempty zero-total order takes no payment. */
   complete = (payments: readonly TenderPayment[]): Promise<boolean> => {
     const order = this.state.order;
-    if (!order || order.operationalStatus !== 'planned' || order.lineItems.length === 0 || payments.length === 0) return Promise.resolve(false);
-    return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/complete`, { body: { payments }, scope: this.scope, idempotencyKey: key, schema: orderSchema }), COMPLETE_CONFLICT, PAYMENT_REFUSED);
+    if (!order || order.operationalStatus !== 'planned' || order.lineItems.length === 0 || (order.totalAmount === 0 ? payments.length !== 0 : payments.length === 0)) return Promise.resolve(false);
+    const body = { payments: payments.map(payment => ({ ...payment })) };
+    return this.act((key) => this.api.post(`${orderPath(this.businessId)}/${encodeURIComponent(order.id)}/complete`, { body, scope: this.scope, idempotencyKey: key, schema: orderSchema }), COMPLETE_CONFLICT, PAYMENT_REFUSED);
   };
 
   /** Void the open order, with an optional reason (kept by the server in the order's history). */
