@@ -1,14 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { BusinessRepository, ProductRepository } from '@infinicus/database';
+import { ProductRepository } from '@infinicus/database';
 import {
   businessIdParamsSchema, productIdParamsSchema,
   createProductBodySchema, updateProductBodySchema,
   productResponseSchema, listProductsQuerySchema, listProductsResponseSchema,
 } from '../schemas/products.js';
 import { errorResponseSchema } from '../schemas/common.js';
+import { requireBusinessWorkspace } from '../guards/businessWorkspace.js';
 
-const businesses = new BusinessRepository();
 const products = new ProductRepository();
 
 export default async function productsRoutes(app: FastifyInstance) {
@@ -22,10 +22,9 @@ export default async function productsRoutes(app: FastifyInstance) {
       body: createProductBodySchema,
       response: { 201: productResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
     const product = await products.create(request.ctx!, { businessId, ...request.body });
     return reply.status(201).send(product);
   });
@@ -38,10 +37,9 @@ export default async function productsRoutes(app: FastifyInstance) {
       querystring: listProductsQuerySchema,
       response: { 200: listProductsResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read')],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:read'), requireBusinessWorkspace],
   }, async (request, reply) => {
     const { businessId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
     const list = await products.list(request.ctx!, businessId, !request.query.includeInactive);
     return reply.status(200).send({ products: list });
   });
@@ -54,10 +52,9 @@ export default async function productsRoutes(app: FastifyInstance) {
       body: updateProductBodySchema,
       response: { 200: productResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, productId } = request.params;
-    await businesses.getById(request.ctx!, businessId);
     const product = await products.update(request.ctx!, productId, request.body, businessId);
     return reply.status(200).send(product);
   });
