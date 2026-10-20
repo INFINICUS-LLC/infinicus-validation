@@ -232,6 +232,8 @@ button.danger {
 .receipt-unit { color: var(--color-muted); font-size: 0.875rem; }
 .receipt-meta { color: var(--color-muted); }
 .receipt-actions button { min-height: 2.75rem; }
+.sales-history { display: grid; gap: var(--space-4); }
+.sales-history button { min-height: 2.75rem; }
 @media print {
   body * { visibility: hidden; }
   .receipt, .receipt * { visibility: visible; }

@@ -91,6 +91,7 @@ export const orderResponseSchema = orderSchema;
 
 export const listOrdersQuerySchema = z.object({
   status: z.enum(['planned', 'authorized', 'executed', 'completed', 'failed', 'reversed']).optional(),
+  before: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });
 
