@@ -152,6 +152,14 @@ describe('order panel: note', () => {
     expect(panel({})).not.toContain('id="order-note"');
   });
 
+  it('the note box and Save note are locked while the connection is down, and Open on a listed order too', () => {
+    const base = { onNoteChange: () => undefined, onSaveNote: () => undefined, offline: true };
+    const out = panel({ ...base, noteText: 'Table 5', noteCheck: buildNote('Table 5'), openOrders: [order({ id: uuid(60), orderNumber: 'ORD-0060', note: 'x' })] }, order({ note: 'Table 4' }));
+    expect(out).toMatch(/<input id="order-note"[^>]*disabled=""/);
+    expect(buttonTag(out, 'Save note')).toContain('disabled=""');
+    expect(buttonTag(out, 'Open')).toContain('disabled=""');
+  });
+
   it('the open-orders list shows a short preview of each note', () => {
     const out = panel({ openOrders: [order({ id: uuid(50), orderNumber: 'ORD-0050', note: 'Table 9, allergy: nuts' }), order({ id: uuid(51), orderNumber: 'ORD-0051', note: null })] });
     expect(out).toContain('ORD-0050');

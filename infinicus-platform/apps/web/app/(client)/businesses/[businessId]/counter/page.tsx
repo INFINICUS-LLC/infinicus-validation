@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { openOrdersPath } from '../../../../../lib/client/orders';
 import { orderListSchema, productListSchema } from '../../../../../lib/client/schemas';
@@ -13,6 +13,7 @@ import { CounterCatalogue } from './counter-view';
 import { OrderPanelView, useOrderSession } from './order-panel';
 import { RegisterPanelView, useRegister } from './register-panel';
 import { BusinessReceipt } from './business-receipt';
+import { ConnectionBanner, shouldWarnBeforeLeave, useLeaveWarning, useOnline, useReconnectRetry } from './connection';
 import { parseCashAmount } from '../../../../../lib/client/register';
 import { buildTenderPlan, type TenderEntry } from '../../../../../lib/client/tender';
 import { buildDiscount, NO_DISCOUNT, type DiscountEntry } from '../../../../../lib/client/discount';
@@ -32,6 +33,18 @@ export default function CounterPage() {
   const [cashText, setCashText] = useState('');
   const [confirmingClose, setConfirmingClose] = useState(false);
   useEffect(() => { if (register) void register.load(); }, [register]);
+  // POS-7a: connection awareness. Offline blocks actions; when the connection RETURNS, an action whose outcome was unknown is retried once with the SAME
+  // Idempotency-Key (the server replays an answer it already gave instead of repeating the action). Nothing is stored in the browser.
+  const online = useOnline();
+  const reloadOpen = useRef(open.reload);
+  reloadOpen.current = open.reload;
+  const retryUnconfirmed = useCallback(() => {
+    if (session?.getState().retryable) void session.retry().then((changed) => { if (changed) reloadOpen.current(); });
+    if (register?.getState().retryable) void register.retry();
+  }, [session, register]);
+  const hasUnconfirmed = useCallback(() => Boolean(session?.getState().retryable || register?.getState().retryable), [session, register]);
+  useReconnectRetry(retryUnconfirmed, hasUnconfirmed);
+  useLeaveWarning(shouldWarnBeforeLeave(orderState, registerState));
   const [ask, setAsk] = useState<{ kind: 'complete' | 'void' | 'discount'; orderId: string } | null>(null);
   const [discount, setDiscount] = useState<DiscountEntry>(NO_DISCOUNT);
   const [voidReason, setVoidReason] = useState('');
@@ -96,6 +109,7 @@ export default function CounterPage() {
       onNoteChange={(text) => { if (orderState.order) setNoteDraft({ orderId: orderState.order.id, text }); }}
       onSaveNote={() => { if (session && noteText !== undefined) void session.setNote(noteText).then((saved) => { if (saved) { setNoteDraft(null); open.reload(); } }); }}
       registerOpen={registerState.loaded ? registerState.session !== null : undefined}
+      offline={!online}
       onViewReceipt={() => { if (orderState.order) setReceiptFor(orderState.order.id); }}
       receiptOpen={receipt !== null}
     />
@@ -103,6 +117,7 @@ export default function CounterPage() {
   const cashValid = parseCashAmount(cashText) !== null;
   const registerPanel = (
     <RegisterPanelView
+      offline={!online}
       state={registerState}
       cashText={cashText}
       cashValid={cashValid}
@@ -116,11 +131,12 @@ export default function CounterPage() {
       onDiscard={() => { if (register) void register.discard(); }}
     />
   );
-  const canAdd = Boolean(orderState.order) && orderState.order?.operationalStatus === 'planned' && !orderState.busy && !orderState.retryable && confirm === null;
+  const canAdd = Boolean(orderState.order) && orderState.order?.operationalStatus === 'planned' && !orderState.busy && !orderState.retryable && confirm === null && online;
 
   return (
     <div>
       <h1>Counter</h1>
+      <ConnectionBanner online={online} />
       <p><a href={`/businesses/${businessId}/sales`}>Sales history and receipts</a></p>
       <p><a href="/businesses">&larr; All businesses</a></p>
       {resource.kind === 'loading' ? <p role="status" aria-live="polite">Loading…</p> : null}

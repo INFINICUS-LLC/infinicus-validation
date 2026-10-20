@@ -50,6 +50,8 @@ export interface OrderPanelProps {
   tenders?: readonly TenderEntry[];
   tenderCheck?: TenderPlanResult | null;
   onTendersChange?: (entries: TenderEntry[]) => void;
+  /** True while the browser has no connection (POS-7a): nothing can be recorded, so every action is disabled and Retry waits for the connection. */
+  offline?: boolean;
   /** Receipt of a completed sale (POS-6a): when given, a completed order offers a "View receipt" button (hidden while the receipt is already open). */
   onViewReceipt?: () => void;
   receiptOpen?: boolean;
@@ -71,10 +73,10 @@ const NO_DISCOUNT_ENTRY: DiscountEntry = { amountText: '', reason: '' };
 const none = (): void => undefined;
 
 /** Presentational order panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
-export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantity, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tenders = INITIAL_TENDERS, tenderCheck = null, onTendersChange = none, onViewReceipt, receiptOpen = false, discount = NO_DISCOUNT_ENTRY, discountCheck = null, onDiscountChange = none, noteText, noteCheck = null, onNoteChange, onSaveNote }: OrderPanelProps) {
+export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantity, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tenders = INITIAL_TENDERS, tenderCheck = null, onTendersChange = none, onViewReceipt, receiptOpen = false, discount = NO_DISCOUNT_ENTRY, discountCheck = null, onDiscountChange = none, noteText, noteCheck = null, onNoteChange, onSaveNote, offline = false }: OrderPanelProps) {
   const { order, busy, message, retryable } = state;
   const planned = order?.operationalStatus === 'planned';
-  const locked = busy || retryable;
+  const locked = busy || retryable || offline;
   const money = (n: number): string => `${order?.currencyCode ?? ''} ${formatAmount(n, order?.currencyCode)}`.trim();
   const resumable = openOrders.filter((o) => o.id !== order?.id);
   return (
@@ -85,8 +87,8 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantit
           {message}
           {retryable ? (
             <>
-              {' '}<button type="button" onClick={onRetry} disabled={busy}>Retry</button>{' '}
-              <button type="button" className="secondary" onClick={onDiscard} disabled={busy}>Discard and reload</button>
+              {' '}<button type="button" onClick={onRetry} disabled={busy || offline}>Retry</button>{' '}
+              <button type="button" className="secondary" onClick={onDiscard} disabled={busy || offline}>Discard and reload</button>
             </>
           ) : null}
         </p>
@@ -210,7 +212,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantit
         </>
       )}
       <p>
-        <button type="button" onClick={onStart} disabled={busy || retryable || registerOpen === false}>New order</button>
+        <button type="button" onClick={onStart} disabled={busy || retryable || offline || registerOpen === false}>New order</button>
         {registerOpen === false ? <span className="empty-state"> Open the register to take orders.</span> : null}
       </p>
       {resumable.length > 0 ? (
@@ -220,7 +222,7 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantit
             {resumable.map((o) => (
               <li key={o.id}>
                 <span>{o.orderNumber}{o.note ? <span className="order-note-preview"> &ndash; {notePreview(o.note)}</span> : null}</span> <span className="line-total">{o.currencyCode} {formatAmount(o.totalAmount, o.currencyCode)}</span>{' '}
-                <button type="button" className="secondary" aria-label={`Open ${o.orderNumber}`} onClick={() => onOpen(o.id)} disabled={busy || retryable}>Open</button>
+                <button type="button" className="secondary" aria-label={`Open ${o.orderNumber}`} onClick={() => onOpen(o.id)} disabled={busy || retryable || offline}>Open</button>
               </li>
             ))}
           </ul>

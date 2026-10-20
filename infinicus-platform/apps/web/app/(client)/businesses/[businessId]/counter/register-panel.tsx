@@ -37,13 +37,15 @@ export interface RegisterPanelProps {
   onConfirmClose: () => void;
   onRetry: () => void;
   onDiscard: () => void;
+  /** True while the browser has no connection (POS-7a): the register cannot be changed, and Retry waits for the connection. */
+  offline?: boolean;
 }
 
 /** Presentational register panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
 export function RegisterPanelView(p: RegisterPanelProps) {
   const { state } = p;
   const { session, summary, justClosed, busy, message, retryable, loaded } = state;
-  const locked = busy || retryable;
+  const locked = busy || retryable || Boolean(p.offline);
   const money = (n: number, code: string | null | undefined): string => `${code ?? ''} ${formatAmount(n, code)}`.trim();
   return (
     <section className="counter-register card" aria-labelledby="register-heading" aria-busy={busy}>
@@ -53,8 +55,8 @@ export function RegisterPanelView(p: RegisterPanelProps) {
           {message}
           {retryable ? (
             <>
-              {' '}<button type="button" onClick={p.onRetry} disabled={busy}>Retry</button>{' '}
-              <button type="button" className="secondary" onClick={p.onDiscard} disabled={busy}>Discard and reload</button>
+              {' '}<button type="button" onClick={p.onRetry} disabled={busy || Boolean(p.offline)}>Retry</button>{' '}
+              <button type="button" className="secondary" onClick={p.onDiscard} disabled={busy || Boolean(p.offline)}>Discard and reload</button>
             </>
           ) : null}
         </p>
