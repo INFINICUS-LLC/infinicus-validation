@@ -107,6 +107,7 @@ export default function CounterPage() {
   return (
     <div>
       <h1>Counter</h1>
+      <p><a href={`/businesses/${businessId}/sales`}>Sales history and receipts</a></p>
       <p><a href="/businesses">&larr; All businesses</a></p>
       {resource.kind === 'loading' ? <p role="status" aria-live="polite">Loading…</p> : null}
       {resource.kind === 'error' ? (<p className="notice danger" role="alert">{resource.message} <button type="button" className="secondary" onClick={reload}>Try again</button></p>) : null}
