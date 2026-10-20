@@ -4,10 +4,11 @@ import { useMemo } from 'react';
 import { businessSummarySchema, type Order } from '../../../../../lib/client/schemas';
 import { buildReceipt } from '../../../../../lib/client/receipt';
 import { useScopedResource } from '../../../use-scoped-resource';
+import type { PaperMm } from '../../../../../lib/client/printing';
 import { ReceiptView } from './receipt-view';
 
 /** Mounted with a tenant/workspace/business key so a previous scope's header is never reused. */
-export function BusinessReceipt({ order, onClose }: { order: Order; onClose: () => void }) {
+export function BusinessReceipt({ order, onClose, autoPrint = false, paperMm }: { order: Order; onClose: () => void; autoPrint?: boolean; paperMm?: PaperMm }) {
   const schema = useMemo(() => businessSummarySchema.refine((b) => b.id === order.businessId, 'Unexpected business'), [order.businessId]);
   const { resource, reload } = useScopedResource(`/v1/businesses/${order.businessId}`, schema);
   if (resource.kind !== 'ok') return <section className="card" aria-label="Receipt">
@@ -16,5 +17,5 @@ export function BusinessReceipt({ order, onClose }: { order: Order; onClose: () 
     <button type="button" onClick={onClose}>Close receipt</button>
   </section>;
   const receipt = buildReceipt(order, { businessName: resource.data.legalName });
-  return receipt ? <ReceiptView receipt={receipt} onClose={onClose} /> : null;
+  return receipt ? <ReceiptView receipt={receipt} onClose={onClose} autoPrint={autoPrint} paperMm={paperMm} /> : null;
 }

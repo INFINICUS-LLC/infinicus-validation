@@ -1,9 +1,33 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import type { Receipt } from '../../../../../lib/client/receipt';
+import { createOnceGuard, DEFAULT_PRINT_SETTINGS, PRINT_FAILED, PRINT_SENDING, PRINT_SENT, printReceiptNow, type PaperMm, type PrintOutcome } from '../../../../../lib/client/printing';
 
-/** Presentational receipt (no data access). Printing uses the browser's own print dialog: the print stylesheet shows only this block. */
-export function ReceiptView({ receipt, onClose, onPrint = () => window.print() }: { receipt: Receipt; onClose: () => void; onPrint?: () => void }) {
+/** One automatic print per receipt for the life of the page, however often the receipt is re-shown or re-rendered. */
+const firstAutoPrint = createOnceGuard();
+
+/**
+ * Presentational receipt (no data access). Printing sends a thermal-paper version of the receipt from a hidden frame (see lib/client/printing). When
+ * `autoPrint` is set (the cashier switched on automatic printing) it prints once, as soon as the receipt is shown, i.e. after the server confirmed the sale.
+ * A failed print never affects the sale: the receipt stays on screen with a message and Print receipt tries again.
+ */
+export function ReceiptView({ receipt, onClose, onPrint, autoPrint = false, paperMm = DEFAULT_PRINT_SETTINGS.paperMm }: {
+  receipt: Receipt; onClose: () => void; onPrint?: (receipt: Receipt) => Promise<PrintOutcome>; autoPrint?: boolean; paperMm?: PaperMm;
+}) {
+  const [status, setStatus] = useState<{ kind: 'idle' | 'sending' | 'sent' | 'failed'; text: string }>({ kind: 'idle', text: '' });
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const print = (): void => {
+    setStatus({ kind: 'sending', text: PRINT_SENDING });
+    (onPrint ?? ((r) => printReceiptNow(r, paperMm)))(receipt).then(
+      (outcome) => { if (mounted.current) setStatus(outcome.ok ? { kind: 'sent', text: PRINT_SENT } : { kind: 'failed', text: PRINT_FAILED }); },
+      () => { if (mounted.current) setStatus({ kind: 'failed', text: PRINT_FAILED }); },
+    );
+  };
+  const printRef = useRef(print);
+  printRef.current = print;
+  useEffect(() => { if (autoPrint && firstAutoPrint(receipt.orderNumber)) printRef.current(); }, [autoPrint, receipt.orderNumber]);
   return (
     <section className="receipt card" aria-labelledby="receipt-heading">
       <h2 id="receipt-heading">Receipt</h2>
@@ -31,8 +55,9 @@ export function ReceiptView({ receipt, onClose, onPrint = () => window.print() }
         </ul>
       ) : null}
       {receipt.changeText ? <p className="receipt-row"><span>Change</span><span>{receipt.changeText}</span></p> : null}
+      {status.kind !== 'idle' ? <p className={status.kind === 'failed' ? 'notice danger' : 'notice'} role={status.kind === 'failed' ? 'alert' : 'status'}>{status.text}</p> : null}
       <p className="receipt-actions">
-        <button type="button" onClick={onPrint}>Print receipt</button>{' '}
+        <button type="button" onClick={print} disabled={status.kind === 'sending'}>Print receipt</button>{' '}
         <button type="button" className="secondary" onClick={onClose}>Close receipt</button>
       </p>
     </section>
