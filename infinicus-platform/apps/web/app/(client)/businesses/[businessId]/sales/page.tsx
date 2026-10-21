@@ -30,7 +30,6 @@ export default function SalesPage() {
   if (!businessId) return <div className="card"><p className="notice danger" role="alert">That business address is not valid.</p><p><a href="/businesses">&larr; All businesses</a></p></div>;
   return <div>
     <h1>Sales history</h1>
-    <p><a href={`/businesses/${businessId}/counter`}>&larr; Back to counter</a></p>
     <SalesHistoryView state={historyState} receiptContent={historyState.receipt?.kind === 'ok' ? <BusinessReceipt key={`${scope.tenantId}/${scope.workspaceId}/${businessId}`} order={historyState.receipt.data} onClose={() => history?.closeReceipt()} /> : null}
       onRefresh={() => { if (history) void history.refresh(); }}
       onOlder={() => { if (history) void history.older(); }}

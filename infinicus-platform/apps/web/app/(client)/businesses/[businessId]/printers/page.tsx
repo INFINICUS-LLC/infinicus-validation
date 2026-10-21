@@ -34,7 +34,6 @@ export default function PrintersPage() {
   return (
     <div>
       <h1>Printers and print log</h1>
-      <p><a href={`/businesses/${businessId}/counter`}>&larr; Back to counter</a></p>
       <PrintersView
         state={printers}
         offline={!online}

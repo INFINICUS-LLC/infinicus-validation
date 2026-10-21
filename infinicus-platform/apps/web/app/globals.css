@@ -77,6 +77,14 @@ a { color: var(--color-accent); }
   padding: 0;
 }
 
+/* Business tab bar (POS-9a): one row that scrolls sideways on a narrow screen instead of wrapping or overflowing the page. */
+.business-tabs { margin: 0 0 var(--space-3); border-bottom: 1px solid var(--color-border); overflow-x: auto; }
+.business-tabs ul { list-style: none; display: flex; gap: var(--space-1); margin: 0; padding: 0; white-space: nowrap; }
+.business-tabs a { display: block; padding: var(--space-2) var(--space-3); border-bottom: 3px solid transparent; text-decoration: none; color: var(--color-muted); }
+.business-tabs a:hover { color: var(--color-text); }
+.business-tabs a.current { color: var(--color-text); border-bottom-color: var(--color-accent); font-weight: 600; }
+.business-tabs a:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+
 main {
   max-width: 72rem;
   margin: 0 auto;
@@ -235,6 +243,7 @@ button.danger {
 .sales-history { display: grid; gap: var(--space-4); }
 .sales-history button { min-height: 2.75rem; }
 @media print {
+  .business-tabs { display: none; }
   body * { visibility: hidden; }
   .receipt, .receipt * { visibility: visible; }
   .receipt { position: absolute; top: 0; left: 0; width: 100%; max-width: none; border: 0; box-shadow: none; background: #fff; color: #000; }
