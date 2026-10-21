@@ -38,6 +38,12 @@ export interface InfinicusConfig {
   dbConnectionTimeoutMs: number;
   dbStatementTimeoutMs: number;
   corsAllowedOrigins: string[];
+  /**
+   * OFF-1 offline selling (POST /v1/businesses/:businessId/offline-sales). Both values are OWNER inputs and have no defaults:
+   *   futureToleranceSeconds  null = offline selling is NOT ENABLED (the route answers 503); a number = how far a device clock may run ahead of the server.
+   *   driftLimitMinorByCurrency  D4 price-drift tolerance per currency in minor units; a currency that is not listed has limit 0 (every difference goes to review).
+   */
+  offlineSales: { futureToleranceSeconds: number | null; driftLimitMinorByCurrency: Readonly<Record<string, number>> };
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, key: string): string {
@@ -93,6 +99,41 @@ function positiveInt(env: NodeJS.ProcessEnv, key: string, fallback: number): num
     throw new ConfigurationError(`Environment variable ${key} must be a positive integer, got: ${env[key]}`);
   }
   return value;
+}
+
+const OFFLINE_FUTURE_TOLERANCE_MAX_SECONDS = 3600;
+const OFFLINE_DRIFT_LIMIT_MAX_MINOR = 1_000_000_000;
+
+/**
+ * OFFLINE_SALES_FUTURE_TOLERANCE_SECONDS: unset or empty = offline selling is not enabled. Otherwise a whole number of seconds from 0 to 3600.
+ * OFFLINE_SALES_DRIFT_LIMITS: unset or empty = no drift is ever honoured. Otherwise a JSON object such as {"KWD":500} mapping an upper-case currency
+ * code to a whole non-negative number of minor units. Anything else refuses to start; the value itself is never echoed.
+ */
+export function parseOfflineSales(env: NodeJS.ProcessEnv): InfinicusConfig['offlineSales'] {
+  const rawTolerance = env.OFFLINE_SALES_FUTURE_TOLERANCE_SECONDS?.trim();
+  let futureToleranceSeconds: number | null = null;
+  if (rawTolerance) {
+    if (!/^\d{1,4}$/.test(rawTolerance) || Number(rawTolerance) > OFFLINE_FUTURE_TOLERANCE_MAX_SECONDS) {
+      throw new ConfigurationError(`OFFLINE_SALES_FUTURE_TOLERANCE_SECONDS must be a whole number of seconds from 0 to ${OFFLINE_FUTURE_TOLERANCE_MAX_SECONDS}`);
+    }
+    futureToleranceSeconds = Number(rawTolerance);
+  }
+  const rawLimits = env.OFFLINE_SALES_DRIFT_LIMITS?.trim();
+  const driftLimitMinorByCurrency: Record<string, number> = {};
+  if (rawLimits) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(rawLimits); } catch { throw new ConfigurationError('OFFLINE_SALES_DRIFT_LIMITS must be a JSON object such as {"KWD":500}'); }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new ConfigurationError('OFFLINE_SALES_DRIFT_LIMITS must be a JSON object such as {"KWD":500}');
+    }
+    for (const [code, limit] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!/^[A-Z]{3}$/.test(code) || typeof limit !== 'number' || !Number.isInteger(limit) || limit < 0 || limit > OFFLINE_DRIFT_LIMIT_MAX_MINOR) {
+        throw new ConfigurationError(`OFFLINE_SALES_DRIFT_LIMITS: each key must be an upper-case currency code and each value a whole number of minor units from 0 to ${OFFLINE_DRIFT_LIMIT_MAX_MINOR}`);
+      }
+      driftLimitMinorByCurrency[code] = limit;
+    }
+  }
+  return { futureToleranceSeconds, driftLimitMinorByCurrency };
 }
 
 function resolveDbSsl(env: NodeJS.ProcessEnv, databaseUrl: string, resolvedEnv: InfinicusConfig['env']): boolean {
@@ -171,5 +212,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): InfinicusConfi
     dbStatementTimeoutMs: optionalInt(env, 'DB_STATEMENT_TIMEOUT_MS', 30_000),
     corsAllowedOrigins: (env.CORS_ALLOWED_ORIGINS ?? 'https://infini-cus.com,https://www.infini-cus.com')
       .split(',').map((o) => o.trim()).filter((o) => o.length > 0),
+    offlineSales: parseOfflineSales(env),
   };
 }
