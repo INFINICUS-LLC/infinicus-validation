@@ -8,7 +8,8 @@
 | Plan | `PHASE_W2_WINDOW_PLAN_0202-0206.md` (covers 0202–0209) |
 | Release SHA | `ccadbf51be90c35377e21b73ceda77a1d455a805` (CI push run 505 on `main`: `validate` and `build-and-smoke-test-image` both success) |
 | Result | **Window completed. Database at ledger 209, head `0209_create_print_jobs.sql`, fingerprint `325158ea2a54cde9` (`MATCHES_REPOSITORY_0209_PG16`). API running the release image; public smoke test passed.** |
-| Not done | Restore proof of the W4 backup (needs the private key; owner-run, section 5). W9b/W9c (no production host for the counter). Row counts were not re-read after the API started. |
+| Restore proof (W10) | **PASS** (section 5): the W4 backup restores into a scratch database; ledger 201, fingerprint `61ef99d74289c3b3`, row-count and outbox rules satisfied. |
+| Not done | W9b/W9c (no production host for the counter). Row counts were not re-read after the API started. The restore proof of the post-window daily backup (ledger 209) has no expectations profile yet. |
 
 ## 1. Timeline (UTC, from the operator's output)
 | Step | Result |
@@ -49,12 +50,19 @@ Downtime (API stopped to healthy): roughly 10 minutes (stopped shortly before 14
 - `docker stop` waits 10 s then kills the API (exit 137); acceptable, but a shorter wait or a graceful stop timeout could be set later.
 - W11 is safer as a drop-in than as an edit of the installed unit.
 
-## 5. Open items (all owner-side; none started)
-1. **Restore proof of the W4 backup** (`restore-proof.sh`): run it on a machine that holds the private backup key and a disposable local PostgreSQL 16, never on the production VM; the backup is not "recoverable" until this passes. The 2026-10-21 daily backup (`…T143056Z-daily`) records the 0209 schema and can be proved the same way.
-2. Rename or remove the rejected CRLF folders and archives on the VM, and prune the untagged image `9eec2a2e8c71`.
-3. Backup-key rotation (the key is revoked on the laptop but valid on the VM) remains a separate decision.
-4. W9b/W9c (a test sale and printer setup through the counter) still need a counter host and an allowed CORS origin; they are not part of this window.
-5. Per-product kitchen routing (0210) and offline selling (0211+) are not authorised and not started.
+## 5. Restore proof (W10), run 2026-10-21 ~15:08Z
+- Object: `infinicus-production/2026-10-21/20261021T141842Z-pre-0202-window` (the W4 backup). Expectations: `production-pre-0202.profile` (sha256 prefix `f2b390ced614f783`).
+- Method: the three encrypted objects were fetched on the VM with the backup settings already installed there, copied to the owner's PC, and `restore-proof.sh` was run inside a throwaway `postgres:16-bookworm` container (loopback only, `infinicus.restore_target=disposable`, trust auth, no production route). The offline private key file was mounted read-only and imported into a temporary gpg home inside the container only; the passphrase was typed at the container's prompt and never left it. The container was started with `--rm`.
+- Result: `RESTORE_PROOF=PASS`. Ledger 201 rows, head `0201_enforce_om_monitored_action_child_scope_integrity.sql`; fingerprint `61ef99d74289c3b3` equals the manifest; 10 row-count rules and 2 outbox classification rules satisfied. Timings: download 0.1 s, decrypt 0.6 s, restore 29.2 s, verify 0.9 s, total 30.8 s (evidence only, not an RTO).
+- Observations: the encryption subkey `2379B8C95D86BB0B` is in the offline file; gpg reports the primary key `D636066837F9141B` as revoked (2026-10-18) and does not list its subkeys, but decryption works. The Gpg4win keyring on the PC holds the revoked primary only, without the subkey secret, so it cannot decrypt backups; the offline file is the recovery key. The revocation certificate is stored next to the offline key and must never be imported where the key is needed. The key should be rotated (open item 3).
 
-## 6. What this record does not claim
-No row counts were re-read after the API started (NOT RUN). The restore proof was NOT RUN. Exact downtime was not measured. Nothing in this record changes production.
+## 6. Open items (all owner-side; none started)
+1. Remove the temporary copies of the encrypted objects (`~/proof-objects` on the VM, `~/w2src/proof` on the PC).
+2. Rename or remove the rejected CRLF folders and archives on the VM (renamed to `*-REJECTED-*` on 2026-10-21; deletion not done) and prune the untagged image `9eec2a2e8c71`.
+3. Backup-key rotation (the active key is revoked locally; the VM still encrypts to the public key `2379B8C95D86BB0B`). A rotation needs a new key, a new offline copy and a restore proof with it.
+4. Create an expectations profile for ledger 209 and prove the post-window daily backup the same way.
+5. W9b/W9c (a test sale and printer setup through the counter) still need a counter host and an allowed CORS origin.
+6. Per-product kitchen routing (0210) and offline selling (0211+) are not authorised and not started.
+
+## 7. What this record does not claim
+No row counts were re-read after the API started (NOT RUN). The restore proof covers the W4 backup only, not the post-window daily backup. Exact downtime was not measured. Nothing in this record changes production.
