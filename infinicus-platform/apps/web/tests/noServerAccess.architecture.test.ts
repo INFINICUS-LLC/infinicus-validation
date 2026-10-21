@@ -37,15 +37,21 @@ describe('apps/web has no server-side data access or identity path (NA-05)', () 
     expect(files.filter((f) => /\bfetch\(|\bdoFetch\(/.test(code(f))).map(rel).sort()).toEqual(['/lib/client/apiClient.ts', '/lib/client/backendSession.ts']);
   });
 
-  it('takes no identity or scope from the URL or a form: no searchParams, no tenant/workspace/user inputs, only the business id route parameter', () => {
+  it('takes no identity or scope from the URL or a form: no searchParams, no tenant/workspace/user inputs; the business id is read only from the address PATH and validated (POS-8d-2a)', () => {
     expect(files.filter((f) => /searchParams|useSearchParams|location\.(search|hash)/.test(code(f))).map(rel)).toEqual([]);
     expect(files.filter((f) => /name=["'](userId|tenantId|workspaceId)["']|id=["'](userId|tenantId|workspaceId)["']/.test(code(f))).map(rel)).toEqual([]);
-    const routeParams = files.filter((f) => /useParams/.test(code(f)));
-    expect(routeParams.map(rel).sort()).toEqual(['/app/(client)/businesses/[businessId]/counter/page.tsx', '/app/(client)/businesses/[businessId]/history/page.tsx', '/app/(client)/businesses/[businessId]/printers/page.tsx', '/app/(client)/businesses/[businessId]/sales/page.tsx', '/app/(client)/businesses/[businessId]/workflow/page.tsx']);
-    for (const f of routeParams) {
-      expect(code(f), rel(f)).toMatch(/useParams<\{ businessId: string \}>/);       // the only parameter
-      expect(code(f), rel(f)).toMatch(/z\.string\(\)\.uuid\(\)/);                   // validated as an id before use
-    }
+    // The framework's route parameter is NOT used by any screen: in a static export (the counter bundled in the device shell) it is the build-time
+    // placeholder, never the real business. The id comes from the address through one shared, validating reader.
+    expect(files.filter((f) => /useParams|usePathname/.test(code(f))).map(rel)).toEqual([]);
+    const readers = files.filter((f) => /useBusinessId\(/.test(code(f)) && !f.endsWith('use-business-id.ts'));
+    expect(readers.map(rel).sort()).toEqual(['/app/(client)/businesses/[businessId]/counter/page.tsx', '/app/(client)/businesses/[businessId]/history/page.tsx', '/app/(client)/businesses/[businessId]/printers/page.tsx', '/app/(client)/businesses/[businessId]/sales/page.tsx', '/app/(client)/businesses/[businessId]/workflow/page.tsx']);
+    const reader = code(join(ROOT, 'lib/client/locationPath.ts'));
+    expect(reader).toContain('window.location.pathname');                                    // the path only (search/hash are refused above)
+    expect(reader).toContain('businessIdFromPath');
+    const validator = code(join(ROOT, 'lib/client/businessTabs.ts'));
+    expect(validator).toMatch(/\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}/);   // a well-formed id or nothing
+    expect(validator).toMatch(/UUID\.test\(m\[1\]\) \? m\[1\] : null/);
+    for (const f of readers) expect(code(f), rel(f)).toContain('const businessId = useBusinessId();');     // used as a lookup key, never as authority
   });
 
   it('every tenant page uses a scoped API reader and the workspace guard', () => {

@@ -3,7 +3,13 @@ import { renderToString } from 'react-dom/server';
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 
 let routeParams: Record<string, string> = { businessId: '33333333-3333-4333-8333-333333333333' };
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useParams: () => routeParams }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
+// POS-8d-2a: a screen reads its business from the address (use-business-id.ts), not from the framework route parameter. The stub names the business in a
+// test address and still goes through the REAL validator, so a malformed id is refused exactly as in the app.
+vi.mock('../app/(client)/businesses/[businessId]/use-business-id', async () => {
+  const { businessIdFromPath } = await import('../lib/client/businessTabs');
+  return { useBusinessId: () => businessIdFromPath(`/businesses/${routeParams.businessId}/counter/`), useBusinessTabs: () => [] };
+});
 
 import { AuthContext, type AuthContextValue } from '../app/(client)/auth-provider';
 import CounterPage from '../app/(client)/businesses/[businessId]/counter/page';

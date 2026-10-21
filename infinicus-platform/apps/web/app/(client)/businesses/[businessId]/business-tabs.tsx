@@ -1,7 +1,7 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
-import { businessTabs, type BusinessTab } from '../../../../lib/client/businessTabs';
+import type { BusinessTab } from '../../../../lib/client/businessTabs';
+import { useBusinessTabs } from './use-business-id';
 
 /** Presentational tab bar. The open screen is marked for assistive technology as well as visually. */
 export function BusinessTabsView({ tabs }: { tabs: readonly BusinessTab[] }) {
@@ -18,5 +18,5 @@ export function BusinessTabsView({ tabs }: { tabs: readonly BusinessTab[] }) {
 }
 
 export function BusinessTabs() {
-  return <BusinessTabsView tabs={businessTabs(usePathname())} />;
+  return <BusinessTabsView tabs={useBusinessTabs()} />;
 }
