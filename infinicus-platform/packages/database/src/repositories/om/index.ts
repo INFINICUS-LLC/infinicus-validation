@@ -59,3 +59,6 @@ export type { OMComponentRegistryEntry, OMDeployment } from './OMComponentRegist
 
 export { ActionExecutionVerificationRepository } from './ActionExecutionVerificationRepository.js';
 export type { ActionExecutionVerification, RecordExecutionVerificationInput, LearningSourceFactRow, LearningSourceLookup } from './ActionExecutionVerificationRepository.js';
+
+export { OutcomeMonitoringHealthRepository } from './OutcomeMonitoringHealthRepository.js';
+export type { OutcomeMonitoringHealthOptions, OutcomeMonitoringHealthSnapshot, AnnouncedExecutionClass } from './OutcomeMonitoringHealthRepository.js';

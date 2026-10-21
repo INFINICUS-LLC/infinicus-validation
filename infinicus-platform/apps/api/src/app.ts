@@ -26,6 +26,7 @@ import inventoryPolicyEvaluationRoutes from './routes/inventoryPolicyEvaluations
 import executionActivationRoutes from './routes/executionActivations.js';
 import claimRecoveryRoutes from './routes/claimRecovery.js';
 import executionHealthRoutes from './routes/executionHealth.js';
+import outcomeMonitoringHealthRoutes from './routes/outcomeMonitoringHealth.js';
 import { buildClaimRecoveryOperator } from './claimRecoveryComposition.js';
 import type { ClaimRecoveryCompositionOptions } from './claimRecoveryComposition.js';
 import { BoGovernanceEvidenceVerifier, ExecutionHealthService } from '@infinicus/business-operations-runtime';
@@ -196,6 +197,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(claimRecoveryRoutes, { operator: buildClaimRecoveryOperator(options.claimRecovery) });
   // L-OBS-1: read-only execution health for one business (bo:admin); it acts on nothing.
   await app.register(executionHealthRoutes, { service: new ExecutionHealthService(options.executionHealth) });
+  // OM-OBS-1: read-only Outcome Monitoring health for one business (bo:admin), separate from execution health; it verifies, replays and acts on nothing.
+  await app.register(outcomeMonitoringHealthRoutes);
   await app.register(businessAdministrationRoutes);
   await app.register(observabilityRoutes);
   await app.register(billingRoutes);

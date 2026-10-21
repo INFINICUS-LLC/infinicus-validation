@@ -36,6 +36,7 @@
     "@infinicus/handoff-contracts": "workspace:*",
     "@infinicus/observability": "workspace:*",
     "@infinicus/onboarding": "workspace:*",
+    "@infinicus/outcome-monitoring-runtime": "workspace:*",
     "@infinicus/shared-types": "workspace:*",
     "@infinicus/workflow": "workspace:*",
     "fastify": "^5.12.5",
