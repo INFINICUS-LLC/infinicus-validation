@@ -102,6 +102,18 @@ export class PrinterRepository {
     });
   }
 
+  /** The printers print jobs are routed to: the active default of each kind, or null when the business has none (the browser's own print path is then used). */
+  async routes(ctx: TenantContext, businessId: string): Promise<{ receipt: Printer | null; kitchen: Printer | null }> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT * FROM business_operations.printers WHERE business_id = $1 AND status = 'active' AND is_default`,
+        [businessId],
+      );
+      const printers = result.rows.map(rowToPrinter);
+      return { receipt: printers.find((p) => p.kind === 'receipt') ?? null, kitchen: printers.find((p) => p.kind === 'kitchen') ?? null };
+    });
+  }
+
   /** Makes an active printer the default of its kind; the previous default stops being one in the same transaction. Already the default = no change. */
   async setDefault(ctx: TenantContext, businessId: string, printerId: string): Promise<Printer> {
     return withTenantTransaction(ctx, async (client) => {

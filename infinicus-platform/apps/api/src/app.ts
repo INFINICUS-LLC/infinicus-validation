@@ -40,6 +40,7 @@ import businessOperationsRoutes from './routes/businessOperations.js';
 import productsRoutes from './routes/products.js';
 import registerSessionsRoutes from './routes/registerSessions.js';
 import printersRoutes from './routes/printers.js';
+import printJobsRoutes from './routes/printJobs.js';
 import ordersRoutes from './routes/orders.js';
 import twinRoutes from './routes/twin.js';
 import decisionRecommendationsRoutes from './routes/decisionRecommendations.js';
@@ -196,6 +197,7 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(productsRoutes);
   await app.register(registerSessionsRoutes);
   await app.register(printersRoutes);
+  await app.register(printJobsRoutes);
   await app.register(ordersRoutes);
   await app.register(twinRoutes);
   await app.register(decisionRecommendationsRoutes);
