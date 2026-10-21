@@ -204,3 +204,64 @@ describe('order panel with the register state (POS-4)', () => {
     expect(html(<OrderPanelView {...props} />)).not.toMatch(/<button[^>]*disabled[^>]*>New order/);
   });
 });
+
+describe('register summary identity', () => {
+  it('a pending summary must not replace the next loaded register session summary', async () => {
+    const { api, c } = setup();
+    const previous = session(); api.current = previous;
+    await c.load();
+    const originalGet = api.get;
+    let resolve!: (value: RegisterSummary) => void;
+    const delayed = new Promise<RegisterSummary>(done => { resolve = done; });
+    let intercept = true;
+    api.get = <T,>(path: string, init?: RequestInitLite<T>): Promise<T> => {
+      if (path.endsWith('/summary') && intercept) { intercept = false; return delayed as Promise<T>; }
+      return originalGet(path, init);
+    };
+    const pending = c.refreshSummary();
+    expect(await c.close(25)).toBe(true);
+    const nextId = '77777777-7777-4777-8777-777777777777';
+    api.current = session({ id: nextId, openingCash: 50 });
+    await c.load();
+    expect(c.getState().summary?.session.id).toBe(nextId);
+    resolve(summaryOf(previous, { expectedCash: 999 })); await pending;
+    expect(c.getState().summary?.session.id).toBe(nextId);
+  });
+  it('does not restore a summary after the register closes', async () => {
+    const { api, c } = setup(); api.current = session(); await c.load();
+    let resolve!: (value: RegisterSummary) => void;
+    const delayed = new Promise<RegisterSummary>(done => { resolve = done; });
+    api.get = <T,>(): Promise<T> => delayed as Promise<T>;
+    const pending = c.refreshSummary();
+    expect(await c.close(25)).toBe(true);
+    resolve(summaryOf(session())); await pending;
+    expect(c.getState().session).toBeNull();
+    expect(c.getState().summary).toBeNull();
+  });
+  it('keeps the newest same-session summary when responses arrive out of order', async () => {
+    const { api, c } = setup(); api.current = session(); await c.load();
+    let first!: (value: RegisterSummary) => void;
+    let second!: (value: RegisterSummary) => void;
+    const a = new Promise<RegisterSummary>(done => { first = done; });
+    const b = new Promise<RegisterSummary>(done => { second = done; });
+    let n = 0; api.get = <T,>(): Promise<T> => (++n === 1 ? a : b) as Promise<T>;
+    const old = c.refreshSummary(); const latest = c.refreshSummary();
+    second(summaryOf(session(), { expectedCash: 40 })); await latest;
+    first(summaryOf(session(), { expectedCash: 30 })); await old;
+    expect(c.getState().summary?.expectedCash).toBe(40);
+  });
+  it('ignores a summary for a different session', async () => {
+    const { api, c } = setup(); api.current = session(); await c.load();
+    api.get = async <T,>(): Promise<T> => summaryOf(session({ id: '77777777-7777-4777-8777-777777777777' }), { expectedCash: 999 }) as T;
+    await c.refreshSummary();
+    expect(c.getState().summary?.session.id).toBe(SESSION_ID);
+    expect(c.getState().summary?.expectedCash).toBe(26.125);
+  });
+  it('refuses a load whose summary belongs to a different session', async () => {
+    const { api, c } = setup();
+    api.get = async <T,>(path: string): Promise<T> => (path.endsWith('/open') ? { session: session() } : summaryOf(session({ id: '77777777-7777-4777-8777-777777777777' }))) as T;
+    await c.load();
+    expect(c.getState()).toMatchObject({ loaded: false, session: null, summary: null, busy: false });
+    expect(c.getState().message).toContain('unexpected format');
+  });
+});
