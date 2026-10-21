@@ -51,7 +51,7 @@ Rejected at the door (HTTP 400/409, nothing stored): unknown or non-`cash` metho
 7. If the server total would exceed what was tendered, or any other existing invariant would fail: **no order is created**; outcome `needs_review`.
 8. Write the `offline_sales` record (4.3) in the same transaction in every case, so nothing is silent.
 
-### 4.3 Data model (proposal; migration number 0211 or later, decided at step 2)
+### 4.3 Data model (proposal; migration number decided at step 2: **0210**, see the numbering update below)
 - `business_operations.offline_sales` — **append-only** (same `forbid_mutation` + truncate guard pattern as 0206), RLS enabled and forced, tenant/workspace/business columns, composite FKs `(…, business_id)` like 0203. Columns: `client_sale_id` (unique per business), `device_id`, `register_session_id`, `order_id` (nullable: null when no order was created), `outcome` (`accepted | accepted_with_difference | needs_review`), `review_reason` (code), `device_created_at`, `received_at` (server clock), `clock_skew_seconds`, `catalogue_snapshot_at`, `device_total`, `server_total`, `difference`, `currency_code`, `request_digest` (sha-256 of the canonical request), `lines_detail` (jsonb: the device's claims and the server's result per line), `correlation_id`, `created_at`.
 - `platform.orders.client_sale_id uuid NULL` with a partial unique index per business, so an order can be traced to its sale and a second order for one sale is impossible even if the table row were lost.
 - **Resolution of an exception is OFF-4** (D8). OFF-1 only stores `needs_review`; it adds no resolve endpoint. A later resolution is a **new** append-only row, never an update.
@@ -107,7 +107,7 @@ Real-PostgreSQL integration tests, each with a mutation proof that it fails when
 ## 9. Migration, rollback and window (planning only)
 - The migration is written and proven on a local PostgreSQL only; **not applied to production**. Reference fingerprint rows are added like 0208/0209 (and the profile `restored_fingerprint` is re-derived for any CHECK that uses `BETWEEN` inside `AND`; see the restore-proof fix #224).
 - Rollback block shipped with the migration; it drops only objects it created and is proven from the document text, as for 0208/0209.
-- It gets its own production window and explicit authorization, separate from Phase W2 and from kitchen routing (0210).
+- It gets its own production window and explicit authorization, separate from Phase W2 and from kitchen routing.
 - Re-check the free migration number against every remote branch immediately before writing it (the Core Architecture session may take numbers).
 
 ## 10. Open items (owner)
@@ -127,3 +127,6 @@ Real-PostgreSQL integration tests, each with a mutation proof that it fails when
 
 ## 12. What this note does not do
 It does not implement anything, create or apply a migration, change the API, the web client or the shell, touch authentication or browser-storage contracts, modify production, begin OFF-2…OFF-5, authorize enabling offline selling, or interfere with the Core Architecture or H-5B sessions.
+
+## 13. Numbering update (2026-10-21, step 2)
+The record reserved 0210 for kitchen routing and 0211+ for OFF-1 (record section 6). The repository guard `migration-stage2a` requires migration numbers with **no gaps**, so a migration 0211 cannot merge while 0210 is unused. By owner decision (2026-10-21) OFF-1 takes **0210**; kitchen routing takes the next free number when it is written. Sections 2 (F-1) and 4.3 above describe the original reservation and are superseded by this paragraph; the migration is `0210_create_offline_sales.sql`.
