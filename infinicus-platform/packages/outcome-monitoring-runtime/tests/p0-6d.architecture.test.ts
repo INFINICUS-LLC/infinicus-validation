@@ -90,11 +90,11 @@ describe('P0-6d architecture', () => {
     }
   });
 
-  it('learning eligibility has a single definition and no production caller yet (nothing learns from execution)', () => {
+  it('learning eligibility has a single definition and ONE production caller: the OM -> CL release decision (CL-BOUNDARY-1); nothing else decides learning', () => {
     const defs = production.filter((f) => /function learningEligibility\b/.test(f.code)).map((f) => f.rel);
     expect(defs).toEqual(['packages/handoff-contracts/src/execution-evidence/states.ts']);
     const users = production.filter((f) => /learningEligibility\(/.test(f.code) && f.rel !== defs[0]).map((f) => f.rel);
-    expect(users).toEqual([]);
+    expect(users).toEqual(['packages/handoff-contracts/src/om-to-cl-learning-release.ts']);
     expect(read(defs[0])).toMatch(/executionState !== 'EXECUTION_VERIFIED'[\s\S]*outcomeState !== 'OUTCOME_VERIFIED'[\s\S]*'SUCCEEDED'[\s\S]*'APPLIED'/);
   });
 

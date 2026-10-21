@@ -167,7 +167,7 @@ describe('P0-6e architecture', () => {
 
   it('OM stays verification-only and CL learns nothing: OM never writes BO state, no outcome beyond PENDING/INCONCLUSIVE is assignable, and nothing calls the learning gate', () => {
     for (const f of under('packages/outcome-monitoring-runtime/src/')) expect(f.code, f.rel).not.toMatch(/business_operations\.|AuthorizedActionExecutionRepository|inventory_balances|'OUTCOME_(OBSERVED|VERIFIED|FAILED)'/);
-    expect(filesMatching(/learningEligibility\(/).filter((rel) => rel !== 'packages/handoff-contracts/src/execution-evidence/states.ts')).toEqual([]);
+    expect(filesMatching(/learningEligibility\(/).filter((rel) => rel !== 'packages/handoff-contracts/src/execution-evidence/states.ts')).toEqual(['packages/handoff-contracts/src/om-to-cl-learning-release.ts']); // CL-BOUNDARY-1: the one release decision; nothing else (and nothing wired) calls the gate
     expect([...under('packages/database/src/repositories/cl/'), ...under('layers/continuous-learning/')].filter((f) => /action_execution_verifications|operations\.action\.executed|execution-evidence|authorized_action_executions/.test(f.code))).toEqual([]);
   });
 });

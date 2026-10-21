@@ -128,7 +128,7 @@ describe('P0-6f architecture', () => {
 
   it('OM cannot write BO and CL learns nothing (unchanged by the announcer wiring)', () => {
     for (const f of under('packages/outcome-monitoring-runtime/src/')) expect(f.code, f.rel).not.toMatch(/business_operations\.|AuthorizedActionExecutionRepository|inventory_balances/);
-    expect(filesMatching(/learningEligibility\(/).filter((rel) => rel !== 'packages/handoff-contracts/src/execution-evidence/states.ts')).toEqual([]);
+    expect(filesMatching(/learningEligibility\(/).filter((rel) => rel !== 'packages/handoff-contracts/src/execution-evidence/states.ts')).toEqual(['packages/handoff-contracts/src/om-to-cl-learning-release.ts']); // CL-BOUNDARY-1: the one release decision; nothing else (and nothing wired) calls the gate
   });
 
   it('the principal end-to-end proof exists and uses the production composition: no substituted package source, recorder or BO injection', () => {

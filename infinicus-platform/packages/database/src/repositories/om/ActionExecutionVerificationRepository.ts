@@ -85,6 +85,21 @@ function rowToVerification(r: Json): ActionExecutionVerification {
   };
 }
 
+/** One verified-execution fact, exactly as OM stored it (read-only view for the learning boundary; judges nothing). */
+export interface LearningSourceFactRow {
+  source: 'om_execution_verification';
+  tenantId: string; workspaceId: string; businessId: string;
+  executionId: string; evidenceDigest: string;
+  monitoredActionId: string | null; approvedActionId: string | null;
+  executionState: string; outcomeState: string; executionOutcome: string; mutationResult: string;
+}
+
+/** The observation a hand-off is about and the verified executions that support it. `observation` is null when it is not visible in the caller's scope. */
+export interface LearningSourceLookup {
+  observation: { businessId: string; monitoredActionId: string | null; approvedActionId: string | null } | null;
+  facts: LearningSourceFactRow[];
+}
+
 export class ActionExecutionVerificationRepository {
   /**
    * Records the verification of one execution, idempotently. The same execution verified again returns the stored row (`created: false`);
@@ -128,6 +143,45 @@ export class ActionExecutionVerificationRepository {
     return withTenantTransaction(ctx, async (client) => {
       const r = await client.query<Json>(`SELECT * FROM ${S}.action_execution_verifications WHERE business_id = $1 AND execution_id = $2`, [businessId, executionId]);
       return r.rows[0] ? rowToVerification(r.rows[0]) : null;
+    });
+  }
+  /**
+   * Read-only (CL-BOUNDARY-1): the observation named by an OM -> CL hand-off and the OM execution verifications behind it, read under the caller's
+   * tenant and workspace (row-level security), so another tenant's rows cannot appear. An execution supports an observation when OM linked it to the
+   * observation's monitored action, or when both refer to the same approved action. Nothing is written, locked or decided here: the learning gate
+   * (`learningEligibility`) judges the facts elsewhere. Unknown or malformed ids give an empty result, never an error that could leak existence.
+   */
+  async learningSourcesForObservation(ctx: TenantContext, businessId: string, observationId: string): Promise<LearningSourceLookup> {
+    if (!UUID.test(businessId) || !UUID.test(observationId)) return { observation: null, facts: [] };
+    return withTenantTransaction(ctx, async (client) => {
+      const o = await client.query<Json>(
+        `SELECT o.business_id, o.monitored_action_id, m.approved_action_id
+           FROM ${S}.outcome_observations o JOIN ${S}.monitored_actions m ON m.id = o.monitored_action_id
+          WHERE o.id = $1 AND o.business_id = $2`,
+        [observationId, businessId],
+      );
+      const obs = o.rows[0];
+      if (!obs) return { observation: null, facts: [] };
+      const f = await client.query<Json>(
+        `SELECT v.tenant_id, v.workspace_id, v.business_id, v.execution_id, v.evidence_digest, v.monitored_action_id, v.approved_action_id,
+                v.execution_state, v.outcome_state, v.execution_outcome, v.mutation_result
+           FROM ${S}.action_execution_verifications v
+          WHERE v.business_id = $1
+            AND (v.monitored_action_id = $2 OR ($3::uuid IS NOT NULL AND v.approved_action_id = $3::uuid))
+          ORDER BY v.verified_at, v.id`,
+        [businessId, obs.monitored_action_id, obs.approved_action_id ?? null],
+      );
+      return {
+        observation: { businessId: obs.business_id as string, monitoredActionId: (obs.monitored_action_id as string | null) ?? null, approvedActionId: (obs.approved_action_id as string | null) ?? null },
+        facts: f.rows.map((x) => ({
+          source: 'om_execution_verification' as const,
+          tenantId: x.tenant_id as string, workspaceId: x.workspace_id as string, businessId: x.business_id as string,
+          executionId: x.execution_id as string, evidenceDigest: x.evidence_digest as string,
+          monitoredActionId: (x.monitored_action_id as string | null) ?? null, approvedActionId: (x.approved_action_id as string | null) ?? null,
+          executionState: x.execution_state as string, outcomeState: x.outcome_state as string,
+          executionOutcome: x.execution_outcome as string, mutationResult: x.mutation_result as string,
+        })),
+      };
     });
   }
 }
