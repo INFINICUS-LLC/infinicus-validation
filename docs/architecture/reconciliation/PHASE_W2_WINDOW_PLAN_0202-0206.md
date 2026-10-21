@@ -47,7 +47,7 @@ Consequences: (a) precondition P6 ("CI green on the release SHA") cannot be met;
 | P6 | CI green on the release SHA, **including the push run on `main` and the image build/smoke job**, re-read on the day | Claude / owner | run link |
 | P7 | Optional, recommended if time allows: gate rehearsal on a restored copy of the newest backup (Phase R method) | owner | — |
 | P8 | Every command defines its own variables (`OCI`, `REL`, `C`); SSH reconnects lose them (lesson of Phase W) | operator | — |
-| P9 | The daily offsite backup timer has had a confirmed unattended run (`check-backup-freshness.sh`); it was installed 2026-10-19 with its first run due 2026-10-20 02:39 UTC and that run is **not confirmed here** | owner | script output |
+| P9 | The daily offsite backup timer has had a confirmed unattended run. **CONFIRMED 2026-10-21 by the owner's read-only output on the VM (03:24 UTC):** `check-backup-freshness.sh` printed `OK: last successful backup 0h ago (infinicus-production/2026-10-21/20261021T023234Z-daily/manifest.json)`; `infinicus-backup.timer` last fired 2026-10-21 02:3x UTC and next fires 2026-10-22; `infinicus-backup.service` exited 0 for both `--check` and `--verify` at 02:32:37 UTC (objects fetched back and verified, manifest uploaded). Not shown by that output: the run of 2026-10-20 (not needed), and a restore proof of this particular backup (the W4 backup of the window gets its own) | owner | output above |
 
 ## 3. The window (all steps on the VM as `deploy`, bash)
 `OCI=/opt/infinicus/repo/infinicus-platform/infrastructure/deployment/oci`; `REL=/home/deploy/infinicus-release-<sha7>/infinicus-platform`; `C="docker compose -p oci --env-file $OCI/.env -f $REL/infrastructure/deployment/oci/docker-compose.yml"`.
@@ -66,6 +66,7 @@ Consequences: (a) precondition P6 ("CI green on the release SHA") cannot be met;
 | W8 | `$C up -d --no-deps api` (the API only) | `/v1/ready` 200; `/v1/health` reports the release SHA; external `/v1/ready` ok |
 | W9 | `smoke-test.sh` with `EXPECTED_BUILD_SHA=<release sha>`. Optional W9b: the owner takes one test sale in the counter (open register, one order with a note, cash tender; an owner or admin may also add a discount), prints the receipt through the browser, and presses Send to kitchen once; then a read-only check: `order_payments` has one row and `sum(amount_applied)` equals the order total; `print_jobs` has the matching rows (receipt automatic or reprint, kitchen manual) and its columns hold no receipt content. Optional W9c: on the Printers screen add one receipt printer and see it as default. **A completed payment and a print-job row cannot be deleted afterwards** (append-only); only the tenant-data delete script removes such rows, so do W9b/W9c only with a test business | pass |
 | W10 | Close: keep the output without values; a restore proof of the W4 backup is recommended afterwards (same procedure as the Phase W proof) | — |
+| W11 | Repoint the daily backup unit to the new release folder: the installed `infinicus-backup.service` runs `backup-offsite.sh` from `/home/deploy/infinicus-release-ba02d16/...` (its template says to repoint after each release). Not urgent, because the old release folder stays on the VM and the script records the schema fingerprint without refusing on a mismatch (read from `backup-offsite.sh`: it only reads and records the ledger count, head and fingerprint; it fails on prerequisites, not on schema version), so backups continue after the migrations; but the old folder's discovery script no longer names the new head, so repoint it to keep the recorded evidence meaningful. A host change: edit the unit with the owner's explicit go, `systemctl daemon-reload`, then `systemctl start infinicus-backup.service` once and read `check-backup-freshness.sh` | `OK` and a manifest whose `ledger_head` is `0209_create_print_jobs.sql` |
 
 Expected API downtime: W3 to W8, minutes (image built in advance).
 
@@ -91,7 +92,7 @@ Cloudflare, DNS, secrets, roles, bucket protection, backup-key rotation, Gate D 
 
 ## 7. Risks and open items
 - **P0** (section 0) and the fact that CI evidence for 0208/0209 does not exist yet.
-- The daily offsite backup timer's first unattended run is unconfirmed (P9); until it is, the window's own W4 backup is the only recovery point.
+- The daily offsite backup is running unattended (P9 confirmed 2026-10-21), so the window's W4 backup is no longer the only recovery point; it is still the one taken immediately before the change. The unit still points at the `ba02d16` release folder (W11).
 - The backup key is revoked on the laptop (accidental import, owner statement); the VM's copy is valid, so backups continue; rotation is pending.
 - The old-API-on-0209 behaviour is reasoned, not rehearsed (section 1).
 - The VM has little memory headroom (about 600 MB): no builds or heavy work on it.
