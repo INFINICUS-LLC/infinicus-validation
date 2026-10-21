@@ -25,9 +25,11 @@ import businessAdministrationRoutes from './routes/businessAdministration.js';
 import inventoryPolicyEvaluationRoutes from './routes/inventoryPolicyEvaluations.js';
 import executionActivationRoutes from './routes/executionActivations.js';
 import claimRecoveryRoutes from './routes/claimRecovery.js';
+import executionHealthRoutes from './routes/executionHealth.js';
 import { buildClaimRecoveryOperator } from './claimRecoveryComposition.js';
 import type { ClaimRecoveryCompositionOptions } from './claimRecoveryComposition.js';
-import { BoGovernanceEvidenceVerifier } from '@infinicus/business-operations-runtime';
+import { BoGovernanceEvidenceVerifier, ExecutionHealthService } from '@infinicus/business-operations-runtime';
+import type { ExecutionHealthDependencies } from '@infinicus/business-operations-runtime';
 import { buildAbaPackageIssuer } from './abaPackageAnnouncement.js';
 import { resolveBuildVersion } from './buildVersion.js';
 import type { AbaAnnouncementCompositionOptions } from './abaPackageAnnouncement.js';
@@ -66,6 +68,8 @@ export interface BuildAppOptions {
   abaAnnouncement?: AbaAnnouncementCompositionOptions;
   /** Composition-root overrides for the interim operator recovery control (registry, kill switch, scripted ABA status port). Production leaves it unset. */
   claimRecovery?: ClaimRecoveryCompositionOptions;
+  /** L-OBS-1: overrides for the read-only execution-health view (test seam for the due thresholds; production leaves it unset and uses the engine's constants). */
+  executionHealth?: ExecutionHealthDependencies;
   /** AC-1: the ADI reorder-policy recommendation producer's composition (test seam; production uses the BO read-only derivation). */
   reorderRecommendation?: ReorderRecommendationCompositionOptions;
   /** AC-2 Block 5: the BI inventory evidence service composition (test seam; production joins BI to the read-only BO facts service). */
@@ -188,6 +192,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(executionActivationRoutes);
   // P0-6h: the interim operator recovery control; the engine is joined to the ABA status provider in claimRecoveryComposition.ts only.
   await app.register(claimRecoveryRoutes, { operator: buildClaimRecoveryOperator(options.claimRecovery) });
+  // L-OBS-1: read-only execution health for one business (bo:admin); it acts on nothing.
+  await app.register(executionHealthRoutes, { service: new ExecutionHealthService(options.executionHealth) });
   await app.register(businessAdministrationRoutes);
   await app.register(observabilityRoutes);
   await app.register(billingRoutes);

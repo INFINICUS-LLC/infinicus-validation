@@ -30,6 +30,7 @@ export * from './authorized-action-execution/preconditions.js';
 export * from './authorized-action-execution/executionEvidence.js';
 export * from './authorized-action-execution/ExecutionEventPublisher.js';
 export * from './authorized-action-execution/BoExecutionEvidenceReader.js';
+export * from './authorized-action-execution/ExecutionHealthService.js';
 
 // P0-6e: governed activation (key 2 of the execution gate), the gate itself, and the kill switch (key 3).
 export { GovernedExecutionGate } from './execution-activation/GovernedExecutionGate.js';

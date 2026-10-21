@@ -63,5 +63,5 @@ export type { ExecutionCapabilityActivation, RecordActivationInput, ActivationSt
 export { AuthorizedActionExecutionRepository } from './AuthorizedActionExecutionRepository.js';
 export type {
   ClaimForExecution, ClaimState, ClaimAwaitingFilter, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
-  ExecutionOutcome, MutationResult, AuthorityVerdictRecord, AttemptOutcome,
+  ExecutionOutcome, MutationResult, AuthorityVerdictRecord, AttemptOutcome, ExecutionHealthSnapshot, OpenClaimHealthRow, TerminalHealthRow,
 } from './AuthorizedActionExecutionRepository.js';
