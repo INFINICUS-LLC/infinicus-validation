@@ -5,7 +5,8 @@
 # Run it on a machine that holds the PRIVATE key and has a disposable PostgreSQL server of the same major version (never on the production VM, never
 # against the production database). It never touches production: it only reads objects from the backup store and writes to the scratch server.
 #
-# PASS requires ALL of: object SHA-256 = manifest; archive restores; ledger count/head and schema fingerprint = manifest AND = the expectations profile;
+# PASS requires ALL of: object SHA-256 = manifest; archive restores; ledger count/head and schema fingerprint = manifest AND = the expectations profile
+# (a profile may also carry `restored_fingerprint=<16 hex>`, the reviewed fingerprint of a dump-and-restore copy; see the comparison below);
 # every `count` row count and every `outbox` event-type count in the profile matches the RESTORED database (and no outbox row of an unlisted type exists).
 # Only SELECT count(*) runs against the restored data: outbox events are never consumed, updated or replayed.
 #
@@ -135,13 +136,14 @@ DB="${RESTORE_DB_NAME:-infinicus_restore_proof}"
 # expectations profile (strict syntax; an unknown line is an error so a typo can never weaken the proof)
 PROFILE="${RESTORE_EXPECTATIONS:-$SCRIPT_DIR/expectations/production-pre-0171.profile}"
 [[ -f "$PROFILE" ]] || fail "expectations profile not found: $PROFILE" 2
-E_COUNT=""; E_HEAD=""; E_FP=""; EXP_COUNTS=(); EXP_OUTBOX=()
+E_COUNT=""; E_HEAD=""; E_FP=""; E_RFP=""; EXP_COUNTS=(); EXP_OUTBOX=()
 while IFS= read -r line || [[ -n "$line" ]]; do
   line="${line%%#*}"; line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
   [[ -z "$line" ]] && continue
   if   [[ "$line" =~ ^ledger_count=([0-9]+)$ ]]; then E_COUNT="${BASH_REMATCH[1]}"
   elif [[ "$line" =~ ^ledger_head=([A-Za-z0-9._-]+)$ ]]; then E_HEAD="${BASH_REMATCH[1]}"
   elif [[ "$line" =~ ^schema_fingerprint=([0-9a-f]{16})$ ]]; then E_FP="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^restored_fingerprint=([0-9a-f]{16})$ ]]; then E_RFP="${BASH_REMATCH[1]}"
   elif [[ "$line" =~ ^count[[:space:]]+([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)=([0-9]+)$ ]]; then EXP_COUNTS+=("${BASH_REMATCH[1]}=${BASH_REMATCH[2]}")
   elif [[ "$line" =~ ^outbox[[:space:]]+([a-z0-9_.]+)=([0-9]+)$ ]]; then EXP_OUTBOX+=("${BASH_REMATCH[1]}=${BASH_REMATCH[2]}")
   else fail "invalid line in the expectations profile: $line" 2; fi
@@ -284,9 +286,21 @@ LEDGER="$(psql "$SCRATCH_URL" -X -At -c "select count(*)||chr(124)||coalesce(max
 R_COUNT="${LEDGER%%|*}"; R_HEAD="${LEDGER#*|}"
 [[ "$R_COUNT" == "$M_COUNT" && "$R_HEAD" == "$M_HEAD" ]] || fail "ledger differs after restore (restored $R_COUNT/$R_HEAD, manifest $M_COUNT/$M_HEAD)"
 R_FP="$(INFINICUS_DISCOVERY_ONLY=fingerprint INFINICUS_DISCOVERY_PSQL="psql $SCRATCH_URL" REPO_DIR="${RESTORE_REPO_DIR:-$SCRIPT_DIR/../../..}" bash "$DISCOVERY" 2>/dev/null | sed -n 's/^fingerprint-groups=.* combined-sha256-16=\([0-9a-f]\{16\}\)$/\1/p' | head -1)"
-[[ "$R_FP" == "$M_FINGERPRINT" ]] || fail "schema fingerprint differs after restore (restored $R_FP, manifest $M_FINGERPRINT)"
+# A dump and restore can rewrite how a constraint is PRINTED without changing what it means (PostgreSQL re-parses `(a AND b) AND c` as one flat
+# `a AND b AND c`), so the fingerprint of a restored copy may legitimately differ from the one taken on the source. The only second form accepted is a
+# reviewed `restored_fingerprint` in the expectations profile, and then ONLY when the manifest's fingerprint equals the profile's `schema_fingerprint`:
+# both ends stay pinned, and any other difference still fails.
+FP_NOTE="equals the manifest"
+if [[ "$R_FP" != "$M_FINGERPRINT" ]]; then
+  if [[ -n "$E_RFP" && -n "$E_FP" && "$R_FP" == "$E_RFP" && "$M_FINGERPRINT" == "$E_FP" ]]; then
+    FP_NOTE="is the profile's reviewed dump-and-restore form of the manifest fingerprint $M_FINGERPRINT"
+    log "fingerprint: restored $R_FP is the reviewed dump-and-restore form (profile restored_fingerprint) of the source fingerprint $M_FINGERPRINT"
+  else
+    fail "schema fingerprint differs after restore (restored $R_FP, manifest $M_FINGERPRINT)"
+  fi
+fi
 [[ "$R_COUNT" == "$E_COUNT" && "$R_HEAD" == "$E_HEAD" ]] || MISMATCH+=("ledger restored $R_COUNT/$R_HEAD, expected $E_COUNT/$E_HEAD")
-[[ -z "$E_FP" || "$R_FP" == "$E_FP" ]] || MISMATCH+=("schema fingerprint restored $R_FP, expected $E_FP")
+[[ -z "$E_FP" || "$R_FP" == "$E_FP" || ( -n "$E_RFP" && "$R_FP" == "$E_RFP" ) ]] || MISMATCH+=("schema fingerprint restored $R_FP, expected $E_FP")
 
 q() { PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=60000' psql "$SCRATCH_URL" -X -At -c "$1" 2>/dev/null; }
 for entry in ${EXP_COUNTS[@]+"${EXP_COUNTS[@]}"}; do
@@ -311,6 +325,6 @@ if (( ${#MISMATCH[@]} > 0 )); then
   fail "restored data differs from the expectations profile (${#MISMATCH[@]} mismatch(es); first: ${MISMATCH[0]})"
 fi
 
-log "ledger $R_COUNT rows, head $R_HEAD; fingerprint $R_FP equals the manifest; ${#EXP_COUNTS[@]} row-count rule(s) and ${#EXP_OUTBOX[@]} outbox classification rule(s) satisfied (profile $(basename "$PROFILE") sha256:$PROFILE_SHA)"
+log "ledger $R_COUNT rows, head $R_HEAD; fingerprint $R_FP $FP_NOTE; ${#EXP_COUNTS[@]} row-count rule(s) and ${#EXP_OUTBOX[@]} outbox classification rule(s) satisfied (profile $(basename "$PROFILE") sha256:$PROFILE_SHA)"
 emit_timings
 echo "RESTORE_PROOF=PASS (backup $BASE_KEY restores into a clean scratch database; ledger, schema fingerprint, critical row counts and outbox classification all match)"

@@ -103,3 +103,14 @@ Add a short record next to this document: date, new fingerprint, custody locatio
 
 ## 5. Not covered
 Bucket credentials rotation, the S3 lifecycle/retention setting, hardware tokens, and a second recipient (two-key encryption) are separate decisions. A second recipient would remove the single-key risk and could be added in the same change as the rotation.
+
+## 6. Lessons from the first run (2026-10-21), applied to the steps above
+- **R1:** gpg 2.5.24 (Gpg4win) creates an automatic revocation certificate inside the key folder (`openpgp-revocs.d/<fingerprint>.rev`), next to the secret key. Move it out at once (R2) and store it apart from the key copies. gpg prints the pinentry passphrase window outside the terminal; test with R3 that the key really asks for its passphrase.
+- **R2:** the check "private blocks = 0 in the public file, 1 in the offline file" caught nothing wrong, and is cheap; keep it.
+- **R3 before R2** is a good order: prove the passphrase works before exporting anything.
+- **R4/R5:** the connection from the owner's PC to the VM needed several attempts (timeouts and resets) before it held. Use `scp -o ConnectTimeout=20 -o ServerAliveInterval=10` inside a retry loop. After R5, compare the **full** fingerprints with `gpg --with-colons --fingerprint` (two `fpr` lines: primary and subkey); the formatted listing does not always print them.
+- **R6:** `sed -i` on the single `BACKUP_GPG_RECIPIENT=` line preserved owner, group and mode; `diff` against `backup.env.pre-rotation` showed exactly one changed line.
+- **R7:** the backup unit can be started twice by accident; a second backup is harmless.
+- **R8 in a Docker container on the owner's PC:** Docker Desktop did not see the removable `E:` drive. A single-file mount from it became an **empty directory** inside the container, and `gpg --import` then processed 0 keys. Mount the key from a folder on `C:` (copy it there, verify the hash, delete the copy afterwards). The key import prompts for the passphrase once and the subkey prompts again when first used; the agent cache set in `gpg-agent.conf` keeps it for the script.
+- **R8 verdict:** `restore-proof.sh` reports FAIL for any backup at ledger 0207 or later, because three CHECK constraints are re-parsed with different parentheses after a dump and restore (details and the reproduction are in `PHASE_W2_EXECUTION_RECORD_0202-0209.md`, section 8). Until the script accepts the known post-restore fingerprint for each head, R8 cannot return a clean PASS for a current backup. In that case verify, on the kept scratch database (`--keep`), the ledger and every `count` rule of the profile, record the script verdict honestly as FAIL with the cause, and keep R9 (retiring the old key) on hold.
+- **R9:** keep the old public key in the VM keyring while `backup.env.pre-rotation` is the rollback path.
