@@ -142,6 +142,7 @@ jobs:
       # — exactly matching how every prior build's own regression testing
       # in this session has always targeted specific packages, never a
       # blind repo-wide `pnpm test`.
+      # OM-EVID-1: @infinicus/outcome-monitoring-runtime was missing from this list, so the P0-6d Outcome Monitoring tests (Guardrail Section XI) never ran in CI.
       # The output is also written to a file so that a failure can be named afterwards: GitHub's log view of this job ends with the
       # Postgres service container's own log, which buried the failing test on the two unexplained failures of 18 Oct 2026.
       - name: Test
@@ -151,7 +152,7 @@ jobs:
             --filter=@infinicus/database --filter=@infinicus/configuration --filter=@infinicus/observability --filter=@infinicus/business-operations-runtime \
             --filter=@infinicus/authentication --filter=@infinicus/authorization --filter=@infinicus/onboarding \
             --filter=@infinicus/workflow --filter=@infinicus/api --filter=@infinicus/web \
-            --filter=@infinicus/data-acquisition-runtime --filter=@infinicus/layer-continuous-learning \
+            --filter=@infinicus/data-acquisition-runtime --filter=@infinicus/layer-continuous-learning --filter=@infinicus/outcome-monitoring-runtime \
             --filter=@infinicus/event-contracts --filter=@infinicus/handoff-contracts --filter=@infinicus/event-worker --filter=@infinicus/device-shell 2>&1 | tee "$RUNNER_TEMP/test-output.log"
         env:
           DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
