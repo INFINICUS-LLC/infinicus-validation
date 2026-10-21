@@ -41,7 +41,7 @@ describe('apps/web has no server-side data access or identity path (NA-05)', () 
     expect(files.filter((f) => /searchParams|useSearchParams|location\.(search|hash)/.test(code(f))).map(rel)).toEqual([]);
     expect(files.filter((f) => /name=["'](userId|tenantId|workspaceId)["']|id=["'](userId|tenantId|workspaceId)["']/.test(code(f))).map(rel)).toEqual([]);
     const routeParams = files.filter((f) => /useParams/.test(code(f)));
-    expect(routeParams.map(rel).sort()).toEqual(['/app/(client)/businesses/[businessId]/counter/page.tsx', '/app/(client)/businesses/[businessId]/history/page.tsx', '/app/(client)/businesses/[businessId]/sales/page.tsx', '/app/(client)/businesses/[businessId]/workflow/page.tsx']);
+    expect(routeParams.map(rel).sort()).toEqual(['/app/(client)/businesses/[businessId]/counter/page.tsx', '/app/(client)/businesses/[businessId]/history/page.tsx', '/app/(client)/businesses/[businessId]/printers/page.tsx', '/app/(client)/businesses/[businessId]/sales/page.tsx', '/app/(client)/businesses/[businessId]/workflow/page.tsx']);
     for (const f of routeParams) {
       expect(code(f), rel(f)).toMatch(/useParams<\{ businessId: string \}>/);       // the only parameter
       expect(code(f), rel(f)).toMatch(/z\.string\(\)\.uuid\(\)/);                   // validated as an id before use
@@ -50,7 +50,7 @@ describe('apps/web has no server-side data access or identity path (NA-05)', () 
 
   it('every tenant page uses a scoped API reader and the workspace guard', () => {
     const pages = files.filter((f) => /app\/\(client\)\/businesses\/.*page\.tsx$/.test(f));
-    expect(pages).toHaveLength(5);   // workflow, history, businesses list, counter and completed sales
+    expect(pages).toHaveLength(6);   // workflow, history, businesses list, counter, completed sales and printers
     for (const f of pages) {
       if (rel(f) === '/app/(client)/businesses/[businessId]/sales/page.tsx') {
         // History has a scoped controller for cursor/selection races; business identity is read by BusinessReceipt.
@@ -59,6 +59,14 @@ describe('apps/web has no server-side data access or identity path (NA-05)', () 
         const controller = code(join(ROOT, 'lib/client/salesHistory.ts'));
         expect(controller).toContain('this.api.get(');
         expect(controller).toContain('scope: this.scope');
+      } else if (rel(f) === '/app/(client)/businesses/[businessId]/printers/page.tsx') {
+        // Printers has a scoped controller (like completed sales): every request carries the controller's own scope.
+        expect(code(f), rel(f)).toContain('new PrintersController(api, scope, businessId)');
+        const controller = code(join(ROOT, 'lib/client/printers.ts'));
+        expect(controller).toContain('this.api.get(');
+        expect(controller).toContain('this.api.post(');
+        expect(controller).toContain('scope: this.scope');
+        expect(controller).toContain('idempotencyKey: key');
       } else {
         expect(code(f), rel(f)).toContain('useScopedResource');
       }
