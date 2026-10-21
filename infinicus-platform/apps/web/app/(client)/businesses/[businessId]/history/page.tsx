@@ -22,7 +22,6 @@ export default function HistoryPage() {
   if (!businessId) return <div className="card"><p className="notice danger" role="alert">That business address is not valid.</p><p><a href="/businesses">&larr; All businesses</a></p></div>;
   return (
     <div>
-      <p><a href={`/businesses/${businessId}/workflow`}>&larr; Back to workflow</a></p>
       <h1>Decision history</h1>
       <p>Each stage is listed independently, most recent first. There is no single interleaved timeline across stages.</p>
       {resource.kind === 'loading' ? <p role="status" aria-live="polite">Loading…</p> : null}

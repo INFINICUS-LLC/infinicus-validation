@@ -170,7 +170,6 @@ export default function CounterPage() {
     <div>
       <h1>Counter</h1>
       <ConnectionBanner online={online} />
-      <p><a href={`/businesses/${businessId}/sales`}>Sales history and receipts</a> &middot; <a href={`/businesses/${businessId}/printers`}>Printers and print log</a></p>
       <p><a href="/businesses">&larr; All businesses</a></p>
       {resource.kind === 'loading' ? <p role="status" aria-live="polite">Loading…</p> : null}
       {resource.kind === 'error' ? (<p className="notice danger" role="alert">{resource.message} <button type="button" className="secondary" onClick={reload}>Try again</button></p>) : null}
