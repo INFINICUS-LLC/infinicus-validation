@@ -12,6 +12,8 @@ export * from './adi-to-aba';
 export * from './adi-proposed-action';
 export * from './aba-to-om';
 export * from './om-to-cl';
+// OM -> CL learning release decision (CL-BOUNDARY-1): composes the one learning gate with scope, source and linkage checks.
+export * from './om-to-cl-learning-release';
 export * from './cl-feedback';
 
 // Authorized Action Package (P0-5): ABA -> BO authorization contract

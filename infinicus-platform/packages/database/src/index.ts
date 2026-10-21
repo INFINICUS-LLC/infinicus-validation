@@ -387,7 +387,7 @@ export type {
   LearningFeedbackPackage,
   OMPublicationPackage,
   OMComponentRegistryEntry, OMDeployment,
-  ActionExecutionVerification, RecordExecutionVerificationInput,
+  ActionExecutionVerification, RecordExecutionVerificationInput, LearningSourceFactRow, LearningSourceLookup,
 } from './repositories/om/index.js';
 
 // ── Continuous Learning repositories (Stage 2J) ─────────────────────────────────

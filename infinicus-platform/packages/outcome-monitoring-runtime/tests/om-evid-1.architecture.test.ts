@@ -66,13 +66,14 @@ describe('OM-EVID-1 legacy observation path', () => {
     }
   });
 
-  it('no production code outside the database package names a verified outcome state, and the learning gate is still uncalled', () => {
+  it('no production code outside the database package names a verified outcome state, and the learning gate has only the CL-BOUNDARY-1 release decision as its caller', () => {
     const allowed = new Set(['packages/handoff-contracts/src/execution-evidence/states.ts']);
     for (const f of outsideDatabase) {
       if (allowed.has(f.rel)) continue;
       expect(f.code, f.rel).not.toMatch(/['"]OUTCOME_(VERIFIED|OBSERVED|FAILED)['"]/);
     }
-    expect(production.filter((f) => /learningEligibility\(/.test(f.code) && !f.rel.endsWith('execution-evidence/states.ts')).map((f) => f.rel)).toEqual([]);
+    // CL-BOUNDARY-1: the single release decision is the one place the gate is consulted (also asserted in p0-6d / cl-boundary-1 architecture tests).
+    expect(production.filter((f) => /learningEligibility\(/.test(f.code) && !f.rel.endsWith('execution-evidence/states.ts')).map((f) => f.rel)).toEqual(['packages/handoff-contracts/src/om-to-cl-learning-release.ts']);
   });
 
   it('the recorded human outcome is shown to users as free text notes, never as a verified result', () => {
