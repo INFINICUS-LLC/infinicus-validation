@@ -79,20 +79,20 @@ export const ALLOWLIST = [
   // NOT permanent CI policy: remove both entries when the vitest/vite
   // toolchain is upgraded. Tracking issue:
   // https://github.com/INFINICUS-LLC/infinicus-validation/issues/24
-  // Review/removal target date: 2026-11-06.
+  // Review/removal target date: 2026-10-01.
   {
     githubAdvisoryId: 'GHSA-5gmw-xhrv-c9v3',
     package: 'tinypool',
-    expires: '2026-11-06',
+    expires: '2026-10-01',
     reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
+      'TEMPORARY (issue #24, review by 2026-10-01). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
   },
   {
     githubAdvisoryId: 'GHSA-85c8-ppgw-ccpr',
     package: 'tinypool',
-    expires: '2026-11-06',
+    expires: '2026-10-01',
     reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
+      'TEMPORARY (issue #24, review by 2026-10-01). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
   },
 
   // ── TEMPORARY exceptions: vite / launch-editor (2026-10-21, tracked in issue #24) ─────────────────
@@ -102,23 +102,23 @@ export const ALLOWLIST = [
   {
     githubAdvisoryId: 'GHSA-698v-4r3x-3vcv',
     package: 'vite',
-    expires: '2026-11-06',
+    expires: '2026-10-01',
     reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). launch-editor `escapeCmdArgs()` omits % escaping on Windows (moderate); only relevant to the open-in-editor route of the vite dev server, and only on Windows. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
+      'TEMPORARY (issue #24, review by 2026-10-01). launch-editor `escapeCmdArgs()` omits % escaping on Windows (moderate); only relevant to the open-in-editor route of the vite dev server, and only on Windows. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
   },
   {
     githubAdvisoryId: 'GHSA-r825-w8mm-5pxw',
     package: 'vite',
-    expires: '2026-11-06',
+    expires: '2026-10-01',
     reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). launch-editor editor CLI flag misinterpretation (moderate); only relevant to the open-in-editor route of the vite dev server. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
+      'TEMPORARY (issue #24, review by 2026-10-01). launch-editor editor CLI flag misinterpretation (moderate); only relevant to the open-in-editor route of the vite dev server. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
   },
   {
     githubAdvisoryId: 'GHSA-587h-7wmj-h5pm',
     package: 'vite',
-    expires: '2026-11-06',
+    expires: '2026-10-01',
     reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). launch-editor `fs.existsSync()` existence check bypass on Windows (high); only relevant to the open-in-editor route of the vite dev server, and only on Windows. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
+      'TEMPORARY (issue #24, review by 2026-10-01). launch-editor `fs.existsSync()` existence check bypass on Windows (high); only relevant to the open-in-editor route of the vite dev server, and only on Windows. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
   },
 ];
 
