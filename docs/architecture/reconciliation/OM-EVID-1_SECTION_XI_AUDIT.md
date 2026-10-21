@@ -5,7 +5,7 @@ Authority: `MASTER_ARCHITECTURE_GUARDRAIL.md` Section XI (outcome rule), with Se
 Method: repository reading, live execution on a fresh local PostgreSQL 16 (migrations 0001-0209, application-role grants), new tests with mutation checks. **No production system, database or secret was touched. The evidence SQL below was NOT run on production; the owner runs it.**
 
 ## 1. Verdict
-**Section XI holds for everything that can run today.** Nothing in the repository can produce `OUTCOME_VERIFIED` (or `OBSERVED`/`FAILED`) from an execution, in code or in the database, and the learning gate is closed for every state OM can assign. Six findings remain; none is a Section XI violation. Two are operational blind spots (unverified executions are invisible; dead-lettered verifications cannot be replayed) and four are dormant capabilities that a future change could wire unsafely.
+**Section XI holds for everything that can run today.** Nothing in the repository can produce `OUTCOME_VERIFIED` (or `OBSERVED`/`FAILED`) from an execution, in code or in the database, and the learning gate is closed for every state OM can assign. Seven findings: none is a Section XI violation in the code that exists. **F-7 was a verification gap and is fixed in this block:** the Outcome Monitoring test package was not in the CI test list, so the Section XI controls were not enforced by CI. Two findings are operational blind spots (unverified executions are invisible; dead-lettered verifications cannot be replayed) and the rest are dormant capabilities that a future change could wire unsafely.
 
 ## 2. Section XI requirements and the evidence for each
 
@@ -28,6 +28,7 @@ Code: gate ignoring the mutation result (1), gate opened on OUTCOME_PENDING (2),
 
 | ID | Severity | Finding | Evidence | Recommendation |
 |---|---|---|---|---|
+| F-7 | HIGH (fixed here) | **The Outcome Monitoring tests did not run in CI.** `@infinicus/outcome-monitoring-runtime` (the P0-6d verification service tests and the architecture guards for Section XI, 4 test files) was missing from the `Test` step's package filter in `.github/workflows/ci.yml`, so a regression of the Section XI controls would not have failed CI. Found by comparing every workspace package with a `test` script against the filter. | `.github/workflows/ci.yml` filter list; package has `"test": "vitest run"` and no database dependency. | **Fixed:** the package is added to the filter (one line). Same comparison shows other packages with tests that CI does not run: `billing` (1 file), `llm-client` (1), `simulation-engine` (4), `layer-simulation` (1), `device-shell` (2, POS-owned) and six `layer-*` block suites (25-39 files each, run through `run-block-tests.mjs`; not examined, may be legacy). Not changed here; see section 6. |
 | F-1 | MEDIUM (operational) | **Unverified executions are invisible.** OM verification states exist only in the database; no API, metric or report shows `EXECUTION_VERIFIED` / `OUTCOME_PENDING`, or which BO executions OM has not verified. The L-OBS-1 view covers claims and executions on the BO side only. Nothing misreports success; the gap is that "not verified" cannot be seen. | No route reads `action_execution_verifications` (`grep` of `apps/api/src`). On the local test database the evidence SQL shows 85 SUCCEEDED/APPLIED executions with no verification (test fixtures; no worker ran). | Block OM-OBS-1: read-only OM view (counts by state; count of executed events not yet verified, derived from the event tables so OM never reads BO tables). Needs an owner decision on the event-table approach. |
 | F-2 | MEDIUM (operational) | **A dead-lettered `operations.action.executed` cannot be replayed from the repository.** After 3 attempts (DEFAULT_MAX_ATTEMPTS) the event is dead-lettered. `DeadLetterRepository` can list and mark approval, and `assertReplayAuthorized` exists, but no production code replays an event (`assertReplayAuthorized` has no caller). The execution then stays unverified for ever. This fails closed (unverified is not success) but is unrecoverable by design today. | `grep` for callers in `packages`, `apps`; local database shows 3 dead-lettered executed events. | Owner decision on the replay procedure (delivery-only, approved, audited) before activation of the worker; include in OM-OBS-1 or a replay block. |
 | F-3 | LOW (dormant) | **`outcome_observations.status = 'verified'` is reachable by one repository method with no evidence or authority check.** `OutcomeObservationRepository.verify()` marks any observation verified. No production code calls it (now pinned by a test). The status is not `OUTCOME_VERIFIED`, but the old OM -> CL hand-off contract describes "recorded/verified" observations. | `OutcomeObservationRepository.decide()`; `om-evid-1.architecture.test.ts`; evidence SQL X09b (3 test-fixture rows locally). | Before any wiring: require authoritative evidence, or remove the status. Guarded by the new architecture test until then. |
@@ -37,10 +38,14 @@ Code: gate ignoring the mutation result (1), gate opened on OUTCOME_PENDING (2),
 
 ## 5. What this block added
 - `docs/architecture/reconciliation/production-discovery/om-evid-1-section-xi-evidence.sql`: read-only owner-run checks X01-X11 (states, tamper detection against BO digests, unverified executions by age, event delivery state, legacy observations, learning hand-off counts).
+- `.github/workflows/ci.yml`: one filter added (F-7).
 - `packages/outcome-monitoring-runtime/tests/om-evid-1.sectionXI.test.ts` (7 tests) and `om-evid-1.architecture.test.ts` (7 tests), `packages/database/tests/om-execution-verification-invariants.integration.test.ts` (20 live tests).
-No production source, migration or workflow file was changed.
+No production source or migration was changed; the only workflow change is the one CI filter (F-7).
 
-## 6. Not verified / limits
+## 6. CI coverage note (follow-up for the owner)
+The following packages declare a test script but are not in the CI test list: billing, llm-client, simulation-engine, layer-simulation, device-shell (POS session), layer-ai-decision-intelligence, layer-approved-business-action, layer-business-digital-twin, layer-business-intelligence, layer-business-operations, layer-data-acquisition, layer-outcome-monitoring. Whether they pass and belong in CI is not established here (the `layer-*` suites use `run-block-tests.mjs` and may be legacy Stack A). Only the Outcome Monitoring package was added, because it is the evidence for this audit.
+
+## 6b. Not verified / limits
 - Production: not examined. Run the SQL read-only and compare with section 7.
 - The older browser "Stack A" outcome-monitoring engines are outside this audit.
 - The event worker is undeployed, so verification has never run in production.
