@@ -8,8 +8,8 @@
  */
 import type { Receipt } from './receipt';
 import { TENDER_LABELS } from './tender';
-import { receiptToEscPos } from './escpos';
-import { DEFAULT_PRINT_SETTINGS, printReceiptNow, type PaperMm, type PrintOutcome } from './printing';
+import { receiptToEscPos, type EscPosResult } from './escpos';
+import { DEFAULT_PRINT_SETTINGS, printReceiptNow, type PaperMm, type PrintFailureCode, type PrintOutcome } from './printing';
 
 export interface DeviceBridge { printEscPos(dataBase64: string): Promise<unknown> }
 export const BRIDGE_TIMEOUT_MS = 15_000;
@@ -30,26 +30,48 @@ export const paidInCash = (receipt: Receipt): boolean => receipt.payments.some((
 export interface PrintDeps { bridge: DeviceBridge | null; browserPrint: (receipt: Receipt, paperMm: PaperMm) => Promise<PrintOutcome>; setTimeout: (fn: () => void, ms: number) => unknown }
 const realDeps = (): PrintDeps => ({ bridge: findDeviceBridge(), browserPrint: printReceiptNow, setTimeout: (fn, ms) => window.setTimeout(fn, ms) });
 
+/** How a print ended, with the route it took (for the print-job log, POS-8c). A failure always carries a fixed code. */
+export type PrintVia = 'browser' | 'device';
+export type DetailedOutcome = { ok: true; via: PrintVia } | { ok: false; via: PrintVia; reason: string; code: PrintFailureCode };
+export interface DocumentDeps { bridge: DeviceBridge | null; browserPrint: () => Promise<PrintOutcome>; setTimeout: (fn: () => void, ms: number) => unknown }
+
+/**
+ * Prints a prepared document the best available way: ESC/POS through the device shell when there is one and the document could be encoded; otherwise the
+ * browser path. A shell that fails or does not answer is reported as a failure and is NOT retried through the browser, because the shell may have printed
+ * already and a second paper copy is worse than a message.
+ */
+export async function printDocumentOnDevice(escpos: EscPosResult, deps: DocumentDeps): Promise<DetailedOutcome> {
+  const bridge = deps.bridge;
+  if (!bridge || !escpos.ok) {
+    const outcome = await deps.browserPrint();
+    return outcome.ok ? { ok: true, via: 'browser' } : { ok: false, via: 'browser', reason: outcome.reason, code: outcome.code ?? 'other' };
+  }
+  return new Promise<DetailedOutcome>((resolve) => {
+    let done = false;
+    const finish = (outcome: DetailedOutcome): void => { if (!done) { done = true; resolve(outcome); } };
+    const failed = (code: PrintFailureCode): DetailedOutcome => ({ ok: false, via: 'device', reason: DEVICE_PRINT_FAILED, code });
+    deps.setTimeout(() => finish(failed('timeout')), BRIDGE_TIMEOUT_MS);
+    try {
+      bridge.printEscPos(toBase64(escpos.bytes)).then(
+        (answer) => finish((answer as { ok?: unknown } | null)?.ok === true ? { ok: true, via: 'device' } : failed('printer_error')),
+        () => finish(failed('printer_error')),
+      );
+    } catch { finish(failed('printer_error')); }
+  });
+}
+
 /**
  * Prints a receipt the best available way. In the device shell it sends ESC/POS bytes straight to the printer (no dialog); the cash drawer opens only for
  * the automatic print of a cash sale, never on a reprint. If there is no shell, or the receipt cannot be encoded for a plain printer (for example Arabic
- * text), the browser receipt is used. A shell that fails or does not answer is reported as a failure; it is NOT retried through the browser, because the
- * shell may have printed already and a second copy is worse than a message.
+ * text), the browser receipt is used.
  */
+export function printReceiptDetailed(receipt: Receipt, paperMm: PaperMm = DEFAULT_PRINT_SETTINGS.paperMm, options: { automatic?: boolean } = {}, deps: PrintDeps = realDeps()): Promise<DetailedOutcome> {
+  const escpos = receiptToEscPos(receipt, paperMm, { openDrawer: options.automatic === true && paidInCash(receipt) });
+  return printDocumentOnDevice(escpos, { bridge: deps.bridge, browserPrint: () => deps.browserPrint(receipt, paperMm), setTimeout: deps.setTimeout });
+}
+
+/** As printReceiptDetailed, reduced to the plain outcome. */
 export async function printReceiptOnDevice(receipt: Receipt, paperMm: PaperMm = DEFAULT_PRINT_SETTINGS.paperMm, options: { automatic?: boolean } = {}, deps: PrintDeps = realDeps()): Promise<PrintOutcome> {
-  const bridge = deps.bridge;
-  if (!bridge) return deps.browserPrint(receipt, paperMm);
-  const encoded = receiptToEscPos(receipt, paperMm, { openDrawer: options.automatic === true && paidInCash(receipt) });
-  if (!encoded.ok) return deps.browserPrint(receipt, paperMm);
-  return new Promise<PrintOutcome>((resolve) => {
-    let done = false;
-    const finish = (outcome: PrintOutcome): void => { if (!done) { done = true; resolve(outcome); } };
-    deps.setTimeout(() => finish({ ok: false, reason: DEVICE_PRINT_FAILED }), BRIDGE_TIMEOUT_MS);
-    try {
-      bridge.printEscPos(toBase64(encoded.bytes)).then(
-        (answer) => finish((answer as { ok?: unknown } | null)?.ok === true ? { ok: true } : { ok: false, reason: DEVICE_PRINT_FAILED }),
-        () => finish({ ok: false, reason: DEVICE_PRINT_FAILED }),
-      );
-    } catch { finish({ ok: false, reason: DEVICE_PRINT_FAILED }); }
-  });
+  const outcome = await printReceiptDetailed(receipt, paperMm, options, deps);
+  return outcome.ok ? { ok: true } : { ok: false, reason: outcome.reason };
 }

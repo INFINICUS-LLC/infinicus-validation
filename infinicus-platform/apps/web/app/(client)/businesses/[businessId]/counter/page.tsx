@@ -21,6 +21,8 @@ import { buildDiscount, NO_DISCOUNT, type DiscountEntry } from '../../../../../l
 import { buildNote } from '../../../../../lib/client/note';
 import { DEFAULT_PRINT_SETTINGS, type PrintSettings } from '../../../../../lib/client/printing';
 import { loadPrintPrefs, savePrintPrefs, tabStorage } from '../../../../../lib/client/printPrefs';
+import { fetchPrintRoutes, NO_ROUTES, paperFor, recordPrintJob, type PrintRoutes } from '../../../../../lib/client/printJobs';
+import { buildKitchenTicket, KITCHEN_FAILED, KITCHEN_SENDING, KITCHEN_SENT, printKitchenTicket } from '../../../../../lib/client/kitchenTicket';
 
 const idSchema = z.string().uuid();
 
@@ -57,6 +59,17 @@ export default function CounterPage() {
   // The choice is remembered for this tab session only (sessionStorage: two harmless fields); it is read after the page mounts, never from the address.
   const [printSettings, setPrintSettings] = useState<PrintSettings>(DEFAULT_PRINT_SETTINGS);
   useEffect(() => { setPrintSettings(loadPrintPrefs(tabStorage())); }, []);
+  // POS-8c: where each kind of print goes (the business's default registered printers). Best effort: no routes = browser printing with the local paper choice.
+  const [routes, setRoutes] = useState<PrintRoutes>(NO_ROUTES);
+  const routeScopeKey = scope && businessId ? `${scope.tenantId}/${scope.workspaceId}/${businessId}` : null;
+  useEffect(() => {
+    setRoutes(NO_ROUTES);
+    if (!api || !scope || !businessId) return undefined;
+    let cancelled = false;
+    void fetchPrintRoutes(api, scope, businessId).then((r) => { if (!cancelled) setRoutes(r); });
+    return () => { cancelled = true; };
+  }, [api, routeScopeKey]);
+  const [kitchenStatus, setKitchenStatus] = useState<{ kind: 'sending' | 'sent' | 'failed'; text: string } | null>(null);
   const changePrintSettings = (next: PrintSettings) => { setPrintSettings(next); savePrintPrefs(tabStorage(), next); };
   const [autoPrintFor, setAutoPrintFor] = useState<string | null>(null);
   // The note being typed belongs to one order: switching orders drops the draft and the box shows that order's saved note again.
@@ -113,6 +126,17 @@ export default function CounterPage() {
       discount={discount}
       discountCheck={orderState.order ? buildDiscount(discount, orderState.order.totalAmount, orderState.order.currencyCode) : null}
       onDiscountChange={setDiscount}
+      onKitchen={() => {
+        const order = orderState.order;
+        const ticket = order ? buildKitchenTicket(order) : null;
+        if (!order || !ticket || !api || !scope || !businessId) return;
+        setKitchenStatus({ kind: 'sending', text: KITCHEN_SENDING });
+        void printKitchenTicket(ticket, paperFor(routes.kitchen, printSettings.paperMm)).then((outcome) => {
+          setKitchenStatus(outcome.ok ? { kind: 'sent', text: KITCHEN_SENT } : { kind: 'failed', text: KITCHEN_FAILED });
+          void recordPrintJob(api, scope, businessId, { orderId: order.id, kind: 'kitchen', trigger: 'manual', outcome, printerId: routes.kitchen?.id });
+        });
+      }}
+      kitchenStatus={kitchenStatus && orderState.order ? kitchenStatus : null}
       noteText={noteText}
       noteCheck={noteText !== undefined ? buildNote(noteText) : null}
       onNoteChange={(text) => { if (orderState.order) setNoteDraft({ orderId: orderState.order.id, text }); }}
@@ -154,7 +178,7 @@ export default function CounterPage() {
       {resource.kind === 'ok' ? (
         <CounterCatalogue
           products={resource.data.products}
-          orderPanel={<div className="counter-left">{registerPanel}<PrintSettingsPanel settings={printSettings} onChange={changePrintSettings} />{orderPanel}{receipt ? <BusinessReceipt key={`${scope.tenantId}/${scope.workspaceId}/${businessId}`} order={receipt} autoPrint={autoPrintFor === receipt.id} paperMm={printSettings.paperMm} onClose={() => setReceiptFor(null)} /> : null}</div>}
+          orderPanel={<div className="counter-left">{registerPanel}<PrintSettingsPanel settings={printSettings} onChange={changePrintSettings} routedPaperMm={routes.receipt?.paperMm} />{orderPanel}{receipt ? <BusinessReceipt key={`${scope.tenantId}/${scope.workspaceId}/${businessId}`} order={receipt} autoPrint={autoPrintFor === receipt.id} paperMm={paperFor(routes.receipt, printSettings.paperMm)} onPrinted={(info) => { if (api && scope && businessId) void recordPrintJob(api, scope, businessId, { orderId: receipt.id, kind: 'receipt', trigger: info.automatic ? 'automatic' : 'reprint', outcome: info.outcome, printerId: routes.receipt?.id }); }} onClose={() => setReceiptFor(null)} /> : null}</div>}
           disabled={!canAdd}
           onAdd={(product) => session && act(() => session.add(product))}
         />

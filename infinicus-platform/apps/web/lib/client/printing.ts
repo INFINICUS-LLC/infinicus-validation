@@ -70,7 +70,9 @@ export interface PrintEnv {
   createFrame(): PrintFrame;
   setTimeout(handler: () => void, ms: number): unknown;
 }
-export type PrintOutcome = { ok: true } | { ok: false; reason: string };
+/** Why a print failed, as the fixed codes the print-job log (POS-8c) accepts; never free text. */
+export type PrintFailureCode = 'printer_error' | 'timeout' | 'unsupported' | 'other';
+export type PrintOutcome = { ok: true } | { ok: false; reason: string; code?: PrintFailureCode };
 
 /** Longest wait for the hidden frame to load, and how long it is kept after printing when the browser never reports that printing finished (silent printing). */
 export const FRAME_LOAD_TIMEOUT_MS = 10_000;
@@ -100,19 +102,19 @@ export function printReceiptDocument(html: string, env: PrintEnv = browserPrintE
         loaded = true;
         try {
           const win = current.contentWindow;
-          if (!win) { done({ ok: false, reason: 'The print frame has no window.' }); return; }
+          if (!win) { done({ ok: false, reason: 'The print frame has no window.', code: 'unsupported' }); return; }
           win.onafterprint = () => done({ ok: true });
           win.focus();
           win.print();
           env.setTimeout(() => done({ ok: true }), FRAME_LINGER_MS);
         } catch {
-          done({ ok: false, reason: 'The browser refused to print.' });
+          done({ ok: false, reason: 'The browser refused to print.', code: 'printer_error' });
         }
       };
       current.srcdoc = html;
-      env.setTimeout(() => { if (!loaded) done({ ok: false, reason: 'The print frame did not load.' }); }, FRAME_LOAD_TIMEOUT_MS);
+      env.setTimeout(() => { if (!loaded) done({ ok: false, reason: 'The print frame did not load.', code: 'timeout' }); }, FRAME_LOAD_TIMEOUT_MS);
     } catch {
-      done({ ok: false, reason: 'The print frame could not be created.' });
+      done({ ok: false, reason: 'The print frame could not be created.', code: 'unsupported' });
     }
   });
 }

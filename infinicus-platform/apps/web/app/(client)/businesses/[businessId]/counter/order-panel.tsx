@@ -64,6 +64,9 @@ export interface OrderPanelProps {
   noteCheck?: NoteResult | null;
   onNoteChange?: (text: string) => void;
   onSaveNote?: () => void;
+  /** Send the kitchen ticket (POS-8c): the handler, and how the last attempt went. Absent = no button (earlier uses of the panel). */
+  onKitchen?: () => void;
+  kitchenStatus?: { kind: 'sending' | 'sent' | 'failed'; text: string } | null;
 }
 
 const NO_TENDER: TenderEntry = { method: 'cash', amountText: '', reference: '' };
@@ -73,7 +76,7 @@ const NO_DISCOUNT_ENTRY: DiscountEntry = { amountText: '', reason: '' };
 const none = (): void => undefined;
 
 /** Presentational order panel (no data access). Every amount shown is the server's. Buttons are disabled while an action is in flight. */
-export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantity, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tenders = INITIAL_TENDERS, tenderCheck = null, onTendersChange = none, onViewReceipt, receiptOpen = false, discount = NO_DISCOUNT_ENTRY, discountCheck = null, onDiscountChange = none, noteText, noteCheck = null, onNoteChange, onSaveNote, offline = false }: OrderPanelProps) {
+export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantity, onRetry, onDiscard, onOpen, confirm = null, voidReason = '', onAsk = none, onCancelAsk = none, onConfirm = none, onReasonChange = none, registerOpen, tenders = INITIAL_TENDERS, tenderCheck = null, onTendersChange = none, onViewReceipt, receiptOpen = false, discount = NO_DISCOUNT_ENTRY, discountCheck = null, onDiscountChange = none, noteText, noteCheck = null, onNoteChange, onSaveNote, onKitchen, kitchenStatus = null, offline = false }: OrderPanelProps) {
   const { order, busy, message, retryable } = state;
   const planned = order?.operationalStatus === 'planned';
   const locked = busy || retryable || offline;
@@ -142,11 +145,15 @@ export function OrderPanelView({ state, openOrders, onStart, onRemove, onQuantit
             <p className="notice" role="status">Order {order.orderNumber} was voided. No sale was recorded.</p>
           ) : null}
           {planned && !confirm ? (
+            <>
             <p>
               <button type="button" onClick={() => onAsk('complete')} disabled={locked || order.lineItems.length === 0}>Complete sale</button>{' '}
               <button type="button" className="secondary" onClick={() => onAsk('discount')} disabled={locked || order.lineItems.length === 0 || order.totalAmount <= 0}>Discount</button>{' '}
               <button type="button" className="secondary" onClick={() => onAsk('void')} disabled={locked}>Void order</button>
+              {onKitchen ? <>{' '}<button type="button" className="secondary" onClick={onKitchen} disabled={busy || order.lineItems.every((l) => l.itemType === 'discount') || kitchenStatus?.kind === 'sending'}>Send to kitchen</button></> : null}
             </p>
+            {kitchenStatus ? <p className={kitchenStatus.kind === 'failed' ? 'notice danger' : 'notice'} role={kitchenStatus.kind === 'failed' ? 'alert' : 'status'}>{kitchenStatus.text}</p> : null}
+            </>
           ) : null}
           {planned && confirm === 'complete' ? (
             <div className="confirm" role="group" aria-label="Confirm completing the sale">
