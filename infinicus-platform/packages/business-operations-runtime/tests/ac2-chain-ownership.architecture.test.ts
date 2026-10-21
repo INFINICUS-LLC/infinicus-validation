@@ -161,8 +161,10 @@ describe('AC-2 Block 10: every layer in the first-action chain stays in its lane
     const clCode = [...under('layers/continuous-learning/'), ...under('packages/database/src/repositories/cl/')];
     expect(clCode.length).toBeGreaterThan(5);
     for (const f of clCode) expect(f.code, f.rel).not.toMatch(/action_execution_verifications|ActionExecutionVerification|OUTCOME_PENDING|OUTCOME_INCONCLUSIVE/);
-    // the only readers of execution verifications are the OM repository and OM runtime
-    expect(filesMatching(/action_execution_verifications/).filter((r) => !r.startsWith('packages/outcome-monitoring-runtime/'))).toEqual(['packages/database/src/repositories/om/ActionExecutionVerificationRepository.ts']);
+    // the only readers of execution verifications are the OM repositories (verification store; OM-OBS-1 read-only health view) and OM runtime
+    expect(filesMatching(/action_execution_verifications/).filter((r) => !r.startsWith('packages/outcome-monitoring-runtime/'))).toEqual([
+      'packages/database/src/repositories/om/ActionExecutionVerificationRepository.ts', 'packages/database/src/repositories/om/OutcomeMonitoringHealthRepository.ts',
+    ]);
     const migration = readFileSync(join(PLATFORM, 'infrastructure/database/migrations/0194_create_om_action_execution_verifications.sql'), 'utf8');
     expect(migration).toMatch(/outcome_state\s+text\s+NOT NULL\s+CHECK\s*\(\s*outcome_state\s+IN\s*\(\s*'OUTCOME_PENDING'\s*,\s*'OUTCOME_INCONCLUSIVE'\s*\)\s*\)/);
   });

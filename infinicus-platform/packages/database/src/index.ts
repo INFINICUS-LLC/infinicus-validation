@@ -371,6 +371,7 @@ export {
   OMPublicationRepository,
   OMComponentRegistryRepository,
   ActionExecutionVerificationRepository, ActionExecutionVerificationConflictError,
+  OutcomeMonitoringHealthRepository,
   MonitoredActionNotFoundError,
 } from './repositories/om/index.js';
 export type {
@@ -388,6 +389,7 @@ export type {
   OMPublicationPackage,
   OMComponentRegistryEntry, OMDeployment,
   ActionExecutionVerification, RecordExecutionVerificationInput, LearningSourceFactRow, LearningSourceLookup,
+  OutcomeMonitoringHealthOptions, OutcomeMonitoringHealthSnapshot, AnnouncedExecutionClass,
 } from './repositories/om/index.js';
 
 // ── Continuous Learning repositories (Stage 2J) ─────────────────────────────────

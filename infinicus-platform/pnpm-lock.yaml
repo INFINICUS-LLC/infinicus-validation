@@ -107,6 +107,9 @@ importers:
       '@infinicus/onboarding':
         specifier: workspace:*
         version: link:../../packages/onboarding
+      '@infinicus/outcome-monitoring-runtime':
+        specifier: workspace:*
+        version: link:../../packages/outcome-monitoring-runtime
       '@infinicus/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
