@@ -91,6 +91,11 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # POS-8d-2a: the device shell bundles the counter as static files. This proves the web app still exports (every business screen under the
+      # placeholder id, no api folder, no source maps, no baked business id). Web only; no deploy.
+      - name: Static export check (counter bundle for the device shell)
+        run: pnpm --filter @infinicus/web run build:export
+
       - name: Check for browser secret leakage
         run: node infrastructure/deployment/scripts/check-no-browser-secrets.mjs
 

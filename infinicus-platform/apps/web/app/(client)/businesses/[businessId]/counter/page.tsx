@@ -1,8 +1,7 @@
 'use client';
 
-import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { z } from 'zod';
+import { useBusinessId } from '../use-business-id';
 import { openOrdersPath } from '../../../../../lib/client/orders';
 import { orderListSchema, productListSchema } from '../../../../../lib/client/schemas';
 import { StateNotice } from '../../../state-notice';
@@ -24,13 +23,11 @@ import { loadPrintPrefs, savePrintPrefs, tabStorage } from '../../../../../lib/c
 import { fetchPrintRoutes, NO_ROUTES, paperFor, recordPrintJob, type PrintRoutes } from '../../../../../lib/client/printJobs';
 import { buildKitchenTicket, KITCHEN_FAILED, KITCHEN_SENDING, KITCHEN_SENT, printKitchenTicket } from '../../../../../lib/client/kitchenTicket';
 
-const idSchema = z.string().uuid();
 
 export default function CounterPage() {
   const { state, api } = useAuth();
   const { scope } = useRequireWorkspace();
-  const params = useParams<{ businessId: string }>();
-  const businessId = idSchema.safeParse(params.businessId).success ? params.businessId : null;
+  const businessId = useBusinessId();
   const { resource, reload } = useScopedResource(scope && businessId ? `/v1/businesses/${businessId}/products` : null, productListSchema);
   const open = useScopedResource(scope && businessId ? openOrdersPath(businessId) : null, orderListSchema);
   const { session, state: orderState } = useOrderSession(api, scope, businessId);

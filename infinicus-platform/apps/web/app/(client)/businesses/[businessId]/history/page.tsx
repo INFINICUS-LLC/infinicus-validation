@@ -1,7 +1,6 @@
 'use client';
 
-import { useParams } from 'next/navigation';
-import { z } from 'zod';
+import { useBusinessId } from '../use-business-id';
 import { decisionHistorySchema } from '../../../../../lib/client/schemas';
 import { StateNotice } from '../../../state-notice';
 import { useAuth } from '../../../auth-provider';
@@ -9,13 +8,11 @@ import { useRequireWorkspace } from '../../../use-require-workspace';
 import { useScopedResource } from '../../../use-scoped-resource';
 import { HistorySections } from '../../sections';
 
-const idSchema = z.string().uuid();
 
 export default function HistoryPage() {
   const { state } = useAuth();
   const { scope } = useRequireWorkspace();
-  const params = useParams<{ businessId: string }>();
-  const businessId = idSchema.safeParse(params.businessId).success ? params.businessId : null;
+  const businessId = useBusinessId();
   const { resource, reload } = useScopedResource(scope && businessId ? `/v1/businesses/${businessId}/history` : null, decisionHistorySchema);
 
   if (!scope) return <StateNotice state={state} />;

@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint app/ lib/",
     "test": "vitest run",
-    "clean": "rm -rf .next dist"
+    "clean": "rm -rf .next dist",
+    "build:export": "node scripts/build-export.mjs && node scripts/check-export.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
