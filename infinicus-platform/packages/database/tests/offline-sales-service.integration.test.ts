@@ -305,6 +305,12 @@ describe.runIf(run)('OfflineSaleRepository - live PostgreSQL', () => {
       await expect(svc.process(w.ctx, w.biz, sale(w, [[a, 1, 1000]], { tenders: [{ method: 'card' as any, amountTenderedMinor: 1000 }] }), CONFIG)).rejects.toThrow(/only cash/);
       expect(await salesFor(w)).toBe(before);
     });
+    it('accepts a device clock that runs ahead of the server by less than the tolerance, and refuses one just beyond it', async () => {
+      const a = await product(w, 1);
+      const within = await svc.process(w.ctx, w.biz, sale(w, [[a, 1, 1000]], { deviceCreatedAt: new Date(NOW.getTime() + (CONFIG.futureToleranceSeconds - 30) * 1000) }), CONFIG);
+      expect(within.outcome).toBe('accepted');
+      await expect(svc.process(w.ctx, w.biz, sale(w, [[a, 1, 1000]], { deviceCreatedAt: new Date(NOW.getTime() + (CONFIG.futureToleranceSeconds + 30) * 1000) }), CONFIG)).rejects.toThrow(/clock is ahead/);
+    });
     it('refuses to process a business without a declared currency', async () => {
       const bare = await makeWorld();
       await admin.query('DELETE FROM platform.business_currency_declarations WHERE business_id = $1', [bare.biz]).catch(async () => {

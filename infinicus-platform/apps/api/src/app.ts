@@ -44,6 +44,7 @@ import registerSessionsRoutes from './routes/registerSessions.js';
 import printersRoutes from './routes/printers.js';
 import printJobsRoutes from './routes/printJobs.js';
 import ordersRoutes from './routes/orders.js';
+import offlineSalesRoutes from './routes/offlineSales.js';
 import twinRoutes from './routes/twin.js';
 import decisionRecommendationsRoutes from './routes/decisionRecommendations.js';
 import reorderPolicyRecommendationRoutes from './routes/reorderPolicyRecommendation.js';
@@ -207,6 +208,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(printersRoutes);
   await app.register(printJobsRoutes);
   await app.register(ordersRoutes);
+  // OFF-1: closed (503) unless the owner-set OFFLINE_SALES_* configuration is present.
+  await app.register(offlineSalesRoutes, { offlineSales: config.offlineSales });
   await app.register(twinRoutes);
   await app.register(decisionRecommendationsRoutes);
   await app.register(reorderPolicyRecommendationRoutes, options.reorderRecommendation ?? {});
