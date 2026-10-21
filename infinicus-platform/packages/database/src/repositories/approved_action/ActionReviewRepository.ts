@@ -51,6 +51,10 @@ function rowToReview(row: Record<string, unknown>): ActionReviewPackage {
 export class ActionReviewRepository {
   async createReviewPackage(ctx: TenantContext, businessId: string, intakePackageId: string, reviewCode: string): Promise<ActionReviewPackage> {
     return withTenantTransaction(ctx, async (client) => {
+      // J-ROBUST-1: the referenced intake package must be visible in this scope (RLS = tenant and workspace) AND belong to this business. An unknown,
+      // foreign-tenant or other-business id gives the same NotFound, so an unresolvable reference is a 404 (never a foreign-key 500) and reveals nothing.
+      const intake = await client.query('SELECT 1 FROM approved_business_action.aba_intake_packages WHERE id = $1 AND business_id = $2', [intakePackageId, businessId]);
+      if (intake.rows.length === 0) throw new ActionReviewNotFoundError('ABAIntakePackage', intakePackageId);
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO approved_business_action.action_review_packages (tenant_id, workspace_id, business_id, intake_package_id, review_code)
          VALUES ($1,$2,$3,$4,$5) RETURNING *`,
