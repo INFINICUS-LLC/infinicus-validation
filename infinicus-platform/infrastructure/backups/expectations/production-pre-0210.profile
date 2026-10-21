@@ -7,13 +7,21 @@
 #     printers and print_jobs all 0 rows). See PHASE_W2_EXECUTION_RECORD_0202-0209.md.
 #   - tenants, users, businesses and the outbox split: carried from production-pre-0202.profile (restore proof PASS on 2026-10-21 for the W4 backup). They were
 #     NOT re-read after the API restarted; a restore proof of a post-window backup is what confirms them.
-# STATUS: NOT YET PROVEN. The first restore proof of a backup at head 0209 validates this file. If it fails on a traffic-dependent count, correct that line
+# STATUS: the ledger, fingerprint and the 15 count rules were checked on a restore of 2026-10-21 (all matched). Any further restore proof of a backup at head 0209 re-validates this file. If it fails on a traffic-dependent count, correct that line
 # through a reviewed change after reading the restored database; never loosen a rule to make a run pass.
 # The five empty-table rules describe a backup taken before the counter is used in production; once real orders or printers exist, make a new profile.
 # Only stable tables are asserted.
 ledger_count=209
 ledger_head=0209_create_print_jobs.sql
 schema_fingerprint=325158ea2a54cde9
+# The fingerprint of a DUMP-AND-RESTORED copy of this schema. Three CHECK constraints are written with nested parentheses, (a AND b) AND c, and
+# PostgreSQL re-parses them as one flat a AND b AND c on restore: platform.orders.orders_note_format (0207), business_operations.order_payments.
+# order_payments_reference_shape (0203) and business_operations.printers.printers_name_check (0208). The meaning is identical, the printed text is not,
+# so exactly two fingerprint rows change (business_operations|constraints and platform|constraints) and the combined hash becomes the value below.
+# Provenance: observed on 2026-10-21 by restoring the backup infinicus-production/2026-10-21/20261021T172939Z-daily on a disposable PostgreSQL 16, and
+# reproduced from a clean database built from the committed migrations (pg_dump then pg_restore); recomputing the committed reference-0209 fingerprint with
+# only those two rows replaced gives this exact value. restore-proof.sh accepts it ONLY while the manifest fingerprint equals schema_fingerprint above.
+restored_fingerprint=68407667a5618dc9
 
 count tenancy.tenants=16
 count identity.users=6

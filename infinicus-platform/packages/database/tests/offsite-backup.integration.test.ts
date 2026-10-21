@@ -426,6 +426,95 @@ esac`);
     await tpool.query(`DROP DATABASE bk_restore_${suffix}`);
   });
 
+  describe('restored_fingerprint: a dump and restore re-parses nested CHECK parentheses, (a AND b) AND c becomes a AND b AND c, without changing what they mean', () => {
+    const SRC2 = `bk_nest_${suffix}`;
+    let sink2: string;
+    let manifest2: string;
+    let manifestFp: string;
+    let restoredFp: string;
+    const proof2 = (profileLines: string[]) => {
+      const path = join(work, 'expectations-nest.profile');
+      writeFileSync(path, profileLines.join('\n') + '\n');
+      return sh('bash', [RESTORE, manifest2], restoreEnv({ BACKUP_FETCH_CMD: `cat '${sink2}/%KEY%'`, RESTORE_EXPECTATIONS: path, RESTORE_DB_NAME: `bk_nest_restore_${suffix}` }));
+    };
+    const base = (): string[] => ['ledger_count=2', 'ledger_head=0170_add_approved_action_source_recommendation.sql', `schema_fingerprint=${manifestFp}`, 'count tenancy.customers=1'];
+
+    beforeAll(async () => {
+      await pool.query(`CREATE DATABASE ${SRC2} OWNER ${ROLE}`);
+      const url2 = urlFor(admin.toString(), SRC2);
+      const s = new Pool({ connectionString: url2 });
+      await s.query(`CREATE TABLE public._migrations (id serial primary key, filename text not null unique)`);
+      await s.query(`INSERT INTO public._migrations (filename) VALUES ('0001_foundation.sql'), ('0170_add_approved_action_source_recommendation.sql')`);
+      await s.query(`CREATE SCHEMA tenancy AUTHORIZATION ${ROLE}`);
+      // BETWEEN inside AND is written on purpose, exactly as 0207 writes its note check: the source keeps the nested AND, a dump and restore flattens it
+      await s.query(`CREATE TABLE tenancy.customers (id serial primary key, name text not null, CONSTRAINT customers_name_shape CHECK (name IS NULL OR (char_length(name) BETWEEN 1 AND 80 AND name !~ 'x{9}')))`);
+      await s.query(`ALTER TABLE tenancy.customers OWNER TO ${ROLE}`);
+      await s.query(`INSERT INTO tenancy.customers (name) VALUES ('nested-check-row')`);
+      await s.end();
+      sink2 = join(work, 'sink2');
+      const b = sh('bash', [BACKUP, '--verify'], backupEnv({
+        BACKUP_LABEL: 'nested-check', BACKUP_STATE_DIR: join(work, 'state2'),
+        BACKUP_PG_DUMP_CMD: `pg_dump -d ${url2} --format=custom --compress=6`, BACKUP_PG_ROLES_CMD: `pg_dumpall -d ${url2} --roles-only`, BACKUP_PSQL_CMD: `psql ${url2} -X -At`,
+        BACKUP_SINK_CMD: `mkdir -p "$(dirname '${sink2}/%KEY%')" && cat > '${sink2}/%KEY%'`, BACKUP_FETCH_CMD: `cat '${sink2}/%KEY%'`,
+      }));
+      expect(b.status, b.stdout + b.stderr).toBe(0);
+      manifest2 = (readdirSync(sink2, { recursive: true }) as string[]).filter((f) => f.endsWith('manifest.json')).sort().pop() as string;
+      manifestFp = JSON.parse(readFileSync(join(sink2, manifest2), 'utf8')).schema_fingerprint;
+      expect(manifestFp).toMatch(/^[0-9a-f]{16}$/);
+    }, 180000);
+
+    afterAll(async () => { await pool?.query(`DROP DATABASE IF EXISTS ${SRC2}`).catch(() => undefined); });
+
+    it('without the reviewed line the restore FAILS the fingerprint comparison: the false negative this rule exists for', () => {
+      const r = proof2(base());
+      expect(r.stdout).toContain('RESTORE_PROOF=FAIL');
+      const m = /schema fingerprint differs after restore \(restored ([0-9a-f]{16}), manifest ([0-9a-f]{16})\)/.exec(r.stdout);
+      expect(m, r.stdout).not.toBeNull();
+      expect(m![2]).toBe(manifestFp);
+      expect(m![1]).not.toBe(manifestFp);
+      restoredFp = m![1];
+      expect(r.status).not.toBe(0);
+    });
+
+    it('with the reviewed restored_fingerprint (and the manifest fingerprint pinned as schema_fingerprint) it PASSES and says why', () => {
+      const r = proof2([...base(), `restored_fingerprint=${restoredFp}`]);
+      expect(r.stdout + r.stderr).toContain('RESTORE_PROOF=PASS');
+      expect(r.stdout).toContain('is the reviewed dump-and-restore form');
+      expect(r.status).toBe(0);
+    });
+
+    it('a restored_fingerprint that is not the one a restore produces still FAILS', () => {
+      const r = proof2([...base(), 'restored_fingerprint=0000000000000000']);
+      expect(r.stdout).toMatch(/RESTORE_PROOF=FAIL \(schema fingerprint differs after restore/);
+      expect(r.status).not.toBe(0);
+    });
+
+    it('the source end stays pinned: a manifest fingerprint that differs from the profile schema_fingerprint FAILS even with the right restored_fingerprint', () => {
+      const r = proof2(base().map((l) => (l.startsWith('schema_fingerprint=') ? 'schema_fingerprint=1111111111111111' : l)).concat(`restored_fingerprint=${restoredFp}`));
+      expect(r.stdout).toMatch(/RESTORE_PROOF=FAIL \(schema fingerprint differs after restore/);
+      expect(r.status).not.toBe(0);
+    });
+
+    it('a restored_fingerprint without a schema_fingerprint in the profile FAILS (nothing pins the source)', () => {
+      const r = proof2(base().filter((l) => !l.startsWith('schema_fingerprint=')).concat(`restored_fingerprint=${restoredFp}`));
+      expect(r.stdout).toMatch(/RESTORE_PROOF=FAIL \(schema fingerprint differs after restore/);
+      expect(r.status).not.toBe(0);
+    });
+
+    it('a malformed restored_fingerprint line is rejected by the strict profile grammar', () => {
+      const r = proof2([...base(), 'restored_fingerprint=not-a-fingerprint']);
+      expect(r.stdout).toMatch(/RESTORE_PROOF=FAIL \(invalid line in the expectations profile: restored_fingerprint=not-a-fingerprint\)/);
+      expect(r.status).toBe(2);
+    });
+
+    it('the restored form does not excuse other mismatches: a wrong row count still FAILS', () => {
+      const r = proof2([...base().filter((l) => !l.startsWith('count ')), 'count tenancy.customers=7', `restored_fingerprint=${restoredFp}`]);
+      expect(r.stdout).toMatch(/count tenancy\.customers restored 1, expected 7/);
+      expect(r.stdout).toContain('RESTORE_PROOF=FAIL');
+      expect(r.status).not.toBe(0);
+    });
+  });
+
   describe('H-5: fail-closed restore target, protected role restoration, private temporary files (synthetic data only)', () => {
     const validate = (url: string, env: Record<string, string> = {}) => sh('bash', [RESTORE, '--validate-target'], { RESTORE_ADMIN_URL: url, ...env });
     const withHost = (host: string): string => targetMaint.replace('127.0.0.1', host);

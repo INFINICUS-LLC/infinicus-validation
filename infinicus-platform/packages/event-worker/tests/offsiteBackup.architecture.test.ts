@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const DOCS = resolve(__dirname, '../../../../docs/architecture/reconciliation');
@@ -149,6 +149,37 @@ describe('off-VM backup scripts: structure and safety', () => {
       'count audit.audit_events=0', 'count business_operations.inventory_movements=0', 'count business_operations.purchase_receipts=0',
       'count business_operations.inventory_balances=0', 'count business_operations.purchase_orders=0', 'count business_operations.purchase_order_line_items=0',
     ]);
+  });
+
+  it('restore-proof: a reviewed restored_fingerprint is the ONLY second form accepted, and only while the manifest fingerprint equals the profile schema_fingerprint', () => {
+    expect(restore).toMatch(/\^restored_fingerprint=\(\[0-9a-f\]\{16\}\)\$/);
+    // both ends pinned: restored == profile restored_fingerprint AND manifest == profile schema_fingerprint, both non-empty
+    expect(restore).toMatch(/-n "\$E_RFP" && -n "\$E_FP" && "\$R_FP" == "\$E_RFP" && "\$M_FINGERPRINT" == "\$E_FP"/);
+    // anything else still fails closed
+    expect(restore).toMatch(/else\s+fail "schema fingerprint differs after restore \(restored \$R_FP, manifest \$M_FINGERPRINT\)"/);
+    // the profile comparison accepts the restored form too, but never a wildcard
+    expect(restore).toMatch(/-z "\$E_FP" \|\| "\$R_FP" == "\$E_FP" \|\| \( -n "\$E_RFP" && "\$R_FP" == "\$E_RFP" \)/);
+  });
+
+  it('every committed profile that carries a restored_fingerprint also carries a different schema_fingerprint; the 0209 profile pins both known values', () => {
+    const dir = join(BACKUPS, 'expectations');
+    let withRestored = 0;
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.profile'))) {
+      const lines = readFileSync(join(dir, f), 'utf8').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+      const rfp = lines.filter((l) => l.startsWith('restored_fingerprint='));
+      const sfp = lines.filter((l) => l.startsWith('schema_fingerprint='));
+      expect(rfp.length, f).toBeLessThanOrEqual(1);
+      if (rfp.length === 0) continue;
+      withRestored += 1;
+      expect(rfp[0], f).toMatch(/^restored_fingerprint=[0-9a-f]{16}$/);
+      expect(sfp, f).toHaveLength(1);
+      expect(rfp[0].split('=')[1], f).not.toBe(sfp[0].split('=')[1]);
+    }
+    expect(withRestored).toBeGreaterThanOrEqual(1);
+    const p0210 = readFileSync(join(dir, 'production-pre-0210.profile'), 'utf8').split('\n').map((l) => l.trim());
+    expect(p0210).toContain('ledger_head=0209_create_print_jobs.sql');
+    expect(p0210).toContain('schema_fingerprint=325158ea2a54cde9');
+    expect(p0210).toContain('restored_fingerprint=68407667a5618dc9');
   });
 
   it('the plan states the owner ruling: no lifecycle deletion until retention is approved; any expiry value is a proposal only; Object Lock default is owner-configurable', () => {
