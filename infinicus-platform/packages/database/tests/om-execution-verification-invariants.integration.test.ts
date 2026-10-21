@@ -9,6 +9,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { createPool, closePool, withTenantTransaction, type TenantContext } from '../src/client.js';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 
 const run = !!process.env.DATABASE_URL;
 const OM = 'outcome_monitoring';
@@ -17,6 +18,7 @@ const uc = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice
 const DIGEST = `sha256:${'c'.repeat(64)}`;
 
 let admin: Pool;
+let appPool: Pool;
 interface World { ctx: TenantContext; bizId: string }
 async function world(): Promise<World> {
   const tenantId = randomUUID(); const workspaceId = randomUUID(); const bizId = randomUUID();
@@ -49,9 +51,10 @@ describe.runIf(run)('OM-EVID-1 execution verification table - database-enforced 
   beforeAll(async () => {
     createPool({ connectionString: process.env.DATABASE_URL! });
     admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
+    appPool = new Pool({ connectionString: process.env.DATABASE_URL });
     a = await world(); b = await world();
   });
-  afterAll(async () => { await admin?.end(); await closePool(); });
+  afterAll(async () => { await admin?.end(); await appPool?.end(); await closePool(); });
 
   it('a genuine verification is accepted: EXECUTION_VERIFIED with PENDING (applied) and INCONCLUSIVE (no change)', async () => {
     expect((await insert(a, row())).rows).toHaveLength(1);
@@ -102,8 +105,9 @@ describe.runIf(run)('OM-EVID-1 execution verification table - database-enforced 
       await expect(withTenantTransaction(a.ctx, (c) => c.query(sql, [id]))).rejects.toMatchObject({ code: '23000' });
       await expect(admin.query(sql, [id])).rejects.toMatchObject({ code: '23000' });
     }
-    await expect(withTenantTransaction(a.ctx, (c) => c.query(`TRUNCATE ${T}`))).rejects.toBeTruthy();
-    await expect(admin.query(`TRUNCATE ${T}`)).rejects.toMatchObject({ code: '23000' });
+    // TRUNCATE goes through the shared helper (bounded lock wait) so a refused statement can never convoy other test files on the shared database
+    await expect(truncateRefusal(appPool, `TRUNCATE ${T}`)).rejects.toThrow();
+    await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(/append-only/);
     const now = (await admin.query(`SELECT outcome_state, execution_outcome FROM ${T} WHERE id=$1`, [id])).rows[0];
     expect(now).toEqual({ outcome_state: 'OUTCOME_PENDING', execution_outcome: 'SUCCEEDED' });
   });
