@@ -91,10 +91,25 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # CI-HEALTH-1: the three security gates below run to completion and report their own result, but do not stop the job here. Before this change
+      # a failing dependency scan ended the job and the migration gate, grants, tests and image build were skipped (all of 20 Oct 2026's main runs
+      # showed only the scan, with nothing about the code). The job is still failed by "Enforce security gates" at the end, so enforcement is unchanged:
+      # a failing gate fails `validate`, which blocks `build-and-smoke-test-image` exactly as before. continue-on-error is used ONLY on these gates.
       - name: Check for browser secret leakage
+        id: browser_secrets
+        continue-on-error: true
         run: node infrastructure/deployment/scripts/check-no-browser-secrets.mjs
 
+      - name: Dependency allowlist compliance (offline; fails on an expired temporary exception)
+        id: allowlist
+        continue-on-error: true
+        run: |
+          node --test infrastructure/deployment/scripts/check-dependency-vulnerabilities.test.mjs
+          node infrastructure/deployment/scripts/check-dependency-vulnerabilities.mjs --allowlist-only
+
       - name: Dependency vulnerability scan
+        id: dependency_scan
+        continue-on-error: true
         run: node infrastructure/deployment/scripts/check-dependency-vulnerabilities.mjs
 
       - name: Create least-privilege application role
@@ -150,6 +165,34 @@ jobs:
           name: test-output
           path: ${{ runner.temp }}/test-output.log
           retention-days: 14
+
+      # CI-HEALTH-1: re-applies the three gates above. Runs even when a later step failed, so the summary always lists every gate's result next to the
+      # lint, build, migration and test results. It never turns a failure into a pass: any failed gate fails the job (a gate that was skipped only
+      # because an earlier step had already failed the job adds nothing).
+      - name: Enforce security gates
+        if: ${{ !cancelled() }}
+        env:
+          BROWSER_SECRETS: ${{ steps.browser_secrets.outcome }}
+          ALLOWLIST: ${{ steps.allowlist.outcome }}
+          DEPENDENCY_SCAN: ${{ steps.dependency_scan.outcome }}
+        run: |
+          {
+            echo "### Security gates"
+            echo "| Gate | Result |"
+            echo "|---|---|"
+            echo "| Browser secret leakage | ${BROWSER_SECRETS} |"
+            echo "| Dependency allowlist compliance | ${ALLOWLIST} |"
+            echo "| Dependency vulnerability scan | ${DEPENDENCY_SCAN} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          failed=0
+          for gate in "browser secret leakage:${BROWSER_SECRETS}" "dependency allowlist compliance:${ALLOWLIST}" "dependency vulnerability scan:${DEPENDENCY_SCAN}"; do
+            name="${gate%%:*}"; outcome="${gate##*:}"
+            if [ "$outcome" = "failure" ] || [ "$outcome" = "cancelled" ]; then
+              echo "::error title=Security gate failed::${name} -> ${outcome}"
+              failed=1
+            fi
+          done
+          exit $failed
 
   build-and-smoke-test-image:
     needs: validate

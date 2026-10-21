@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, LogController } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -90,7 +90,9 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   // "trust everything"). Behind Caddy it must be set, otherwise request.ip is
   // the proxy's address for every client and all clients share one rate-limit
   // bucket; set too wide, a client could forge its address.
-  const app = Fastify({ logger: { level: config.logLevel }, disableRequestLogging: true, trustProxy: resolveTrustProxy(config.trustProxy) });
+  // Per-request log lines stay off (the correlation-id plugin and the audit logger carry the request record). Fastify 5.12 deprecates the top-level
+  // `disableRequestLogging` option (FSTDEP023, removed in Fastify 6); the same setting now lives on the LogController. Behaviour is unchanged.
+  const app = Fastify({ logger: { level: config.logLevel }, logController: new LogController({ disableRequestLogging: true }), trustProxy: resolveTrustProxy(config.trustProxy) });
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
