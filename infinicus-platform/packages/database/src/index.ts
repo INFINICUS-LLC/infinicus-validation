@@ -170,7 +170,7 @@ export type {
   Product, CreateProductInput, UpdateProductInput,
   Order, OrderLineItem, OrderOperationalStatus, CreateOrderInput, AddLineItemInput,
   ExecutionCapabilityActivation, RecordActivationInput, ActivationState, ClaimForExecution, ClaimState, ClaimAwaitingFilter, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
-  ExecutionOutcome, MutationResult, AuthorityVerdictRecord, AttemptOutcome,
+  ExecutionOutcome, MutationResult, AuthorityVerdictRecord, AttemptOutcome, ExecutionHealthSnapshot, OpenClaimHealthRow, TerminalHealthRow,
   IntakeOutcome, IntakeEvaluation, IntakeRequest, IntakeResult, IntakeAttemptInput, AuthorizedActionReceipt, AuthorizedActionClaim,
   InventoryPolicyEvaluation, InventoryPolicyEvaluationSubject, InventoryPolicyEvaluationDimension, InventoryPolicyEvaluationResult,
   RecordInventoryPolicyEvaluationInput, EvaluationJson,

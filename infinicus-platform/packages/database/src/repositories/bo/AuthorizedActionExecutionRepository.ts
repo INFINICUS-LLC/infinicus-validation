@@ -136,6 +136,36 @@ export interface ClaimAwaitingExecution {
   lastAttemptedAt: string | null;
 }
 
+/** One claim in a business that has no terminal execution row yet (read-only health view; carries no package body). */
+export interface OpenClaimHealthRow {
+  claimId: string;
+  claimedAt: string;
+  attempts: number;
+  lastAttemptedAt: string | null;
+  lastAttemptReasonCode: string | null;
+  actionType: { code: string; schemaVersion: string } | null;
+}
+
+/** Terminal execution counts for a business, grouped by outcome and reason code. */
+export interface TerminalHealthRow {
+  outcome: ExecutionOutcome;
+  reasonCode: string | null;
+  total: number;
+  /** Rows recorded within the window passed to the snapshot. */
+  inWindow: number;
+  latestRecordedAt: string;
+}
+
+/** Raw, unclassified facts for the execution-health view. Thresholds are application policy and are applied by the caller, not here. */
+export interface ExecutionHealthSnapshot {
+  /** The database clock when the snapshot was read. */
+  databaseNow: string;
+  openClaimTotal: number;
+  /** Oldest first, bounded. */
+  openClaims: OpenClaimHealthRow[];
+  terminal: TerminalHealthRow[];
+}
+
 const iso = (v: unknown): string => (v instanceof Date ? v.toISOString() : String(v));
 const isoOrNull = (v: unknown): string | null => (v === null || v === undefined ? null : iso(v));
 
@@ -303,6 +333,53 @@ export class AuthorizedActionExecutionRepository {
         [bounded, filter.businessId ?? null, filter.actionType?.code ?? null, filter.actionType?.schemaVersion ?? null],
       );
       return r.rows.map((x) => ({ claimId: x.id as string, businessId: x.business_id as string, claimedAt: x.claimed_at as string, attempts: x.attempts as number, lastAttemptedAt: isoOrNull(x.last_attempted_at) }));
+    });
+  }
+
+  /**
+   * Read-only facts about the authorized-action claims of ONE business (RLS-scoped to the caller): claims that have no terminal execution yet
+   * (with their attempt state) and terminal outcomes grouped by reason. No lock, no write, no package body. The caller classifies; nothing about
+   * "stranded" or "due" is decided here.
+   */
+  async executionHealthSnapshot(ctx: TenantContext, businessId: string, opts: { openLimit: number; windowSeconds: number }): Promise<ExecutionHealthSnapshot> {
+    const limit = Math.max(1, Math.min(200, Math.trunc(opts.openLimit)));
+    const windowSeconds = Math.max(1, Math.trunc(opts.windowSeconds));
+    if (!UUID.test(businessId)) return { databaseNow: new Date().toISOString(), openClaimTotal: 0, openClaims: [], terminal: [] };
+    return withTenantTransaction(ctx, async (client) => {
+      const now = await client.query<Json>(`SELECT to_char(date_trunc('milliseconds', clock_timestamp()) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS now`);
+      const open = await client.query<Json>(
+        `SELECT c.id,
+                to_char(date_trunc('milliseconds', c.claimed_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS claimed_at,
+                (SELECT count(*)::int FROM ${S}.authorized_action_execution_attempts a WHERE a.claim_id = c.id) AS attempts,
+                to_char(date_trunc('milliseconds', (SELECT max(a.attempted_at) FROM ${S}.authorized_action_execution_attempts a WHERE a.claim_id = c.id)) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS last_attempted_at,
+                (SELECT a.reason_code FROM ${S}.authorized_action_execution_attempts a WHERE a.claim_id = c.id ORDER BY a.attempt_number DESC LIMIT 1) AS last_reason,
+                r.package #>> '{action,type,code}' AS action_code, r.package #>> '{action,type,schemaVersion}' AS action_version,
+                count(*) OVER ()::int AS total
+           FROM ${S}.authorized_action_claims c JOIN ${S}.authorized_action_receipts r ON r.id = c.receipt_id
+          WHERE c.business_id = $1 AND NOT EXISTS (SELECT 1 FROM ${S}.authorized_action_executions e WHERE e.claim_id = c.id)
+          ORDER BY c.claimed_at ASC LIMIT $2`,
+        [businessId, limit],
+      );
+      const term = await client.query<Json>(
+        `SELECT outcome, reason_code, count(*)::int AS total,
+                count(*) FILTER (WHERE recorded_at >= clock_timestamp() - make_interval(secs => $2))::int AS in_window,
+                to_char(date_trunc('milliseconds', max(recorded_at)) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS latest
+           FROM ${S}.authorized_action_executions WHERE business_id = $1
+          GROUP BY outcome, reason_code ORDER BY outcome, reason_code NULLS FIRST`,
+        [businessId, windowSeconds],
+      );
+      return {
+        databaseNow: now.rows[0].now as string,
+        openClaimTotal: open.rows.length > 0 ? (open.rows[0].total as number) : 0,
+        openClaims: open.rows.map((x) => ({
+          claimId: x.id as string, claimedAt: x.claimed_at as string, attempts: x.attempts as number, lastAttemptedAt: isoOrNull(x.last_attempted_at),
+          lastAttemptReasonCode: (x.last_reason as string | null) ?? null,
+          actionType: x.action_code ? { code: x.action_code as string, schemaVersion: x.action_version as string } : null,
+        })),
+        terminal: term.rows.map((x) => ({
+          outcome: x.outcome as ExecutionOutcome, reasonCode: (x.reason_code as string | null) ?? null, total: x.total as number, inWindow: x.in_window as number, latestRecordedAt: x.latest as string,
+        })),
+      };
     });
   }
 
