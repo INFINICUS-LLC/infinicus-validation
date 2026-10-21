@@ -254,6 +254,17 @@ describe.runIf(run)('OFF-1 POST /v1/businesses/:businessId/offline-sales - live 
       expect([403, 404]).toContain(r.statusCode);
       expect(await saleCount(a.bizId)).toBe(0); expect(await orderCount(a.bizId)).toBe(0);
     });
+    it('a business in another workspace of the same tenant is not reachable (404) and creates nothing', async () => {
+      const a = await setup(openApp);
+      const otherWs = randomUUID(); const otherBiz = randomUUID(); const sfx = uc('w');
+      await adminPool.query(`INSERT INTO tenancy.workspaces (id, tenant_id, name, slug, status) VALUES ($1,$2,'OS API WS2',$3,'active')`, [otherWs, a.ctx.tenantId, `osa-ws2-${sfx}`]);
+      await adminPool.query(`INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'ZZ OS Biz 2',$4,'active')`, [otherBiz, a.ctx.tenantId, otherWs, uc('osa-biz2')]);
+      const p = await product(a, 1);
+      const r = await post(openApp, a, body(a, [[p, 1, 1000]]), undefined, otherBiz);
+      expect(r.statusCode).toBe(404);
+      expect(await saleCount(otherBiz)).toBe(0); expect(await orderCount(otherBiz)).toBe(0);
+      expect(await saleCount(a.bizId)).toBe(0);
+    });
     it('the same clientSaleId used by two tenants is two independent sales', async () => {
       const a = await setup(openApp); const b = await setup(openApp);
       const pa = await product(a, 1); const pb = await product(b, 1);
