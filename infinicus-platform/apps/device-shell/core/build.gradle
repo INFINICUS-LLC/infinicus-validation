@@ -1,0 +1,28 @@
+// The platform-independent logic of the INFINICUS device shell (POS-8d-2b): routing rule, printer address safety, request parsing, TCP printing.
+// Plain Java, no Android dependency, so it is built and tested on any machine (`gradle test`) and its sources are compiled into the Android app
+// (android/app/build.gradle adds this source directory). Keep the code Java 17-compatible.
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    mavenCentral()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
+    options.encoding = 'UTF-8'
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

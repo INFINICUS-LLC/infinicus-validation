@@ -1,0 +1,20 @@
+{
+  "name": "@infinicus/device-shell",
+  "version": "0.0.1",
+  "private": true,
+  "description": "INFINICUS native device shell (Capacitor, Android): carries the static-export counter and provides the window.InfinicusDevice printing bridge",
+  "scripts": {
+    "test": "vitest run",
+    "build:web": "pnpm --filter @infinicus/web run build:export",
+    "sync": "cap sync android",
+    "prepare:android": "pnpm run build:web && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "vitest": "^1.6.0"
+  }
+}

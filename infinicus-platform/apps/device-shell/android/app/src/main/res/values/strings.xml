@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">INFINICUS Counter</string>
+    <string name="title_activity_main">INFINICUS Counter</string>
+    <string name="package_name">com.infinicus.counter</string>
+    <string name="custom_url_scheme">com.infinicus.counter</string>
+</resources>

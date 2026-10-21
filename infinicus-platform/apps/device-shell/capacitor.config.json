@@ -1,0 +1,13 @@
+{
+  "appId": "com.infinicus.counter",
+  "appName": "INFINICUS Counter",
+  "webDir": "../web/out",
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  }
+}

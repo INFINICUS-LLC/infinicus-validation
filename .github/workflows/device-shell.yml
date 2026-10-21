@@ -1,0 +1,77 @@
+name: INFINICUS Device Shell (Android)
+
+# POS-8d-2b: builds and tests the native device shell (Capacitor, Android) that carries the static-export counter.
+#   - the platform-independent shell logic (plain Java) is tested on its own;
+#   - the shell's script and guard tests run;
+#   - the counter is exported, synced into the Android project, and the debug app is assembled.
+# It only BUILDS: nothing is signed, published or deployed, and no secret is used. Release signing is done by the owner, outside CI.
+# Hardware behaviour (a real printer, a real tablet) is NOT tested here; see docs/implementation-queue/BLOCK-POS-8D2B-ANDROID-SHELL.md.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+      - "claude/**"
+    paths:
+      - "infinicus-platform/apps/device-shell/**"
+      - "infinicus-platform/apps/web/**"
+      - ".github/workflows/device-shell.yml"
+  pull_request:
+    paths:
+      - "infinicus-platform/apps/device-shell/**"
+      - "infinicus-platform/apps/web/**"
+      - ".github/workflows/device-shell.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: infinicus-platform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: infinicus-platform/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: infinicus-platform/pnpm-lock.yaml
+
+      # Capacitor's Android library is built for Java 21.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Shell logic tests (plain Java, no Android needed)
+        run: ./apps/device-shell/android/gradlew -p apps/device-shell/core test --no-daemon --console=plain
+
+      - name: Shell script and guard tests
+        run: pnpm --filter @infinicus/device-shell test
+
+      - name: Export the counter (the files the app carries)
+        run: pnpm --filter @infinicus/web run build:export
+
+      - name: Sync the export into the Android project
+        run: pnpm --filter @infinicus/device-shell exec cap sync android
+
+      - name: Accept Android SDK licences
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Assemble the debug app and run its unit tests
+        working-directory: infinicus-platform/apps/device-shell/android
+        run: ./gradlew assembleDebug testDebugUnitTest --no-daemon --console=plain
