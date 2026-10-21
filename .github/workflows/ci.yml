@@ -91,6 +91,11 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # POS-8d-2a: the device shell bundles the counter as static files. This proves the web app still exports (every business screen under the
+      # placeholder id, no api folder, no source maps, no baked business id). Web only; no deploy.
+      - name: Static export check (counter bundle for the device shell)
+        run: pnpm --filter @infinicus/web run build:export
+
       # CI-HEALTH-1: the three security gates below run to completion and report their own result, but do not stop the job here. Before this change
       # a failing dependency scan ended the job and the migration gate, grants, tests and image build were skipped (all of 20 Oct 2026's main runs
       # showed only the scan, with nothing about the code). The job is still failed by "Enforce security gates" at the end, so enforcement is unchanged:

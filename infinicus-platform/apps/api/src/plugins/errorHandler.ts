@@ -35,6 +35,22 @@ export default fp(async function errorHandlerPlugin(app: FastifyInstance) {
       });
     }
 
+    // J-ROBUST-1 — last-resort boundary for a PostgreSQL foreign-key violation (23503) that no repository classified. Routes are expected to
+    // resolve their references first (a NotFound), so this is a safety net, never a source of detail: the response is generic and carries no
+    // constraint, table, column, key or value. A reference that is not present is a 404 (same body for an unknown and a foreign-tenant id);
+    // a row that is still referenced is a 409. It is logged server-side with the correlation id, but is not a server fault, so it is not
+    // recorded as an error event.
+    if (error.code === '23503') {
+      const detail = String((error as { detail?: unknown }).detail ?? '');
+      const stillReferenced = /is still referenced from table/i.test(detail);
+      request.log.warn({ err: error, correlationId }, 'foreign-key violation classified at the API boundary');
+      return reply.status(stillReferenced ? 409 : 404).send({
+        error: stillReferenced
+          ? { code: 'ConflictError', message: 'The request conflicts with existing related data.', correlationId }
+          : { code: 'NotFoundError', message: 'A referenced resource was not found.', correlationId },
+      });
+    }
+
     // BUILD-26 — a well-behaved Fastify plugin (e.g. @fastify/rate-limit)
     // throws a plain Error with `.statusCode` set to a legitimate 4xx
     // value but `.name` left as the generic "Error" — statusCodeFor()

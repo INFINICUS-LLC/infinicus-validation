@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { useParams } from 'next/navigation';
-import { z } from 'zod';
+import { useBusinessId } from '../use-business-id';
 import { NEW_PRINTER, PrintersController, type PrinterDraft, type PrintersState } from '../../../../../lib/client/printers';
 import { StateNotice } from '../../../state-notice';
 import { useAuth } from '../../../auth-provider';
@@ -10,14 +9,12 @@ import { useRequireWorkspace } from '../../../use-require-workspace';
 import { useOnline } from '../counter/connection';
 import { PrintersView } from './printers-view';
 
-const idSchema = z.string().uuid();
 const EMPTY: PrintersState = { printers: [], jobs: [], loaded: false, busy: true, message: null, notice: null };
 
 export default function PrintersPage() {
   const { state, api } = useAuth();
   const { scope } = useRequireWorkspace();
-  const params = useParams<{ businessId: string }>();
-  const businessId = idSchema.safeParse(params.businessId).success ? params.businessId : null;
+  const businessId = useBusinessId();
   const controller = useMemo(() => (api && scope && businessId ? new PrintersController(api, scope, businessId) : null), [api, scope, businessId]);
   const printers = useSyncExternalStore(
     (listener) => (controller ? controller.subscribe(listener) : () => undefined),

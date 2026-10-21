@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
-import { useParams } from 'next/navigation';
-import { z } from 'zod';
+import { useBusinessId } from '../use-business-id';
 import { SalesHistoryController, type SalesHistoryState } from '../../../../../lib/client/salesHistory';
 import { StateNotice } from '../../../state-notice';
 import { useAuth } from '../../../auth-provider';
@@ -10,14 +9,12 @@ import { useRequireWorkspace } from '../../../use-require-workspace';
 import { BusinessReceipt } from '../counter/business-receipt';
 import { SalesHistoryView } from './sales-view';
 
-const idSchema = z.string().uuid();
 const EMPTY: SalesHistoryState = { orders: [], busy: true, message: null, hasOlder: false, hasNewer: false, selectedId: null, receipt: null };
 
 export default function SalesPage() {
   const { state, api } = useAuth();
   const { scope } = useRequireWorkspace();
-  const params = useParams<{ businessId: string }>();
-  const businessId = idSchema.safeParse(params.businessId).success ? params.businessId : null;
+  const businessId = useBusinessId();
   const history = useMemo(() => api && scope && businessId ? new SalesHistoryController(api, scope, businessId) : null, [api, scope, businessId]);
   const historyState = useSyncExternalStore(
     listener => history ? history.subscribe(listener) : () => undefined,
