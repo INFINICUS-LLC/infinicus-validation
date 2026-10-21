@@ -38,6 +38,15 @@ export { RegisterSessionRepository, RegisterAmountError } from './RegisterSessio
 export type { RegisterSession, RegisterSessionSummary, OpenRegisterSessionInput, CloseRegisterSessionInput } from './RegisterSessionRepository.js';
 
 export { OrderRepository } from './OrderRepository.js';
+export { OfflineSaleRepository } from './OfflineSaleRepository.js';
+export type { OfflineSaleResult } from './OfflineSaleRepository.js';
+export {
+  OFFLINE_MAX_AGE_SECONDS, MAX_OFFLINE_LINES, MAX_OFFLINE_TENDERS, MAX_OFFLINE_QUANTITY, OfflineSaleRequestError,
+  validateOfflineSaleRequest, requestDigest, planOfflineSale, parseScaled4, unitPriceMinor, minorToMajor, exponentOf,
+} from './offlineSale.js';
+export type {
+  OfflineSaleOutcome, ReviewReason, OfflineSaleLineInput, OfflineSaleTenderInput, OfflineSaleRequest, OfflineSaleConfig, ServerProduct, PlannedLine, LineDetail, OfflineSalePlan,
+} from './offlineSale.js';
 export type { Order, OrderLineItem, OrderPayment, OrderOperationalStatus, CreateOrderInput, AddLineItemInput } from './OrderRepository.js';
 export { planPayments, PaymentError, TENDER_METHODS, MAX_PAYMENTS_PER_ORDER, PAYMENT_REFERENCE_MAX } from './tender.js';
 export type { PaymentInput, PlannedPayment, TenderMethod } from './tender.js';
