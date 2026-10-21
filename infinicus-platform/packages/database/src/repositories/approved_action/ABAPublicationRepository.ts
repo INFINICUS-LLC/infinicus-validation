@@ -57,6 +57,11 @@ export class ABAPublicationRepository {
       );
       if (existing.rows.length > 0) return { package: rowToPackage(existing.rows[0]), idempotentReplay: true };
 
+      // J-ROBUST-1: the approved action must be visible in this scope (RLS) and belong to this business; unknown, foreign-tenant and other-business ids
+      // are indistinguishable (NotFound, 404), so a dangling reference never reaches the foreign key as a 500. A replay above is unaffected.
+      const action = await client.query('SELECT 1 FROM approved_business_action.approved_actions WHERE id = $1 AND business_id = $2', [approvedActionId, businessId]);
+      if (action.rows.length === 0) throw new NotFoundError('ApprovedAction', approvedActionId);
+
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO approved_business_action.aba_publication_packages
            (tenant_id, workspace_id, business_id, approved_action_id, package_code, target_layer, target_block, idempotency_key, publication_status)
