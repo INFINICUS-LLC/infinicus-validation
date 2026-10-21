@@ -8,13 +8,23 @@
 // (GHSA-only), so it can't be allowlisted that way — this script
 // matches on the advisory's github_advisory_id instead, precisely.
 //
-// Usage: node check-dependency-vulnerabilities.mjs
-// Exit code: 0 if every finding is allowlisted; 1 otherwise (with a
-// printed list of the un-allowlisted findings).
+// Usage: node check-dependency-vulnerabilities.mjs [--allowlist-only]
+// Exit code: 0 if every finding is allowlisted and no allowlist entry has
+// expired; 1 otherwise (with a printed list of the problems).
+//
+// CI-HEALTH-1: a TEMPORARY entry must carry `expires` (YYYY-MM-DD, the
+// "review by" date, inclusive). From the day after, the entry no longer
+// allowlists anything and the check fails, so a time-boxed risk acceptance
+// cannot silently become permanent policy. `--allowlist-only` validates the
+// allowlist itself (no network, no `pnpm audit`) so the compliance result is
+// deterministic and visible even when the audit step cannot reach the
+// registry. The date is the real UTC date; there is deliberately no way to
+// override it from the command line or the environment.
 
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
-const ALLOWLIST = [
+export const ALLOWLIST = [
   {
     githubAdvisoryId: 'GHSA-5xrq-8626-4rwp',
     package: 'vitest',
@@ -73,12 +83,14 @@ const ALLOWLIST = [
   {
     githubAdvisoryId: 'GHSA-5gmw-xhrv-c9v3',
     package: 'tinypool',
+    expires: '2026-11-06',
     reason:
       'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
   },
   {
     githubAdvisoryId: 'GHSA-85c8-ppgw-ccpr',
     package: 'tinypool',
+    expires: '2026-11-06',
     reason:
       'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
   },
@@ -90,24 +102,107 @@ const ALLOWLIST = [
   {
     githubAdvisoryId: 'GHSA-698v-4r3x-3vcv',
     package: 'vite',
+    expires: '2026-11-06',
     reason:
       'TEMPORARY (issue #24, review by 2026-11-06). launch-editor `escapeCmdArgs()` omits % escaping on Windows (moderate); only relevant to the open-in-editor route of the vite dev server, and only on Windows. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
   },
   {
     githubAdvisoryId: 'GHSA-r825-w8mm-5pxw',
     package: 'vite',
+    expires: '2026-11-06',
     reason:
       'TEMPORARY (issue #24, review by 2026-11-06). launch-editor editor CLI flag misinterpretation (moderate); only relevant to the open-in-editor route of the vite dev server. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
   },
   {
     githubAdvisoryId: 'GHSA-587h-7wmj-h5pm',
     package: 'vite',
+    expires: '2026-11-06',
     reason:
       'TEMPORARY (issue #24, review by 2026-11-06). launch-editor `fs.existsSync()` existence check bypass on Windows (high); only relevant to the open-in-editor route of the vite dev server, and only on Windows. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
   },
 ];
 
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export function todayUtc(now = new Date()) {
+  return now.toISOString().slice(0, 10);
+}
+
+function isRealDate(value) {
+  if (typeof value !== 'string' || !DATE_PATTERN.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+/**
+ * Pure: checks the allowlist itself against a UTC date (YYYY-MM-DD).
+ * `expired`: TEMPORARY entries whose review-by date has passed (the date itself is still valid).
+ * `invalid`: structural problems (missing/malformed expiry on a TEMPORARY entry, expiry not stated in the reason, duplicate advisory ids).
+ * `active`: the entries that may allowlist an advisory today (everything except `expired`).
+ */
+export function evaluateAllowlist(allowlist, today) {
+  if (!isRealDate(today)) throw new Error(`today must be a real YYYY-MM-DD date, got ${String(today)}`);
+  const expired = [];
+  const invalid = [];
+  const active = [];
+  const seen = new Set();
+  for (const entry of allowlist) {
+    const id = entry.githubAdvisoryId;
+    if (seen.has(id)) invalid.push({ entry, problem: `duplicate allowlist entry for ${id}` });
+    seen.add(id);
+    const temporary = typeof entry.reason === 'string' && entry.reason.startsWith('TEMPORARY');
+    if (entry.expires === undefined) {
+      if (temporary) invalid.push({ entry, problem: `${id} is TEMPORARY but has no 'expires' date` });
+      active.push(entry);
+      continue;
+    }
+    if (!isRealDate(entry.expires)) {
+      invalid.push({ entry, problem: `${id} has an invalid 'expires' (${String(entry.expires)}); expected a real YYYY-MM-DD date` });
+      continue;
+    }
+    if (temporary && !entry.reason.includes(entry.expires)) {
+      invalid.push({ entry, problem: `${id}: the reason must state the same review-by date as 'expires' (${entry.expires})` });
+    }
+    if (entry.expires < today) expired.push(entry);
+    else active.push(entry);
+  }
+  return { expired, invalid, active };
+}
+
+/** Pure: splits audit advisories by whether an ACTIVE (unexpired) allowlist entry covers them. */
+export function classifyAdvisories(advisories, active) {
+  const ids = new Set(active.map((entry) => entry.githubAdvisoryId));
+  return {
+    allowlisted: advisories.filter((a) => ids.has(a.github_advisory_id)),
+    unallowlisted: advisories.filter((a) => !ids.has(a.github_advisory_id)),
+  };
+}
+
+function reportAllowlistProblems({ expired, invalid }, today) {
+  for (const { problem } of invalid) console.error(`ALLOWLIST INVALID: ${problem}`);
+  for (const entry of expired) {
+    console.error(
+      `ALLOWLIST EXPIRED: ${entry.package} (${entry.githubAdvisoryId}) expired on ${entry.expires} (today is ${today} UTC). ` +
+        'Remove the entry after upgrading (issue #24), or have the owner renew it with a new, justified date.',
+    );
+  }
+  return expired.length + invalid.length;
+}
+
 function main() {
+  const today = todayUtc();
+  const state = evaluateAllowlist(ALLOWLIST, today);
+  const allowlistProblems = reportAllowlistProblems(state, today);
+
+  if (process.argv.includes('--allowlist-only')) {
+    if (allowlistProblems > 0) {
+      console.error(`\nAllowlist compliance FAILED — ${allowlistProblems} problem(s).`);
+      process.exit(1);
+    }
+    console.log(`Allowlist compliance passed — ${state.active.length} entries, none expired (UTC ${today}).`);
+    return;
+  }
+
   let auditResult;
 
   if (process.platform === 'win32') {
@@ -160,25 +255,19 @@ function main() {
 
   const advisories = Object.values(report.advisories ?? {});
 
+  const { allowlisted, unallowlisted } = classifyAdvisories(advisories, state.active);
+
   if (advisories.length === 0) {
+    if (allowlistProblems > 0) {
+      console.error(`\nDependency scan FAILED — ${allowlistProblems} allowlist problem(s).`);
+      process.exit(1);
+    }
     console.log('Dependency scan passed — 0 advisories found.');
     return;
   }
 
-  const allowlistIds = new Set(
-    ALLOWLIST.map((entry) => entry.githubAdvisoryId),
-  );
-
-  const unallowlisted = advisories.filter(
-    (advisory) => !allowlistIds.has(advisory.github_advisory_id),
-  );
-
-  const allowlisted = advisories.filter((advisory) =>
-    allowlistIds.has(advisory.github_advisory_id),
-  );
-
   for (const advisory of allowlisted) {
-    const entry = ALLOWLIST.find(
+    const entry = state.active.find(
       (candidate) =>
         candidate.githubAdvisoryId === advisory.github_advisory_id,
     );
@@ -210,10 +299,17 @@ function main() {
     process.exit(1);
   }
 
+  if (allowlistProblems > 0) {
+    console.error(`\nDependency scan FAILED — ${allowlistProblems} allowlist problem(s) (see above).`);
+    process.exit(1);
+  }
+
   console.log(
     `\nDependency scan passed — ${allowlisted.length} advisory(ies), ` +
       'all allowlisted with a documented reason.',
   );
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
