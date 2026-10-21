@@ -65,7 +65,7 @@ describe('P0-6d architecture', () => {
     const emitters = production.filter((f) => /buildActionExecutedEvent\(|actionExecutedEventId\(/.test(f.code) && !f.rel.startsWith('packages/event-contracts/')).map((f) => f.rel).sort();
     expect(emitters).toEqual([`${BO_EXEC}ExecutionEventPublisher.ts`]);
     const consumers = production.filter((f) => /ACTION_EXECUTED_CONSUMER|ActionExecutedConsumer/.test(f.code) && !f.rel.startsWith('packages/event-contracts/')).map((f) => f.rel).sort();
-    expect(consumers).toEqual([`${BO_EXEC}ExecutionEventPublisher.ts`, `${BO_EXEC}eventContract.ts`, `${OM_RT}ActionExecutedConsumer.ts`, `${OM_RT}index.ts`, 'packages/event-worker/src/compose.ts'].sort());
+    expect(consumers).toEqual([`${BO_EXEC}ExecutionEventPublisher.ts`, `${BO_EXEC}eventContract.ts`, `${OM_RT}ActionExecutedConsumer.ts`, `${OM_RT}index.ts`, `${OM_RT}OutcomeMonitoringHealthService.ts` /* OM-OBS-1: names the consumer only to read its delivery failures */, 'packages/event-worker/src/compose.ts'].sort());
   });
 
   it('the event is published only on the engine\'s own transaction client, in the terminal step', () => {
