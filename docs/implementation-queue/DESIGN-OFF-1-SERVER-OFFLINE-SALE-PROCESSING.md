@@ -127,3 +127,8 @@ Real-PostgreSQL integration tests, each with a mutation proof that it fails when
 
 ## 12. What this note does not do
 It does not implement anything, create or apply a migration, change the API, the web client or the shell, touch authentication or browser-storage contracts, modify production, begin OFF-2…OFF-5, authorize enabling offline selling, or interfere with the Core Architecture or H-5B sessions.
+
+## 13. Numbering update (2026-10-21, step 2; confirmed by the owner 2026-10-22)
+The record reserved 0210 for kitchen routing and 0211+ for OFF-1 (record section 6, original text kept there as history). The repository guard `migration-stage2a` requires migration numbers with **no gaps**, so a migration 0211 could not merge while 0210 was unused. By owner decision OFF-1 takes **0210**; per-product kitchen routing takes **0211**, provided it is still unallocated when that block is written (otherwise the next free sequential number after re-checking the migration history). Sections 2 (F-1), 4.3 and 9 above describe the original reservation and are superseded by this paragraph. The migration is `0210_create_offline_sales.sql` (PR #228). It must not be renumbered or rewritten.
+
+Status unchanged by this update: 0210 is **not applied to production** (production ledger head is 0209); Phase W2 is separate; offline selling is **disabled** until the owner approves the D3 caps (with server-side enforcement), the D4 drift limits and the clock-skew tolerance, and authorizes a production window and an updated backup-verification profile for 0210.

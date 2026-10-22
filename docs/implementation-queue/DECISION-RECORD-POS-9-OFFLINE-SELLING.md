@@ -62,6 +62,16 @@ Approved names, replacing the memo's lettered stages 9a–9e. **They must not be
 | OFF-5 | Hardening and monitoring | 9e |
 
 ## 6. Migration reservations (planning only)
+
+### 6.1 Current allocation (owner ruling, 2026-10-22; supersedes 6.2 below)
+- **0210 = OFF-1 offline selling** (`0210_create_offline_sales.sql`, merged to `main` in PR #228). It is not to be renumbered or rewritten.
+- **0211 = per-product kitchen routing**, provided 0211 is still unallocated when that block is written. If another migration already holds 0211, kitchen routing takes the next free sequential number after the migration history is re-checked.
+- **Phase W2 is separate and unchanged.** Production has migrations through 0209 only (Phase W2 execution record, PR #220). **0210 has NOT been applied to production**; it needs its own window and explicit authorization. A routine redeploy of `main` would apply it through the migration gate, so none is to be made without that authorization.
+- **Offline selling remains disabled** (the API route answers 503 unless the owner-approved configuration exists). The D3 monetary caps and their server-side enforcement, the D4 price-drift limits, the device clock-skew tolerance, the production migration window and the updated backup-verification profile for 0210 are all still pending owner decisions. No default or example value is approved.
+
+### 6.2 History: the earlier reservation (2026-10-21, kept for the record; superseded by 6.1)
+- Why it changed: the repository guard `migration-stage2a` requires migration numbers with no gaps, so an OFF-1 migration numbered 0211 could not merge while 0210 was unused. OFF-1 step 2 therefore asked the owner, who ruled on 2026-10-21 to renumber OFF-1 to 0210 (recorded in PR #228 and in the OFF-1 design note, section 13). The owner confirmed the allocation in the OFF-1 close-out ruling of 2026-10-22.
+- Original text:
 - **0210: reserved for per-product kitchen routing.**
 - **0211 or later: reserved for OFF-1.**
 - **Allocation check (2026-10-21):** `main` ends at `0209_create_print_jobs.sql`. No migration numbered 0210 or higher exists on any remote branch (every branch was inspected). Two documents mention these numbers: the design memo says the offline server stage would need "0210 or later" (**superseded by this record**: offline takes 0211 or later, 0210 is kitchen routing), and the Phase W2 plan lists per-product kitchen routing as "a later migration 0210" (**consistent** with this record). Both numbers are unallocated today.
