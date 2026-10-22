@@ -10,7 +10,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { MembershipRepository } from '../src/repositories/auth/MembershipRepository.js';
 import { withTenantTransaction } from '../src/client.js';
-import { setupIntegration, teardownIntegration, ctx1, ctx2, T1, WS1 } from './helpers/integration.js';
+import { withExclusiveLocksNoWait } from './helpers/ddlProof.js';
+import { setupIntegration, endIntegration, ctx1, ctx2, T1, WS1 } from './helpers/integration.js';
 
 const RUN = !!process.env.DATABASE_URL;
 const MIGRATION = '0212_enable_rls_membership_roles_and_file_children.sql';
@@ -47,7 +48,7 @@ describe.runIf(RUN)('migration 0212: membership_roles and file children are tena
   afterAll(async () => {
     for (const [table, idCol, id] of cleanup) await admin.query(`DELETE FROM ${table} WHERE ${idCol} = $1`, [id]).catch(() => undefined);
     await admin.end();
-    await teardownIntegration();
+    await endIntegration();
   });
 
   it('RLS is enabled with one parent-derived isolation policy on each table (not forced, so owner and admin authority is unchanged)', async () => {
@@ -101,15 +102,14 @@ describe.runIf(RUN)('migration 0212: membership_roles and file children are tena
     const sql = readFileSync(resolve(__dirname, '../../../infrastructure/database/migrations', MIGRATION), 'utf8');
     const stmts = sql.split('\n').filter((l) => /^--   (DROP POLICY|ALTER TABLE)/.test(l)).map((l) => l.slice(5));
     expect(stmts).toHaveLength(6);
-    const c = await admin.connect();
-    try {
-      await c.query('BEGIN');
+    // Locked up front with NOWAIT (helpers/ddlProof.ts): the proof never waits in a lock queue, so it cannot deadlock or stall other tests.
+    await withExclusiveLocksNoWait(admin, { tables: [...TABLES] }, async (c) => {
       for (const s of stmts) await c.query(s);
       const flags = await c.query(`SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname || '.' || c.relname = ANY($1) AND c.relrowsecurity`, [[...TABLES]]);
       const pols = await c.query(`SELECT count(*)::int AS n FROM pg_policies WHERE schemaname || '.' || tablename = ANY($1)`, [[...TABLES]]);
       expect(flags.rows[0].n).toBe(0);
       expect(pols.rows[0].n).toBe(0);
-    } finally { await c.query('ROLLBACK'); c.release(); }
+    });
     const after = await admin.query(`SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname || '.' || c.relname = ANY($1) AND c.relrowsecurity`, [[...TABLES]]);
     expect(after.rows[0].n).toBe(TABLES.length);
   });
