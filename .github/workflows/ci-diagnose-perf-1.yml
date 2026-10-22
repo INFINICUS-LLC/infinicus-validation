@@ -1,0 +1,260 @@
+name: ZZ DIAGNOSTIC per-package tests (throwaway, not for merge)
+
+# BUILD-23 — CI validation (spec §2). Scoped to infinicus-platform/ only:
+# this repository's `main` branch predates this monorepo and hosts an
+# entirely unrelated static site (Cloudflare Pages/Workers, its own
+# .github/workflows/deploy.yml) — this workflow never touches it.
+#
+# Two jobs:
+#   validate                  — lint, typecheck, build, and the full live
+#                                 -database test suite (every package).
+#                                 image (tagged by infrastructure/deployment
+#                                 /scripts/version.sh's git-derived version),
+#                                 runs it for real, and smoke-tests it.
+#                                 Does not push/publish the image anywhere —
+#                                 no real container registry or deployment
+#                                 target is configured for this repository
+#                                 (see known-limitations-build23.md).
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "claude/ci-diagnose-perf-1"
+    paths:
+      - ".github/workflows/ci-diagnose-perf-1.yml"
+
+defaults:
+  run:
+    working-directory: infinicus-platform
+
+env:
+  CI_ADMIN_USER: infinicus_ci_admin
+  CI_ADMIN_PASSWORD: ci_admin_pw
+  CI_APP_USER: app_test_user
+  CI_APP_PASSWORD: ci_app_pw
+  CI_DB_NAME: infinicus_ci
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: infinicus_ci_admin
+          POSTGRES_PASSWORD: ci_admin_pw
+          POSTGRES_DB: infinicus_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # package_json_file defaults to ./package.json resolved from
+      # GITHUB_WORKSPACE (the repo root) — it does NOT inherit this
+      # workflow's `defaults.run.working-directory` (that setting only
+      # applies to `run:` shell steps, not to a `uses:` action's own
+      # inputs). infinicus-platform/'s package.json (with its
+      # "packageManager": "pnpm@10.33.0" field) must be pointed to
+      # explicitly, or this action fails with "No pnpm version is
+      # specified" even though the field genuinely exists.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: infinicus-platform/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: infinicus-platform/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      # POS-8d-2a: the device shell bundles the counter as static files. This proves the web app still exports (every business screen under the
+      # placeholder id, no api folder, no source maps, no baked business id). Web only; no deploy.
+      - name: Static export check (counter bundle for the device shell)
+        run: pnpm --filter @infinicus/web run build:export
+
+      # CI-HEALTH-1: the three security gates below run to completion and report their own result, but do not stop the job here. Before this change
+      # a failing dependency scan ended the job and the migration gate, grants, tests and image build were skipped (all of 20 Oct 2026's main runs
+      # showed only the scan, with nothing about the code). The job is still failed by "Enforce security gates" at the end, so enforcement is unchanged:
+      # a failing gate fails `validate`, which blocks `build-and-smoke-test-image` exactly as before. continue-on-error is used ONLY on these gates.
+      - name: Check for browser secret leakage
+        id: browser_secrets
+        continue-on-error: true
+        run: node infrastructure/deployment/scripts/check-no-browser-secrets.mjs
+
+      - name: Dependency allowlist compliance (offline; fails on an expired temporary exception)
+        id: allowlist
+        continue-on-error: true
+        run: |
+          node --test infrastructure/deployment/scripts/check-dependency-vulnerabilities.test.mjs
+          node infrastructure/deployment/scripts/check-dependency-vulnerabilities.mjs --allowlist-only
+
+      - name: Dependency vulnerability scan
+        id: dependency_scan
+        continue-on-error: true
+        run: node infrastructure/deployment/scripts/check-dependency-vulnerabilities.mjs
+
+      - name: Create least-privilege application role
+        run: |
+          PGPASSWORD="$CI_ADMIN_PASSWORD" psql -h localhost -U "$CI_ADMIN_USER" -d "$CI_DB_NAME" -c \
+            "CREATE ROLE ${CI_APP_USER} LOGIN PASSWORD '${CI_APP_PASSWORD}';"
+
+      - name: Apply migrations (migration gate)
+        run: |
+          DATABASE_URL="postgresql://${CI_ADMIN_USER}:${CI_ADMIN_PASSWORD}@localhost:5432/${CI_DB_NAME}" \
+            infrastructure/deployment/scripts/migration-gate.sh
+
+      - name: Grant application role access
+        run: |
+          ADMIN_DATABASE_URL="postgresql://${CI_ADMIN_USER}:${CI_ADMIN_PASSWORD}@localhost:5432/${CI_DB_NAME}" \
+          APP_ROLE="$CI_APP_USER" \
+            infrastructure/database/scripts/grant-app-role.sh
+
+      # Scoped to the packages with real test suites — several placeholder
+      # layers/* packages declare a `test` script (`vitest run`) but were
+      # never given vitest as a devDependency (a pre-existing gap flagged
+      # in BUILD-10's own completion report as candidate future work, no
+      # specification authored). A blind `pnpm test` fails on the very
+      # first such package before ever reaching the packages that matter
+      # — exactly matching how every prior build's own regression testing
+      # in this session has always targeted specific packages, never a
+      # blind repo-wide `pnpm test`.
+      # OM-EVID-1: @infinicus/outcome-monitoring-runtime was missing from this list, so the P0-6d Outcome Monitoring tests (Guardrail Section XI) never ran in CI.
+      # The output is also written to a file so that a failure can be named afterwards: GitHub's log view of this job ends with the
+      # Postgres service container's own log, which buried the failing test on the two unexplained failures of 18 Oct 2026.
+      - name: "TEST database"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/database
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST configuration"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/configuration
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST observability"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/observability
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST business-operations-runtime"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/business-operations-runtime
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST authentication"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/authentication
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST authorization"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/authorization
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST onboarding"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/onboarding
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST workflow"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/workflow
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST api"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/api
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST web"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/web
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST data-acquisition-runtime"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/data-acquisition-runtime
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST layer-continuous-learning"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/layer-continuous-learning
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST outcome-monitoring-runtime"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/outcome-monitoring-runtime
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST event-contracts"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/event-contracts
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST handoff-contracts"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/handoff-contracts
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST event-worker"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/event-worker
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
+      - name: "TEST device-shell"
+        if: ${{ !cancelled() }}
+        run: npx turbo run test --filter=@infinicus/device-shell
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+          ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
+
