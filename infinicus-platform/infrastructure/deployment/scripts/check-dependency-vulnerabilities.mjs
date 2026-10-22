@@ -26,12 +26,6 @@ import { pathToFileURL } from 'node:url';
 
 export const ALLOWLIST = [
   {
-    githubAdvisoryId: 'GHSA-5xrq-8626-4rwp',
-    package: 'vitest',
-    reason:
-      'Requires the Vitest UI server (`vitest --ui`) to be actively listening. Every test script in this monorepo runs `vitest run` — the UI server is never started, in any package, in CI, or in local development, so the vulnerable code path is unreachable. Verified via grep across every package.json\'s "test" script.',
-  },
-  {
     githubAdvisoryId: 'GHSA-f88m-g3jw-g9cj',
     package: 'sharp',
     reason:
@@ -42,83 +36,6 @@ export const ALLOWLIST = [
     package: 'sharp',
     reason:
       'Transitive dependency of Next.js image optimization. apps/web does not import or render next/image and does not expose an image-optimization upload/processing path, so untrusted input cannot reach sharp/libheif in this repository. Next.js itself is upgraded to the patched 15.5.x line; this exception is limited to the otherwise unreachable transitive sharp advisory.',
-  },
-
-  // BUILD-30 launch-acceptance findings:
-  // esbuild and vite are transitive dependencies of vitest.
-  {
-    githubAdvisoryId: 'GHSA-67mh-4wv8-2f99',
-    package: 'esbuild',
-    reason:
-      'esbuild\'s own development server (`esbuild --serve`) can be queried cross-origin. Never started in this repository — esbuild is used only as vitest\'s internal bundler for `vitest run`, never via its own CLI/serve mode.',
-  },
-  {
-    githubAdvisoryId: 'GHSA-4w7w-66w2-5vf9',
-    package: 'vite',
-    reason:
-      'Path traversal in vite dev server\'s handling of optimized-dependency `.map` files. Requires `vite dev` or `vite preview` to be running; this repository never starts vite\'s own development or preview server.',
-  },
-  {
-    githubAdvisoryId: 'GHSA-v6wh-96g9-6wx3',
-    package: 'vite',
-    reason:
-      'NTLMv2 hash disclosure via UNC path handling in vite\'s `launch-editor` development-server integration. No vite development server is started in this repository, so the vulnerable route is unreachable.',
-  },
-  {
-    githubAdvisoryId: 'GHSA-fx2h-pf6j-xcff',
-    package: 'vite',
-    reason:
-      'Vite development server `server.fs.deny` bypass through Windows alternate paths. No vite development server is started in this repository, so the vulnerable route is unreachable.',
-  },
-
-  // ── TEMPORARY exceptions: tinypool (tracked in issue #24) ─────────────────
-  // dev/test-only. tinypool@0.8.4 is a transitive dependency of vitest@1.6.1
-  // (the `vitest run` test runner declared by the workspace packages). No
-  // INFINICUS code declares, imports or calls tinypool, and it is not part of
-  // the production API or web runtime. This is a time-boxed risk acceptance,
-  // NOT permanent CI policy: remove both entries when the vitest/vite
-  // toolchain is upgraded. Tracking issue:
-  // https://github.com/INFINICUS-LLC/infinicus-validation/issues/24
-  // Review/removal target date: 2026-11-06.
-  {
-    githubAdvisoryId: 'GHSA-5gmw-xhrv-c9v3',
-    package: 'tinypool',
-    expires: '2026-11-06',
-    reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
-  },
-  {
-    githubAdvisoryId: 'GHSA-85c8-ppgw-ccpr',
-    package: 'tinypool',
-    expires: '2026-11-06',
-    reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). Dev/test-only transitive dependency of vitest@1.6.1; not declared, imported or invoked by INFINICUS code and not shipped in the production API or web runtime. Remove when the vitest/vite toolchain is upgraded.',
-  },
-
-  // ── TEMPORARY exceptions: vite / launch-editor (2026-10-21, tracked in issue #24) ─────────────────
-  // Three advisories published after the entries above, found failing the CI dependency scan on main (which skips the migration gate, tests and image
-  // build when this step fails). Same reasoning and same time box as the tinypool entries: dev/test toolchain only, unreachable, upgrade with vitest.
-  // Time-boxed risk acceptance, NOT permanent CI policy.
-  {
-    githubAdvisoryId: 'GHSA-698v-4r3x-3vcv',
-    package: 'vite',
-    expires: '2026-11-06',
-    reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). launch-editor `escapeCmdArgs()` omits % escaping on Windows (moderate); only relevant to the open-in-editor route of the vite dev server, and only on Windows. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
-  },
-  {
-    githubAdvisoryId: 'GHSA-r825-w8mm-5pxw',
-    package: 'vite',
-    expires: '2026-11-06',
-    reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). launch-editor editor CLI flag misinterpretation (moderate); only relevant to the open-in-editor route of the vite dev server. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
-  },
-  {
-    githubAdvisoryId: 'GHSA-587h-7wmj-h5pm',
-    package: 'vite',
-    expires: '2026-11-06',
-    reason:
-      'TEMPORARY (issue #24, review by 2026-11-06). launch-editor `fs.existsSync()` existence check bypass on Windows (high); only relevant to the open-in-editor route of the vite dev server, and only on Windows. vite@5.4.21 is only a transitive dependency of vitest@1.6.1 (declared as a devDependency by workspace packages; vite itself is declared nowhere). Nothing here starts a vite server (no vite, vite dev or vite preview script, no vitest --ui, none in CI or the Dockerfiles), so the launch-editor integration that this advisory concerns is never loaded. The files are present in the API image because it installs the workspace with its devDependencies, but they are never executed. The fix needs vite >= 6.4.4, a major upgrade that belongs with the vitest upgrade tracked in issue #24. Remove when the vitest/vite toolchain is upgraded.',
   },
 ];
 
