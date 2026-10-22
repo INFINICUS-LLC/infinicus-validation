@@ -22,6 +22,7 @@ describe('loadConfig', () => {
       dbConnectionTimeoutMs: 5_000,
       dbStatementTimeoutMs: 30_000,
       corsAllowedOrigins: ['https://infini-cus.com', 'https://www.infini-cus.com'],
+      offlineSales: { futureToleranceSeconds: null, driftLimitMinorByCurrency: {} },
     });
   });
 
@@ -214,6 +215,38 @@ describe('loadConfig', () => {
     it('falls back to the hostname heuristic in test when DB_SSL is unset', () => {
       const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: 'postgresql://localhost:5432/infinicus_test' });
       expect(config.dbSsl).toBe(false);
+    });
+  });
+
+  describe('OFF-1 offline selling (owner inputs, no defaults)', () => {
+    const base = { DATABASE_URL: 'postgresql://x', NODE_ENV: 'test' as const, DB_SSL: 'false' };
+
+    it('is NOT enabled and honours no price drift when nothing is configured', () => {
+      expect(loadConfig(base).offlineSales).toEqual({ futureToleranceSeconds: null, driftLimitMinorByCurrency: {} });
+      expect(loadConfig({ ...base, OFFLINE_SALES_FUTURE_TOLERANCE_SECONDS: '  ', OFFLINE_SALES_DRIFT_LIMITS: '' }).offlineSales)
+        .toEqual({ futureToleranceSeconds: null, driftLimitMinorByCurrency: {} });
+    });
+
+    it('reads the future tolerance (0 to 3600 whole seconds) and the per-currency drift limits', () => {
+      expect(loadConfig({ ...base, OFFLINE_SALES_FUTURE_TOLERANCE_SECONDS: '0' }).offlineSales.futureToleranceSeconds).toBe(0);
+      expect(loadConfig({ ...base, OFFLINE_SALES_FUTURE_TOLERANCE_SECONDS: '3600' }).offlineSales.futureToleranceSeconds).toBe(3600);
+      const c = loadConfig({ ...base, OFFLINE_SALES_FUTURE_TOLERANCE_SECONDS: '300', OFFLINE_SALES_DRIFT_LIMITS: '{"KWD":500,"USD":0,"JPY":100}' });
+      expect(c.offlineSales).toEqual({ futureToleranceSeconds: 300, driftLimitMinorByCurrency: { KWD: 500, USD: 0, JPY: 100 } });
+    });
+
+    it('refuses to start on an invalid tolerance, without echoing the value', () => {
+      for (const bad of ['-1', '3601', '1.5', 'abc', '1e2', '12345', '5 s']) {
+        let message = '';
+        try { loadConfig({ ...base, OFFLINE_SALES_FUTURE_TOLERANCE_SECONDS: bad }); } catch (e) { expect(e).toBeInstanceOf(ConfigurationError); message = (e as Error).message; }
+        expect(message, bad).toMatch(/OFFLINE_SALES_FUTURE_TOLERANCE_SECONDS/);
+        expect(message).not.toContain(bad === '5 s' ? '5 s' : `: ${bad}`);
+      }
+    });
+
+    it('refuses to start on invalid drift limits', () => {
+      for (const bad of ['not json', '[]', 'null', '5', '{"kwd":5}', '{"KWDX":5}', '{"KWD":-1}', '{"KWD":1.5}', '{"KWD":"500"}', '{"KWD":1000000001}', '{"KWD":null}']) {
+        expect(() => loadConfig({ ...base, OFFLINE_SALES_DRIFT_LIMITS: bad }), bad).toThrow(ConfigurationError);
+      }
     });
   });
 });

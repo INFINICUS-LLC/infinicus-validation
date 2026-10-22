@@ -134,8 +134,8 @@ describe('route-permission regression audit', () => {
   });
 
   it('POS-6f checks workspace visibility after permission and before any cached POS replay', () => {
-    const pos = routes.filter(r => /^\/v1\/businesses\/:businessId\/(orders|products|register-sessions)(\/|$)/.test(r.url));
-    expect(pos.length).toBeGreaterThanOrEqual(16);
+    const pos = routes.filter(r => /^\/v1\/businesses\/:businessId\/(orders|products|register-sessions|offline-sales)(\/|$)/.test(r.url));
+    expect(pos.length).toBeGreaterThanOrEqual(17);
     for (const r of pos) {
       const guard = r.steps.indexOf('businessWorkspace');
       const permission = r.steps.findIndex(step => step.startsWith('perm:'));
@@ -223,11 +223,23 @@ describe('route-permission regression audit', () => {
   });
 
   it('no business-operations route accepts an ApprovedAction: BO cannot consume ABA output through the HTTP surface', () => {
-    const BO_PREFIXES = ['/events', '/operations', '/products', '/register-sessions', '/orders'];
+    const BO_PREFIXES = ['/events', '/operations', '/products', '/register-sessions', '/orders', '/offline-sales'];
     const boRoutes = routes.filter((r) => BO_PREFIXES.some((p) => r.url.includes(`/v1/businesses/:businessId${p}`)));
     expect(boRoutes.length).toBeGreaterThan(15);
     for (const r of boRoutes) {
       expect([...r.bodyKeys, ...r.paramKeys].filter((k) => /approved.?action|authorized.?action|actionPackage/i.test(k)), r.key).toEqual([]);
     }
+  });
+
+  it('OFF-1: the offline-sales route needs bo:write, the full POS guard chain, a closed-by-default gate before idempotency, and takes no authority from the body', () => {
+    const r = routes.find((x) => x.key === 'POST /v1/businesses/:businessId/offline-sales');
+    expect(r, 'the offline-sales route must exist').toBeDefined();
+    expect(routes.filter((x) => x.url.includes('/offline-sales')).map((x) => x.key)).toEqual(['POST /v1/businesses/:businessId/offline-sales']);   // no other offline route yet (exceptions list is OFF-4)
+    expect(r!.perms).toEqual(['bo:write']);
+    // authenticate > resolveTenantContext > bo:write > subscription > workspace visibility > enablement gate > idempotency
+    expect(r!.steps.slice(r!.steps.indexOf('authenticate')).map((x) => (x.startsWith('perm:') ? 'perm' : x))).toEqual(['authenticate', 'resolveTenantContext', 'perm', 'other', 'businessWorkspace', 'other', 'idempotency']);
+    expect(r!.paramKeys).toEqual(['businessId']);
+    expect([...r!.bodyKeys].sort()).toEqual(['catalogueSnapshotAt', 'clientSaleId', 'currencyCode', 'deviceCreatedAt', 'deviceId', 'lines', 'provisionalTotalMinor', 'registerSessionId', 'tenders']);
+    expect(r!.bodyKeys.filter((k) => /tenant|workspace|user|business|status|role|permission|total(?!Minor)|serverTotal|outcome|order/i.test(k)), 'no caller-supplied authority or server-owned value').toEqual([]);
   });
 });
