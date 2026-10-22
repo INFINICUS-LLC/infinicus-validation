@@ -81,5 +81,6 @@ export { AdiProposedActionSource, ProposedActionIntegrityError } from './Propose
 export type { ProposedActionSource, StoredProposedAction } from './ProposedActionSource.js';
 export { AdiProposalBaselineSource } from './AdiProposalBaselineSource.js';
 export * from './InventoryBiEvidenceService.js';
+export * from './SalesReportService.js';
 export * from './InventoryItemTwinService.js';
 export * from './inventoryItemTwinState.js';
