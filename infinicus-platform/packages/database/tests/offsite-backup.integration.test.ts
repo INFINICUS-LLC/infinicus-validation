@@ -686,11 +686,18 @@ esac`);
     });
 
     it('wipes the temporary directory when interrupted (SIGTERM) and refuses to run with shell tracing on', async () => {
-      const child = spawn('bash', [RESTORE, manifestKey()], { env: { PATH: process.env.PATH as string, HOME: work, TMPDIR: work, ...restoreEnv({ BACKUP_FETCH_CMD: 'sleep 3 # %KEY%' }) } });
+      // Deterministic, not timing-based: the fetch blocks until the test creates `release`, and the test does so only AFTER sending SIGTERM. Bash runs the
+      // TERM trap between commands, so the signal is always pending when the blocked fetch returns and the script exits 143 however slow the runner is.
+      // (A fixed `sleep 3` raced against a loaded CI runner: if the kill landed after the sleep, the script finished the fetch and exited with its own code.)
+      // The 300 x 0.1 s cap only keeps a broken test from hanging.
+      const release = join(work, 'release-fetch');
+      const blockUntilReleased = `n=0; while [ ! -e '${release}' ] && [ $n -lt 300 ]; do sleep 0.1; n=$((n+1)); done # %KEY%`;
+      const child = spawn('bash', [RESTORE, manifestKey()], { env: { PATH: process.env.PATH as string, HOME: work, TMPDIR: work, ...restoreEnv({ BACKUP_FETCH_CMD: blockUntilReleased }) } });
       const exited = new Promise<number | null>((ok) => child.on('exit', (code) => ok(code)));
       for (let i = 0; i < 50 && !readdirSync(work).some((f) => f.startsWith('restore-proof.')); i++) await new Promise((r) => setTimeout(r, 100));
       expect(readdirSync(work).some((f) => f.startsWith('restore-proof.'))).toBe(true);
       child.kill('SIGTERM');
+      writeFileSync(release, '');
       expect(await exited).toBe(143);
       noTemp();
       await noScratch();
