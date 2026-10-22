@@ -117,6 +117,9 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   OperationalMappingError: 400,
   OperationalStateTransitionError: 409,
 
+  // OFF-1 offline selling: no owner-approved configuration is present, so the surface is closed (503), never cached.
+  OfflineSalesDisabledError: 503,
+
   // Fastify / schema validation
   FST_ERR_VALIDATION: 400,
 };
