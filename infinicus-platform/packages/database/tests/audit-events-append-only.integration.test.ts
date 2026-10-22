@@ -17,6 +17,16 @@ const run = !!process.env.DATABASE_URL;
 const MIGRATION = readFileSync(resolve(__dirname, '../../../infrastructure/database/migrations/0181_audit_events_append_only.sql'), 'utf8');
 const APPEND_ONLY = /audit\.audit_events: append-only table - (UPDATE|DELETE|TRUNCATE) is not permitted/;
 
+/**
+ * The triggers this migration installs: those bound to audit.forbid_mutation. They are counted by function, not by table, because every package's tests share
+ * one database and apps/api/tests/abaAuthoring.integration.test.ts temporarily installs its own failing trigger on audit.audit_events to inject an audit failure;
+ * counting every trigger on the table failed whenever the two ran at the same time (a third `abau_fail_*` trigger). A second forbid_mutation trigger, or a
+ * missing one, still fails these assertions.
+ */
+const GUARD_TRIGGERS = `WITH guard AS (
+  SELECT t.oid FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE t.tgrelid = 'audit.audit_events'::regclass AND NOT t.tgisinternal AND n.nspname = 'audit' AND p.proname = 'forbid_mutation')`;
+
 describe.runIf(run)('audit.audit_events append-only (0181) - live PostgreSQL', () => {
   let admin: Pool; let app: Pool;
   let tenantId = ''; let workspaceId = ''; let otherTenantId = ''; let rowId = '';
@@ -91,7 +101,9 @@ describe.runIf(run)('audit.audit_events append-only (0181) - live PostgreSQL', (
       `SELECT t.tgname, p.proname, n.nspname AS fn_schema, (t.tgtype & 1) = 1 AS per_row, (t.tgtype & 8) = 8 AS on_delete,
               (t.tgtype & 16) = 16 AS on_update, (t.tgtype & 32) = 32 AS on_truncate, (t.tgtype & 2) = 2 AS before, t.tgenabled
          FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE t.tgrelid = 'audit.audit_events'::regclass AND NOT t.tgisinternal ORDER BY t.tgname`)).rows;
+        WHERE t.tgrelid = 'audit.audit_events'::regclass AND NOT t.tgisinternal
+          AND n.nspname = 'audit' AND p.proname = 'forbid_mutation'   -- the guard under test; see GUARD_TRIGGERS
+        ORDER BY t.tgname`)).rows;
     expect(t).toEqual([
       { tgname: 'forbid_mutation_audit_events', proname: 'forbid_mutation', fn_schema: 'audit', per_row: true, on_delete: true, on_update: true, on_truncate: false, before: true, tgenabled: 'O' },
       { tgname: 'forbid_truncate_audit_events', proname: 'forbid_mutation', fn_schema: 'audit', per_row: false, on_delete: false, on_update: false, on_truncate: true, before: true, tgenabled: 'O' },
@@ -101,7 +113,7 @@ describe.runIf(run)('audit.audit_events append-only (0181) - live PostgreSQL', (
   it('re-running the migration is safe: it succeeds, leaves the same two triggers, and registers once', async () => {
     await admin.query(MIGRATION);
     await admin.query(MIGRATION);
-    expect((await admin.query(`SELECT count(*)::int n FROM pg_trigger WHERE tgrelid = 'audit.audit_events'::regclass AND NOT tgisinternal`)).rows[0].n).toBe(2);
+    expect((await admin.query(`${GUARD_TRIGGERS} SELECT count(*)::int n FROM guard`)).rows[0].n).toBe(2);
     expect((await admin.query(`SELECT count(*)::int n FROM _migrations WHERE filename = '0181_audit_events_append_only.sql'`)).rows[0].n).toBe(1);
     await expect(admin.query(`DELETE FROM audit.audit_events WHERE id = $1`, [rowId])).rejects.toThrow(APPEND_ONLY);
   });
