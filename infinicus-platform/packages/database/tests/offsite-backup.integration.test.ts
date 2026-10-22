@@ -693,12 +693,18 @@ esac`);
       const release = join(work, 'release-fetch');
       const blockUntilReleased = `n=0; while [ ! -e '${release}' ] && [ $n -lt 300 ]; do sleep 0.1; n=$((n+1)); done # %KEY%`;
       const child = spawn('bash', [RESTORE, manifestKey()], { env: { PATH: process.env.PATH as string, HOME: work, TMPDIR: work, ...restoreEnv({ BACKUP_FETCH_CMD: blockUntilReleased }) } });
-      const exited = new Promise<number | null>((ok) => child.on('exit', (code) => ok(code)));
+      // The script's own output is kept so a failure explains itself (which stage it was in, which exit path it took) instead of only "expected 2 to be 143".
+      let output = '';
+      child.stdout.on('data', (d: Buffer) => { output += d.toString(); });
+      child.stderr.on('data', (d: Buffer) => { output += d.toString(); });
+      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((ok) => child.on('exit', (code, signal) => ok({ code, signal })));
       for (let i = 0; i < 50 && !readdirSync(work).some((f) => f.startsWith('restore-proof.')); i++) await new Promise((r) => setTimeout(r, 100));
-      expect(readdirSync(work).some((f) => f.startsWith('restore-proof.'))).toBe(true);
+      expect(readdirSync(work).some((f) => f.startsWith('restore-proof.')), `no temporary directory appeared; script output so far:\n${output}`).toBe(true);
+      const dirsAtKill = readdirSync(work).filter((f) => f.startsWith('restore-proof.'));
       child.kill('SIGTERM');
       writeFileSync(release, '');
-      expect(await exited).toBe(143);
+      const result = await exited;
+      expect(result.code, `exit code ${result.code} (signal ${result.signal}); temporary directories when the signal was sent: ${dirsAtKill.join(',')}; script output:\n${output}`).toBe(143);
       noTemp();
       await noScratch();
 
