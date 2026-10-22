@@ -704,7 +704,9 @@ esac`);
       child.kill('SIGTERM');
       writeFileSync(release, '');
       const result = await exited;
-      expect(result.code, `exit code ${result.code} (signal ${result.signal}); temporary directories when the signal was sent: ${dirsAtKill.join(',')}; script output:\n${output}`).toBe(143);
+      // ONE line, most useful part first: CI's failure summary prints only the first 300 characters of the first line of a message.
+      const tail = output.replace(/\s+/g, ' ').trim().slice(-170);
+      expect(result.code, `exit ${result.code} signal ${result.signal} | script said: ${tail || '(nothing)'} | dirs at kill: ${dirsAtKill.length}`).toBe(143);
       noTemp();
       await noScratch();
 
