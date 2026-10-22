@@ -6,6 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { truncateRefusal } from './helpers/truncateRefusal.js';
+import { runMigrationWithoutWaiting } from './helpers/ddlProof.js';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -111,8 +112,7 @@ describe.runIf(run)('audit.audit_events append-only (0181) - live PostgreSQL', (
   });
 
   it('re-running the migration is safe: it succeeds, leaves the same two triggers, and registers once', async () => {
-    await admin.query(MIGRATION);
-    await admin.query(MIGRATION);
+    await runMigrationWithoutWaiting(admin, MIGRATION); await runMigrationWithoutWaiting(admin, MIGRATION);   // helpers/ddlProof.ts: never waits on a lock
     expect((await admin.query(`${GUARD_TRIGGERS} SELECT count(*)::int n FROM guard`)).rows[0].n).toBe(2);
     expect((await admin.query(`SELECT count(*)::int n FROM _migrations WHERE filename = '0181_audit_events_append_only.sql'`)).rows[0].n).toBe(1);
     await expect(admin.query(`DELETE FROM audit.audit_events WHERE id = $1`, [rowId])).rejects.toThrow(APPEND_ONLY);
