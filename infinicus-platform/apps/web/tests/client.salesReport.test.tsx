@@ -147,7 +147,7 @@ describe('SalesReportView', () => {
 
 describe('ReportsPage', () => {
   const scope = { tenantId: '00000000-0000-4000-8000-000000000003', workspaceId: '00000000-0000-4000-8000-000000000004' };
-  const value: AuthContextValue = { state: { status: 'ready', email: 'staff@example.test', scope, memberships: [] }, api: null, signIn: async () => ({ ok: true }), signOut: async () => undefined };
+  const value: AuthContextValue = { state: { status: 'ready', email: 'staff@example.test', scope, memberships: [] }, api: null, signIn: async () => ({ ok: true }), signOut: async () => undefined, selectWorkspace: () => true, retry: () => undefined };
   it('shows no report before the business address is known (server render), and nothing at all when signed out', () => {
     const ready = renderToString(<AuthContext.Provider value={value}><ReportsPage /></AuthContext.Provider>);
     expect(ready).toContain('business address is not valid');
