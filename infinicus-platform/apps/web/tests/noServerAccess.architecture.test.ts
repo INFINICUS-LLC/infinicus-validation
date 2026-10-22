@@ -44,7 +44,7 @@ describe('apps/web has no server-side data access or identity path (NA-05)', () 
     // placeholder, never the real business. The id comes from the address through one shared, validating reader.
     expect(files.filter((f) => /useParams|usePathname/.test(code(f))).map(rel)).toEqual([]);
     const readers = files.filter((f) => /useBusinessId\(/.test(code(f)) && !f.endsWith('use-business-id.ts'));
-    expect(readers.map(rel).sort()).toEqual(['/app/(client)/businesses/[businessId]/counter/page.tsx', '/app/(client)/businesses/[businessId]/history/page.tsx', '/app/(client)/businesses/[businessId]/printers/page.tsx', '/app/(client)/businesses/[businessId]/sales/page.tsx', '/app/(client)/businesses/[businessId]/workflow/page.tsx']);
+    expect(readers.map(rel).sort()).toEqual(['/app/(client)/businesses/[businessId]/counter/page.tsx', '/app/(client)/businesses/[businessId]/history/page.tsx', '/app/(client)/businesses/[businessId]/printers/page.tsx', '/app/(client)/businesses/[businessId]/reports/page.tsx', '/app/(client)/businesses/[businessId]/sales/page.tsx', '/app/(client)/businesses/[businessId]/workflow/page.tsx']);
     const reader = code(join(ROOT, 'lib/client/locationPath.ts'));
     expect(reader).toContain('window.location.pathname');                                    // the path only (search/hash are refused above)
     expect(reader).toContain('businessIdFromPath');
@@ -56,7 +56,7 @@ describe('apps/web has no server-side data access or identity path (NA-05)', () 
 
   it('every tenant page uses a scoped API reader and the workspace guard', () => {
     const pages = files.filter((f) => /app\/\(client\)\/businesses\/.*page\.tsx$/.test(f));
-    expect(pages).toHaveLength(6);   // workflow, history, businesses list, counter, completed sales and printers
+    expect(pages).toHaveLength(7);   // workflow, history, businesses list, counter, completed sales, printers and the BI sales report
     for (const f of pages) {
       if (rel(f) === '/app/(client)/businesses/[businessId]/sales/page.tsx') {
         // History has a scoped controller for cursor/selection races; business identity is read by BusinessReceipt.
