@@ -569,3 +569,5 @@ export type {
 } from './eventing/index.js';
 
 export { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from './currency/minorUnits.js';
+export { SalesFactsRepository, SALES_PRODUCT_ROW_CAP } from './repositories/bo/SalesFactsRepository.js';
+export type { RawSalesFacts } from './repositories/bo/SalesFactsRepository.js';

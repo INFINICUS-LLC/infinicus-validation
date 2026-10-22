@@ -90,3 +90,8 @@ export { buildFinancialReport } from './financial/financialReport.js';
 export type { BuildReportInput } from './financial/financialReport.js';
 export * from './financial/money.js';
 export * from './financial/periods.js';
+
+// ── Business Intelligence sales and operations performance (NEW-BI-02) ─────────
+export * from './sales/SalesIntelligenceService.js';
+export { buildSalesReport, DEFAULT_TOP_PRODUCTS, MAX_TOP_PRODUCTS } from './sales/salesReport.js';
+export type { BuildSalesReportInput } from './sales/salesReport.js';

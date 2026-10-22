@@ -52,10 +52,12 @@ import reorderPolicyRecommendationRoutes from './routes/reorderPolicyRecommendat
 import inventoryReorderPolicyBaselineRoutes from './routes/inventoryReorderPolicyBaseline.js';
 import inventoryBiEvidenceRoutes from './routes/inventoryBiEvidence.js';
 import financialIntelligenceRoutes from './routes/financialIntelligence.js';
+import salesIntelligenceRoutes from './routes/salesIntelligence.js';
 import inventoryItemTwinRoutes from './routes/inventoryItemTwin.js';
 import type { InventoryItemTwinCompositionOptions } from './inventoryItemTwinComposition.js';
 import type { InventoryBiEvidenceCompositionOptions } from './inventoryBiEvidenceComposition.js';
 import type { FinancialIntelligenceCompositionOptions } from './financialIntelligenceComposition.js';
+import type { SalesIntelligenceCompositionOptions } from './salesIntelligenceComposition.js';
 import type { ReorderRecommendationCompositionOptions } from './reorderPolicyRecommendationComposition.js';
 import dataAcquisitionRoutes from './routes/dataAcquisition.js';
 import webhooksRoutes from './routes/webhooks.js';
@@ -80,6 +82,8 @@ export interface BuildAppOptions {
   inventoryBiEvidence?: InventoryBiEvidenceCompositionOptions;
   /** NEW-BI-01: test seam for the read-only financial report (production leaves it unset). */
   financialIntelligence?: FinancialIntelligenceCompositionOptions;
+  /** NEW-BI-02: test seam for the read-only sales and operations report (production leaves it unset). */
+  salesIntelligence?: SalesIntelligenceCompositionOptions;
   /** AC-2 Block 6: the BDT inventory item state composition (test seam; production feeds the twin from the BI evidence service). */
   inventoryItemTwin?: InventoryItemTwinCompositionOptions;
 }
@@ -224,6 +228,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(inventoryBiEvidenceRoutes, options.inventoryBiEvidence ?? {});
   // NEW-BI-01: read-only financial report (bi:read); Business Intelligence derives every figure from read-only Business Operations facts.
   await app.register(financialIntelligenceRoutes, options.financialIntelligence ?? {});
+  // NEW-BI-02: read-only sales and operations performance report (bi:read), same BO-facts to BI-derivation pattern.
+  await app.register(salesIntelligenceRoutes, options.salesIntelligence ?? {});
   await app.register(inventoryItemTwinRoutes, options.inventoryItemTwin ?? {});
   await app.register(dataAcquisitionRoutes);
   await app.register(webhooksRoutes, {
