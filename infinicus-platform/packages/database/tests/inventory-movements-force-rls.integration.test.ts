@@ -10,6 +10,7 @@ import { resolve } from 'node:path';
 import { Pool } from 'pg';
 import { createPool, closePool } from '../src/client.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
+import { runMigrationWithoutWaiting } from './helpers/ddlProof.js';
 
 const run = !!process.env.DATABASE_URL;
 const MIGRATION = readFileSync(resolve(__dirname, '../../../infrastructure/database/migrations/0186_force_rls_inventory_movements.sql'), 'utf8');
@@ -198,7 +199,7 @@ describe.runIf(run)('inventory_movements FORCE RLS (0186) - live PostgreSQL', ()
   describe('history and migration safety', () => {
     it('historical rows are unchanged by (re)applying the migration', async () => {
       const before = await snapshot();
-      await admin.query(MIGRATION); await admin.query(MIGRATION);
+      await runMigrationWithoutWaiting(admin, MIGRATION); await runMigrationWithoutWaiting(admin, MIGRATION);   // helpers/ddlProof.ts: never waits on a lock
       expect(await snapshot()).toBe(before);
       expect((await admin.query(`SELECT count(*)::int n FROM _migrations WHERE filename = '0186_force_rls_inventory_movements.sql'`)).rows[0].n).toBe(1);
       expect((await admin.query(`SELECT relforcerowsecurity f FROM pg_class WHERE oid = '${T}'::regclass`)).rows[0].f).toBe(true);

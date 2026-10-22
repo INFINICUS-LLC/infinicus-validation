@@ -10,6 +10,7 @@ import { resolve } from 'node:path';
 import { Pool } from 'pg';
 import { createPool, closePool } from '../src/client.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
+import { runMigrationWithoutWaiting } from './helpers/ddlProof.js';
 
 const run = !!process.env.DATABASE_URL;
 const MIGRATION = readFileSync(resolve(__dirname, '../../../infrastructure/database/migrations/0187_require_positive_inventory_unit_cost.sql'), 'utf8');
@@ -128,7 +129,7 @@ describe.runIf(run)('positive unit cost when present (0187) - live PostgreSQL', 
 
     it('applying (and re-applying) the migration neither validates the constraint nor changes any row', async () => {
       const before = await snapshot();
-      await admin.query(MIGRATION); await admin.query(MIGRATION);
+      await runMigrationWithoutWaiting(admin, MIGRATION); await runMigrationWithoutWaiting(admin, MIGRATION);   // helpers/ddlProof.ts: never waits on a lock
       expect(await snapshot()).toBe(before);
       expect((await admin.query(`SELECT count(*)::int n FROM pg_constraint WHERE conrelid = '${T}'::regclass AND conname = 'inventory_movements_unit_cost_positive'`)).rows[0].n).toBe(1);
       expect((await admin.query(`SELECT convalidated FROM pg_constraint WHERE conname = 'inventory_movements_unit_cost_positive'`)).rows[0].convalidated).toBe(false);

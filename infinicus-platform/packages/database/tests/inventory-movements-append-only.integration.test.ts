@@ -10,6 +10,7 @@ import { resolve } from 'node:path';
 import { Pool } from 'pg';
 import { createPool, closePool } from '../src/client.js';
 import { deleteMovementsForTenants } from './helpers/movementCleanup.js';
+import { runMigrationWithoutWaiting } from './helpers/ddlProof.js';
 
 const run = !!process.env.DATABASE_URL;
 const MIGRATION = readFileSync(resolve(__dirname, '../../../infrastructure/database/migrations/0184_inventory_movements_append_only.sql'), 'utf8');
@@ -233,7 +234,7 @@ describe.runIf(run)('inventory_movements is append-only (0184) - live PostgreSQL
   describe('migration safety', () => {
     it('re-applying the migration is idempotent: same two triggers, one registration, rows untouched', async () => {
       const before = await snapshot();
-      await admin.query(MIGRATION); await admin.query(MIGRATION);
+      await runMigrationWithoutWaiting(admin, MIGRATION); await runMigrationWithoutWaiting(admin, MIGRATION);   // helpers/ddlProof.ts: never waits on a lock
       expect((await admin.query(`SELECT count(*)::int n FROM pg_trigger WHERE tgrelid = '${T}'::regclass AND NOT tgisinternal`)).rows[0].n).toBe(2);
       expect((await admin.query(`SELECT count(*)::int n FROM _migrations WHERE filename = '0184_inventory_movements_append_only.sql'`)).rows[0].n).toBe(1);
       expect(await snapshot()).toBe(before);
