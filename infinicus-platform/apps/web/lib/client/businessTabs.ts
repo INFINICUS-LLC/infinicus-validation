@@ -9,6 +9,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TABS: readonly { key: string; label: string; segment: string }[] = [
   { key: 'counter', label: 'Counter', segment: 'counter' },
   { key: 'sales', label: 'Sales', segment: 'sales' },
+  { key: 'reports', label: 'Reports', segment: 'reports' },
   { key: 'printers', label: 'Printers', segment: 'printers' },
   { key: 'workflow', label: 'Workflow', segment: 'workflow' },
   { key: 'history', label: 'Decision history', segment: 'history' },

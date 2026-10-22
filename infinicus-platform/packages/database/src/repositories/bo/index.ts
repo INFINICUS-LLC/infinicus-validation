@@ -74,3 +74,6 @@ export type {
   ClaimForExecution, ClaimState, ClaimAwaitingFilter, ExecutionRecord, InsertExecutionInput, InsertAttemptInput, AttemptSummary, ClaimAwaitingExecution,
   ExecutionOutcome, MutationResult, AuthorityVerdictRecord, AttemptOutcome, ExecutionHealthSnapshot, OpenClaimHealthRow, TerminalHealthRow,
 } from './AuthorizedActionExecutionRepository.js';
+
+export { SalesFactsRepository } from './SalesFactsRepository.js';
+export type { SalesDayCurrencyFacts } from './SalesFactsRepository.js';

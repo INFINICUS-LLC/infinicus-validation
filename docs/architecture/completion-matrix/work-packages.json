@@ -1,7 +1,7 @@
 {
   "version": 1,
   "asOf": "2026-10-22",
-  "mainCommit": "5fc8489",
+  "mainCommit": "6ac298b",
   "dimensions": { "spec": 0.10, "functional": 0.35, "integration": 0.25, "verification": 0.20, "operational": 0.10 },
   "levels": {
     "spec": "100 locked spec + schema + a Stack B contract artifact; 75 locked spec + schema; 50 locked spec or owner-approved block document only; 25 direction only; 0 none",
@@ -19,7 +19,7 @@
       "evidence": "Only manual-record validation (DA-13) is implemented. Tables exist for the rest; no services." },
     { "id": "DAL-4", "family": "layer", "layer": "DAL", "domain": "DATA", "title": "Quality scoring, source reliability, provenance", "covers": "DA-20, DA-22, DA-23", "units": 3, "impl": 0.67, "spec": 75, "integration": 75, "verification": 75, "operational": 0,
       "evidence": "DataQualityScoringService and ProvenanceService feed the BO intake gate; source reliability is a table only." },
-    { "id": "DAL-5", "family": "layer", "layer": "DAL", "domain": "DATA", "title": "Core runtime, publication handoff, assembly", "covers": "DA-01, DA-24, DA-25", "units": 3, "impl": 0.50, "spec": 100, "integration": 75, "verification": 75, "operational": 0,
+    { "id": "DAL-5", "family": "layer", "layer": "DAL", "domain": "DATA", "title": "Core runtime, publication handoff, assembly", "covers": "DA-01, DA-24, DA-25", "units": 3, "impl": 0.50, "spec": 100, "integration": 75, "verification": 100, "operational": 0,
       "evidence": "PublicationService and the DAL->BO handoff contract work in the chain; V-07 delivery-state ownership resolved by block A1 (PR #239). No assembly/deployment block." },
 
     { "id": "BO-1", "family": "layer", "layer": "BO", "domain": "BUSINESS ADMINISTRATION", "title": "Core runtime, business profile, organization", "covers": "BO-01..03", "units": 3, "impl": 0.58, "spec": 100, "integration": 75, "verification": 100, "operational": 25,
@@ -173,5 +173,22 @@
     { "id": "G-K", "title": "Database: migrations validated, live delta reviewed, runbook, rollback/backup", "impl": 0.85, "integration": 75, "verification": 100, "operational": 50, "spec": 100, "evidence": "210 migrations apply from empty; Phase W2 (0202-0209) executed; 0210 prepared; restore proof PASS." },
     { "id": "G-L", "title": "Operations: backup/restore, observability for execution failures, deployment runbook", "impl": 0.60, "integration": 50, "verification": 75, "operational": 25, "spec": 100, "evidence": "Restore proof PASS on a real new-key backup; execution-health and OM health endpoints; worker not deployed; alert channel undecided." },
     { "id": "G-M", "title": "End to end: data to OM with negative paths", "impl": 1.0, "integration": 75, "verification": 100, "operational": 0, "spec": 100, "evidence": "ac2-principal-first-action e2e on a private database; not run in staging or production." }
+  ],
+  "history": [
+    { "date": "2026-10-22", "mainCommit": "5fc8489", "label": "baseline", "fullScope": 29.1, "guardrailSlice": 78.9, "changes": [] },
+    { "date": "2026-10-22", "mainCommit": "ba177cb", "label": "reconciliation after #238-#242", "changes": [
+      { "workPackage": "DAL-5", "field": "verification", "from": 75, "to": 100, "criterion": "verification rubric 100 = unit + integration + architecture guards + mutation or negative proofs", "evidence": "#239: 7 integration tests with 7 mutants killed, cross-tenant negative proofs, dalOwnership.architecture guard" } ],
+      "notScored": [
+        "#241 RLS on six child tables: those tables back unimplemented DAL channels and pipeline stages (DAL-2, DAL-3) or sit in a cluster whose verification is already scored (DAL-4); no work-package criterion moves",
+        "#238 and #242 CI repairs: not a matrix criterion" ] },
+    { "date": "2026-10-22", "mainCommit": "6ac298b", "label": "merge reconciliation (#243-#246, #250)", "changes": [
+      { "workPackage": "BI-3", "field": "impl", "from": 0.06, "to": 0.19, "criterion": "domain intelligence: financial domain (BI-11), read-only per-currency report, API + integration tests", "evidence": "#244 NEW-BI-01 (scored by the Core Architecture session; not re-audited by this session)" },
+      { "workPackage": "BI-4", "field": "impl", "from": 0, "to": 0.17, "criterion": "trend: zero-filled per-currency trend and previous-period comparison inside the financial report only", "evidence": "#244 (Core session scoring, not re-audited here)" },
+      { "workPackage": "BI-5", "field": "impl", "from": 0, "to": 0.25, "criterion": "reporting: one read-only reporting API with integration tests", "evidence": "#244 (Core session scoring, not re-audited here)" } ],
+      "notScored": [
+        "#243 V-07 residual (DAL read path, BO in-transaction rejection recording): Core session; no further criterion moved here",
+        "#245 wait-free DDL proofs, #250 SIGTERM diagnostics: CI tooling, not a matrix criterion",
+        "#246 migration 0212 (RLS on membership_roles/file children, service-only erasure trail): security hardening of tables outside any implemented unit's criteria; no work-package criterion moves",
+        "BI-SALES-1 (#247) and BI-WEB-1 (#248) are not merged and are not scored" ] }
   ]
 }
