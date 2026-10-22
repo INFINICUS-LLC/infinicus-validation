@@ -269,3 +269,17 @@ jobs:
           if grep -E "^ *Failed:" "$RUNNER_TEMP/test-output.log" | grep -q "@infinicus/device-shell#test"; then echo "package device-shell FAILED in the combined run"; exit 1; fi
           echo "package device-shell ok"
 
+      - name: "FILE offsite-backup (candidate)"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean.log"
+          if grep -E " FAIL .*offsite-backup" "$RUNNER_TEMP/clean.log" | head -3 | grep -q .; then grep -E " FAIL .*offsite-backup|exit|143|expected" "$RUNNER_TEMP/clean.log" | head -10; echo "offsite-backup FAILED"; exit 1; fi
+          echo "offsite-backup ok"
+
+      - name: "OTHER FAIL lines (anything except offsite-backup)"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean.log"
+          n=$(grep -E " FAIL " "$RUNNER_TEMP/clean.log" | grep -v offsite-backup | wc -l)
+          echo "other FAIL lines: $n"; grep -E " FAIL " "$RUNNER_TEMP/clean.log" | grep -v offsite-backup | head -20
+          if [ "$n" -gt 0 ]; then exit 1; fi
