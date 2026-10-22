@@ -18,6 +18,9 @@ name: ZZ DIAGNOSTIC per-package tests (throwaway, not for merge)
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/ci-diagnose-perf-1.yml"
   push:
     branches:
       - "claude/ci-diagnose-perf-1"
@@ -139,10 +142,27 @@ jobs:
       # OM-EVID-1: @infinicus/outcome-monitoring-runtime was missing from this list, so the P0-6d Outcome Monitoring tests (Guardrail Section XI) never ran in CI.
       # The output is also written to a file so that a failure can be named afterwards: GitHub's log view of this job ends with the
       # Postgres service container's own log, which buried the failing test on the two unexplained failures of 18 Oct 2026.
-      - name: Combined test run (same command as ci.yml plus --continue; never fails the step)
+      - name: EXACT ci.yml Test step (no --continue, tee, pipefail)
         run: |
-          npx turbo run test --continue --filter=@infinicus/database --filter=@infinicus/configuration --filter=@infinicus/observability --filter=@infinicus/business-operations-runtime --filter=@infinicus/authentication --filter=@infinicus/authorization --filter=@infinicus/onboarding --filter=@infinicus/workflow --filter=@infinicus/api --filter=@infinicus/web --filter=@infinicus/data-acquisition-runtime --filter=@infinicus/layer-continuous-learning --filter=@infinicus/outcome-monitoring-runtime --filter=@infinicus/event-contracts --filter=@infinicus/handoff-contracts --filter=@infinicus/event-worker --filter=@infinicus/device-shell > "$RUNNER_TEMP/test-output.log" 2>&1 || true
-          grep -E "^ *Failed:|Tasks:" "$RUNNER_TEMP/test-output.log" | sed 's/\x1b\[[0-9;]*m//g' | head -5 || true
+          set -o pipefail
+          npx turbo run test \
+            --filter=@infinicus/database \
+            --filter=@infinicus/configuration \
+            --filter=@infinicus/observability \
+            --filter=@infinicus/business-operations-runtime \
+            --filter=@infinicus/authentication \
+            --filter=@infinicus/authorization \
+            --filter=@infinicus/onboarding \
+            --filter=@infinicus/workflow \
+            --filter=@infinicus/api \
+            --filter=@infinicus/web \
+            --filter=@infinicus/data-acquisition-runtime \
+            --filter=@infinicus/layer-continuous-learning \
+            --filter=@infinicus/outcome-monitoring-runtime \
+            --filter=@infinicus/event-contracts \
+            --filter=@infinicus/handoff-contracts \
+            --filter=@infinicus/event-worker \
+            --filter=@infinicus/device-shell 2>&1 | tee "$RUNNER_TEMP/test-output.log"
         env:
           DATABASE_URL: postgresql://${{ env.CI_APP_USER }}:${{ env.CI_APP_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
           ADMIN_DATABASE_URL: postgresql://${{ env.CI_ADMIN_USER }}:${{ env.CI_ADMIN_PASSWORD }}@localhost:5432/${{ env.CI_DB_NAME }}
