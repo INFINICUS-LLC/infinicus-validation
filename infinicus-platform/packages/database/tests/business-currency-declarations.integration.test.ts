@@ -12,6 +12,7 @@ import {
   createPool, closePool, BusinessDeclaredCurrencyReader, BusinessDeclaredCurrencyRepository, DeclaredCurrencyValidationError,
   DeclaredCurrencyConflictError, BusinessNotFoundError, TenantRepository, type TenantContext,
 } from '../src/index.js';
+import { runMigrationWithoutWaiting } from './helpers/ddlProof.js';
 
 const run = !!process.env.DATABASE_URL;
 const MIGRATION = readFileSync(resolve(__dirname, '../../../infrastructure/database/migrations/0185_create_business_currency_declarations.sql'), 'utf8');
@@ -263,7 +264,7 @@ describe.runIf(run)('business currency declarations (0185) - live PostgreSQL', (
   describe('migration safety', () => {
     it('re-applying the migration is idempotent: same triggers, same table, one registration, rows untouched', async () => {
       const before = (await admin.query(`SELECT md5(string_agg(to_jsonb(d)::text,'|' ORDER BY id)) h FROM ${T} d`)).rows[0].h;
-      await admin.query(MIGRATION); await admin.query(MIGRATION);
+      await runMigrationWithoutWaiting(admin, MIGRATION); await runMigrationWithoutWaiting(admin, MIGRATION);   // helpers/ddlProof.ts: never waits on a lock
       expect((await admin.query(`SELECT count(*)::int n FROM pg_trigger WHERE tgrelid = '${T}'::regclass AND NOT tgisinternal`)).rows[0].n).toBe(3);
       expect((await admin.query(`SELECT count(*)::int n FROM _migrations WHERE filename = '0185_create_business_currency_declarations.sql'`)).rows[0].n).toBe(1);
       expect((await admin.query(`SELECT md5(string_agg(to_jsonb(d)::text,'|' ORDER BY id)) h FROM ${T} d`)).rows[0].h).toBe(before);

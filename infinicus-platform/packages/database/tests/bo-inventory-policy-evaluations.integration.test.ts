@@ -13,6 +13,7 @@ import {
   InventoryPolicyEvaluationRepository, InventoryPolicyEvaluationValidationError, INVENTORY_POLICY_EVALUATION_DIMENSIONS, INVENTORY_POLICY_EVALUATION_RESULTS,
   type RecordInventoryPolicyEvaluationInput,
 } from '../src/index.js';
+import { runMigrationWithoutWaiting } from './helpers/ddlProof.js';
 
 const run = !!process.env.DATABASE_URL;
 const MIGRATION = readFileSync(resolve(__dirname, '../../../infrastructure/database/migrations/0182_create_bo_inventory_policy_evaluations.sql'), 'utf8');
@@ -180,7 +181,7 @@ describe.runIf(run)('BO inventory policy evaluations (0182) - live PostgreSQL', 
         { tgname: 'guard_inventory_policy_evaluation_insert', proname: 'guard_inventory_policy_evaluation_insert', per_row: true, on_truncate: false, tgenabled: 'O' },
       ];
       expect((await admin.query(q)).rows).toEqual(expected);
-      await admin.query(MIGRATION); await admin.query(MIGRATION);
+      await runMigrationWithoutWaiting(admin, MIGRATION); await runMigrationWithoutWaiting(admin, MIGRATION);   // helpers/ddlProof.ts: never waits on a lock
       expect((await admin.query(q)).rows).toEqual(expected);
       expect((await admin.query(`SELECT count(*)::int n FROM _migrations WHERE filename='0182_create_bo_inventory_policy_evaluations.sql'`)).rows[0].n).toBe(1);
       await unchanged();

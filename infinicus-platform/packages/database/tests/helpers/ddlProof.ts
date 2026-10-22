@@ -49,3 +49,35 @@ export async function withExclusiveLocksNoWait<R>(pool: Pool, options: DdlProofO
     await sleep(40 + Math.floor(Math.random() * 160));
   }
 }
+
+/**
+ * Re-applies a migration script (it carries its own BEGIN/COMMIT) against the shared test database without ever waiting for a lock.
+ *
+ * A re-applied migration is DDL on the table it guards (DROP/CREATE TRIGGER, ALTER TABLE, CREATE OR REPLACE FUNCTION), which needs strong locks that other
+ * packages' tests hold while they write the same hot tables. Waiting in the lock queue for them stalled those tests and, taking the locks one statement at a
+ * time, formed lock-order cycles ("deadlock detected"). Here a lock wait longer than `lockTimeoutMs` aborts the whole script (it is one implicit transaction,
+ * so nothing is left half-applied), and it is retried after a short jittered pause. The 50 ms cap is far below PostgreSQL's 1 s deadlock check, so this
+ * session can never be chosen as a deadlock victim, and it never holds up a later reader for more than 50 ms. The migration is idempotent by design, which is
+ * what the tests using this prove; a real error (anything other than 55P03 lock not available / 40P01 deadlock) is thrown at once.
+ */
+export async function runMigrationWithoutWaiting(pool: Pool, sql: string, options: { lockTimeoutMs?: number; maxWaitMs?: number } = {}): Promise<void> {
+  const lockTimeoutMs = options.lockTimeoutMs ?? 50;
+  const maxWaitMs = options.maxWaitMs ?? 90_000;
+  const deadline = Date.now() + maxWaitMs;
+  for (let attempt = 1; ; attempt++) {
+    const client = await pool.connect();
+    try {
+      await client.query(`SET lock_timeout = ${Math.trunc(lockTimeoutMs)}`);
+      await client.query(sql);
+      return;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if ((code !== '55P03' && code !== '40P01') || Date.now() > deadline) throw error;
+    } finally {
+      await client.query('ROLLBACK').catch(() => undefined);          // a script that failed part-way leaves the session in an aborted transaction
+      await client.query('RESET lock_timeout').catch(() => undefined);
+      client.release();
+    }
+    await sleep(30 + Math.floor(Math.random() * 120));
+  }
+}

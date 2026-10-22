@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import { withExclusiveLocksNoWait } from './helpers/ddlProof.js';
+import { runMigrationWithoutWaiting, withExclusiveLocksNoWait } from './helpers/ddlProof.js';
 
 const RUN = !!process.env.ADMIN_DATABASE_URL;
 const SCHEMA = `ddlproof_${randomUUID().replace(/-/g, '').slice(0, 10)}`;
@@ -93,5 +93,56 @@ describe.runIf(RUN)('withExclusiveLocksNoWait', () => {
   it('does not swallow real errors: a failing proof statement or a missing table is thrown at once, not retried', async () => {
     await expect(withExclusiveLocksNoWait(pool, { tables: [A] }, async (c) => { await c.query('SELECT nope_not_a_function()'); })).rejects.toThrow(/nope_not_a_function/);
     await expect(withExclusiveLocksNoWait(pool, { tables: [`${SCHEMA}.missing`] }, async () => 'x')).rejects.toMatchObject({ code: '42P01' });
+  });
+});
+
+describe.runIf(RUN)('runMigrationWithoutWaiting', () => {
+  let pool: Pool;
+  const SCHEMA2 = `ddlmig_${randomUUID().replace(/-/g, '').slice(0, 10)}`;
+  const T = `${SCHEMA2}.t`;
+  // an idempotent migration script with its own BEGIN/COMMIT, like the repository's
+  const MIGRATION = `BEGIN;
+    ALTER TABLE ${T} ADD COLUMN IF NOT EXISTS extra int;
+    CREATE INDEX IF NOT EXISTS t_extra_idx ON ${T} (extra);
+  COMMIT;`;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL, max: 8 });
+    await pool.query(`CREATE SCHEMA ${SCHEMA2}`);
+    await pool.query(`CREATE TABLE ${T} (id int PRIMARY KEY)`);
+  });
+  afterAll(async () => { await pool.query(`DROP SCHEMA ${SCHEMA2} CASCADE`); await pool.end(); });
+
+  it('applies an idempotent migration script, twice, and leaves the session usable', async () => {
+    await runMigrationWithoutWaiting(pool, MIGRATION);
+    await runMigrationWithoutWaiting(pool, MIGRATION);
+    const cols = await pool.query(`SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema = $1 AND table_name = 't' AND column_name = 'extra'`, [SCHEMA2]);
+    expect(cols.rows[0].n).toBe(1);
+  });
+
+  it('does not wait in the lock queue: while another transaction holds the table it retries, a third connection is never blocked behind it, and it succeeds once released', async () => {
+    const holder = await pool.connect();
+    await holder.query('BEGIN');
+    await holder.query(`INSERT INTO ${T} VALUES (1)`);                      // ROW EXCLUSIVE: conflicts with the migration's ALTER TABLE
+    const started = Date.now();
+    const migration = runMigrationWithoutWaiting(pool, MIGRATION);
+    await sleep(500);
+    const t0 = Date.now();
+    await pool.query(`SELECT count(*) FROM ${T}`);                          // a plain reader: must not be queued behind the migration
+    expect(Date.now() - t0).toBeLessThan(300);
+    await holder.query('ROLLBACK');
+    holder.release();
+    await migration;
+    expect(Date.now() - started).toBeGreaterThanOrEqual(500);                // it waited for the holder by retrying, not by queueing
+  });
+
+  it('throws a real error at once instead of retrying it, and gives up loudly when the lock never frees', async () => {
+    await expect(runMigrationWithoutWaiting(pool, 'BEGIN; SELECT nope_not_a_function(); COMMIT;')).rejects.toThrow(/nope_not_a_function/);
+    const holder = await pool.connect();
+    await holder.query('BEGIN');
+    await holder.query(`LOCK TABLE ${T} IN ROW EXCLUSIVE MODE`);
+    try {
+      await expect(runMigrationWithoutWaiting(pool, MIGRATION, { maxWaitMs: 400 })).rejects.toMatchObject({ code: '55P03' });
+    } finally { await holder.query('ROLLBACK'); holder.release(); }
   });
 });

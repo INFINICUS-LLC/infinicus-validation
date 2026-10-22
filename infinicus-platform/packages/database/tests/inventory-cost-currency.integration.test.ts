@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { Pool } from 'pg';
 import { createPool, closePool } from '../src/client.js';
 import { PurchaseOrderRepository } from '../src/index.js';
+import { runMigrationWithoutWaiting } from './helpers/ddlProof.js';
 
 const run = !!process.env.DATABASE_URL;
 const MIGRATION = readFileSync(resolve(__dirname, '../../../infrastructure/database/migrations/0183_add_explicit_currency_to_inventory_costs.sql'), 'utf8');
@@ -106,7 +107,7 @@ describe.runIf(run)('explicit currency on inventory costs (0183) - live PostgreS
 
   describe('migration safety and unchanged protections', () => {
     it('re-applying the migration is idempotent: same two constraints, same column, one registration', async () => {
-      await admin.query(MIGRATION); await admin.query(MIGRATION);
+      await runMigrationWithoutWaiting(admin, MIGRATION); await runMigrationWithoutWaiting(admin, MIGRATION);   // helpers/ddlProof.ts: never waits on a lock
       expect((await admin.query(`SELECT count(*)::int n FROM pg_constraint WHERE conrelid = 'business_operations.inventory_movements'::regclass AND conname LIKE 'inventory_movements_unit_cost_currency_%'`)).rows[0].n).toBe(2);
       expect((await admin.query(`SELECT count(*)::int n FROM _migrations WHERE filename = '0183_add_explicit_currency_to_inventory_costs.sql'`)).rows[0].n).toBe(1);
       expect((await admin.query(`SELECT convalidated FROM pg_constraint WHERE conname = 'inventory_movements_unit_cost_currency_presence'`)).rows[0].convalidated).toBe(false);
