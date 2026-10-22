@@ -84,3 +84,10 @@ export * from './InventoryBiEvidenceService.js';
 export * from './SalesReportService.js';
 export * from './InventoryItemTwinService.js';
 export * from './inventoryItemTwinState.js';
+
+// ── Business Intelligence financial reporting (NEW-BI-01) ──────────────────────
+export * from './financial/FinancialIntelligenceService.js';
+export { buildFinancialReport } from './financial/financialReport.js';
+export type { BuildReportInput } from './financial/financialReport.js';
+export * from './financial/money.js';
+export * from './financial/periods.js';

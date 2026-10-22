@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import {
   PublicationDeliveryRepository,
+  PublicationIntakeReader,
   PublicationPackageRepository,
   withTenantTransaction,
   type PublicationPackage,
@@ -30,16 +31,6 @@ export interface BusinessIntakeResult {
   acceptedRecordCount: number;
   commandCount: number;
   results: CommandExecutionResult[];
-}
-
-interface SubmissionRow {
-  id: string;
-  payload: unknown;
-}
-
-interface ProvenanceRow {
-  id: string;
-  record_reference: string;
 }
 
 function recordsFromPayload(payload: unknown): unknown[] {
@@ -133,7 +124,9 @@ export class BusinessIntakeService {
     private readonly publicationPackages = new PublicationPackageRepository(),
     private readonly policy: BusinessIntakePolicy = DEFAULT_BUSINESS_INTAKE_POLICY,
     // Data Acquisition owns data_acquisition.publication_deliveries (V-07 / SOT-09). BO only acknowledges or rejects through DAL's repository.
-    private readonly deliveries = new PublicationDeliveryRepository()
+    private readonly deliveries = new PublicationDeliveryRepository(),
+    // Data Acquisition also owns the READ of its published package, submissions and provenance (V-07 residual): BO names no data_acquisition relation.
+    private readonly intakeReader = new PublicationIntakeReader()
   ) {
     this.registry = registry ?? registerDefaultMappers(new IntakeMapperRegistry());
   }
@@ -211,7 +204,11 @@ export class BusinessIntakeService {
     publicationPackageId: string,
     error: unknown
   ): Promise<void> {
-    await this.deliveries.recordLayerFailure(ctx, publicationPackageId, DESTINATION_LAYER, controlledFailureReason(error));
+    try {
+      await this.deliveries.recordLayerFailure(ctx, publicationPackageId, DESTINATION_LAYER, controlledFailureReason(error));
+    } catch {
+      // The original rejection is the truth the caller needs; a failure to record it must not replace it.
+    }
   }
 
   async processHandoff(ctx: TenantContext, handoff: DALToBOHandoff): Promise<BusinessIntakeResult> {
@@ -252,29 +249,22 @@ export class BusinessIntakeService {
       throw new BusinessIntakeRejectedError('Publication contains an unresolved critical limitation.');
     }
 
-    return withTenantTransaction(ctx, async (client) => {
-      const pkgResult = await client.query<Record<string, unknown>>(
-        `SELECT *
-         FROM data_acquisition.publication_packages
-         WHERE id = $1
-         FOR UPDATE`,
-        [payload.publicationPackageId]
-      );
-      if (pkgResult.rowCount !== 1) {
+    // `return await`: without the await a rejection inside the transaction escapes this try/catch, and Data Acquisition would never be told the handoff failed.
+    return await withTenantTransaction(ctx, async (client) => {
+      const pkg = await this.intakeReader.lockPackageOn(client, payload.publicationPackageId);
+      if (pkg === null) {
         throw new BusinessIntakeRejectedError('Published Data Acquisition package not found.');
       }
-
-      const pkg = pkgResult.rows[0];
-      if (pkg.tenant_id !== ctx.tenantId || pkg.workspace_id !== ctx.workspaceId) {
+      if (pkg.tenantId !== ctx.tenantId || pkg.workspaceId !== ctx.workspaceId) {
         throw new BusinessIntakeRejectedError('Publication package scope mismatch.');
       }
-      if (pkg.business_id !== businessId) {
+      if (pkg.businessId !== businessId) {
         throw new BusinessIntakeRejectedError('Publication package business scope mismatch.');
       }
-      if (pkg.status !== 'published' || pkg.target_layer !== 'business_operations') {
+      if (pkg.status !== 'published' || pkg.targetLayer !== 'business_operations') {
         throw new BusinessIntakeRejectedError('Publication package is not published for Business Operations.');
       }
-      if (payload.recordCount !== Number(pkg.record_count)) {
+      if (payload.recordCount !== pkg.recordCount) {
         throw new BusinessIntakeRejectedError('Handoff record count does not match persisted publication package.');
       }
 
@@ -292,36 +282,24 @@ export class BusinessIntakeService {
       }
       const deliveryId = attempt.deliveryId;
 
-      const dataReference = pkg.data_reference as { collectionRunId?: unknown };
+      const dataReference = pkg.dataReference as { collectionRunId?: unknown } | null;
       if (typeof dataReference?.collectionRunId !== 'string' || dataReference.collectionRunId.length === 0) {
         throw new BusinessIntakeRejectedError('Publication package has no collectionRunId reference.');
       }
 
-      const submissions = await client.query<SubmissionRow>(
-        `SELECT id, payload
-         FROM data_acquisition.manual_submissions
-         WHERE collection_run_id = $1
-         ORDER BY created_at ASC`,
-        [dataReference.collectionRunId]
-      );
-      if (submissions.rowCount === 0) {
+      const collectionRunId = dataReference.collectionRunId;
+      const submissions = await this.intakeReader.submissionsForCollectionRunOn(client, collectionRunId);
+      if (submissions.length === 0) {
         throw new BusinessIntakeRejectedError('No manual submission found for published collection run.');
       }
 
-      const provenance = await client.query<ProvenanceRow>(
-        `SELECT id, record_reference
-         FROM data_acquisition.provenance_records
-         WHERE collection_run_id = $1`,
-        [dataReference.collectionRunId]
-      );
-      const provenanceByReference = new Map(
-        provenance.rows.map((row) => [row.record_reference, row.id])
-      );
+      const provenance = await this.intakeReader.provenanceForCollectionRunOn(client, collectionRunId);
+      const provenanceByReference = new Map(provenance.map((row) => [row.recordReference, row.id]));
 
       const commands: OperationalCommand[] = [];
       let acceptedRecordCount = 0;
 
-      for (const submission of submissions.rows) {
+      for (const submission of submissions) {
         const records = recordsFromPayload(submission.payload);
         for (let recordIndex = 0; recordIndex < records.length; recordIndex++) {
           const reference = `${submission.id}#${recordIndex}`;

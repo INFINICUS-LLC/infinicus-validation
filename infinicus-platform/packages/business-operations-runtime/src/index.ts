@@ -38,7 +38,7 @@ export type { GovernedExecutionGateDependencies } from './execution-activation/G
 export { KILL_SWITCH_ENV, killSwitchEngagedFrom } from './execution-activation/killSwitch.js';
 export { ExecutionActivationService, ExecutionActivationError, EXECUTION_ACTIVATION_PERMISSION, EXECUTION_ACTIVATION_AUDIT_ACTIONS } from './execution-activation/ExecutionActivationService.js';
 export type { SetActivationRequest, ExecutionActivationServiceDependencies } from './execution-activation/ExecutionActivationService.js';
-
+export * from './financial/FinancialFactsService.js';
 // Business Operations' read-only sales facts (BI sales report).
 export * from './sales/SalesFactsService.js';
 export { decimalToMinorUnits, AmountNotRepresentableError } from './sales/decimalMinor.js';

@@ -62,6 +62,7 @@ export {
   MAX_LINEAGE_DEPTH,
   PublicationPackageRepository,
   PublicationDeliveryRepository,
+  PublicationIntakeReader,
   PUBLICATION_PACKAGE_TRANSITIONS,
   ManualSubmissionRepository,
   MANUAL_SUBMISSION_STATUSES,
@@ -121,6 +122,9 @@ export type {
   LayerDelivery,
   LayerAttempt,
   PublicationDeliveryStatus,
+  PublicationPackageForIntake,
+  SubmissionForIntake,
+  ProvenanceForIntake,
   PublicationPackageStatus,
   CreatePublicationPackageInput,
   ManualSubmission,
@@ -162,6 +166,8 @@ export {
   INVENTORY_POLICY_EVALUATION_DIMENSIONS, INVENTORY_POLICY_EVALUATION_RESULTS,
 } from './repositories/bo/index.js';
 export { InventoryPolicyFactsRepository } from './repositories/bo/InventoryPolicyFactsRepository.js';
+export { FinancialFactsRepository } from './repositories/bo/FinancialFactsRepository.js';
+export type { RawFinancialFacts, RawDailyAmount, RawCostOfSales, RawIndicator } from './repositories/bo/FinancialFactsRepository.js';
 export type {
   InventoryPolicyFactsSnapshot, InventoryPolicyFactsItem, InventoryPolicyFactsBalance, InventoryPolicyFactsReceipt, InventoryPolicyFactsDemand, LoadInventoryPolicyFactsInput,
 } from './repositories/bo/InventoryPolicyFactsRepository.js';
