@@ -283,3 +283,662 @@ jobs:
           n=$(grep -E " FAIL " "$RUNNER_TEMP/clean.log" | grep -v offsite-backup | wc -l)
           echo "other FAIL lines: $n"; grep -E " FAIL " "$RUNNER_TEMP/clean.log" | grep -v offsite-backup | head -20
           if [ "$n" -gt 0 ]; then exit 1; fi
+
+      - name: "DBFILE aba-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/aba\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/aba-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: aba-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE adi-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/adi\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/adi-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: adi-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE alert-events.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/alert\-events.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/alert-events.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: alert-events.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE api-idempotency.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/api\-idempotency.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/api-idempotency.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: api-idempotency.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE audit-events-append-only.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/audit\-events\-append\-only.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/audit-events-append-only.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: audit-events-append-only.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE auth-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/auth\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/auth-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: auth-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE backup-restore.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/backup\-restore.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/backup-restore.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: backup-restore.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE bi-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/bi\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/bi-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: bi-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE billing-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/billing\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/billing-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: billing-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE bo-inventory-policy-evaluations.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/bo\-inventory\-policy\-evaluations.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/bo-inventory-policy-evaluations.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: bo-inventory-policy-evaluations.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE bo-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/bo\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/bo-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: bo-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE build33-delivery-attempt.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/build33\-delivery\-attempt.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/build33-delivery-attempt.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: build33-delivery-attempt.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE build33-eventing-rls.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/build33\-eventing\-rls.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/build33-eventing-rls.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: build33-eventing-rls.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE build33-publication-replay.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/build33\-publication\-replay.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/build33-publication-replay.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: build33-publication-replay.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE business-currency-declarations.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/business\-currency\-declarations.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/business-currency-declarations.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: business-currency-declarations.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE cl-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/cl\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/cl-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: cl-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE currency-minor-units.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/currency\-minor\-units.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/currency-minor-units.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: currency-minor-units.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE da-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/da\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/da-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: da-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE delete-tenant-data.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/delete\-tenant\-data.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/delete-tenant-data.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: delete-tenant-data.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE deployment-events.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/deployment\-events.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/deployment-events.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: deployment-events.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE discount-planning.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/discount\-planning.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/discount-planning.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: discount-planning.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE dt-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/dt\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/dt-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: dt-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE error-events.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/error\-events.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/error-events.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: error-events.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE export-tenant.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/export\-tenant.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/export-tenant.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: export-tenant.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE incident-repository.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/incident\-repository.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/incident-repository.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: incident-repository.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE inventory-cost-currency.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/inventory\-cost\-currency.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/inventory-cost-currency.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: inventory-cost-currency.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE inventory-movements-append-only.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/inventory\-movements\-append\-only.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/inventory-movements-append-only.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: inventory-movements-append-only.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE inventory-movements-force-rls.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/inventory\-movements\-force\-rls.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/inventory-movements-force-rls.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: inventory-movements-force-rls.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE inventory-unit-cost-positive.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/inventory\-unit\-cost\-positive.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/inventory-unit-cost-positive.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: inventory-unit-cost-positive.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE membership-list-active.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/membership\-list\-active.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/membership-list-active.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: membership-list-active.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0001.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0001.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0001.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0001.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0181-audit-append-only.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0181\-audit\-append\-only.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0181-audit-append-only.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0181-audit-append-only.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0182-bo-inventory-policy-evaluations.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0182\-bo\-inventory\-policy\-evaluations.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0182-bo-inventory-policy-evaluations.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0182-bo-inventory-policy-evaluations.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0183-inventory-cost-currency.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0183\-inventory\-cost\-currency.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0183-inventory-cost-currency.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0183-inventory-cost-currency.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0184-inventory-movements-append-only.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0184\-inventory\-movements\-append\-only.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0184-inventory-movements-append-only.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0184-inventory-movements-append-only.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0185-business-currency-declarations.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0185\-business\-currency\-declarations.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0185-business-currency-declarations.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0185-business-currency-declarations.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0186-force-rls-inventory-movements.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0186\-force\-rls\-inventory\-movements.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0186-force-rls-inventory-movements.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0186-force-rls-inventory-movements.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0187-positive-unit-cost.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0187\-positive\-unit\-cost.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0187-positive-unit-cost.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0187-positive-unit-cost.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0188-freeze-decided-decisions.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0188\-freeze\-decided\-decisions.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0188-freeze-decided-decisions.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0188-freeze-decided-decisions.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0200-om-scope-integrity.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0200\-om\-scope\-integrity.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0200-om-scope-integrity.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0200-om-scope-integrity.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0201-om-child-scope-integrity.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0201\-om\-child\-scope\-integrity.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0201-om-child-scope-integrity.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0201-om-child-scope-integrity.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-0210-offline-sales.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-0210\-offline\-sales.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-0210-offline-sales.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-0210-offline-sales.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-build31.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-build31.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-build31.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-build31.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-build33-event-architecture.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-build33\-event\-architecture.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-build33-event-architecture.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-build33-event-architecture.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-gate.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-gate.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-gate.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-gate.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-locking.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-locking.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-locking.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-locking.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-p0-5-block3.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-p0\-5\-block3.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-p0-5-block3.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-p0-5-block3.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-p0-5-block3c1.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-p0\-5\-block3c1.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-p0-5-block3c1.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-p0-5-block3c1.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-p0-5-block3c2.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-p0\-5\-block3c2.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-p0-5-block3c2.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-p0-5-block3c2.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-p0-5-block3c3.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-p0\-5\-block3c3.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-p0-5-block3c3.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-p0-5-block3c3.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-p0-5-block3e.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-p0\-5\-block3e.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-p0-5-block3e.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-p0-5-block3e.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2a.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2a.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2a.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2a.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2b.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2b.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2b.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2b.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2c.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2c.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2c.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2c.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2d.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2d.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2d.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2d.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2e.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2e.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2e.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2e.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2f.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2f.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2f.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2f.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2g.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2g.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2g.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2g.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2h.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2h.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2h.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2h.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2i.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2i.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2i.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2i.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE migration-stage2j.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/migration\-stage2j.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/migration-stage2j.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: migration-stage2j.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE note-planning.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/note\-planning.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/note-planning.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: note-planning.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE observability-audit-cli.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/observability\-audit\-cli.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/observability-audit-cli.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: observability-audit-cli.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE offline-sale-planning.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/offline\-sale\-planning.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/offline-sale-planning.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: offline-sale-planning.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE offline-sales-schema.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/offline\-sales\-schema.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/offline-sales-schema.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: offline-sales-schema.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE offline-sales-service.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/offline\-sales\-service.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/offline-sales-service.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: offline-sales-service.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE offsite-backup.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/offsite\-backup.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/offsite-backup.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: offsite-backup.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE om-execution-verification-invariants.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/om\-execution\-verification\-invariants.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/om-execution-verification-invariants.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: om-execution-verification-invariants.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE om-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/om\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/om-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: om-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE onboarding-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/onboarding\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/onboarding-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: onboarding-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE owner-authority-dry-run-cli.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/owner\-authority\-dry\-run\-cli.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/owner-authority-dry-run-cli.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: owner-authority-dry-run-cli.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE owner-authority.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/owner\-authority.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/owner-authority.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: owner-authority.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-b2a-evaluation.architecture.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-b2a\-evaluation.architecture.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-b2a-evaluation.architecture.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-b2a-evaluation.architecture.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3-aap-persistence.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3\-aap\-persistence.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3-aap-persistence.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3-aap-persistence.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3b-aap-repository.architecture.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3b\-aap\-repository.architecture.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3b-aap-repository.architecture.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3b-aap-repository.architecture.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3b-aap-repository.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3b\-aap\-repository.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3b-aap-repository.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3b-aap-repository.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3c1-capture.architecture.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3c1\-capture.architecture.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3c1-capture.architecture.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3c1-capture.architecture.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3c1-capture.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3c1\-capture.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3c1-capture.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3c1-capture.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3c2-governance.architecture.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3c2\-governance.architecture.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3c2-governance.architecture.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3c2-governance.architecture.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3c2-governance.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3c2\-governance.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3c2-governance.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3c2-governance.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3c3-boundaries.architecture.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3c3\-boundaries.architecture.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3c3-boundaries.architecture.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3c3-boundaries.architecture.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3c3-boundaries.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3c3\-boundaries.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3c3-boundaries.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3c3-boundaries.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3d-shared-transaction.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3d\-shared\-transaction.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3d-shared-transaction.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3d-shared-transaction.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE p0-5-block3e-intake.architecture.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/p0\-5\-block3e\-intake.architecture.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/p0-5-block3e-intake.architecture.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: p0-5-block3e-intake.architecture.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE performance.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/performance.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/performance.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: performance.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE promotion-gate.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/promotion\-gate.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/promotion-gate.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: promotion-gate.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE prune-backups.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/prune\-backups.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/prune-backups.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: prune-backups.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE restore-proof-trap-order.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/restore\-proof\-trap\-order.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/restore-proof-trap-order.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: restore-proof-trap-order.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE secret-rotation-audit-cli.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/secret\-rotation\-audit\-cli.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/secret-rotation-audit-cli.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: secret-rotation-audit-cli.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE secret-rotation-events.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/secret\-rotation\-events.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/secret-rotation-events.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: secret-rotation-events.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE simulation-repositories.integration.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/simulation\-repositories.integration.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/simulation-repositories.integration.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: simulation-repositories.integration.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE tender-planning.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/tender\-planning.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/tender-planning.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: tender-planning.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE testTruncateSafety.architecture.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/testTruncateSafety.architecture.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/testTruncateSafety.architecture.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: testTruncateSafety.architecture.test.ts"; exit 1; fi
+          echo ok
+
+      - name: "DBFILE transaction-helpers.test.ts"
+        if: ${{ always() }}
+        run: |
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test-output.log" > "$RUNNER_TEMP/clean2.log"
+          if grep -E " FAIL +tests/transaction\-helpers.test.ts" "$RUNNER_TEMP/clean2.log" | grep -q .; then grep -E " FAIL +tests/transaction-helpers.test.ts|Error:|timed out" "$RUNNER_TEMP/clean2.log" | head -6; echo "FAILED: transaction-helpers.test.ts"; exit 1; fi
+          echo ok
+
