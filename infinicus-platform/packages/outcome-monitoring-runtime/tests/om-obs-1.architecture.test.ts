@@ -90,9 +90,10 @@ describe('OM-OBS-1 - read-only observability', () => {
 
   it('no migration was added by this block and no new permission was invented', () => {
     // 0210 is the OFF-1 offline-selling migration (PR #228; owner ruling 2026-10-22: 0210 = OFF-1). It is not part of this block, so it is exempted
-    // BY EXACT NAME ONLY: any other migration numbered 0210 or higher (0211 included) still fails this guard.
-    const OFF_1_MIGRATION = '0210_create_offline_sales.sql';
-    const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && f !== OFF_1_MIGRATION);
+    // BY EXACT NAME ONLY: any other migration numbered 0210 or higher still fails this guard.
+    // 0211 is the Data Acquisition child-table RLS hardening (architecture finding V-18); it is not part of this block either.
+    const OTHER_BLOCK_MIGRATIONS = ['0210_create_offline_sales.sql', '0211_enable_rls_da_child_tables.sql'];
+    const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);
     expect(read(ROUTE) + read(SERVICE)).not.toMatch(/['"](om|aba|bi|dt|sim|adi|cl):(admin|monitor|observe|health)['"]/);
   });
