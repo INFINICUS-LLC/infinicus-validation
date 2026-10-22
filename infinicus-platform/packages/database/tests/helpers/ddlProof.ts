@@ -58,7 +58,7 @@ export async function withExclusiveLocksNoWait<R>(pool: Pool, options: DdlProofO
  * time, formed lock-order cycles ("deadlock detected"). Here a lock wait longer than `lockTimeoutMs` aborts the whole script (it is one implicit transaction,
  * so nothing is left half-applied), and it is retried after a short jittered pause. The 50 ms cap is far below PostgreSQL's 1 s deadlock check, so this
  * session can never be chosen as a deadlock victim, and it never holds up a later reader for more than 50 ms. The migration is idempotent by design, which is
- * what the tests using this prove; a real error (anything other than 55P03 lock not available / 40P01 deadlock) is thrown at once.
+ * what the tests using this prove; a real error (anything other than 55P03 lock not available / 40P01 deadlock / the transient catalog race below) is thrown at once.
  */
 export async function runMigrationWithoutWaiting(pool: Pool, sql: string, options: { lockTimeoutMs?: number; maxWaitMs?: number } = {}): Promise<void> {
   const lockTimeoutMs = options.lockTimeoutMs ?? 50;
@@ -72,7 +72,10 @@ export async function runMigrationWithoutWaiting(pool: Pool, sql: string, option
       return;
     } catch (error) {
       const code = (error as { code?: string }).code;
-      if ((code !== '55P03' && code !== '40P01') || Date.now() > deadline) throw error;
+      // 'tuple concurrently updated' (XX000) is PostgreSQL's catalog race when two sessions CREATE OR REPLACE the same function at once. Six migrations replace
+      // business_operations.forbid_mutation and different suites re-apply them in parallel, so it is transient here; the script is idempotent and is retried.
+      const catalogRace = code === 'XX000' && /tuple concurrently updated/.test((error as Error).message);
+      if ((code !== '55P03' && code !== '40P01' && !catalogRace) || Date.now() > deadline) throw error;
     } finally {
       await client.query('ROLLBACK').catch(() => undefined);          // a script that failed part-way leaves the session in an aborted transaction
       await client.query('RESET lock_timeout').catch(() => undefined);

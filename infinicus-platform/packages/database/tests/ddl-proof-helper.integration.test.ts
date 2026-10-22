@@ -145,4 +145,18 @@ describe.runIf(RUN)('runMigrationWithoutWaiting', () => {
       await expect(runMigrationWithoutWaiting(pool, MIGRATION, { maxWaitMs: 400 })).rejects.toMatchObject({ code: '55P03' });
     } finally { await holder.query('ROLLBACK'); holder.release(); }
   });
+  it('retries the catalog race: scripts that each CREATE OR REPLACE the same function, run in parallel, all succeed (raw "tuple concurrently updated" is transient and the script is idempotent)', async () => {
+    const F = `${SCHEMA2}.shared_guard`;
+    const tables = [0, 1, 2, 3, 4].map((i) => `${SCHEMA2}.race_${i}`);
+    for (const t of tables) await pool.query(`CREATE TABLE IF NOT EXISTS ${t} (id int PRIMARY KEY)`);
+    // distinct tables, so nothing serialises the scripts except the shared function row: the same shape as the six migrations that replace business_operations.forbid_mutation
+    const scripts = tables.map((t, i) => `CREATE OR REPLACE FUNCTION ${F}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
+      CREATE INDEX IF NOT EXISTS race_ix_${i} ON ${t} (id);`);
+    await pool.query(`CREATE OR REPLACE FUNCTION ${F}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$`);   // the real functions already exist when a migration is re-applied: replace-only, so no first-creation race
+    for (let round = 0; round < 15; round++) {
+      await Promise.all(scripts.map((sql) => runMigrationWithoutWaiting(pool, sql)));
+    }
+    const fn = await pool.query(`SELECT count(*)::int AS n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.proname = 'shared_guard'`, [SCHEMA2]);
+    expect(fn.rows[0].n).toBe(1);
+  }, 60_000);
 });
