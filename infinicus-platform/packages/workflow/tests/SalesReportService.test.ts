@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TenantContext } from '@infinicus/database';
 import {
-  SalesReportService, SalesReportPeriodError, validateSalesPeriod, averageHalfUp, MAX_REPORT_DAYS,
+  SalesReportService, SalesReportPeriodError, validateSalesPeriod, averageHalfUp, SALES_REPORT_MAX_DAYS,
   type SalesDayFactsView, type SalesFactsPort, type SalesFactsResultView,
 } from '../src/SalesReportService.js';
 
@@ -24,7 +24,7 @@ describe('validateSalesPeriod', () => {
     expect(validateSalesPeriod('2026-01-01', '2026-12-31').days).toBe(365);
     expect(validateSalesPeriod('2024-01-01', '2024-12-31').days).toBe(366);        // leap year
   });
-  it(`refuses a span over ${MAX_REPORT_DAYS} days, a reversed range and anything that is not a real calendar date`, () => {
+  it(`refuses a span over ${SALES_REPORT_MAX_DAYS} days, a reversed range and anything that is not a real calendar date`, () => {
     expect(() => validateSalesPeriod('2024-01-01', '2025-01-01')).toThrow(SalesReportPeriodError);
     expect(() => validateSalesPeriod('2026-03-12', '2026-03-10')).toThrow(/not be before/);
     for (const bad of ['2026-02-30', '2026-13-01', '2026-00-10', '26-03-10', '2026-3-10', '', '2026-03-10T00:00:00Z', 'tomorrow'])
