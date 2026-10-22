@@ -100,7 +100,7 @@ describe.runIf(RUN)('migration 0212: membership_roles and file children are tena
 
   it('the documented rollback removes exactly the policies and RLS flags, proven inside a transaction that is rolled back', async () => {
     const sql = readFileSync(resolve(__dirname, '../../../infrastructure/database/migrations', MIGRATION), 'utf8');
-    const stmts = sql.split('\n').filter((l) => /^--   (DROP POLICY|ALTER TABLE)/.test(l)).map((l) => l.slice(5));
+    const stmts = sql.split('\n').filter((l) => /^-- {3}(DROP POLICY|ALTER TABLE)/.test(l)).map((l) => l.slice(5));
     expect(stmts).toHaveLength(6);
     // Locked up front with NOWAIT (helpers/ddlProof.ts): the proof never waits in a lock queue, so it cannot deadlock or stall other tests.
     await withExclusiveLocksNoWait(admin, { tables: [...TABLES] }, async (c) => {
