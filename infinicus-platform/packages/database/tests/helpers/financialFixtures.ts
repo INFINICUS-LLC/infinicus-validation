@@ -31,20 +31,32 @@ export class Seeder {
   constructor(private readonly admin: Pool, readonly w: World) {}
   private scope(): unknown[] { return [this.w.tenantId, this.w.workspaceId, this.w.businessId]; }
 
-  async order(o: { date: string; currency: string; total: string; status?: string; lines?: { quantity: string; type?: string; total?: string }[] }): Promise<{ orderId: string; lineIds: string[] }> {
+  async order(o: { date: string; currency: string; total: string; status?: string; customerId?: string; lines?: { quantity: string; type?: string; total?: string; productId?: string; fulfilled?: string }[] }): Promise<{ orderId: string; lineIds: string[] }> {
     const orderId = randomUUID();
     await this.admin.query(
-      `INSERT INTO platform.orders (id, tenant_id, workspace_id, business_id, order_number, order_date, currency_code, total_amount, operational_status)
-       VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9)`, [orderId, ...this.scope(), uc('ORD'), o.date, o.currency, o.total, o.status ?? 'completed']);
+      `INSERT INTO platform.orders (id, tenant_id, workspace_id, business_id, order_number, order_date, currency_code, total_amount, operational_status, customer_id)
+       VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10)`, [orderId, ...this.scope(), uc('ORD'), o.date, o.currency, o.total, o.status ?? 'completed', o.customerId ?? null]);
     const lineIds: string[] = [];
     for (const [i, line] of (o.lines ?? []).entries()) {
       const id = randomUUID();
       await this.admin.query(
-        `INSERT INTO business_operations.order_line_items (id, tenant_id, workspace_id, business_id, order_id, line_number, item_type, description, quantity, unit_price, line_total)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'fixture line',$8,1,$9)`, [id, ...this.scope(), orderId, i + 1, line.type ?? 'product', line.quantity, line.total ?? line.quantity]);
+        `INSERT INTO business_operations.order_line_items (id, tenant_id, workspace_id, business_id, order_id, line_number, item_type, description, quantity, unit_price, line_total, product_id, fulfilled_qty)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'fixture line',$8,1,$9,$10,$11)`, [id, ...this.scope(), orderId, i + 1, line.type ?? 'product', line.quantity, line.total ?? line.quantity, line.productId ?? null, line.fulfilled ?? '0']);
       lineIds.push(id);
     }
     return { orderId, lineIds };
+  }
+
+  async customer(name = 'Fixture customer'): Promise<string> {
+    const id = randomUUID();
+    await this.admin.query(`INSERT INTO platform.customers (id, tenant_id, workspace_id, business_id, display_name) VALUES ($1,$2,$3,$4,$5)`, [id, ...this.scope(), name]);
+    return id;
+  }
+
+  async product(name: string): Promise<string> {
+    const id = randomUUID();
+    await this.admin.query(`INSERT INTO platform.products (id, tenant_id, workspace_id, business_id, product_code, name) VALUES ($1,$2,$3,$4,$5,$6)`, [id, ...this.scope(), uc('PRD'), name]);
+    return id;
   }
 
   private async stockRefs(): Promise<{ item: string; warehouse: string }> {
