@@ -13,6 +13,9 @@ const strip = (text: string) => text.split('\n').filter((line) => !/^\s*(\/\/|\*
 
 function listTs(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {
+    // Never descend into dependencies: they are not source under review (the importer filter below already excludes node_modules paths), and walking
+    // them (about 145,000 .ts files under apps/ and layers/) took several seconds, past the 5 s test timeout on a loaded CI runner.
+    if (entry === 'node_modules') return [];
     const full = join(directory, entry);
     return statSync(full).isDirectory() ? listTs(full) : full.endsWith('.ts') ? [full] : [];
   });
