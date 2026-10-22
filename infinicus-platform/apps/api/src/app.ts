@@ -51,9 +51,11 @@ import decisionRecommendationsRoutes from './routes/decisionRecommendations.js';
 import reorderPolicyRecommendationRoutes from './routes/reorderPolicyRecommendation.js';
 import inventoryReorderPolicyBaselineRoutes from './routes/inventoryReorderPolicyBaseline.js';
 import inventoryBiEvidenceRoutes from './routes/inventoryBiEvidence.js';
+import financialIntelligenceRoutes from './routes/financialIntelligence.js';
 import inventoryItemTwinRoutes from './routes/inventoryItemTwin.js';
 import type { InventoryItemTwinCompositionOptions } from './inventoryItemTwinComposition.js';
 import type { InventoryBiEvidenceCompositionOptions } from './inventoryBiEvidenceComposition.js';
+import type { FinancialIntelligenceCompositionOptions } from './financialIntelligenceComposition.js';
 import type { ReorderRecommendationCompositionOptions } from './reorderPolicyRecommendationComposition.js';
 import dataAcquisitionRoutes from './routes/dataAcquisition.js';
 import webhooksRoutes from './routes/webhooks.js';
@@ -76,6 +78,8 @@ export interface BuildAppOptions {
   reorderRecommendation?: ReorderRecommendationCompositionOptions;
   /** AC-2 Block 5: the BI inventory evidence service composition (test seam; production joins BI to the read-only BO facts service). */
   inventoryBiEvidence?: InventoryBiEvidenceCompositionOptions;
+  /** NEW-BI-01: test seam for the read-only financial report (production leaves it unset). */
+  financialIntelligence?: FinancialIntelligenceCompositionOptions;
   /** AC-2 Block 6: the BDT inventory item state composition (test seam; production feeds the twin from the BI evidence service). */
   inventoryItemTwin?: InventoryItemTwinCompositionOptions;
 }
@@ -218,6 +222,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(reorderPolicyRecommendationRoutes, options.reorderRecommendation ?? {});
   await app.register(inventoryReorderPolicyBaselineRoutes);
   await app.register(inventoryBiEvidenceRoutes, options.inventoryBiEvidence ?? {});
+  // NEW-BI-01: read-only financial report (bi:read); Business Intelligence derives every figure from read-only Business Operations facts.
+  await app.register(financialIntelligenceRoutes, options.financialIntelligence ?? {});
   await app.register(inventoryItemTwinRoutes, options.inventoryItemTwin ?? {});
   await app.register(dataAcquisitionRoutes);
   await app.register(webhooksRoutes, {
