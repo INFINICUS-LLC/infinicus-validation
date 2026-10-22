@@ -6,7 +6,7 @@ Workstream NEW-ARCHITECTURE-01. Baseline as of 2026-10-22 on main `5fc8489`. Dat
 
 | Basis | Score | Definition |
 |---|---|---|
-| Full scope | **29.1%** | every requirement unit of the 8 domains / 9 layers (246 units, 69 work packages) |
+| Full scope | **29.7%** | every requirement unit of the 8 domains / 9 layers (246 units, 69 work packages) |
 | Guardrail slice | **78.9%** | the 13 acceptance criteria (G-A..G-M) of the first governed action |
 
 **Owner decision needed:** which basis defines the 90% target. The slice is the narrow, evidence-heavy view; the full scope is the honest view of the whole architecture. No cherry-picking: both are published on every checkpoint.
@@ -29,7 +29,7 @@ Weights: specification 10%, functional 35%, end-to-end integration 25%, automate
 |---|---|---|
 | DAL | 25 | 32.1% |
 | BO | 25 | 48.6% |
-| BI | 25 | 15.3% |
+| BI | 25 | 20.9% |
 | BDT | 24 | 22.7% |
 | SIM | 27 | 26.6% |
 | ADI | 25 | 34.6% |
@@ -46,7 +46,7 @@ Weights: specification 10%, functional 35%, end-to-end integration 25%, automate
 | COMMERCE | 8 | 54% |
 | OPERATIONS | 14 | 36.5% |
 | FINANCE | 1 | 38.8% |
-| INTELLIGENCE | 100 | 25.4% |
+| INTELLIGENCE | 100 | 26.8% |
 | EXPERIENCE | 10 | 20.6% |
 | CONTROL LOOP | 77 | 29.2% |
 
@@ -69,9 +69,9 @@ Weights: specification 10%, functional 35%, end-to-end integration 25%, automate
 | BO-8 | Operational event publication, data handoff, assembly | 3 | 61.1% |
 | BI-1 | Core, mapping, ingestion, validation, cleaning, entity resolution, transformation | 7 | 12.6% |
 | BI-2 | Warehouse, metric registry, metric calculation | 3 | 30.2% |
-| BI-3 | Domain intelligence (financial, sales, customer, marketing, operations, inventory, workforce, market) | 8 | 11.6% |
-| BI-4 | Trend, anomaly and root-cause analysis | 3 | 7.5% |
-| BI-5 | Dashboards, reporting, alerts | 2 | 7.5% |
+| BI-3 | Domain intelligence (financial, sales, customer, marketing, operations, inventory, workforce, market) | 8 | 20.6% |
+| BI-4 | Trend, anomaly and root-cause analysis | 3 | 19% |
+| BI-5 | Dashboards, reporting, alerts | 2 | 24.4% |
 | BI-6 | Twin publication handoff, assembly | 2 | 36.1% |
 | BDT-1 | Core, identity/instance registry, ontology, intake validation | 4 | 50.8% |
 | BDT-2 | Entity graph and domain twins (organization, financial, demand, sales, marketing, operations, inventory, workforce, assets, market) | 11 | 13.7% |
@@ -147,6 +147,7 @@ Weights: specification 10%, functional 35%, end-to-end integration 25%, automate
 | Checkpoint | Full scope | Slice | Status |
 |---|---|---|---|
 | Baseline | 29.1% | 78.9% | recorded |
+| NEW-BI-01 (draft PR; ESTIMATE until merged and CI-verified) | 29.7% | 78.9% | estimated |
 | 75% | - | - | pending |
 | 80% | - | - | pending |
 | 85% | - | - | pending |

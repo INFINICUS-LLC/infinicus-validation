@@ -161,6 +161,8 @@ export {
   INVENTORY_POLICY_EVALUATION_DIMENSIONS, INVENTORY_POLICY_EVALUATION_RESULTS,
 } from './repositories/bo/index.js';
 export { InventoryPolicyFactsRepository } from './repositories/bo/InventoryPolicyFactsRepository.js';
+export { FinancialFactsRepository } from './repositories/bo/FinancialFactsRepository.js';
+export type { RawFinancialFacts, RawDailyAmount, RawCostOfSales, RawIndicator } from './repositories/bo/FinancialFactsRepository.js';
 export type {
   InventoryPolicyFactsSnapshot, InventoryPolicyFactsItem, InventoryPolicyFactsBalance, InventoryPolicyFactsReceipt, InventoryPolicyFactsDemand, LoadInventoryPolicyFactsInput,
 } from './repositories/bo/InventoryPolicyFactsRepository.js';
