@@ -83,7 +83,14 @@ BEGIN
     EXECUTE format('REVOKE UPDATE ON business_operations.inventory_balances FROM %I', app_role);
     EXECUTE format('GRANT UPDATE (%s) ON business_operations.inventory_balances TO %I', writable, app_role);
   END IF;
+  -- V-18: platform.data_deletion_events is the platform-scoped right-to-erasure audit trail (migration 0149). It deliberately has no tenant column
+  -- semantics (a tenant is gone once erased), so row-level security cannot isolate it; the blanket grant above would let ANY tenant session read other
+  -- tenants' erasure records or rewrite and delete the trail. It is written only by infrastructure/database/scripts/delete-tenant-data.mjs through the
+  -- ADMIN connection and read by no application code, so the application role gets no privilege on it at all (service-only access).
+  IF to_regclass('platform.data_deletion_events') IS NOT NULL THEN
+    EXECUTE format('REVOKE ALL PRIVILEGES ON platform.data_deletion_events FROM %I', app_role);
+  END IF;
 END
 $hardening$;
 SQL
-echo "Withheld direct writes of activation rows and protected reorder columns from ${APP_ROLE}."
+echo "Withheld direct writes of activation rows and protected reorder columns, and all access to the erasure audit trail, from ${APP_ROLE}."

@@ -3,7 +3,7 @@
  *
  *  - BI reads Business Operations only through the structural {@link SalesFactsPort} (joined at the API composition root, so this package never imports
  *    Business Operations) and persists NOTHING: the report is computed on read from the one source of truth, so there is no second copy that can drift.
- *  - Periods are explicit and bounded: an inclusive range of calendar days [from, to] on the order's recorded date, at most {@link MAX_REPORT_DAYS} days.
+ *  - Periods are explicit and bounded: an inclusive range of calendar days [from, to] on the order's recorded date, at most {@link SALES_REPORT_MAX_DAYS} days.
  *  - Currency is explicit and never mixed: every figure belongs to one currency (code and minor-unit exponent), amounts are integer minor units, and a
  *    business that sold in two currencies in the period gets two separate sections. Nothing is converted or summed across currencies.
  *  - It never fabricates: no orders in the period means no currency sections at all; days without orders inside a section are reported as zeros so the
@@ -12,7 +12,7 @@
  */
 import type { TenantContext } from '@infinicus/database';
 
-export const MAX_REPORT_DAYS = 366;
+export const SALES_REPORT_MAX_DAYS = 366;
 export const SALES_REPORT_BASIS = 'order_date' as const;
 
 export interface SalesDayFactsView {
@@ -100,7 +100,7 @@ export function validateSalesPeriod(from: string, to: string): { fromDay: number
   if (toDay === null) throw new SalesReportPeriodError('to must be a real calendar date in YYYY-MM-DD form');
   if (toDay < fromDay) throw new SalesReportPeriodError('to must not be before from');
   const days = toDay - fromDay + 1;
-  if (days > MAX_REPORT_DAYS) throw new SalesReportPeriodError(`the period may span at most ${MAX_REPORT_DAYS} days`);
+  if (days > SALES_REPORT_MAX_DAYS) throw new SalesReportPeriodError(`the period may span at most ${SALES_REPORT_MAX_DAYS} days`);
   return { fromDay, toDay, days };
 }
 

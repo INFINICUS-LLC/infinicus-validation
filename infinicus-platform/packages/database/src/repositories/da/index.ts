@@ -37,6 +37,8 @@ export { ProvenanceRepository, MAX_LINEAGE_DEPTH } from './ProvenanceRepository.
 
 export { PublicationDeliveryRepository } from './PublicationDeliveryRepository.js';
 export type { LayerDelivery, LayerAttempt, PublicationDeliveryStatus } from './PublicationDeliveryRepository.js';
+export { PublicationIntakeReader } from './PublicationIntakeReader.js';
+export type { PublicationPackageForIntake, SubmissionForIntake, ProvenanceForIntake } from './PublicationIntakeReader.js';
 export type {
   ProvenanceRecord,
   TransformationRecord,
