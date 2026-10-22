@@ -21,3 +21,4 @@ export * from './authorized-action-package';
 
 // Execution evidence (P0-6d): BO -> OM execution fact contract, reader port and OM state vocabulary / learning gate.
 export * from './execution-evidence';
+export * from './bi-financial';

@@ -10,10 +10,11 @@ import { describe, expect, it } from 'vitest';
  *
  * `data_acquisition.publication_deliveries` is Data Acquisition's record of delivering a package. Business Operations used to INSERT and UPDATE it from
  * BusinessIntakeService (a cross-layer write). The state transitions now live in the DAL-owned PublicationDeliveryRepository, and BO only asks that
- * repository to acknowledge or reject a handoff. Reading the published package, its submissions and its provenance remains the handoff's data path and is
- * not restricted here.
+ * repository to acknowledge or reject a handoff. The READS of the handoff's data path (the published package, its submissions and its provenance) now live in
+ * the DAL-owned PublicationIntakeReader as well (V-07 residual), so BO code names no `data_acquisition.` relation at all.
  *
- * What it forbids in BO code: any INSERT INTO / UPDATE / DELETE FROM / TRUNCATE / ALTER / DROP naming a `data_acquisition.` relation.
+ * What it forbids in BO code: (1) any INSERT INTO / UPDATE / DELETE FROM / TRUNCATE / ALTER / DROP naming a `data_acquisition.` relation, and
+ * (2) any reference at all to a `data_acquisition.` relation in code (reads included).
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -45,6 +46,14 @@ function stripComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 }
 
+const ANY_DAL_RELATION = /"?data_acquisition"?\s*\.\s*"?[a-z_]+/i;
+
+/** Lines of code (comments removed) that name a data_acquisition relation in any way, reads included. */
+export function findDalReferences(text: string): string[] {
+  const code = stripComments(text);
+  return code.split('\n').filter((line) => ANY_DAL_RELATION.test(line)).map((line) => line.trim());
+}
+
 export function findDalWrites(text: string): string[] {
   const code = stripComments(text);
   return code.split('\n').filter((line) => WRITE_TO_DAL.test(line)).map((line) => line.trim());
@@ -65,6 +74,20 @@ describe('V-07: Business Operations does not write Data Acquisition tables', () 
     expect(offenders).toEqual([]);
   });
 
+  it('no BO source file names a data_acquisition relation at all: the reads go through the DAL-owned PublicationIntakeReader', () => {
+    const offenders = files
+      .map((file) => ({ file: relative(PLATFORM_ROOT, file), references: findDalReferences(readFileSync(file, 'utf8')) }))
+      .filter((r) => r.references.length > 0);
+    expect(offenders).toEqual([]);
+  });
+
+  it('BusinessIntakeService takes its package, submissions and provenance only from the PublicationIntakeReader, inside the one intake transaction', () => {
+    const code = stripComments(readFileSync(join(PLATFORM_ROOT, 'packages/business-operations-runtime/src/intake/BusinessIntakeService.ts'), 'utf8'));
+    expect(code).toMatch(/PublicationIntakeReader/);
+    for (const method of ['lockPackageOn', 'submissionsForCollectionRunOn', 'provenanceForCollectionRunOn']) expect(code, method).toMatch(new RegExp(`intakeReader\\.${method}\\(client,`));
+    expect(code).not.toMatch(/client\.query/);       // BO's intake runs no SQL of its own on a Data Acquisition table; every read goes through the port
+  });
+
   it('BusinessIntakeService acknowledges and rejects handoffs only through the DAL-owned PublicationDeliveryRepository', () => {
     const code = stripComments(readFileSync(join(PLATFORM_ROOT, 'packages/business-operations-runtime/src/intake/BusinessIntakeService.ts'), 'utf8'));
     expect(code).toMatch(/PublicationDeliveryRepository/);
@@ -75,6 +98,18 @@ describe('V-07: Business Operations does not write Data Acquisition tables', () 
   });
 
   describe('the scanner itself (so a pass cannot be an artefact of a blind scan)', () => {
+    it('detects a read of a data_acquisition relation, with quoting or spacing variations, and ignores comments and other schemas', () => {
+      for (const sql of [
+        'SELECT * FROM data_acquisition.publication_packages WHERE id = $1 FOR UPDATE',
+        'select id from "data_acquisition".manual_submissions',
+        'FROM data_acquisition .provenance_records',
+      ]) {
+        expect(findDalReferences(`const q = \`${sql}\`;`), sql).toHaveLength(1);
+      }
+      expect(findDalReferences('// reads data_acquisition.publication_packages through the port')).toEqual([]);
+      expect(findDalReferences('SELECT * FROM business_operations.business_events')).toEqual([]);
+    });
+
     it('detects each kind of write, in any case and with quoting or spacing variations', () => {
       for (const sql of [
         'INSERT INTO data_acquisition.publication_deliveries (a) VALUES (1)',

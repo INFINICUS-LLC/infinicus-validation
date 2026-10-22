@@ -1,7 +1,7 @@
 {
   "version": 1,
   "asOf": "2026-10-22",
-  "mainCommit": "ba177cb",
+  "mainCommit": "6ac298b",
   "dimensions": { "spec": 0.10, "functional": 0.35, "integration": 0.25, "verification": 0.20, "operational": 0.10 },
   "levels": {
     "spec": "100 locked spec + schema + a Stack B contract artifact; 75 locked spec + schema; 50 locked spec or owner-approved block document only; 25 direction only; 0 none",
@@ -43,12 +43,12 @@
       "evidence": "Schema and repositories only. Preparation is DAL's job in Stack B." },
     { "id": "BI-2", "family": "layer", "layer": "BI", "domain": "INTELLIGENCE", "title": "Warehouse, metric registry, metric calculation", "covers": "BI-08..10", "units": 3, "impl": 0.33, "spec": 75, "integration": 75, "verification": 75, "operational": 0,
       "evidence": "InventoryBiEvidenceService persists three metric definitions/calculations in an insight package version for the first action; no general registry or warehouse." },
-    { "id": "BI-3", "family": "layer", "layer": "BI", "domain": "INTELLIGENCE", "title": "Domain intelligence (financial, sales, customer, marketing, operations, inventory, workforce, market)", "covers": "BI-11..18", "units": 8, "impl": 0.06, "spec": 75, "integration": 75, "verification": 75, "operational": 0,
-      "evidence": "Only inventory reorder evidence (BI-16, one action). Nothing else." },
-    { "id": "BI-4", "family": "layer", "layer": "BI", "domain": "INTELLIGENCE", "title": "Trend, anomaly and root-cause analysis", "covers": "BI-19..21", "units": 3, "impl": 0.0, "spec": 75, "integration": 0, "verification": 0, "operational": 0,
-      "evidence": "Nothing found." },
-    { "id": "BI-5", "family": "layer", "layer": "BI", "domain": "INTELLIGENCE", "title": "Dashboards, reporting, alerts", "covers": "BI-22, BI-23", "units": 2, "impl": 0.0, "spec": 75, "integration": 0, "verification": 0, "operational": 0,
-      "evidence": "Nothing in Stack B (the web workflow page lists BI evidence packages only)." },
+    { "id": "BI-3", "family": "layer", "layer": "BI", "domain": "INTELLIGENCE", "title": "Domain intelligence (financial, sales, customer, marketing, operations, inventory, workforce, market)", "covers": "BI-11..18", "units": 8, "impl": 0.19, "spec": 75, "integration": 75, "verification": 75, "operational": 0,
+      "evidence": "Inventory reorder evidence (BI-16, one action) plus NEW-BI-01 (draft PR; ESTIMATE until merged and CI-verified): a read-only per-currency financial domain (BI-11) - revenue, expenses, goods received, evidence-gated gross profit from BO-owned facts (bo-financial-facts/1 to bi-financial-report/1). Sales, customer, marketing, operations, workforce and market intelligence: nothing." },
+    { "id": "BI-4", "family": "layer", "layer": "BI", "domain": "INTELLIGENCE", "title": "Trend, anomaly and root-cause analysis", "covers": "BI-19..21", "units": 3, "impl": 0.17, "spec": 75, "integration": 50, "verification": 100, "operational": 0,
+      "evidence": "NEW-BI-01 (draft PR; ESTIMATE until merged): zero-filled per-currency trend buckets and previous-period comparison inside the financial report only. No anomaly detection, no root-cause analysis, no non-financial trends." },
+    { "id": "BI-5", "family": "layer", "layer": "BI", "domain": "INTELLIGENCE", "title": "Dashboards, reporting, alerts", "covers": "BI-22, BI-23", "units": 2, "impl": 0.25, "spec": 75, "integration": 50, "verification": 100, "operational": 0,
+      "evidence": "NEW-BI-01 (draft PR; ESTIMATE until merged): one read-only reporting API (GET /v1/businesses/:businessId/intelligence/financial-report, bi:read). No dashboard UI, no alerts, no saved or scheduled reports. The web workflow page lists BI evidence packages only." },
     { "id": "BI-6", "family": "layer", "layer": "BI", "domain": "INTELLIGENCE", "title": "Twin publication handoff, assembly", "covers": "BI-24, BI-25", "units": 2, "impl": 0.38, "spec": 100, "integration": 75, "verification": 75, "operational": 0,
       "evidence": "The BI insight version is referenced and digest-checked by the twin service (first action). No assembly block." },
 
@@ -180,6 +180,15 @@
       { "workPackage": "DAL-5", "field": "verification", "from": 75, "to": 100, "criterion": "verification rubric 100 = unit + integration + architecture guards + mutation or negative proofs", "evidence": "#239: 7 integration tests with 7 mutants killed, cross-tenant negative proofs, dalOwnership.architecture guard" } ],
       "notScored": [
         "#241 RLS on six child tables: those tables back unimplemented DAL channels and pipeline stages (DAL-2, DAL-3) or sit in a cluster whose verification is already scored (DAL-4); no work-package criterion moves",
-        "#238 and #242 CI repairs: not a matrix criterion" ] }
+        "#238 and #242 CI repairs: not a matrix criterion" ] },
+    { "date": "2026-10-22", "mainCommit": "6ac298b", "label": "merge reconciliation (#243-#246, #250)", "changes": [
+      { "workPackage": "BI-3", "field": "impl", "from": 0.06, "to": 0.19, "criterion": "domain intelligence: financial domain (BI-11), read-only per-currency report, API + integration tests", "evidence": "#244 NEW-BI-01 (scored by the Core Architecture session; not re-audited by this session)" },
+      { "workPackage": "BI-4", "field": "impl", "from": 0, "to": 0.17, "criterion": "trend: zero-filled per-currency trend and previous-period comparison inside the financial report only", "evidence": "#244 (Core session scoring, not re-audited here)" },
+      { "workPackage": "BI-5", "field": "impl", "from": 0, "to": 0.25, "criterion": "reporting: one read-only reporting API with integration tests", "evidence": "#244 (Core session scoring, not re-audited here)" } ],
+      "notScored": [
+        "#243 V-07 residual (DAL read path, BO in-transaction rejection recording): Core session; no further criterion moved here",
+        "#245 wait-free DDL proofs, #250 SIGTERM diagnostics: CI tooling, not a matrix criterion",
+        "#246 migration 0212 (RLS on membership_roles/file children, service-only erasure trail): security hardening of tables outside any implemented unit's criteria; no work-package criterion moves",
+        "BI-SALES-1 (#247) and BI-WEB-1 (#248) are not merged and are not scored" ] }
   ]
 }

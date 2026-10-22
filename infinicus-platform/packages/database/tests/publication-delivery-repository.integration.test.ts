@@ -8,7 +8,7 @@ import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { PublicationDeliveryRepository } from '../src/repositories/da/PublicationDeliveryRepository.js';
 import { withTenantTransaction } from '../src/client.js';
-import { setupIntegration, teardownIntegration, ctx1, ctx2, T1, WS1 } from './helpers/integration.js';
+import { setupIntegration, endIntegration, ctx1, ctx2, T1, WS1 } from './helpers/integration.js';
 
 const RUN = !!process.env.DATABASE_URL;
 const BO = 'business_operations';
@@ -47,7 +47,7 @@ describe.runIf(RUN)('PublicationDeliveryRepository: Data Acquisition owns its de
       await admin.query('DELETE FROM data_acquisition.publication_packages WHERE id = ANY($1)', [packageIds]);
     }
     await admin.end();
-    await teardownIntegration();
+    await endIntegration();
   });
 
   it('the first attempt creates an in_progress delivery with attempt 1; a restart increments the attempt and clears the previous failure', async () => {
