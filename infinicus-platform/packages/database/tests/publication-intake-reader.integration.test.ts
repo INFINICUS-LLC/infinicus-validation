@@ -9,13 +9,17 @@ import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { PublicationIntakeReader } from '../src/repositories/da/PublicationIntakeReader.js';
 import { withTenantTransaction } from '../src/client.js';
-import { setupIntegration, teardownIntegration, ctx1, ctx2, T1, WS1 } from './helpers/integration.js';
+import { setupIntegration, teardownIntegration } from './helpers/integration.js';
 
 const RUN = !!process.env.DATABASE_URL;
 const DA = 'data_acquisition';
 
 describe.runIf(RUN)('PublicationIntakeReader: Data Acquisition owns the read path of a delivery (V-07 residual)', () => {
   const reader = new PublicationIntakeReader();
+  // Own tenants: other suites share the fixed integration tenants and clean them wholesale while files run in parallel.
+  const T1 = randomUUID(); const WS1 = randomUUID(); const T2 = randomUUID(); const WS2 = randomUUID();
+  const ctx1 = { tenantId: T1, workspaceId: WS1, userId: randomUUID() };
+  const ctx2 = { tenantId: T2, workspaceId: WS2, userId: randomUUID() };
   let admin: Pool;
   const owned: Array<[string, string]> = [];
   let source: string; let run: string; let otherRun: string; let pkg: string; let emptyPkg: string;
@@ -33,6 +37,10 @@ describe.runIf(RUN)('PublicationIntakeReader: Data Acquisition owns the read pat
   beforeAll(async () => {
     await setupIntegration();
     admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
+    for (const [t, w] of [[T1, WS1], [T2, WS2]]) {
+      await admin.query(`INSERT INTO tenancy.tenants (id, name, slug, status, plan_code) VALUES ($1,'Reader Tenant',$2,'active','test')`, [t, `rdr-${t.slice(0, 8)}`]);
+      await admin.query(`INSERT INTO tenancy.workspaces (id, tenant_id, name, slug, status) VALUES ($1,$2,'Reader WS',$3,'active')`, [w, t, `rdw-${w.slice(0, 8)}`]);
+    }
     source = await ins('data_sources', 'tenant_id,workspace_id,name,source_code,source_type', [T1, WS1, 'reader src', `rd-${randomUUID().slice(0, 8)}`, 'manual']);
     run = await ins('collection_runs', 'tenant_id,workspace_id,data_source_id,collection_type', [T1, WS1, source, 'manual']);
     otherRun = await ins('collection_runs', 'tenant_id,workspace_id,data_source_id,collection_type', [T1, WS1, source, 'manual']);
@@ -51,6 +59,8 @@ describe.runIf(RUN)('PublicationIntakeReader: Data Acquisition owns the read pat
   });
   afterAll(async () => {
     for (const [table, rowId] of owned) await admin.query(`DELETE FROM ${DA}.${table} WHERE id = $1`, [rowId]).catch(() => undefined);
+    await admin.query('DELETE FROM tenancy.workspaces WHERE id = ANY($1)', [[WS1, WS2]]).catch(() => undefined);
+    await admin.query('DELETE FROM tenancy.tenants WHERE id = ANY($1)', [[T1, T2]]).catch(() => undefined);
     await admin.end();
     await teardownIntegration();
   });
