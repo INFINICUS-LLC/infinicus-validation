@@ -289,6 +289,23 @@ describe.runIf(run)('migration 0210 - offline_sales schema - live PostgreSQL', (
     });
   });
 
+  /**
+   * The rollback proof and the re-apply take ACCESS EXCLUSIVE locks on shared tables (platform.orders, offline_sales) one statement at a time.
+   * Other packages' live-database tests run against the same database at the same time and write to the same tables, so the lock order can form a
+   * cycle and PostgreSQL aborts one side (40P01 deadlock detected, or 55P03 lock timeout). That is contention, not a defect of the migration:
+   * every attempt here runs inside BEGIN..ROLLBACK (or is the idempotent migration itself), so the whole attempt is simply repeated. No assertion
+   * is relaxed: any other error, or the same contention on the last attempt, still fails the test.
+   */
+  const retryOnLockContention = async <R>(attempt: () => Promise<R>, attempts = 6): Promise<R> => {
+    for (let i = 1; ; i++) {
+      try { return await attempt(); } catch (e) {
+        const code = (e as { code?: string }).code;
+        if ((code !== '40P01' && code !== '55P03') || i >= attempts) throw e;
+        await new Promise((r) => setTimeout(r, 200 * i + Math.floor(Math.random() * 200)));
+      }
+    }
+  };
+
   describe('rollback block and idempotency', () => {
     const rollbackStatements = (): string[] =>
       MIGRATION.split('\n').filter((l) => /^--\s{3}(DROP|ALTER)/.test(l)).map((l) => l.replace(/^--\s+/, '').replace(/\s+--.*$/, ''));
@@ -303,18 +320,20 @@ describe.runIf(run)('migration 0210 - offline_sales schema - live PostgreSQL', (
         col: (await c.query(`SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema='platform' AND table_name='orders' AND column_name='client_sale_id'`)).rows[0].n,
         ordersCols: (await c.query(`SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema='platform' AND table_name='orders'`)).rows[0].n,
       });
-      const c = await admin.connect();
-      try {
-        const before = await objects(c);
-        expect(before).toMatchObject({ table: true, fn: true, idx: true, col: 1 });
-        await c.query('BEGIN');
-        await c.query("SET LOCAL lock_timeout = '5s'");
-        for (const s of stmts) await c.query(s);
-        const during = await objects(c);
-        expect(during).toMatchObject({ table: false, fn: false, idx: false, col: 0, ordersCols: before.ordersCols - 1 });
-        await c.query('ROLLBACK');
-        expect(await objects(c)).toEqual(before);
-      } finally { await c.query('ROLLBACK').catch(() => undefined); c.release(); }
+      await retryOnLockContention(async () => {
+        const c = await admin.connect();
+        try {
+          const before = await objects(c);
+          expect(before).toMatchObject({ table: true, fn: true, idx: true, col: 1 });
+          await c.query('BEGIN');
+          await c.query("SET LOCAL lock_timeout = '5s'");
+          for (const s of stmts) await c.query(s);
+          const during = await objects(c);
+          expect(during).toMatchObject({ table: false, fn: false, idx: false, col: 0, ordersCols: before.ordersCols - 1 });
+          await c.query('ROLLBACK');
+          expect(await objects(c)).toEqual(before);
+        } finally { await c.query('ROLLBACK').catch(() => undefined); c.release(); }
+      });
     });
 
     it('re-applying the migration is a no-op: no duplicate objects, no duplicate ledger row, rows untouched', async () => {
@@ -322,7 +341,7 @@ describe.runIf(run)('migration 0210 - offline_sales schema - live PostgreSQL', (
       const before = await count();
       const cols = async () => (await admin.query(`SELECT count(*)::int n FROM information_schema.columns WHERE table_schema='business_operations' AND table_name='offline_sales'`)).rows[0].n;
       const colsBefore = await cols();
-      await admin.query(MIGRATION); await admin.query(MIGRATION);
+      await retryOnLockContention(() => admin.query(MIGRATION)); await retryOnLockContention(() => admin.query(MIGRATION));
       expect(await count()).toBe(before);
       expect(await cols()).toBe(colsBefore);
       expect((await admin.query(`SELECT count(*)::int n FROM _migrations WHERE filename = '0210_create_offline_sales.sql'`)).rows[0].n).toBe(1);
