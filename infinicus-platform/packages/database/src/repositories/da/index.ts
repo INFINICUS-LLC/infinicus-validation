@@ -34,6 +34,9 @@ export type {
 } from './DataQualityScoreRepository.js';
 
 export { ProvenanceRepository, MAX_LINEAGE_DEPTH } from './ProvenanceRepository.js';
+
+export { PublicationDeliveryRepository } from './PublicationDeliveryRepository.js';
+export type { LayerDelivery, LayerAttempt, PublicationDeliveryStatus } from './PublicationDeliveryRepository.js';
 export type {
   ProvenanceRecord,
   TransformationRecord,
