@@ -8,7 +8,8 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { withTenantTransaction } from '../src/client.js';
-import { setupIntegration, teardownIntegration, ctx1, ctx2, T1, WS1, UID } from './helpers/integration.js';
+import { withExclusiveLocksNoWait } from './helpers/ddlProof.js';
+import { setupIntegration, endIntegration, ctx1, ctx2, T1, WS1, UID } from './helpers/integration.js';
 
 const RUN = !!process.env.DATABASE_URL;
 const MIGRATION = '0211_enable_rls_da_child_tables.sql';
@@ -52,7 +53,7 @@ describe.runIf(RUN)('migration 0211: Data Acquisition child tables are tenant-is
   afterAll(async () => {
     for (const [table, rowId] of owned) await admin.query(`DELETE FROM data_acquisition.${table} WHERE id = $1`, [rowId]).catch(() => undefined);
     await admin.end();
-    await teardownIntegration();
+    await endIntegration();
   });
 
   it('every child table has RLS enabled and forced, with one isolation policy', async () => {
@@ -102,19 +103,15 @@ describe.runIf(RUN)('migration 0211: Data Acquisition child tables are tenant-is
     const block = sql.split('\n').filter((l) => l.startsWith('--   ')).map((l) => l.slice(5));
     const statements = block.filter((l) => l.startsWith('DROP POLICY'));
     expect(statements).toHaveLength(TABLES.length);
-    const c = await admin.connect();
-    try {
-      await c.query('BEGIN');
+    // The six tables are locked up front with NOWAIT (see helpers/ddlProof.ts): the proof never waits in a lock queue, so it can neither deadlock nor stall other tests.
+    await withExclusiveLocksNoWait(admin, { tables: TABLES.map((t) => `data_acquisition.${t}`) }, async (c) => {
       for (const s of statements) await c.query(s);
       for (const t of TABLES) await c.query(`ALTER TABLE data_acquisition.${t} NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY`);
       const flags = await c.query(`SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'data_acquisition' AND c.relname = ANY($1) AND (c.relrowsecurity OR c.relforcerowsecurity)`, [[...TABLES]]);
       const pols = await c.query(`SELECT count(*)::int AS n FROM pg_policies WHERE schemaname = 'data_acquisition' AND tablename = ANY($1)`, [[...TABLES]]);
       expect(flags.rows[0].n).toBe(0);
       expect(pols.rows[0].n).toBe(0);
-    } finally {
-      await c.query('ROLLBACK');
-      c.release();
-    }
+    });
     const after = await admin.query(`SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'data_acquisition' AND c.relname = ANY($1) AND c.relforcerowsecurity`, [[...TABLES]]);
     expect(after.rows[0].n).toBe(TABLES.length);
   });
