@@ -8,40 +8,39 @@ import { ALLOWLIST, evaluateAllowlist, classifyAdvisories, todayUtc } from './ch
 
 const SCRIPT = fileURLToPath(new URL('./check-dependency-vulnerabilities.mjs', import.meta.url));
 const REVIEW_BY = '2026-11-06';
-const temporary = ALLOWLIST.filter((e) => e.reason.startsWith('TEMPORARY'));
 const adv = (id, name = 'pkg') => ({ github_advisory_id: id, module_name: name, severity: 'high', title: 't' });
 const entry = (over = {}) => ({ githubAdvisoryId: 'GHSA-aaaa-bbbb-cccc', package: 'p', reason: 'TEMPORARY (issue #24, review by 2026-11-06). x', expires: REVIEW_BY, ...over });
+// The guard is tested against fixtures, not the committed list: the committed list may legitimately hold no TEMPORARY entry at all (CI-SEC-1 removed them
+// once the scan proved them unnecessary), and the guard must keep being proven for the next time one is added.
+const FIXTURE = [entry(), entry({ githubAdvisoryId: 'GHSA-dddd-eeee-ffff' }), { githubAdvisoryId: 'GHSA-gggg-hhhh-iiii', package: 'perm', reason: 'permanent, reasoned' }];
+const temporary = FIXTURE.filter((e) => e.reason.startsWith('TEMPORARY'));
 
 test('the committed allowlist is valid today: nothing invalid, nothing expired (existing entries stay accepted)', () => {
   const state = evaluateAllowlist(ALLOWLIST, todayUtc());
-  if (todayUtc() <= REVIEW_BY) {
-    assert.deepEqual(state.invalid, []);
-    assert.deepEqual(state.expired, []);
-    assert.equal(state.active.length, ALLOWLIST.length);
-  } else {
-    // After the review date the guard is SUPPOSED to fail; this test then documents exactly which entries expired.
-    assert.ok(state.expired.length > 0, 'expired temporary entries must be reported once the review date has passed');
-  }
+  assert.deepEqual(state.invalid, []);
+  assert.deepEqual(state.expired, []);
+  assert.equal(state.active.length, ALLOWLIST.length);
+  for (const e of ALLOWLIST.filter((x) => x.reason.startsWith('TEMPORARY'))) assert.ok(e.expires && e.expires <= REVIEW_BY, `${e.githubAdvisoryId} must expire no later than ${REVIEW_BY}`);
 });
 
-test('there are TEMPORARY entries and every one carries the review-by date (the guard has something to guard)', () => {
-  assert.ok(temporary.length >= 5);
+test('the fixture has TEMPORARY entries and every one carries the review-by date (the guard has something to guard)', () => {
+  assert.ok(temporary.length >= 2);
   for (const e of temporary) assert.equal(e.expires, REVIEW_BY, e.githubAdvisoryId);
 });
 
 test('the review-by day itself is still valid; the next day every temporary entry is expired', () => {
-  assert.equal(evaluateAllowlist(ALLOWLIST, REVIEW_BY).expired.length, 0);
-  const after = evaluateAllowlist(ALLOWLIST, '2026-11-07');
+  assert.equal(evaluateAllowlist(FIXTURE, REVIEW_BY).expired.length, 0);
+  const after = evaluateAllowlist(FIXTURE, '2026-11-07');
   assert.equal(after.expired.length, temporary.length);
   assert.deepEqual(new Set(after.expired.map((e) => e.githubAdvisoryId)), new Set(temporary.map((e) => e.githubAdvisoryId)));
-  assert.equal(after.active.length, ALLOWLIST.length - temporary.length); // permanent entries never expire
+  assert.equal(after.active.length, FIXTURE.length - temporary.length); // permanent entries never expire
 });
 
 test('an expired entry no longer allowlists its advisory; an unexpired one still does', () => {
   const id = temporary[0].githubAdvisoryId;
-  const before = evaluateAllowlist(ALLOWLIST, '2026-10-21');
+  const before = evaluateAllowlist(FIXTURE, '2026-10-21');
   assert.equal(classifyAdvisories([adv(id)], before.active).unallowlisted.length, 0);
-  const after = evaluateAllowlist(ALLOWLIST, '2026-11-07');
+  const after = evaluateAllowlist(FIXTURE, '2026-11-07');
   const r = classifyAdvisories([adv(id)], after.active);
   assert.equal(r.allowlisted.length, 0);
   assert.equal(r.unallowlisted.length, 1);
