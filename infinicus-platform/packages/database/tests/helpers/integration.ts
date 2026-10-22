@@ -51,6 +51,19 @@ export async function setupIntegration(): Promise<void> {
 }
 
 /** Clean up all DA rows owned by test tenants and close pools. Call in afterAll. */
+/**
+ * End the pools WITHOUT sweeping the shared fixed tenants. For a suite that runs in parallel with another suite on T1/T2 and cleans up exactly the rows it
+ * created: the tenant-wide sweep of teardownIntegration() would delete rows the other suite still depends on, or fail on the foreign keys they hold.
+ * (Not an options parameter on teardownIntegration: suites pass it straight to afterAll, and vitest calls hooks with a context argument.)
+ */
+export async function endIntegration(): Promise<void> {
+  if (adminPool) {
+    await adminPool.end();
+    adminPool = null;
+  }
+  await closePool();
+}
+
 export async function teardownIntegration(): Promise<void> {
   if (adminPool) {
     // Delete in leaf→root order to respect FK constraints.
