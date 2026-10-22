@@ -118,7 +118,7 @@ Each item is one reviewable change set. Nothing starts without approval of that 
 | P1-C | C-07 idempotency keys, C-08 shared credential scan, C-06 compatibility policy. | none |
 | P1-D | C-03 `ExecutionEvidence` / `VerifiedOutcomeEvidence`; E-05 manifest events. | P0-5 |
 | P1-E | V-15 evidence class on browser CL learning state (`manual_entry`). | none |
-| P1-F | V-07 BO receipt instead of the cross-schema write. | none |
+| P1-F | V-07 BO receipt instead of the cross-schema write. **DONE (block A1): DAL-owned `PublicationDeliveryRepository` + static guard; no migration was needed.** | none |
 
 ### P2 — Layer alignment
 
