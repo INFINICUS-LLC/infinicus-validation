@@ -566,6 +566,32 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
     expect(recoveredDelivery.rows[0].attempt_count).toBe(2);
   });
 
+  it('records a failed delivery when the rejection happens INSIDE the intake transaction (record count differs from the persisted package), then recovers on retry', async () => {
+    const handoff = await createPublishedHandoff();
+    const persistedCount = handoff.payload.recordCount;
+    handoff.payload.recordCount = persistedCount + 1;
+    handoff.payload.provenanceReferenceIds = ['p'];
+
+    await expect(bo.processHandoff(ctx, handoff)).rejects.toThrow(/record count does not match/i);
+
+    const deliveryOf = () => adminPool.query<{ delivery_status: string; attempt_count: number; failure_reason: string | null }>(
+      `SELECT delivery_status, attempt_count, failure_reason
+       FROM data_acquisition.publication_deliveries
+       WHERE publication_package_id = $1 AND destination_type = 'layer' AND destination_reference = 'business_operations'`,
+      [handoff.payload.publicationPackageId]
+    );
+    const failed = await deliveryOf();
+    expect(failed.rowCount).toBe(1);
+    expect(failed.rows[0]).toMatchObject({ delivery_status: 'failed', attempt_count: 1 });
+    expect(failed.rows[0].failure_reason).toMatch(/BusinessIntakeRejectedError: Handoff record count does not match/);
+
+    handoff.payload.recordCount = persistedCount;
+    const retry = await bo.processHandoff(ctx, handoff);
+    expect(retry.idempotentReplay).toBe(false);
+    const recovered = await deliveryOf();
+    expect(recovered.rows[0]).toMatchObject({ delivery_status: 'delivered', attempt_count: 2, failure_reason: null });
+  });
+
   it('rejects a scored source reliability below the DA to BO threshold', async () => {
     const handoff = await createPublishedHandoff();
     handoff.payload.quality.reliabilityScore = 0.69;
