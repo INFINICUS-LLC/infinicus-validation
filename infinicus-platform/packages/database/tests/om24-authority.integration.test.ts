@@ -56,7 +56,7 @@ describe.runIf(run)('OM-24 authority source on disposable PostgreSQL', () => {
       expect(constraints.get(name)).toMatchObject({ contype: 'f', convalidated: true });
       expect(constraints.get(name)?.definition).toContain('tenant_id, workspace_id, business_id');
     }
-    expect(constraints.get('om_verdict_observed_shape')).toMatchObject({ contype: 'c', convalidated: true });
+    expect(constraints.get('om_verdict_assessment_shape')).toMatchObject({ contype: 'c', convalidated: true });
   });
 
   it('keeps verdicts append-only and rejects a forged approval even without source rows', async () => {

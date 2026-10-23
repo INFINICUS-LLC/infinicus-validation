@@ -61,6 +61,8 @@ export { ActionExecutionVerificationRepository } from './ActionExecutionVerifica
 export { OM24AuthorityRepository } from './OM24AuthorityRepository.js';
 export { GovernedMeasurementDefinitionRepository } from './GovernedMeasurementDefinitionRepository.js';
 export type { GovernedMeasurementDefinition, GovernedDefinitionPage } from './GovernedMeasurementDefinitionRepository.js';
+export { GovernedMeasurementVerdictRepository } from './GovernedMeasurementVerdictRepository.js';
+export type { GovernedMeasurementAssessmentInput } from './GovernedMeasurementVerdictRepository.js';
 export type { ActionExecutionVerification, RecordExecutionVerificationInput, LearningSourceFactRow, LearningSourceLookup } from './ActionExecutionVerificationRepository.js';
 
 export { OutcomeMonitoringHealthRepository } from './OutcomeMonitoringHealthRepository.js';

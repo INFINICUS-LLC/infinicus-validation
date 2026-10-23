@@ -90,8 +90,8 @@ BEGIN
   IF to_regclass('platform.data_deletion_events') IS NOT NULL THEN
     EXECUTE format('REVOKE ALL PRIVILEGES ON platform.data_deletion_events FROM %I', app_role);
   END IF;
-  -- OM-24 authority records have no governed writer yet. The application role can inspect
-  -- them under forced RLS, but cannot create an apparent verdict or publication receipt.
+  -- OM-24 authority records remain read-only to the application role under forced RLS.
+  -- OM-MEASURE-5 assessments use a separately granted runner role; publication receipts have no writer.
   IF to_regclass('outcome_monitoring.governed_measurement_definitions') IS NOT NULL THEN
     EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON outcome_monitoring.governed_measurement_definitions FROM %I', app_role);
     EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON outcome_monitoring.governed_outcome_verdicts FROM %I', app_role);
