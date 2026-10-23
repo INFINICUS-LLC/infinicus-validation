@@ -275,6 +275,10 @@ button.danger {
 .purchasing-view .purchasing th, .purchasing-view .purchasing td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--color-border); vertical-align: top; }
 .purchasing-view .purchasing caption { text-align: left; color: var(--color-muted); padding-bottom: var(--space-1); }
 @media (max-width: 40rem) { .purchasing-view .card { overflow-x: auto; } }
+.staff-view { display: grid; gap: var(--space-4); }
+.staff-view .staff { width: 100%; border-collapse: collapse; }
+.staff-view .staff th, .staff-view .staff td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--color-border); vertical-align: top; }
+@media (max-width: 40rem) { .staff-view .card { overflow-x: auto; } }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media print {
   .business-tabs { display: none; }
