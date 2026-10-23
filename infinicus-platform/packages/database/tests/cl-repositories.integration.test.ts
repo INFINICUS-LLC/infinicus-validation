@@ -372,6 +372,39 @@ describe.runIf(run)('Stage 2J Continuous Learning — live PostgreSQL', () => {
 
   // ── 2. CLIntakeRepository ───────────────────────────────────────────────────
   describe('CLIntakeRepository', () => {
+    it('atomically records a released package and leaves replay lineage unchanged', async () => {
+      const omPkg = await createOmPublicationPackage(ctx1, BIZ1);
+      const publication = await adminPool!.query('SELECT feedback_package_id FROM outcome_monitoring.om_publication_packages WHERE id = $1', [omPkg]);
+      const feedbackId = publication.rows[0].feedback_package_id as string;
+      const feedbackVersion = await adminPool!.query('SELECT id FROM outcome_monitoring.learning_feedback_package_versions WHERE feedback_package_id = $1 ORDER BY version_number DESC LIMIT 1', [feedbackId]);
+      const observation = await adminPool!.query(`SELECT review.observation_id, ov.id AS version_id
+        FROM outcome_monitoring.learning_feedback_packages fb
+        JOIN outcome_monitoring.outcome_reviews review ON review.id = fb.review_id
+        JOIN outcome_monitoring.outcome_observation_versions ov ON ov.observation_id = review.observation_id
+        WHERE fb.id = $1 ORDER BY ov.version_number DESC LIMIT 1`, [feedbackId]);
+      const input = {
+        businessId: BIZ1, omPublicationPackageId: omPkg, feedbackPackageId: feedbackId,
+        feedbackPackageVersionId: feedbackVersion.rows[0].id as string,
+        observationId: observation.rows[0].observation_id as string,
+        observationVersionId: observation.rows[0].version_id as string,
+        idempotencyKey: uniqueCode('release'), correlationId: 'opaque-correlation',
+        executions: [{ executionId: '33333333-3333-4333-8333-333333333333', evidenceDigest: `sha256:${'a'.repeat(64)}` }],
+      };
+      const repo = new CLIntakeRepository();
+      const first = await repo.recordReleased(ctx1, input);
+      expect(first.idempotentReplay).toBe(false);
+      expect(first.package.status).toBe('received');
+      const replay = await repo.recordReleased(ctx1, input);
+      expect(replay.idempotentReplay).toBe(true);
+      expect(replay.package.id).toBe(first.package.id);
+      const counts = await adminPool!.query(`SELECT
+        (SELECT count(*)::int FROM continuous_learning.cl_intake_package_versions WHERE intake_package_id = $1) AS versions,
+        (SELECT count(*)::int FROM continuous_learning.cl_intake_source_references WHERE intake_package_id = $1) AS sources,
+        (SELECT count(*)::int FROM continuous_learning.cl_intake_status_history WHERE intake_package_id = $1) AS statuses`, [first.package.id]);
+      expect(counts.rows[0]).toMatchObject({ versions: 1, sources: 1, statuses: 1 });
+      await expect(repo.recordReleased(ctx1, { ...input, executions: [{ ...input.executions[0], evidenceDigest: `sha256:${'b'.repeat(64)}` }] })).rejects.toThrow();
+    });
+
     it('receives a valid OM publication package', async () => {
       const omPkg = await createOmPublicationPackage(ctx1, BIZ1);
       const repo = new CLIntakeRepository();

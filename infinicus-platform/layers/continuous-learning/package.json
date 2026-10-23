@@ -15,10 +15,12 @@
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "node ../../scripts/run-block-tests.mjs",
+    "test": "node --test tests/*.test.mjs && node ../../scripts/run-block-tests.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@infinicus/database": "workspace:*",
+    "@infinicus/outcome-monitoring-runtime": "workspace:*",
     "@infinicus/layer-outcome-monitoring": "workspace:*",
     "@infinicus/shared-types": "workspace:*",
     "@infinicus/event-contracts": "workspace:*",

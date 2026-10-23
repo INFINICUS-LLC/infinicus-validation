@@ -307,6 +307,9 @@ importers:
 
   layers/continuous-learning:
     dependencies:
+      '@infinicus/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@infinicus/event-contracts':
         specifier: workspace:*
         version: link:../../packages/event-contracts
@@ -319,6 +322,9 @@ importers:
       '@infinicus/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@infinicus/outcome-monitoring-runtime':
+        specifier: workspace:*
+        version: link:../../packages/outcome-monitoring-runtime
       '@infinicus/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types

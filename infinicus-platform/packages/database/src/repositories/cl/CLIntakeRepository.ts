@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { TenantContext } from '../../client.js';
 import { withTenantTransaction } from '../../client.js';
-import { NotFoundError, CLIntakeValidationError } from './errors.js';
+import { NotFoundError, ConflictError, CLIntakeValidationError } from './errors.js';
 
 export interface CLIntakePackage {
   id: string;
@@ -28,7 +28,21 @@ export interface ReceiveCLPackageInput {
   correlationId?: string;
 }
 
+/** References supplied only by the OM learning-release boundary after its authoritative evidence lookup and gate. */
+export interface ReleasedCLPackageInput {
+  businessId: string;
+  omPublicationPackageId: string;
+  feedbackPackageId: string;
+  feedbackPackageVersionId: string;
+  observationId: string;
+  observationVersionId: string;
+  idempotencyKey: string;
+  correlationId: string;
+  executions: readonly { executionId: string; evidenceDigest: string }[];
+}
+
 const VALID_STATUSES = ['received', 'validated', 'accepted', 'processing', 'completed', 'rejected', 'failed'];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function rowToPackage(row: Record<string, unknown>): CLIntakePackage {
   return {
@@ -49,6 +63,88 @@ function rowToPackage(row: Record<string, unknown>): CLIntakePackage {
 }
 
 export class CLIntakeRepository {
+  /** Persist one gated release atomically. A replay creates no new version or source row. */
+  async recordReleased(ctx: TenantContext, input: ReleasedCLPackageInput): Promise<{ package: CLIntakePackage; idempotentReplay: boolean }> {
+    return withTenantTransaction(ctx, async (client) => {
+      // Serialize competing deliveries for this business before checking either uniqueness key.
+      const scope = await client.query('SELECT id FROM platform.businesses WHERE id = $1 FOR UPDATE', [input.businessId]);
+      if (scope.rowCount !== 1) throw new NotFoundError('Business', input.businessId);
+      const publication = await client.query(
+        `SELECT pub.id FROM outcome_monitoring.om_publication_packages pub
+         JOIN outcome_monitoring.learning_feedback_packages fb ON fb.id = pub.feedback_package_id
+         JOIN outcome_monitoring.learning_feedback_package_versions fbv ON fbv.feedback_package_id = fb.id
+         JOIN outcome_monitoring.outcome_reviews review ON review.id = fb.review_id
+         JOIN outcome_monitoring.outcome_observation_versions ov ON ov.observation_id = review.observation_id
+         WHERE pub.id = $1 AND pub.business_id = $2 AND pub.feedback_package_id = $3
+           AND fbv.id = $4 AND review.observation_id = $5 AND ov.id = $6
+           AND fb.business_id = $2 AND fbv.business_id = $2 AND review.business_id = $2 AND ov.business_id = $2
+           AND pub.target_layer = 'continuous_learning' AND pub.target_block = 'CL-01'
+           AND pub.publication_status IN ('ready', 'dispatched', 'acknowledged')`,
+        [input.omPublicationPackageId, input.businessId, input.feedbackPackageId,
+          input.feedbackPackageVersionId, input.observationId, input.observationVersionId]
+      );
+      if (publication.rowCount !== 1) throw new ConflictError('CLIntakePackage', 'OM publication is not releasable in this business');
+      const reference = {
+        correlationId: input.correlationId,
+        observationId: input.observationId,
+        observationVersionId: input.observationVersionId,
+        feedbackPackageId: input.feedbackPackageId,
+        feedbackPackageVersionId: input.feedbackPackageVersionId,
+        executions: input.executions,
+      };
+      const existing = await client.query<Record<string, unknown>>(
+        `SELECT * FROM continuous_learning.cl_intake_packages
+         WHERE business_id = $1 AND (om_publication_package_id = $2 OR idempotency_key = $3) FOR UPDATE`,
+        [input.businessId, input.omPublicationPackageId, input.idempotencyKey]
+      );
+      if (existing.rows.length) {
+        if (existing.rows.length !== 1 || existing.rows[0].om_publication_package_id !== input.omPublicationPackageId
+          || existing.rows[0].idempotency_key !== input.idempotencyKey) {
+          throw new ConflictError('CLIntakePackage', 'idempotency key or publication was reused for another release');
+        }
+        const prior = await client.query<{ same: boolean }>(
+          `SELECT payload_reference = $2::jsonb AS same FROM continuous_learning.cl_intake_package_versions
+           WHERE intake_package_id = $1 AND version_number = 1`,
+          [existing.rows[0].id, JSON.stringify(reference)]
+        );
+        if (prior.rows.length !== 1 || prior.rows[0].same !== true) {
+          throw new ConflictError('CLIntakePackage', 'released evidence changed on replay');
+        }
+        return { package: rowToPackage(existing.rows[0]), idempotentReplay: true };
+      }
+      const inserted = await client.query<Record<string, unknown>>(
+        `INSERT INTO continuous_learning.cl_intake_packages
+           (tenant_id, workspace_id, business_id, om_publication_package_id, intake_code,
+            schema_version, idempotency_key, correlation_id)
+         VALUES ($1,$2,$3,$4,'CL-01','1.0',$5,$6) RETURNING *`,
+        [ctx.tenantId, ctx.workspaceId, input.businessId, input.omPublicationPackageId,
+          input.idempotencyKey, UUID.test(input.correlationId) ? input.correlationId : randomUUID()]
+      );
+      const id = inserted.rows[0].id;
+      const correlationId = inserted.rows[0].correlation_id;
+      await client.query(
+        `INSERT INTO continuous_learning.cl_intake_package_versions
+           (intake_package_id, tenant_id, workspace_id, business_id, version_number, payload_reference, record_count, correlation_id)
+         VALUES ($1,$2,$3,$4,1,$5,$6,$7)`,
+        [id, ctx.tenantId, ctx.workspaceId, input.businessId, JSON.stringify(reference), input.executions.length, correlationId]
+      );
+      for (const source of input.executions) {
+        await client.query(
+          `INSERT INTO continuous_learning.cl_intake_source_references
+             (intake_package_id, tenant_id, workspace_id, business_id, source_system, source_reference)
+           VALUES ($1,$2,$3,$4,'outcome_monitoring',$5)`,
+          [id, ctx.tenantId, ctx.workspaceId, input.businessId, JSON.stringify(source)]
+        );
+      }
+      await client.query(
+        `INSERT INTO continuous_learning.cl_intake_status_history
+           (intake_package_id, tenant_id, workspace_id, business_id, from_status, to_status, correlation_id)
+         VALUES ($1,$2,$3,$4,NULL,'received',$5)`,
+        [id, ctx.tenantId, ctx.workspaceId, input.businessId, correlationId]
+      );
+      return { package: rowToPackage(inserted.rows[0]), idempotentReplay: false };
+    });
+  }
   /** Idempotent: replays the existing package when the (business, omPublicationPackageId) pair or idempotencyKey already exists. */
   async receivePackage(ctx: TenantContext, input: ReceiveCLPackageInput): Promise<{ package: CLIntakePackage; idempotentReplay: boolean }> {
     return withTenantTransaction(ctx, async (client) => {
