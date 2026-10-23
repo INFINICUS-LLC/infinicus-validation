@@ -172,6 +172,8 @@ export { InventoryAttributionEvidenceRepository } from './repositories/bo/Invent
 export type { InventoryAttributionInput, InventoryAttributionEvidence } from './repositories/bo/InventoryAttributionEvidenceRepository.js';
 export { FinancialFactsRepository } from './repositories/bo/FinancialFactsRepository.js';
 export type { RawFinancialFacts, RawDailyAmount, RawCostOfSales, RawIndicator } from './repositories/bo/FinancialFactsRepository.js';
+export { SaleEvidenceReviewRepository, storedAmountToMinor } from './repositories/bo/SaleEvidenceReviewRepository.js';
+export type { SaleEvidenceReview, SaleEvidenceBlocker } from './repositories/bo/SaleEvidenceReviewRepository.js';
 export type {
   InventoryPolicyFactsSnapshot, InventoryPolicyFactsItem, InventoryPolicyFactsBalance, InventoryPolicyFactsReceipt, InventoryPolicyFactsDemand, LoadInventoryPolicyFactsInput,
 } from './repositories/bo/InventoryPolicyFactsRepository.js';

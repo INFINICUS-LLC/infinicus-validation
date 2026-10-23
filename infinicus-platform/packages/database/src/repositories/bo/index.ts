@@ -77,6 +77,8 @@ export type {
 
 export { SalesFactsRepository } from './SalesFactsRepository.js';
 export type { SalesDayCurrencyFacts } from './SalesFactsRepository.js';
+export { SaleEvidenceReviewRepository, storedAmountToMinor } from './SaleEvidenceReviewRepository.js';
+export type { SaleEvidenceReview, SaleEvidenceBlocker } from './SaleEvidenceReviewRepository.js';
 export { InventoryOutcomeEvidenceRepository } from './InventoryOutcomeEvidenceRepository.js';
 export type { InventoryOutcomeEvidence, InventoryOutcomeEvidenceInput, InventoryIssueEvidence } from './InventoryOutcomeEvidenceRepository.js';
 export { InventoryAttributionEvidenceRepository } from './InventoryAttributionEvidenceRepository.js';
