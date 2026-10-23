@@ -32,6 +32,25 @@ test('CL-01 records only a gated, verified OM handoff and forwards its lineage',
   assert.deepEqual(calls[0][1].executions, [{ executionId: 'e1', evidenceDigest: DIGEST }]);
   assert.equal(calls[0][1].omPublicationPackageId, 'p');
   assert.equal(calls[0][1].observationId, OBS);
+  assert.deepEqual(calls[0][1].cl02, { status: 'rejected', reasons: ['CL02_GOVERNED_PUBLICATION_MISSING'] });
+});
+
+test('CL-02 quarantines claimed governed detail until its OM source can be verified', async () => {
+  const release = handoff();
+  release.sourceBlock = 'OM-24';
+  release.payload.governedPublication = {
+    publicationReceiptId: 'receipt', outcomeVerdictId: 'verdict', monitoringContractId: 'contract',
+    confidence: 0.8, reliability: 0.9, applicabilityScope: 'branch', limitations: [],
+    lessons: [], successFactors: [], failureFactors: [], hypotheses: [], decisionRuleFeedback: [],
+    modelCalibrationFeedback: [], dataQualityLearning: [], operationalLearning: [], riskLearning: [],
+  };
+  const calls = [];
+  const writer = { recordReleased: async (_, input) => { calls.push(input); return { package: { status: input.cl02.status }, idempotentReplay: false }; } };
+  const result = await new CLIntakeService(sources('OUTCOME_VERIFIED'), writer).receive(ctx, release);
+  assert.equal(result.package.status, 'rejected');
+  assert.deepEqual(calls[0].cl02.reasons, ['CL02_GOVERNED_SOURCE_UNVERIFIED']);
+  assert.match(calls[0].cl02.governedPublicationDigest, /^sha256:[0-9a-f]{64}$/);
+  assert.equal('governedPublication' in calls[0].cl02, false);
 });
 
 test('CL-01 refuses unverified outcome and foreign tenant without writing', async () => {
@@ -40,6 +59,15 @@ test('CL-01 refuses unverified outcome and foreign tenant without writing', asyn
   await assert.rejects(new CLIntakeService(sources('OUTCOME_PENDING'), writer).receive(ctx, handoff()), { code: 'LEARNING_GATE_REFUSED' });
   const foreign = handoff(); foreign.payload.tenantId = '99999999-9999-4999-8999-999999999999';
   await assert.rejects(new CLIntakeService(sources('OUTCOME_VERIFIED'), writer).receive(ctx, foreign), { code: 'LEARNING_GATE_REFUSED' });
+  assert.equal(writes, 0);
+});
+
+test('malformed governed publication is refused before CL intake writes', async () => {
+  const invalid = handoff();
+  invalid.payload.governedPublication = { confidence: 4, lessons: 'not-an-array' };
+  let writes = 0;
+  const writer = { recordReleased: async () => { writes++; } };
+  await assert.rejects(new CLIntakeService(sources('OUTCOME_VERIFIED'), writer).receive(ctx, invalid), { code: 'LEARNING_GATE_REFUSED' });
   assert.equal(writes, 0);
 });
 

@@ -3,6 +3,7 @@ import { ActionExecutionVerificationRepository, CLIntakeRepository } from '@infi
 import type { CLIntakePackage, ReleasedCLPackageInput, TenantContext } from '@infinicus/database';
 import { LearningReleaseBoundary } from '@infinicus/outcome-monitoring-runtime';
 import type { LearningSourceReader } from '@infinicus/outcome-monitoring-runtime';
+import { validateCL02Publication } from './CL02Validation.js';
 
 export interface CLIntakeWriter {
   recordReleased(ctx: TenantContext, input: ReleasedCLPackageInput): Promise<{ package: CLIntakePackage; idempotentReplay: boolean }>;
@@ -30,6 +31,7 @@ export class CLIntakeService {
           idempotencyKey: payload.idempotencyKey,
           correlationId: released.correlationId,
           executions: evidence.executions,
+          cl02: validateCL02Publication(released),
         });
       },
     });

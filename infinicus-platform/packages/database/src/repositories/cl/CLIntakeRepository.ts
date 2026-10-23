@@ -39,6 +39,7 @@ export interface ReleasedCLPackageInput {
   idempotencyKey: string;
   correlationId: string;
   executions: readonly { executionId: string; evidenceDigest: string }[];
+  cl02?: { status: 'rejected'; reasons: readonly string[]; governedPublicationDigest?: string };
 }
 
 const VALID_STATUSES = ['received', 'validated', 'accepted', 'processing', 'completed', 'rejected', 'failed'];
@@ -91,6 +92,7 @@ export class CLIntakeRepository {
         feedbackPackageId: input.feedbackPackageId,
         feedbackPackageVersionId: input.feedbackPackageVersionId,
         executions: input.executions,
+        ...(input.cl02 ? { governedPublicationDigest: input.cl02.governedPublicationDigest ?? null } : {}),
       };
       const existing = await client.query<Record<string, unknown>>(
         `SELECT * FROM continuous_learning.cl_intake_packages
@@ -142,6 +144,21 @@ export class CLIntakeRepository {
          VALUES ($1,$2,$3,$4,NULL,'received',$5)`,
         [id, ctx.tenantId, ctx.workspaceId, input.businessId, correlationId]
       );
+      if (input.cl02) {
+        const reason = input.cl02.reasons.join(',');
+        const changed = await client.query<Record<string, unknown>>(
+          `UPDATE continuous_learning.cl_intake_packages
+           SET status = $2, rejection_reason = $3 WHERE id = $1 RETURNING *`,
+          [id, input.cl02.status, reason]
+        );
+        await client.query(
+          `INSERT INTO continuous_learning.cl_intake_status_history
+             (intake_package_id, tenant_id, workspace_id, business_id, from_status, to_status, reason, correlation_id)
+           VALUES ($1,$2,$3,$4,'received',$5,$6,$7)`,
+          [id, ctx.tenantId, ctx.workspaceId, input.businessId, input.cl02.status, reason, correlationId]
+        );
+        return { package: rowToPackage(changed.rows[0]), idempotentReplay: false };
+      }
       return { package: rowToPackage(inserted.rows[0]), idempotentReplay: false };
     });
   }
@@ -213,6 +230,12 @@ export class CLIntakeRepository {
       );
       if (current.rows.length === 0) throw new NotFoundError('CLIntakePackage', id);
       const fromStatus = current.rows[0].status as string;
+      if (fromStatus === 'rejected' && toStatus !== 'rejected') {
+        throw new ConflictError('CLIntakePackage', 'a quarantined intake cannot be advanced');
+      }
+      if (current.rows[0].intake_code === 'CL-01' && ['accepted', 'processing', 'completed'].includes(toStatus)) {
+        throw new ConflictError('CLIntakePackage', 'gated OM intake awaits governed CL-02 acceptance');
+      }
       const result = await client.query<Record<string, unknown>>(
         `UPDATE continuous_learning.cl_intake_packages
          SET status = $2, rejection_reason = $3
