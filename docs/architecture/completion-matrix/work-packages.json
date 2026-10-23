@@ -1,7 +1,7 @@
 {
   "version": 1,
   "asOf": "2026-10-22",
-  "mainCommit": "3f4e3ad",
+  "mainCommit": "8c181ce",
   "dimensions": {
     "spec": 0.1,
     "functional": 0.35,
@@ -925,12 +925,12 @@
       "title": "Suppliers and purchasing screens",
       "covers": "suppliers, purchase orders",
       "units": 1,
-      "impl": 0.0,
+      "impl": 0.3,
       "spec": 25,
       "integration": 0,
       "verification": 0,
       "operational": 0,
-      "evidence": "None."
+      "evidence": "Purchasing tab (#265, merged): read-only purchase orders (own-currency totals shown exactly or as unavailable, status filter) and suppliers (latest performance) over the existing BO procurement and suppliers reads (bo:read), with a 100-row bound notice; both contracts parsed from real API responses. No create, approve, receive or pay, no goods receipts or PO lines, and not exercised in a browser against a live API."
     },
     {
       "id": "X-13",
@@ -1321,6 +1321,25 @@
       "notScored": [
         "BI-5: the financial report API was credited to Core's NEW-BI-01 and the first report screen in the previous update; no double credit for the second screen",
         "BI-3/BI-4: no new intelligence logic, the screen displays existing server figures"
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "mainCommit": "8c181ce",
+      "label": "PUR-WEB-1 merged (#265)",
+      "changes": [
+        {
+          "workPackage": "X-12",
+          "field": "impl",
+          "from": 0.0,
+          "to": 0.3,
+          "criterion": "purchasing screen: one functional read-only screen over real BO contracts with tests (purchase orders and suppliers only; no create/approve/receive/pay, no receipts or PO lines)",
+          "evidence": "#265 merged (8c181ce): 24 tests, 2 mutants killed, both contracts parsed from real API responses; web 437/437; CI validate and image build green on the PR head"
+        }
+      ],
+      "notScored": [
+        "BO-3: no backend change",
+        "Overview/KPI screens: not built; operations/summary reads the event log with currency-less numbers (see docs/architecture/bi/PUR-WEB-1_PURCHASING.md)"
       ]
     }
   ]
