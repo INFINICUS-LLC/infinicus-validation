@@ -1,7 +1,7 @@
 {
   "version": 1,
   "asOf": "2026-10-22",
-  "mainCommit": "2a8d406",
+  "mainCommit": "1a5f93b",
   "dimensions": {
     "spec": 0.1,
     "functional": 0.35,
@@ -895,12 +895,12 @@
       "title": "Inventory screens",
       "covers": "stock, movements, reorder policy",
       "units": 1,
-      "impl": 0.0,
+      "impl": 0.3,
       "spec": 25,
       "integration": 0,
       "verification": 0,
       "operational": 0,
-      "evidence": "None (API summary routes exist)."
+      "evidence": "Inventory tab (#261, merged): read-only stock list per item and warehouse over the existing BO inventory read (bo:read), with the low-stock comparison restated, a 100-row bound notice, and fail-closed display; contract checked against the real API response. No movements, receiving, adjustments, item management or search, and not exercised in a browser against a live API."
     },
     {
       "id": "X-11",
@@ -1283,6 +1283,25 @@
       "notScored": [
         "#251-#254 CI test repairs and #246 0212 RLS: no matrix criterion",
         "Core's BI-4 trend credit not extended: the sales report has no trend or comparison beyond a daily series"
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "mainCommit": "1a5f93b",
+      "label": "INV-WEB-1 merged (#261)",
+      "changes": [
+        {
+          "workPackage": "X-10",
+          "field": "impl",
+          "from": 0.0,
+          "to": 0.3,
+          "criterion": "inventory screen: one functional read-only screen over a real BO contract with tests (stock list only; no movements, receiving, adjustments or item management)",
+          "evidence": "#261 merged (1a5f93b): 27 render/logic tests, 2 mutants killed, contract parsed from a real API response; web 384/384; next build and static export"
+        }
+      ],
+      "notScored": [
+        "X-06 navigation: the tab bar grew from six to seven screens but gains no module framework",
+        "BO-3: no backend change"
       ]
     }
   ]
