@@ -279,6 +279,14 @@ button.danger {
 .staff-view .staff { width: 100%; border-collapse: collapse; }
 .staff-view .staff th, .staff-view .staff td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--color-border); vertical-align: top; }
 @media (max-width: 40rem) { .staff-view .card { overflow-x: auto; } }
+.automation-view { display: grid; gap: var(--space-4); }
+.automation-view .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-3); margin: 0 0 var(--space-3); }
+.automation-view .kpis dt { color: var(--color-muted); font-size: 0.875rem; }
+.automation-view .kpis dd { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.automation-view .auto { width: 100%; border-collapse: collapse; margin-bottom: var(--space-3); }
+.automation-view .auto th, .automation-view .auto td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.automation-view .auto caption { text-align: left; color: var(--color-muted); padding-bottom: var(--space-1); }
+@media (max-width: 40rem) { .automation-view .card { overflow-x: auto; } }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media print {
   .business-tabs { display: none; }
