@@ -166,6 +166,8 @@ export {
   INVENTORY_POLICY_EVALUATION_DIMENSIONS, INVENTORY_POLICY_EVALUATION_RESULTS,
 } from './repositories/bo/index.js';
 export { InventoryPolicyFactsRepository } from './repositories/bo/InventoryPolicyFactsRepository.js';
+export { InventoryOutcomeEvidenceRepository } from './repositories/bo/InventoryOutcomeEvidenceRepository.js';
+export type { InventoryOutcomeEvidence, InventoryOutcomeEvidenceInput, InventoryIssueEvidence } from './repositories/bo/InventoryOutcomeEvidenceRepository.js';
 export { FinancialFactsRepository } from './repositories/bo/FinancialFactsRepository.js';
 export type { RawFinancialFacts, RawDailyAmount, RawCostOfSales, RawIndicator } from './repositories/bo/FinancialFactsRepository.js';
 export type {
@@ -388,13 +390,13 @@ export {
   LearningFeedbackPackageRepository,
   OMPublicationRepository,
   OMComponentRegistryRepository,
-  ActionExecutionVerificationRepository, ActionExecutionVerificationConflictError, OM24AuthorityRepository, GovernedMeasurementDefinitionRepository,
+  ActionExecutionVerificationRepository, ActionExecutionVerificationConflictError, OM24AuthorityRepository, GovernedMeasurementDefinitionRepository, GovernedMeasurementVerdictRepository,
   OutcomeMonitoringHealthRepository,
   MonitoredActionNotFoundError,
 } from './repositories/om/index.js';
 export type {
   OMIntakePackage, ReceiveOMPackageInput,
-  GovernedMeasurementDefinition, GovernedDefinitionPage,
+  GovernedMeasurementDefinition, GovernedDefinitionPage, GovernedMeasurementAssessmentInput,
   MonitoringPlan,
   MonitoredAction,
   OutcomeObservation, OutcomeObservationVersion,

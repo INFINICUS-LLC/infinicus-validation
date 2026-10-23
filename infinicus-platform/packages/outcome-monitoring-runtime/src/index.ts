@@ -4,3 +4,4 @@ export * from './initialOutcome.js';
 export * from './observationAuthority.js';
 export * from './LearningReleaseBoundary.js';
 export * from './OutcomeMonitoringHealthService.js';
+export * from './GovernedMeasurementRunner.js';

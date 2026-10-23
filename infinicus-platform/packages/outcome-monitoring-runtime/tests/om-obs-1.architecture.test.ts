@@ -93,7 +93,12 @@ describe('OM-OBS-1 - read-only observability', () => {
     // BY EXACT NAME ONLY: any other migration numbered 0210 or higher still fails this guard.
     // 0211 is the Data Acquisition child-table RLS hardening (architecture finding V-18); it is not part of this block either.
     // 0212 is the same finding for membership_roles and the files children (V-18).
-    const OTHER_BLOCK_MIGRATIONS = ['0210_create_offline_sales.sql', '0211_enable_rls_da_child_tables.sql', '0212_enable_rls_membership_roles_and_file_children.sql'];
+    const OTHER_BLOCK_MIGRATIONS = [
+      '0210_create_offline_sales.sql', '0211_enable_rls_da_child_tables.sql', '0212_enable_rls_membership_roles_and_file_children.sql',
+      // OM-24 and OM-MEASURE storage arrived after OM-OBS-1; none is part of its read-only route.
+      '0213_create_om_governed_publication_source.sql', '0214_enforce_governed_verdict_scope.sql',
+      '0215_record_governed_measurement_assessments.sql',
+    ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);
     expect(read(ROUTE) + read(SERVICE)).not.toMatch(/['"](om|aba|bi|dt|sim|adi|cl):(admin|monitor|observe|health)['"]/);
