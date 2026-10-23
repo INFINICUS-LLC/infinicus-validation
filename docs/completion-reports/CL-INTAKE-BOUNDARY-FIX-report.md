@@ -17,6 +17,7 @@ Modified:
 - `infinicus-platform/layers/continuous-learning/src/CLIntakeService.ts`
 - `infinicus-platform/layers/continuous-learning/tests/cl-intake.test.mjs`
 - `infinicus-platform/packages/outcome-monitoring-runtime/src/LearningReleaseBoundary.ts` (type alias only)
+- `.github/workflows/build-32.yml` (adds CL and OM-runtime trigger paths: its ownership guards scan those sources, so their changes must run the job)
 
 Created: this report.
 
@@ -47,7 +48,7 @@ No migrations, production database access, infrastructure changes, deployment, m
 
 ## Known limitations and remaining verification
 
-No live database regression was run locally because this fix adds no persistence or query behavior; Linux CI remains required for full database verification. No architecture guard was relaxed to make tests pass. No additional full-scope or operational credit is earned: the recorded matrix remains 30.6%, and 90% is not reached.
+No live database regression was run locally because this fix adds no persistence or query behavior; Linux CI remains required for full database verification. The operations CI path filter previously omitted both CL and OM runtime; the two added paths ensure this patch and future changes in those guarded sources trigger the check. No architecture guard was relaxed to make tests pass. No additional full-scope or operational credit is earned: the recorded matrix remains 30.6%, and 90% is not reached.
 
 ## Queue
 
