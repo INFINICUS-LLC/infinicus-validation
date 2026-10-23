@@ -19,13 +19,13 @@ describe('businessIdFromPath', () => {
 });
 
 describe('businessTabs', () => {
-  it('lists the six existing screens in order, linked to this business only', () => {
+  it('lists the seven existing screens in order, linked to this business only', () => {
     const tabs = businessTabs(`/businesses/${ID}/counter`);
-    expect(tabs.map((t) => t.label)).toEqual(['Counter', 'Sales', 'Reports', 'Printers', 'Workflow', 'Decision history']);
-    expect(tabs.map((t) => t.href)).toEqual(['counter', 'sales', 'reports', 'printers', 'workflow', 'history'].map((s) => `/businesses/${ID}/${s}`));
+    expect(tabs.map((t) => t.label)).toEqual(['Counter', 'Sales', 'Reports', 'Inventory', 'Printers', 'Workflow', 'Decision history']);
+    expect(tabs.map((t) => t.href)).toEqual(['counter', 'sales', 'reports', 'inventory', 'printers', 'workflow', 'history'].map((s) => `/businesses/${ID}/${s}`));
   });
   it('marks exactly the open screen as current, for each screen', () => {
-    for (const [segment, label] of [['counter', 'Counter'], ['sales', 'Sales'], ['reports', 'Reports'], ['printers', 'Printers'], ['workflow', 'Workflow'], ['history', 'Decision history']]) {
+    for (const [segment, label] of [['counter', 'Counter'], ['sales', 'Sales'], ['reports', 'Reports'], ['inventory', 'Inventory'], ['printers', 'Printers'], ['workflow', 'Workflow'], ['history', 'Decision history']]) {
       const current = businessTabs(`/businesses/${ID}/${segment}`).filter((t) => t.current).map((t) => t.label);
       expect(current, segment).toEqual([label]);
     }
@@ -42,10 +42,10 @@ describe('businessTabs', () => {
 
 describe('BusinessTabsView', () => {
   const html = (path: string | null) => renderToString(<BusinessTabsView tabs={businessTabs(path)} />);
-  it('is a labelled navigation with six links, the open one marked aria-current', () => {
+  it('is a labelled navigation with seven links, the open one marked aria-current', () => {
     const out = html(`/businesses/${ID}/printers`);
     expect(out).toContain('<nav class="business-tabs" aria-label="Business sections">');
-    expect(out.match(/<a /g)).toHaveLength(6);
+    expect(out.match(/<a /g)).toHaveLength(7);
     expect(out.match(/aria-current="page"/g)).toHaveLength(1);
     expect(out).toContain(`<a href="/businesses/${ID}/printers" aria-current="page" class="current">Printers</a>`);
     expect(out).toContain(`<a href="/businesses/${ID}/sales">Sales</a>`);
