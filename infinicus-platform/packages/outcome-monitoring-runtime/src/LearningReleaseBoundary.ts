@@ -38,6 +38,9 @@ export interface ReleasedEvidence {
 /** Where a released hand-off goes (a future OM publication / CL intake step). Called only after the gate passed. */
 export type LearningSink = (handoff: OMToCLHandoff, evidence: ReleasedEvidence) => Promise<void>;
 
+/** Explicit composition seam for an intake consumer. Only OM owns the source lookup and release decision; no production factory is wired by default. */
+export type LearningReleaseFactory = (sink: LearningSink) => Pick<LearningReleaseBoundary, 'release'>;
+
 export interface LearningReleaseBoundaryDependencies {
   sources: LearningSourceReader;
   sink: LearningSink;
