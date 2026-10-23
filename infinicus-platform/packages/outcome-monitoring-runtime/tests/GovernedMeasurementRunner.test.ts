@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ActionExecutionVerification, GovernedMeasurementDefinition, InventoryOutcomeEvidence, TenantContext } from '@infinicus/database';
+import type { ActionExecutionVerification, GovernedMeasurementDefinition, InventoryAttributionEvidence, InventoryOutcomeEvidence, TenantContext } from '@infinicus/database';
 import { GovernedMeasurementRunner, type MeasurementRunnerPorts } from '../src/GovernedMeasurementRunner.js';
 
 const ctx: TenantContext = { tenantId: '11111111-1111-4111-8111-111111111111', workspaceId: '22222222-2222-4222-8222-222222222222', userId: '33333333-3333-4333-8333-333333333333' };
@@ -22,24 +22,29 @@ const definition = {
 const issue = { id: itemId, warehouseId: itemId, quantity: '1.0000', occurredAt: '2026-10-19T01:00:00.000Z', createdAt: '2026-10-19T01:00:01.000Z' };
 const evidence = { targetStatus: 'single_balance', balanceId: itemId, warehouseId: itemId,
   baseline: [issue], window: [issue, issue], truncated: false, capturedAt: '2026-10-22T00:00:00.000Z', digest } as InventoryOutcomeEvidence;
+const attribution = { policyChanges: [], adjustments: [], truncated: false, digest: `sha256:${'b'.repeat(64)}`,
+  capturedAt: '2026-10-22T00:00:00.000Z' } as InventoryAttributionEvidence;
 
 function fixture() {
   let active = true;
   let fact: ActionExecutionVerification | null = verification;
   let definitions: GovernedMeasurementDefinition[] = [definition];
   let source = evidence;
+  let confounders = attribution;
   let now = new Date('2026-10-22T00:00:00.000Z');
   const ports: MeasurementRunnerPorts = {
     isActiveRunner: async () => active,
     loadVerification: async () => fact,
     loadDefinitions: async () => definitions,
     readInventoryIssues: async () => source,
+    readAttributionEvidence: async () => confounders,
     databaseNow: async () => now,
   };
   return { runner: new GovernedMeasurementRunner(ports, serviceAccountId),
     setActive: (v: boolean) => { active = v; }, setFact: (v: ActionExecutionVerification | null) => { fact = v; },
     setDefinitions: (v: GovernedMeasurementDefinition[]) => { definitions = v; },
-    setSource: (v: InventoryOutcomeEvidence) => { source = v; }, setNow: (v: Date) => { now = v; } };
+    setSource: (v: InventoryOutcomeEvidence) => { source = v; }, setAttribution: (v: InventoryAttributionEvidence) => { confounders = v; },
+    setNow: (v: Date) => { now = v; } };
 }
 
 describe('governed measurement assessment before attribution is available', () => {
@@ -95,5 +100,22 @@ describe('governed measurement assessment before attribution is available', () =
     });
     expect(result?.record).toEqual({ id: itemId, created: true });
     expect(writes).toBe(1);
+  });
+
+  it('records a visible confounder as INCONCLUSIVE and never treats a clear read as attribution approval', async () => {
+    const f = fixture();
+    f.setDefinitions([{ ...definition, attributionRuleCode: 'no_other_policy_change_or_adjustment' }]);
+    const clean = await f.runner.assess(ctx, businessId, executionId);
+    expect(clean).toMatchObject({ state: 'OUTCOME_INCONCLUSIVE', reason: 'ATTRIBUTION_UNAVAILABLE' });
+    f.setAttribution({ ...attribution, adjustments: [{ id: itemId, movementType: 'adjustment', quantity: '1.0000',
+      occurredAt: '2026-10-20T12:00:00.000Z', createdAt: '2026-10-20T12:00:01.000Z' }] });
+    const confounded = await f.runner.assess(ctx, businessId, executionId);
+    expect(confounded).toMatchObject({ state: 'OUTCOME_INCONCLUSIVE', reason: 'CONFOUNDED' });
+    expect(confounded?.assessmentDigest).not.toBe(clean?.assessmentDigest);
+    f.setAttribution({ ...attribution, policyChanges: [{ id: itemId, balanceId: itemId,
+      completedAt: '2026-10-20T12:00:00.000Z', evidenceDigest: digest }] });
+    expect(await f.runner.assess(ctx, businessId, executionId)).toMatchObject({
+      state: 'OUTCOME_INCONCLUSIVE', reason: 'CONFOUNDED',
+    });
   });
 });

@@ -3,17 +3,18 @@ import type {
   ActionExecutionVerification, GovernedMeasurementDefinition, InventoryOutcomeEvidence,
   InventoryOutcomeEvidenceInput, TenantContext,
   GovernedMeasurementVerdictRepository,
+  InventoryAttributionEvidence, InventoryAttributionInput,
 } from '@infinicus/database';
 import {
   ActionExecutionVerificationRepository, GovernedMeasurementDefinitionRepository,
-  InventoryOutcomeEvidenceRepository, query, withTenantTransaction,
+  InventoryOutcomeEvidenceRepository, InventoryAttributionEvidenceRepository, query, withTenantTransaction,
 } from '@infinicus/database';
 
 export type MeasurementAssessmentState = 'OUTCOME_PENDING' | 'OUTCOME_INCONCLUSIVE';
 export type MeasurementAssessmentReason =
   'NO_DEFINITION' | 'NOTHING_APPLIED' | 'SCOPE_MISMATCH' | 'WINDOW_OPEN' |
   'SOURCE_UNAVAILABLE' | 'BASELINE_MISSING' | 'INSUFFICIENT_DATA' |
-  'DATA_QUALITY' | 'ATTRIBUTION_UNAVAILABLE';
+  'DATA_QUALITY' | 'ATTRIBUTION_UNAVAILABLE' | 'CONFOUNDED';
 
 /** An idempotent, non-verifying assessment. Its persisted row cannot confer learning authority. */
 export interface MeasurementAssessment {
@@ -31,6 +32,7 @@ export interface MeasurementRunnerPorts {
   loadVerification(ctx: TenantContext, businessId: string, executionId: string): Promise<ActionExecutionVerification | null>;
   loadDefinitions(ctx: TenantContext, businessId: string): Promise<readonly GovernedMeasurementDefinition[]>;
   readInventoryIssues(ctx: TenantContext, input: InventoryOutcomeEvidenceInput): Promise<InventoryOutcomeEvidence>;
+  readAttributionEvidence(ctx: TenantContext, input: InventoryAttributionInput): Promise<InventoryAttributionEvidence>;
   databaseNow(): Promise<Date>;
 }
 
@@ -39,6 +41,7 @@ export class DatabaseMeasurementRunnerPorts implements MeasurementRunnerPorts {
   private readonly verifications = new ActionExecutionVerificationRepository();
   private readonly definitions = new GovernedMeasurementDefinitionRepository();
   private readonly inventory = new InventoryOutcomeEvidenceRepository();
+  private readonly attribution = new InventoryAttributionEvidenceRepository();
 
   isActiveRunner(ctx: TenantContext, id: string): Promise<boolean> {
     return withTenantTransaction(ctx, async (client) => {
@@ -57,6 +60,9 @@ export class DatabaseMeasurementRunnerPorts implements MeasurementRunnerPorts {
   }
   readInventoryIssues(ctx: TenantContext, input: InventoryOutcomeEvidenceInput) {
     return this.inventory.readIssues(ctx, input);
+  }
+  readAttributionEvidence(ctx: TenantContext, input: InventoryAttributionInput) {
+    return this.attribution.read(ctx, input);
   }
   async databaseNow(): Promise<Date> {
     return (await query<{ now: Date }>('SELECT clock_timestamp() AS now')).rows[0].now;
@@ -128,9 +134,34 @@ export class GovernedMeasurementRunner {
     if (evidence.window.length < definition.minimumObservations) {
       return emit('OUTCOME_INCONCLUSIVE', 'INSUFFICIENT_DATA', definition.id, evidence.digest);
     }
-    // Issue movements establish demand, never stock-out frequency or causal attribution.
-    // OM-MEASURE-6 must supply a governed attribution result before OBSERVED can be emitted.
-    return emit('OUTCOME_INCONCLUSIVE', 'ATTRIBUTION_UNAVAILABLE', definition.id, evidence.digest);
+    // Only an explicitly named, conservative rule is understood here. A definition with any
+    // other rule never inherits a default interpretation.
+    if (definition.attributionRuleCode !== 'no_other_policy_change_or_adjustment' ||
+      !evidence.balanceId || !evidence.warehouseId) {
+      return emit('OUTCOME_INCONCLUSIVE', 'ATTRIBUTION_UNAVAILABLE', definition.id, evidence.digest);
+    }
+    let attribution: InventoryAttributionEvidence;
+    try {
+      attribution = await this.ports.readAttributionEvidence(ctx, {
+        businessId, inventoryItemId: verification.target.id,
+        balanceId: evidence.balanceId, warehouseId: evidence.warehouseId,
+        executionId: verification.executionId,
+        baselineOpenedAt: new Date(started - definition.baselineSeconds * 1000).toISOString(),
+        windowClosedAt: new Date(windowClosed).toISOString(),
+      });
+    } catch {
+      return emit('OUTCOME_INCONCLUSIVE', 'ATTRIBUTION_UNAVAILABLE', definition.id, evidence.digest);
+    }
+    const combinedDigest = `sha256:${createHash('sha256').update(`${evidence.digest}\n${attribution.digest}`).digest('hex')}`;
+    if (attribution.truncated || !/^sha256:[0-9a-f]{64}$/.test(attribution.digest)) {
+      return emit('OUTCOME_INCONCLUSIVE', 'DATA_QUALITY', definition.id, combinedDigest);
+    }
+    if (attribution.policyChanges.length > 0 || attribution.adjustments.length > 0) {
+      return emit('OUTCOME_INCONCLUSIVE', 'CONFOUNDED', definition.id, combinedDigest);
+    }
+    // The legacy attribution tables have no governed rule, source digest, or machine-observation
+    // identity. Absence of BO confounders is useful negative evidence, not an approved attribution pass.
+    return emit('OUTCOME_INCONCLUSIVE', 'ATTRIBUTION_UNAVAILABLE', definition.id, combinedDigest);
   }
 
   /** Persist only pending/inconclusive assessments through the dedicated OM runner role. */

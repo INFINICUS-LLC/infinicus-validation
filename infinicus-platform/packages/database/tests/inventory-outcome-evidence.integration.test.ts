@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { closePool, createPool, type TenantContext } from '../src/client.js';
 import { InventoryOutcomeEvidenceRepository } from '../src/repositories/bo/InventoryOutcomeEvidenceRepository.js';
+import { InventoryAttributionEvidenceRepository } from '../src/repositories/bo/InventoryAttributionEvidenceRepository.js';
 
 const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const bounds = { baselineOpenedAt: '2026-10-19T00:00:00.000Z', baselineClosedAt: '2026-10-20T00:00:00.000Z',
@@ -14,7 +15,9 @@ describe.runIf(run)('BO inventory outcome evidence port', () => {
   let businessId: string;
   let itemId: string;
   let warehouseId: string;
+  let balanceId: string;
   const reader = new InventoryOutcomeEvidenceRepository();
+  const attribution = new InventoryAttributionEvidenceRepository();
 
   beforeAll(async () => {
     createPool({ connectionString: process.env.DATABASE_URL! });
@@ -27,7 +30,8 @@ describe.runIf(run)('BO inventory outcome evidence port', () => {
     await admin.query(`INSERT INTO platform.businesses (id,tenant_id,workspace_id,legal_name,business_code,status) VALUES ($1,$2,$3,'OM source',$4,'active')`, [businessId, tenantId, workspaceId, `om-${businessId}`]);
     await admin.query(`INSERT INTO platform.inventory_items (id,tenant_id,workspace_id,business_id,sku,name) VALUES ($1,$2,$3,$4,$5,'OM item')`, [itemId, tenantId, workspaceId, businessId, `om-${itemId}`]);
     await admin.query(`INSERT INTO platform.warehouses (id,tenant_id,workspace_id,business_id,warehouse_code,name) VALUES ($1,$2,$3,$4,$5,'OM warehouse')`, [warehouseId, tenantId, workspaceId, businessId, `om-${warehouseId}`]);
-    await admin.query(`INSERT INTO business_operations.inventory_balances (tenant_id,workspace_id,business_id,inventory_item_id,warehouse_id) VALUES ($1,$2,$3,$4,$5)`, [tenantId, workspaceId, businessId, itemId, warehouseId]);
+    balanceId = (await admin.query(`INSERT INTO business_operations.inventory_balances (tenant_id,workspace_id,business_id,inventory_item_id,warehouse_id) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [tenantId, workspaceId, businessId, itemId, warehouseId])).rows[0].id;
   });
   afterAll(async () => { await admin?.end(); await closePool(); });
 
@@ -59,5 +63,24 @@ describe.runIf(run)('BO inventory outcome evidence port', () => {
     await admin.query(`INSERT INTO business_operations.inventory_balances (tenant_id,workspace_id,business_id,inventory_item_id,warehouse_id) VALUES ($1,$2,$3,$4,$5)`,
       [ctx.tenantId, ctx.workspaceId, businessId, itemId, anotherWarehouse]);
     expect((await reader.readIssues(ctx, input())).targetStatus).toBe('ambiguous');
+  });
+
+  it('reads same-balance adjustments as possible confounders with a stable digest', async () => {
+    const executionId = randomUUID();
+    const query = () => attribution.read(ctx, { businessId, inventoryItemId: itemId, balanceId, warehouseId,
+      executionId, baselineOpenedAt: bounds.baselineOpenedAt, windowClosedAt: bounds.windowClosedAt });
+    const initial = await query();
+    expect(initial).toMatchObject({ policyChanges: [], adjustments: [], truncated: false });
+    expect((await query()).digest).toBe(initial.digest);
+    await admin.query(`INSERT INTO business_operations.inventory_movements
+      (tenant_id,workspace_id,business_id,inventory_item_id,warehouse_id,movement_type,quantity,occurred_at)
+      VALUES ($1,$2,$3,$4,$5,'adjustment',1,'2026-10-20T15:00:00.000Z')`,
+      [ctx.tenantId, ctx.workspaceId, businessId, itemId, warehouseId]);
+    const changed = await query();
+    expect(changed.adjustments).toMatchObject([{ movementType: 'adjustment', quantity: '1.0000' }]);
+    expect(changed.digest).not.toBe(initial.digest);
+    await expect(attribution.read({ ...ctx, tenantId: randomUUID() }, { businessId, inventoryItemId: itemId,
+      balanceId, warehouseId, executionId, baselineOpenedAt: bounds.baselineOpenedAt, windowClosedAt: bounds.windowClosedAt }))
+      .rejects.toThrow('missing or out of scope');
   });
 });

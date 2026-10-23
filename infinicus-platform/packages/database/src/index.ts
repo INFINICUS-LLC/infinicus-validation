@@ -168,6 +168,8 @@ export {
 export { InventoryPolicyFactsRepository } from './repositories/bo/InventoryPolicyFactsRepository.js';
 export { InventoryOutcomeEvidenceRepository } from './repositories/bo/InventoryOutcomeEvidenceRepository.js';
 export type { InventoryOutcomeEvidence, InventoryOutcomeEvidenceInput, InventoryIssueEvidence } from './repositories/bo/InventoryOutcomeEvidenceRepository.js';
+export { InventoryAttributionEvidenceRepository } from './repositories/bo/InventoryAttributionEvidenceRepository.js';
+export type { InventoryAttributionInput, InventoryAttributionEvidence } from './repositories/bo/InventoryAttributionEvidenceRepository.js';
 export { FinancialFactsRepository } from './repositories/bo/FinancialFactsRepository.js';
 export type { RawFinancialFacts, RawDailyAmount, RawCostOfSales, RawIndicator } from './repositories/bo/FinancialFactsRepository.js';
 export type {
