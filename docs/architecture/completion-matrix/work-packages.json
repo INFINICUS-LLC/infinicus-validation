@@ -1,7 +1,7 @@
 {
   "version": 1,
   "asOf": "2026-10-22",
-  "mainCommit": "1a5f93b",
+  "mainCommit": "3f4e3ad",
   "dimensions": {
     "spec": 0.1,
     "functional": 0.35,
@@ -970,12 +970,12 @@
       "title": "Business intelligence presentation",
       "covers": "KPIs, insight",
       "units": 1,
-      "impl": 0.3,
+      "impl": 0.4,
       "spec": 50,
       "integration": 50,
       "verification": 50,
       "operational": 0,
-      "evidence": "Workflow page lists BI evidence packages (read only). Reports tab: sales report screen (#248, merged); not exercised in a browser against a live API."
+      "evidence": "Workflow page lists BI evidence packages (read only). Reports tab: sales report screen (#248). Finance tab: finance overview over the NEW-BI-01 financial report (#263, merged): per currency, evidence-gated gross profit with its reason, comparison, trend, coverage notes. Inventory tab (#261) is scored under X-10. Not exercised in a browser against a live API; no KPI or business overview screen yet."
     },
     {
       "id": "X-16",
@@ -1302,6 +1302,25 @@
       "notScored": [
         "X-06 navigation: the tab bar grew from six to seven screens but gains no module framework",
         "BO-3: no backend change"
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "mainCommit": "3f4e3ad",
+      "label": "FIN-WEB-1 merged (#263)",
+      "changes": [
+        {
+          "workPackage": "X-15",
+          "field": "impl",
+          "from": 0.3,
+          "to": 0.4,
+          "criterion": "BI presentation: a second functional BI screen (finance overview) over a real contract with tests; still no KPI or business overview screen, no browser run against a live API",
+          "evidence": "#263 merged (3f4e3ad): 29 tests, 3 mutants killed, nine real API responses parsed by the web schema; web 413/413; lint, typecheck, next build, static export"
+        }
+      ],
+      "notScored": [
+        "BI-5: the financial report API was credited to Core's NEW-BI-01 and the first report screen in the previous update; no double credit for the second screen",
+        "BI-3/BI-4: no new intelligence logic, the screen displays existing server figures"
       ]
     }
   ]
