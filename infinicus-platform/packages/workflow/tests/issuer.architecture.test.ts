@@ -59,8 +59,9 @@ describe('ABA package issuer architecture', () => {
     // AC-1: the ADI reorder-policy producer persists ADI's own recommendation records atomically in one shared tenant transaction; it never touches the issuer.
     // AC-2 Block 5: the BI inventory evidence service writes BI's own metric calculations and insight version atomically in one shared tenant transaction; it never touches the issuer.
     // AC-2 Block 6: the BDT inventory item twin service builds its definition/instance/snapshot atomically in one shared tenant transaction; it never touches the issuer.
+    // NEW-BDT-01: the BDT business performance twin service builds its definition/instance/snapshot atomically in one shared tenant transaction, exactly as the inventory item twin does; it never touches the issuer.
     // OFF-1 (owner-authorized 2026-10-22): the offline sale repository runs the existing order create/addLineItem/complete in one shared tenant transaction under a per-sale lock; it never touches the issuer.
-    expect(users).toEqual([ISSUER, AUTHORING, 'packages/workflow/src/abaExecutionPorts.ts', 'packages/workflow/src/ReorderPolicyRecommendationProducer.ts', 'packages/workflow/src/InventoryBiEvidenceService.ts', 'packages/workflow/src/InventoryItemTwinService.ts', 'packages/database/src/client.ts', 'packages/database/src/index.ts', 'packages/database/src/repositories/bo/OfflineSaleRepository.ts'].sort());
+    expect(users).toEqual([ISSUER, AUTHORING, 'packages/workflow/src/abaExecutionPorts.ts', 'packages/workflow/src/ReorderPolicyRecommendationProducer.ts', 'packages/workflow/src/InventoryBiEvidenceService.ts', 'packages/workflow/src/InventoryItemTwinService.ts', 'packages/database/src/client.ts', 'packages/database/src/index.ts', 'packages/database/src/repositories/bo/OfflineSaleRepository.ts', 'packages/workflow/src/performance/BusinessPerformanceTwinService.ts'].sort());
   });
 
   it('the issuer, its policy and the source reader name no event, outbox, ledger or publisher (any announcement is an injected collaborator)', () => {

@@ -91,3 +91,8 @@ export { buildFinancialReport } from './financial/financialReport.js';
 export type { BuildReportInput } from './financial/financialReport.js';
 export * from './financial/money.js';
 export * from './financial/periods.js';
+
+// ── Business Digital Twin representation of governed BI performance evidence (NEW-BDT-01) ──
+export * from './performance/BusinessPerformanceTwinService.js';
+export { assembleBiPerformanceEvidence, verifyBiPerformanceEvidence, crossCheckRevenue, canonicalJson, digestOf, SALES_REPORT_PROVENANCE_CONTRACT } from './performance/biPerformanceEvidence.js';
+export type { AssembleResult, PerformanceRefusalCode } from './performance/biPerformanceEvidence.js';
