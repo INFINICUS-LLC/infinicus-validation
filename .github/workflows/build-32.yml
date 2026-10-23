@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "infinicus-platform/packages/business-operations-runtime/**"
+      # The ownership guards scan these sources too; changes here must rerun the operations boundary checks.
+      - "infinicus-platform/packages/outcome-monitoring-runtime/**"
+      - "infinicus-platform/layers/continuous-learning/**"
       - "infinicus-platform/packages/database/**"
       - "infinicus-platform/packages/handoff-contracts/**"
       - "infinicus-platform/apps/api/**"
