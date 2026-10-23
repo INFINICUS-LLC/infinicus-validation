@@ -12,6 +12,7 @@ const TABS: readonly { key: string; label: string; segment: string }[] = [
   { key: 'reports', label: 'Reports', segment: 'reports' },
   { key: 'finance', label: 'Finance', segment: 'finance' },
   { key: 'inventory', label: 'Inventory', segment: 'inventory' },
+  { key: 'purchasing', label: 'Purchasing', segment: 'purchasing' },
   { key: 'printers', label: 'Printers', segment: 'printers' },
   { key: 'workflow', label: 'Workflow', segment: 'workflow' },
   { key: 'history', label: 'Decision history', segment: 'history' },
