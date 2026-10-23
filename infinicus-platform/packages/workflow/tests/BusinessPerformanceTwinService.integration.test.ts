@@ -152,6 +152,33 @@ describe.runIf(run)('BusinessPerformanceTwinService (live PostgreSQL, applicatio
     expect(await counts(w)).toEqual({ digital_twin_definitions: 0, digital_twin_instances: 0, digital_twin_snapshots: 0 });
   });
 
+  it('returns an invalid integrity verdict for malformed persisted evidence without throwing', async () => {
+    const w = await world();
+    const svc = new BusinessPerformanceTwinService({ ...readers(w) });
+    const out = await svc.publish(ctxOf(w), { businessId: w.businessId, ...PERIOD });
+    if (out.outcome !== 'PUBLISHED') throw new Error('expected published');
+    const row = await admin.query(`SELECT id, value_json FROM business_digital_twin.digital_twin_snapshot_values WHERE snapshot_version_id = $1`, [out.snapshotVersionId]);
+    const doctored = row.rows[0].value_json;
+    doctored.evidence.financial.currencies = { USD: 999 };
+    // Simulate corruption through the fixture administrator; application writes remain governed and immutable.
+    await admin.query(`ALTER TABLE business_digital_twin.digital_twin_snapshot_values DISABLE TRIGGER USER`);
+    try { await admin.query(`UPDATE business_digital_twin.digital_twin_snapshot_values SET value_json = $2 WHERE id = $1`, [row.rows[0].id, doctored]); }
+    finally { await admin.query(`ALTER TABLE business_digital_twin.digital_twin_snapshot_values ENABLE TRIGGER USER`); }
+    expect(await svc.getLatest(ctxOf(w), w.businessId)).toMatchObject({
+      snapshotId: out.snapshotId, integrity: { valid: false, reasons: ['financial_currencies_invalid'] },
+    });
+  });
+
+  it('does not expose a twin to another workspace in the same tenant', async () => {
+    const w = await world();
+    const other = await admin.query(`INSERT INTO tenancy.workspaces (id, tenant_id, name, slug, status)
+      VALUES (gen_random_uuid(), $1, 'Other BDT workspace', gen_random_uuid()::text, 'active') RETURNING id`, [w.tenantId]);
+    const svc = new BusinessPerformanceTwinService({ ...readers(w) });
+    await svc.publish(ctxOf(w), { businessId: w.businessId, ...PERIOD });
+    const wrongWorkspace = { ...ctxOf(w), workspaceId: other.rows[0].id };
+    expect(await svc.getLatest(wrongWorkspace, w.businessId)).toBeNull();
+  });
+
   it('one unavailable domain publishes the other with the missing one explicit (no zeros), and records evidence only for the provided domain', async () => {
     const w = await world();
     const svc = new BusinessPerformanceTwinService({ ...readers(w, { fin: () => ({ outcome: 'UNAVAILABLE', code: 'FACTS_UNAVAILABLE', detail: 'down' }) }) });

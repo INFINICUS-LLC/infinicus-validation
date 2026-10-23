@@ -114,7 +114,8 @@ export function assembleBiPerformanceEvidence(input: { businessId: string; perio
     crossCheck = { performed: true, revenue: checked.revenue };
   }
   const body = { contract: BI_PERFORMANCE_EVIDENCE_CONTRACT, businessId, period, financial: fin.domain, sales: sal.domain, crossCheck };
-  return { ok: true, evidence: { ...body, evidenceDigest: digestOf(body) } };
+  // Own the sealed evidence: a reader retaining its report (or the caller retaining its period) must not mutate a snapshot after its digest was computed.
+  return { ok: true, evidence: structuredClone({ ...body, evidenceDigest: digestOf(body) }) };
 }
 
 /** Verifies a (stored) evidence: structure, and that its integrity digest matches its content. Pure. */

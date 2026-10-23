@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "asOf": "2026-10-22",
-  "mainCommit": "e12dc11",
+  "asOf": "2026-10-23",
+  "mainCommit": "bfc9914",
   "dimensions": {
     "spec": 0.1,
     "functional": 0.35,
@@ -325,12 +325,12 @@
       "title": "Entity graph and domain twins (organization, financial, demand, sales, marketing, operations, inventory, workforce, assets, market)",
       "covers": "DT-05..15",
       "units": 11,
-      "impl": 0.09,
+      "impl": 0.23,
       "spec": 75,
       "integration": 75,
       "verification": 75,
       "operational": 0,
-      "evidence": "Inventory-item twin state and a modeled financial snapshot (TwinComputationService); nothing else."
+      "evidence": "Inventory-item twin plus NEW-BDT-01 financial and sales performance representations (#270 merged bfc9914): governed BI figures copied per currency with reporting-period/business checks, source provenance, evidence digests and published twin lifecycle; contract, assembly, real PostgreSQL/RLS, architecture and API tests. CI validate and image build passed on #270 head e78174f. Two additional partial domain slices (0.75 each) plus the existing inventory slice give approximately 2.5/11 units (impl 0.23); no KPI derivation, general entity graph, financial simulation, demand, marketing, workforce, asset or market twins."
     },
     {
       "id": "BDT-3",
@@ -1359,6 +1359,27 @@
       "notScored": [
         "BO-3 workforce: no backend change",
         "Employee names are shown to bo:read holders exactly as the API returns them (privacy note in docs/architecture/bi/WORK-WEB-1_STAFF.md)"
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "mainCommit": "bfc9914",
+      "label": "NEW-BDT-01 merged (#270), independently reconciled against current main",
+      "changes": [
+        {
+          "workPackage": "BDT-2",
+          "field": "impl",
+          "from": 0.09,
+          "to": 0.23,
+          "criterion": "Two additional partial domain representations (financial and sales, 0.75 unit each), using BI-owned calculations through the real API and governed twin lifecycle; existing inventory slice retained. Approximately 2.5/11 domain units; not full financial or sales twins.",
+          "evidence": "#270 merged bfc9914; PR-head CI validate, operations-runtime and image smoke-test jobs succeeded (run 39895545770). Existing contract, assembly, architecture, PostgreSQL/RLS and API tests independently rerun during CORE-ARCHITECTURE-01 verification."
+        }
+      ],
+      "notScored": [
+        "Current draft integrity hardening and its new mutation tests: not merged, no additional score credit",
+        "BI-3, BI-6 and BDT-4: no duplicate credit for existing BI calculations, handoffs or lifecycle machinery",
+        "Stack A, POS, H-5B, Continuous Learning activation and production readiness: outside this block",
+        "AUTO-WEB-1: merged, but its experience scoring is left to its owning workstream"
       ]
     }
   ]

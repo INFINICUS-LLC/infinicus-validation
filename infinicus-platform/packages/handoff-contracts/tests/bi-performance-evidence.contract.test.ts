@@ -28,6 +28,31 @@ describe('bi-performance-evidence/1', () => {
     expect(validateBiPerformanceEvidenceShape(good())).toEqual({ valid: true, reasons: [] });
   });
   it.each([
+    ['array root', [], 'not_an_object'],
+    ['impossible date', { ...good(), period: { from: '2026-02-30', to: '2026-10-31' } }, 'period_invalid'],
+    ['non-leap day', { ...good(), period: { from: '2026-02-29', to: '2026-10-31' } }, 'period_invalid'],
+    ['absent currencies', { ...good(), financial: { ...good().financial, currencies: undefined } }, 'financial_currencies_invalid'],
+    ['object currencies', { ...good(), financial: { ...good().financial, currencies: {} } }, 'financial_currencies_invalid'],
+    ['null currency', { ...good(), financial: { ...good().financial, currencies: [null] } }, 'financial_currency_invalid'],
+    ['primitive domain', { ...good(), sales: 7 }, 'sales_missing'],
+    ['empty provenance', { ...good(), financial: { ...good().financial, provenance: { contract: '', digest: D } } }, 'financial_provenance_invalid'],
+    ['non-string coverage', { ...good(), financial: { ...good().financial, coverage: [null] } }, 'financial_coverage_invalid'],
+    ['absent missing detail', { ...good(), sales: { status: 'MISSING', code: 'UNAVAILABLE' } }, 'sales_missing_detail_absent'],
+    ['null revenue row', { ...good(), crossCheck: { performed: false, revenue: [null] } }, 'cross_check_revenue_invalid'],
+    ['absent revenue', { ...good(), crossCheck: { performed: false } }, 'cross_check_revenue_invalid'],
+    ['unsupported check state', { ...good(), crossCheck: { performed: false, revenue: [{ currency: 'USD', state: 'GUESSED' }] } }, 'cross_check_revenue_invalid'],
+    ['unperformed results', { ...good(), crossCheck: { performed: false, revenue: [{ currency: 'USD', state: 'AGREE' }] } }, 'cross_check_unperformed_carries_results'],
+    ['duplicate check currencies', { ...good(), crossCheck: { performed: false, revenue: [{ currency: 'USD', state: 'AGREE' }, { currency: 'USD', state: 'AGREE' }] } }, 'cross_check_currencies_invalid'],
+    ['unsorted check currencies', { ...good(), crossCheck: { performed: false, revenue: [{ currency: 'USD', state: 'AGREE' }, { currency: 'KWD', state: 'AGREE' }] } }, 'cross_check_currencies_invalid'],
+  ])('fails closed on %s without throwing', (_name, value, reason) => {
+    expect(validateBiPerformanceEvidenceShape(value)).toMatchObject({ valid: false, reasons: expect.arrayContaining([reason]) });
+  });
+  it('accepts a real leap day', () => {
+    const e = good(); e.period.from = '2024-02-29';
+    if (e.financial.status === 'PROVIDED') e.financial.provenance.period.from = e.period.from;
+    expect(validateBiPerformanceEvidenceShape(e)).toEqual({ valid: true, reasons: [] });
+  });
+  it.each([
     ['not an object', null, ['not_an_object']],
     ['an unsupported contract', { ...good(), contract: 'x' }, ['contract_unsupported']],
     ['a reversed period', { ...good(), period: { from: '2026-11-01', to: '2026-10-01' } }, ['period_invalid']],
