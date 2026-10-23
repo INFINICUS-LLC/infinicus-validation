@@ -19,13 +19,13 @@ describe('businessIdFromPath', () => {
 });
 
 describe('businessTabs', () => {
-  it('lists the nine existing screens in order, linked to this business only', () => {
+  it('lists the ten existing screens in order, linked to this business only', () => {
     const tabs = businessTabs(`/businesses/${ID}/counter`);
-    expect(tabs.map((t) => t.label)).toEqual(['Counter', 'Sales', 'Reports', 'Finance', 'Inventory', 'Purchasing', 'Printers', 'Workflow', 'Decision history']);
-    expect(tabs.map((t) => t.href)).toEqual(['counter', 'sales', 'reports', 'finance', 'inventory', 'purchasing', 'printers', 'workflow', 'history'].map((s) => `/businesses/${ID}/${s}`));
+    expect(tabs.map((t) => t.label)).toEqual(['Counter', 'Sales', 'Reports', 'Finance', 'Inventory', 'Purchasing', 'Staff', 'Printers', 'Workflow', 'Decision history']);
+    expect(tabs.map((t) => t.href)).toEqual(['counter', 'sales', 'reports', 'finance', 'inventory', 'purchasing', 'staff', 'printers', 'workflow', 'history'].map((s) => `/businesses/${ID}/${s}`));
   });
   it('marks exactly the open screen as current, for each screen', () => {
-    for (const [segment, label] of [['counter', 'Counter'], ['sales', 'Sales'], ['reports', 'Reports'], ['finance', 'Finance'], ['inventory', 'Inventory'], ['purchasing', 'Purchasing'], ['printers', 'Printers'], ['workflow', 'Workflow'], ['history', 'Decision history']]) {
+    for (const [segment, label] of [['counter', 'Counter'], ['sales', 'Sales'], ['reports', 'Reports'], ['finance', 'Finance'], ['inventory', 'Inventory'], ['purchasing', 'Purchasing'], ['staff', 'Staff'], ['printers', 'Printers'], ['workflow', 'Workflow'], ['history', 'Decision history']]) {
       const current = businessTabs(`/businesses/${ID}/${segment}`).filter((t) => t.current).map((t) => t.label);
       expect(current, segment).toEqual([label]);
     }
@@ -42,10 +42,10 @@ describe('businessTabs', () => {
 
 describe('BusinessTabsView', () => {
   const html = (path: string | null) => renderToString(<BusinessTabsView tabs={businessTabs(path)} />);
-  it('is a labelled navigation with nine links, the open one marked aria-current', () => {
+  it('is a labelled navigation with ten links, the open one marked aria-current', () => {
     const out = html(`/businesses/${ID}/printers`);
     expect(out).toContain('<nav class="business-tabs" aria-label="Business sections">');
-    expect(out.match(/<a /g)).toHaveLength(9);
+    expect(out.match(/<a /g)).toHaveLength(10);
     expect(out.match(/aria-current="page"/g)).toHaveLength(1);
     expect(out).toContain(`<a href="/businesses/${ID}/printers" aria-current="page" class="current">Printers</a>`);
     expect(out).toContain(`<a href="/businesses/${ID}/sales">Sales</a>`);
