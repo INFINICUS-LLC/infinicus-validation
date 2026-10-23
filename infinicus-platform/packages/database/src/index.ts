@@ -388,7 +388,7 @@ export {
   LearningFeedbackPackageRepository,
   OMPublicationRepository,
   OMComponentRegistryRepository,
-  ActionExecutionVerificationRepository, ActionExecutionVerificationConflictError,
+  ActionExecutionVerificationRepository, ActionExecutionVerificationConflictError, OM24AuthorityRepository,
   OutcomeMonitoringHealthRepository,
   MonitoredActionNotFoundError,
 } from './repositories/om/index.js';
