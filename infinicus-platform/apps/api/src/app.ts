@@ -53,7 +53,9 @@ import inventoryReorderPolicyBaselineRoutes from './routes/inventoryReorderPolic
 import inventoryBiEvidenceRoutes from './routes/inventoryBiEvidence.js';
 import financialIntelligenceRoutes from './routes/financialIntelligence.js';
 import inventoryItemTwinRoutes from './routes/inventoryItemTwin.js';
+import businessPerformanceTwinRoutes from './routes/businessPerformanceTwin.js';
 import type { InventoryItemTwinCompositionOptions } from './inventoryItemTwinComposition.js';
+import type { BusinessPerformanceTwinCompositionOptions } from './businessPerformanceTwinComposition.js';
 import type { InventoryBiEvidenceCompositionOptions } from './inventoryBiEvidenceComposition.js';
 import type { FinancialIntelligenceCompositionOptions } from './financialIntelligenceComposition.js';
 import biSalesReportRoutes from './routes/biSalesReport.js';
@@ -85,6 +87,8 @@ export interface BuildAppOptions {
   biSalesReport?: BiSalesReportCompositionOptions;
   /** AC-2 Block 6: the BDT inventory item state composition (test seam; production feeds the twin from the BI evidence service). */
   inventoryItemTwin?: InventoryItemTwinCompositionOptions;
+  /** NEW-BDT-01: test seam for the business performance twin (production leaves it unset). */
+  businessPerformanceTwin?: BusinessPerformanceTwinCompositionOptions;
 }
 
 export async function buildApp(config: InfinicusConfig, options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -229,6 +233,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(financialIntelligenceRoutes, options.financialIntelligence ?? {});
   await app.register(biSalesReportRoutes, options.biSalesReport ?? {});
   await app.register(inventoryItemTwinRoutes, options.inventoryItemTwin ?? {});
+  // NEW-BDT-01: the twin's representation of governed BI financial and sales evidence (dt:write / dt:read); derives no KPI.
+  await app.register(businessPerformanceTwinRoutes, options.businessPerformanceTwin ?? {});
   await app.register(dataAcquisitionRoutes);
   await app.register(webhooksRoutes, {
     rateLimit: {
