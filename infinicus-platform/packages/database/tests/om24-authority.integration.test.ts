@@ -44,6 +44,43 @@ describe.runIf(run)('OM-24 authority source on disposable PostgreSQL', () => {
       [ctx.tenantId, ctx.workspaceId, businessId, `sha256:${'a'.repeat(64)}`])).rejects.toMatchObject({ code: '23514' });
   });
 
+  it('enforces every verdict source relationship as a validated scoped foreign key', async () => {
+    const result = await admin.query(`SELECT conname, contype, convalidated,
+      pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint WHERE conrelid = 'outcome_monitoring.governed_outcome_verdicts'::regclass`);
+    const constraints = new Map(result.rows.map((row) => [row.conname as string, row]));
+    for (const name of [
+      'om_verdict_definition_scope', 'om_verdict_verification_scope', 'om_verdict_observation_scope',
+      'om_verdict_version_scope', 'om_verdict_attribution_scope',
+    ]) {
+      expect(constraints.get(name)).toMatchObject({ contype: 'f', convalidated: true });
+      expect(constraints.get(name)?.definition).toContain('tenant_id, workspace_id, business_id');
+    }
+    expect(constraints.get('om_verdict_observed_shape')).toMatchObject({ contype: 'c', convalidated: true });
+  });
+
+  it('keeps verdicts append-only and rejects a forged approval even without source rows', async () => {
+    const triggers = await admin.query(`SELECT tgname, tgenabled FROM pg_trigger
+      WHERE tgrelid = 'outcome_monitoring.governed_outcome_verdicts'::regclass AND NOT tgisinternal`);
+    for (const name of ['guard_governed_outcome_verdict_insert', 'immutable_governed_outcome_verdicts',
+      'immutable_governed_outcome_verdicts_truncate']) {
+      expect(triggers.rows).toContainEqual({ tgname: name, tgenabled: 'O' });
+    }
+    // The receipt FK may reject a plain TRUNCATE before the append-only trigger runs.
+    await expect(admin.query('TRUNCATE outcome_monitoring.governed_outcome_verdicts'))
+      .rejects.toMatchObject({ code: '0A000' });
+    await expect(admin.query('TRUNCATE outcome_monitoring.governed_outcome_verdicts CASCADE'))
+      .rejects.toMatchObject({ code: '23514' });
+    await expect(admin.query(`INSERT INTO outcome_monitoring.governed_outcome_verdicts
+      (tenant_id, workspace_id, business_id, execution_verification_id, observation_id, observation_version_id,
+       definition_id, outcome_state, input_digest, verdict_digest, measured_value, baseline_value,
+       observation_count, baseline_opened_at, baseline_closed_at, window_opened_at, window_closed_at, runner_id, approver_id)
+      VALUES ($1,$2,$3,$1,$1,$1,$1,'OUTCOME_OBSERVED',$4,$4,1,0,1,
+        now()-interval '3 days',now()-interval '2 days',now()-interval '1 day',now(),$1,$2)`,
+      [ctx.tenantId, ctx.workspaceId, businessId, `sha256:${'a'.repeat(64)}`]))
+      .rejects.toMatchObject({ code: '23514' });
+  });
+
   it('refuses a missing or malformed source under tenant scope', async () => {
     const reader = new OM24AuthorityRepository();
     expect(await reader.hasVerifiedPublication(ctx, businessId, publicationId, {})).toBe(false);
