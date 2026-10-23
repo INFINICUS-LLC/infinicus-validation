@@ -32,6 +32,26 @@ export interface OMVarianceSummaryReference {
   varianceValue: unknown;
 }
 
+/** Optional governed OM-24 publication data. Absence means CL-02 cannot accept the package. */
+export interface OMLearningPublicationDetail {
+  publicationReceiptId: string;
+  outcomeVerdictId: string;
+  monitoringContractId: string;
+  confidence: number;
+  reliability: number;
+  applicabilityScope: string;
+  limitations: readonly string[];
+  lessons: readonly string[];
+  successFactors: readonly string[];
+  failureFactors: readonly string[];
+  hypotheses: readonly string[];
+  decisionRuleFeedback: readonly string[];
+  modelCalibrationFeedback: readonly string[];
+  dataQualityLearning: readonly string[];
+  operationalLearning: readonly string[];
+  riskLearning: readonly string[];
+}
+
 /** Payload of the OM → CL handoff envelope. Serializable data only. */
 export interface OMToCLHandoffPayload {
   contractVersion: typeof OM_TO_CL_CONTRACT_VERSION;
@@ -59,6 +79,8 @@ export interface OMToCLHandoffPayload {
   targetLayer: typeof CL_REQUIRED_TARGET_LAYER;
   targetBlock: string;
   publishedAt: string;
+  /** Additional governed data, only when OM has produced and can attest it. */
+  governedPublication?: OMLearningPublicationDetail;
 }
 
 /**
@@ -209,6 +231,29 @@ export function validateOMToCLHandoff(value: unknown): OMToCLValidationResult {
   if (!isNonEmptyString(p.targetBlock)) reasons.push('target_block_required');
   if (!isNonEmptyString(p.publishedAt) || Number.isNaN(Date.parse(p.publishedAt))) {
     reasons.push('published_at_invalid');
+  }
+
+  if (p.governedPublication !== undefined) {
+    const detail = p.governedPublication as OMLearningPublicationDetail;
+    if (!detail || typeof detail !== 'object' || Array.isArray(detail)) {
+      reasons.push('governed_publication_invalid');
+    } else {
+      for (const key of ['publicationReceiptId', 'outcomeVerdictId', 'monitoringContractId', 'applicabilityScope'] as const) {
+        if (!isNonEmptyString(detail[key])) reasons.push(`governed_${key}_required`);
+      }
+      for (const key of ['confidence', 'reliability'] as const) {
+        if (typeof detail[key] !== 'number' || !Number.isFinite(detail[key]) || detail[key] < 0 || detail[key] > 1) {
+          reasons.push(`governed_${key}_invalid`);
+        }
+      }
+      for (const key of ['limitations', 'lessons', 'successFactors', 'failureFactors', 'hypotheses',
+        'decisionRuleFeedback', 'modelCalibrationFeedback', 'dataQualityLearning', 'operationalLearning', 'riskLearning'] as const) {
+        const entries = detail[key];
+        if (!Array.isArray(entries) || entries.length > MAX_COLLECTION_ENTRIES || entries.some((entry) => !isNonEmptyString(entry))) {
+          reasons.push(`governed_${key}_invalid`);
+        }
+      }
+    }
   }
 
   // Authority boundary: a finalized observation/review declaration only —

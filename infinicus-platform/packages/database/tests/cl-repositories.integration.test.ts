@@ -389,11 +389,14 @@ describe.runIf(run)('Stage 2J Continuous Learning — live PostgreSQL', () => {
         observationVersionId: observation.rows[0].version_id as string,
         idempotencyKey: uniqueCode('release'), correlationId: 'opaque-correlation',
         executions: [{ executionId: '33333333-3333-4333-8333-333333333333', evidenceDigest: `sha256:${'a'.repeat(64)}` }],
+        cl02: { status: 'rejected' as const, reasons: ['CL02_GOVERNED_PUBLICATION_MISSING'] },
       };
       const repo = new CLIntakeRepository();
       const first = await repo.recordReleased(ctx1, input);
       expect(first.idempotentReplay).toBe(false);
-      expect(first.package.status).toBe('received');
+      expect(first.package.status).toBe('rejected');
+      expect(first.package.rejectionReason).toBe('CL02_GOVERNED_PUBLICATION_MISSING');
+      await expect(repo.acceptPackage(ctx1, first.package.id)).rejects.toThrow();
       const replay = await repo.recordReleased(ctx1, input);
       expect(replay.idempotentReplay).toBe(true);
       expect(replay.package.id).toBe(first.package.id);
@@ -401,7 +404,7 @@ describe.runIf(run)('Stage 2J Continuous Learning — live PostgreSQL', () => {
         (SELECT count(*)::int FROM continuous_learning.cl_intake_package_versions WHERE intake_package_id = $1) AS versions,
         (SELECT count(*)::int FROM continuous_learning.cl_intake_source_references WHERE intake_package_id = $1) AS sources,
         (SELECT count(*)::int FROM continuous_learning.cl_intake_status_history WHERE intake_package_id = $1) AS statuses`, [first.package.id]);
-      expect(counts.rows[0]).toMatchObject({ versions: 1, sources: 1, statuses: 1 });
+      expect(counts.rows[0]).toMatchObject({ versions: 1, sources: 1, statuses: 2 });
       await expect(repo.recordReleased(ctx1, { ...input, executions: [{ ...input.executions[0], evidenceDigest: `sha256:${'b'.repeat(64)}` }] })).rejects.toThrow();
     });
 
