@@ -388,12 +388,13 @@ export {
   LearningFeedbackPackageRepository,
   OMPublicationRepository,
   OMComponentRegistryRepository,
-  ActionExecutionVerificationRepository, ActionExecutionVerificationConflictError, OM24AuthorityRepository,
+  ActionExecutionVerificationRepository, ActionExecutionVerificationConflictError, OM24AuthorityRepository, GovernedMeasurementDefinitionRepository,
   OutcomeMonitoringHealthRepository,
   MonitoredActionNotFoundError,
 } from './repositories/om/index.js';
 export type {
   OMIntakePackage, ReceiveOMPackageInput,
+  GovernedMeasurementDefinition, GovernedDefinitionPage,
   MonitoringPlan,
   MonitoredAction,
   OutcomeObservation, OutcomeObservationVersion,
