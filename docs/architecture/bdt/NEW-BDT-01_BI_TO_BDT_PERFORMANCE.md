@@ -1,6 +1,6 @@
 # NEW-BDT-01: governed BI -> Business Digital Twin performance representation
 
-Workstream CORE-ARCHITECTURE-01. Layer: Business Digital Twin (consumes Business Intelligence). Status: implemented on a draft PR, not merged, not deployed.
+Workstream CORE-ARCHITECTURE-01. Layer: Business Digital Twin (consumes Business Intelligence). Status: merged in #270 (`bfc9914`), not deployed by this workstream. Follow-up integrity hardening is proposed separately.
 
 ## What it does
 The twin represents the **financial** (`bi-financial-report/1`, NEW-BI-01) and **sales** (BI-SALES-1) reports Business Intelligence already derived for one business and one reporting period. BI stays the only KPI authority; the twin copies those figures **verbatim, per currency**, and adds provenance and an integrity digest. Chain: BO -> BI -> BDT. The twin imports no Business Operations code and reads no BO table.
@@ -19,6 +19,7 @@ The twin represents the **financial** (`bi-financial-report/1`, NEW-BI-01) and *
 - **Missing / insufficient:** one unavailable domain is `MISSING` with its code; both unavailable is `BI_EVIDENCE_MISSING`; nothing recorded in the period is `BI_EVIDENCE_INSUFFICIENT` (absence of data is not data). BI states such as `INSUFFICIENT_COST_EVIDENCE` pass through unchanged.
 - **Integrity:** `evidenceDigest` = SHA-256 of the canonical evidence; every read re-verifies it, so a stored copy altered behind the twin's back reports `evidence_digest_mismatch`.
 - **Deterministic:** the same BI reports always give the same evidence and digest.
+- **Follow-up integrity hardening (draft):** sealed evidence owns a detached copy of the BI figures and reporting period. Malformed stored domain/currency arrays, coverage, provenance, dates and cross-check rows return an invalid integrity verdict instead of throwing. No new KPI or frozen contract is introduced. Reproducible negative proofs: `node infinicus-platform/scripts/test-bdt-performance-mutations.mjs` (13 targeted mutants).
 - **Existing lifecycle:** definition -> instance -> snapshot -> value + evidence -> validate -> publish in one shared tenant transaction, exactly as the inventory item twin; published snapshots are immutable and the P0-3 freshness rule applies. Writes only twin tables.
 
 ## Frozen-contract finding (owner attention)

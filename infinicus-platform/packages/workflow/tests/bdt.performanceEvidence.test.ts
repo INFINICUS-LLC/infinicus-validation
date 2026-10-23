@@ -48,6 +48,18 @@ describe('canonical JSON and digests', () => {
 
 describe('assembly: both BI reports provided', () => {
   const e = ok(assemble());
+  it('owns its sealed evidence independently of mutable BI reports and the caller period', () => {
+    const f = goodFin(); const s = goodSales(); const p = { ...PERIOD };
+    const sealed = ok(assemble(f, s, p));
+    const before = structuredClone(sealed);
+    if (f.outcome !== 'REPORT' || s.outcome !== 'REPORT') throw new Error('expected reports');
+    f.report.period.currencies[0]!.revenue.amount = '999.0000';
+    f.report.coverage.push('MUTATED');
+    s.report.currencies[0]!.totals.netMinor = 999;
+    p.from = '2026-09-01';
+    expect(sealed).toEqual(before);
+    expect(verifyBiPerformanceEvidence(sealed)).toEqual({ valid: true, reasons: [] });
+  });
   it('keeps currencies separate, sorted, and the figures VERBATIM from the BI reports (nothing recalculated, nothing converted)', () => {
     expect(e.contract).toBe(BI_PERFORMANCE_EVIDENCE_CONTRACT);
     if (e.financial.status !== 'PROVIDED' || e.sales.status !== 'PROVIDED') throw new Error('expected provided');

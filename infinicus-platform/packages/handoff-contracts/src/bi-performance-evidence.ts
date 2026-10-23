@@ -59,6 +59,9 @@ export interface BusinessPerformanceTwinState {
 const DIGEST = /^[0-9a-f]{64}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CURRENCY = /^[A-Z]{3}$/;
+const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+const date = (value: unknown): value is string => typeof value === 'string' && DATE.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 
 export interface PerformanceEvidenceValidation { valid: boolean; reasons: string[] }
 
@@ -66,29 +69,43 @@ export interface PerformanceEvidenceValidation { valid: boolean; reasons: string
 export function validateBiPerformanceEvidenceShape(value: unknown): PerformanceEvidenceValidation {
   const reasons: string[] = [];
   const e = value as Partial<BiPerformanceEvidence> | null;
-  if (e === null || typeof e !== 'object') return { valid: false, reasons: ['not_an_object'] };
+  if (!record(e)) return { valid: false, reasons: ['not_an_object'] };
   if (e.contract !== BI_PERFORMANCE_EVIDENCE_CONTRACT) reasons.push('contract_unsupported');
   if (typeof e.businessId !== 'string' || e.businessId.length === 0) reasons.push('business_missing');
-  if (!e.period || !DATE.test(e.period.from) || !DATE.test(e.period.to) || e.period.from > e.period.to) reasons.push('period_invalid');
+  if (!e.period || !date(e.period.from) || !date(e.period.to) || e.period.from > e.period.to) reasons.push('period_invalid');
   if (typeof e.evidenceDigest !== 'string' || !DIGEST.test(e.evidenceDigest)) reasons.push('evidence_digest_invalid');
   const domain = (d: DomainEvidence<{ currency: string }> | undefined, label: string): void => {
-    if (!d) { reasons.push(`${label}_missing`); return; }
+    if (!record(d)) { reasons.push(`${label}_missing`); return; }
     if (d.status === 'MISSING') {
       if ('currencies' in d) reasons.push(`${label}_missing_domain_carries_figures`);
       if (typeof d.code !== 'string' || d.code.length === 0) reasons.push(`${label}_missing_code_absent`);
+      if (typeof d.detail !== 'string') reasons.push(`${label}_missing_detail_absent`);
       return;
     }
     if (d.status !== 'PROVIDED') { reasons.push(`${label}_status_invalid`); return; }
-    if (!d.provenance || !DIGEST.test(d.provenance.digest) || typeof d.provenance.contract !== 'string') reasons.push(`${label}_provenance_invalid`);
+    if (!record(d.provenance) || typeof d.provenance.digest !== 'string' || !DIGEST.test(d.provenance.digest) || !text(d.provenance.contract)) reasons.push(`${label}_provenance_invalid`);
     else if (e.period && (d.provenance.period?.from !== e.period.from || d.provenance.period?.to !== e.period.to)) reasons.push(`${label}_period_mismatch`);
-    const codes = (d.currencies ?? []).map((c) => c.currency);
+    if (!Array.isArray(d.coverage) || d.coverage.some((c) => typeof c !== 'string')) reasons.push(`${label}_coverage_invalid`);
+    if (!Array.isArray(d.currencies)) { reasons.push(`${label}_currencies_invalid`); return; }
+    if (d.currencies.some((c) => !record(c) || typeof c.currency !== 'string')) { reasons.push(`${label}_currency_invalid`); return; }
+    const codes = d.currencies.map((c) => c.currency);
     if (codes.some((c) => !CURRENCY.test(c))) reasons.push(`${label}_currency_invalid`);
     if (new Set(codes).size !== codes.length) reasons.push(`${label}_currency_duplicated`);
     if (codes.join(',') !== [...codes].sort().join(',')) reasons.push(`${label}_currencies_not_sorted`);
   };
   domain(e.financial as DomainEvidence<{ currency: string }> | undefined, 'financial');
   domain(e.sales as DomainEvidence<{ currency: string }> | undefined, 'sales');
-  if (!e.crossCheck || typeof e.crossCheck.performed !== 'boolean') reasons.push('cross_check_missing');
+  if (!record(e.crossCheck) || typeof e.crossCheck.performed !== 'boolean') reasons.push('cross_check_missing');
   else if (e.crossCheck.performed !== (e.financial?.status === 'PROVIDED' && e.sales?.status === 'PROVIDED')) reasons.push('cross_check_inconsistent_with_domains');
+  if (!Array.isArray(e.crossCheck?.revenue)) reasons.push('cross_check_revenue_invalid');
+  else {
+    const rows = e.crossCheck.revenue;
+    if (rows.some((r) => !record(r) || typeof r.currency !== 'string' || !CURRENCY.test(r.currency) || !['AGREE', 'NOT_COMPARABLE'].includes(r.state))) reasons.push('cross_check_revenue_invalid');
+    else {
+      const codes = rows.map((r) => r.currency);
+      if (new Set(codes).size !== codes.length || codes.join(',') !== [...codes].sort().join(',')) reasons.push('cross_check_currencies_invalid');
+      if (e.crossCheck.performed === false && rows.length !== 0) reasons.push('cross_check_unperformed_carries_results');
+    }
+  }
   return { valid: reasons.length === 0, reasons };
 }
