@@ -98,6 +98,7 @@ describe('OM-OBS-1 - read-only observability', () => {
       // OM-24 and OM-MEASURE storage arrived after OM-OBS-1; none is part of its read-only route.
       '0213_create_om_governed_publication_source.sql', '0214_enforce_governed_verdict_scope.sql',
       '0215_record_governed_measurement_assessments.sql',
+      '0216_add_governed_confounder_reason.sql',
     ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);
