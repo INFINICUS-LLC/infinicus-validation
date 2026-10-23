@@ -17,7 +17,7 @@ export {
 } from './errors.js';
 
 export { CLIntakeRepository } from './CLIntakeRepository.js';
-export type { CLIntakePackage, ReceiveCLPackageInput } from './CLIntakeRepository.js';
+export type { CLIntakePackage, ReceiveCLPackageInput, ReleasedCLPackageInput } from './CLIntakeRepository.js';
 
 export { LearningCaseRepository } from './LearningCaseRepository.js';
 export type { LearningCase } from './LearningCaseRepository.js';

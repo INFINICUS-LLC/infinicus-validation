@@ -426,7 +426,7 @@ export {
   CLComponentRegistryRepository,
 } from './repositories/cl/index.js';
 export type {
-  CLIntakePackage, ReceiveCLPackageInput,
+  CLIntakePackage, ReceiveCLPackageInput, ReleasedCLPackageInput,
   LearningCase,
   LearningFeedbackRecord,
   LearnedLesson,
