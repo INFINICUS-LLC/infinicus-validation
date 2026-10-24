@@ -174,6 +174,8 @@ export { FinancialFactsRepository } from './repositories/bo/FinancialFactsReposi
 export type { RawFinancialFacts, RawDailyAmount, RawCostOfSales, RawIndicator } from './repositories/bo/FinancialFactsRepository.js';
 export { SaleEvidenceReviewRepository, storedAmountToMinor } from './repositories/bo/SaleEvidenceReviewRepository.js';
 export type { SaleEvidenceReview, SaleEvidenceBlocker } from './repositories/bo/SaleEvidenceReviewRepository.js';
+export { SalesWindowEvidenceReviewRepository } from './repositories/bo/SalesWindowEvidenceReviewRepository.js';
+export type { SalesWindowReview, SalesWindowReviewInput, SalesWindowBlocker } from './repositories/bo/SalesWindowEvidenceReviewRepository.js';
 export type {
   InventoryPolicyFactsSnapshot, InventoryPolicyFactsItem, InventoryPolicyFactsBalance, InventoryPolicyFactsReceipt, InventoryPolicyFactsDemand, LoadInventoryPolicyFactsInput,
 } from './repositories/bo/InventoryPolicyFactsRepository.js';
