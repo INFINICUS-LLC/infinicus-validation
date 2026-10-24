@@ -7,3 +7,4 @@ export * from './OutcomeMonitoringHealthService.js';
 export * from './GovernedMeasurementRunner.js';
 export * from './VerificationRefusalAssessment.js';
 export * from './LearningShadowEvaluation.js';
+export * from './ControlledShadowEvaluation.js';
