@@ -11,3 +11,4 @@ export * from './ControlledShadowEvaluation.js';
 export * from './ShadowOperatorAuthorityProposal.js';
 export * from './ShadowAuditCandidate.js';
 export * from './ShadowAuditChainRehearsal.js';
+export * from './ApprovedShadowPolicy.js';
