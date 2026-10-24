@@ -93,7 +93,7 @@ export class SaleEvidenceReviewRepository {
       if (row && (row.events.length > LIMIT || row.payments.length > LIMIT || row.credits.length > LIMIT)) blockers.add('SOURCE_TRUNCATED');
       // Current BO tables do not prove immutable lifecycle history, refund application time or the absence of unlinked refunds.
       blockers.add('SOURCE_HISTORY_MUTABLE'); blockers.add('REFUND_APPLICATION_TIME_MISSING'); blockers.add('UNLINKED_REFUNDS_UNDETECTABLE');
-      const sourceDigest = `sha256:${createHash('sha256').update(JSON.stringify({ businessId, orderId, row })).digest('hex')}`;
+      const sourceDigest = `sha256:${createHash('sha256').update(JSON.stringify({ tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, businessId, orderId, row })).digest('hex')}`;
       return { authoritative: false, orderId, completionAt, currency: row?.currency ?? null,
         saleMinor: sale?.toString() ?? null, linkedCredits, blockers: [...blockers], sourceDigest };
     });

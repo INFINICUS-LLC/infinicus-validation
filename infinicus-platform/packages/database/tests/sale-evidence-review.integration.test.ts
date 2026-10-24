@@ -111,7 +111,13 @@ describe.runIf(run)('read-only BO sale evidence inspection on PostgreSQL', () =>
     await admin.query(`UPDATE business_operations.order_events SET occurred_at='2026-10-01T09:01:00Z'
       WHERE order_id=$1 AND event_type='completed'`, [orderId]);
     expect((await read()).sourceDigest).not.toBe(after.sourceDigest);
-    expect((await reader.read({ ...ctx, tenantId: randomUUID() }, businessId, orderId)).blockers).toContain('ORDER_NOT_FOUND');
+    const otherTenantReview = await reader.read({ ...ctx, tenantId: randomUUID() }, businessId, orderId);
+    expect(otherTenantReview.blockers).toContain('ORDER_NOT_FOUND');
+    // A review digest must bind the complete scope even when neither caller can see an order.
+    const otherWorkspaceReview = await reader.read({ ...ctx, workspaceId: randomUUID() }, businessId, orderId);
+    expect(otherWorkspaceReview.blockers).toContain('ORDER_NOT_FOUND');
+    expect(otherTenantReview.sourceDigest).not.toBe(otherWorkspaceReview.sourceDigest);
+    expect(otherTenantReview.sourceDigest).not.toBe((await read()).sourceDigest);
     expect((await reader.read({ ...ctx, workspaceId: randomUUID() }, businessId, orderId)).blockers).toContain('ORDER_NOT_FOUND');
     expect((await reader.read(ctx, randomUUID(), orderId)).blockers).toContain('ORDER_NOT_FOUND');
   });
