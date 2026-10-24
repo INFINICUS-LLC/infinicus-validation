@@ -15,6 +15,7 @@ export * from './intake/BusinessIntakeService.js';
 export * from './OperationalCommandExecutor.js';
 export * from './publication/OperationalPublicationService.js';
 export * from './events/OperationalEventService.js';
+export * from './commerce/DisabledTaxPolicyAuthorityResolver.js';
 export * from './authorized-action/boActionCapabilities.js';
 export * from './authorized-action/authorizedActionIntakePolicy.js';
 export * from './authorized-action/AuthorizedActionIntakeService.js';
