@@ -134,8 +134,8 @@ describe.runIf(run)('CL-BOUNDARY-1 learning boundary (live PostgreSQL, applicati
   });
 
   it('CL-ACT-04: real application-role OM facts rehearse in shadow mode without writes or eligibility', async () => {
-    // The existing fixture contains real scoped verification rows with pending/inconclusive
-    // outcomes. No test-only promotion to OUTCOME_VERIFIED is allowed in PostgreSQL.
+    // Create an actual pending verification; no test-only promotion to OUTCOME_VERIFIED.
+    await verification(a);
     const reader = new ActionExecutionVerificationRepository();
     const before = await snapshot();
     const found = await reader.learningSourcesForObservation(a.ctx, a.bizId, a.observationId);
