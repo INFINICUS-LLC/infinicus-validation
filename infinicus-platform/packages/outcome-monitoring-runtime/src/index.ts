@@ -16,3 +16,5 @@ export * from './ShadowAuditSecurityContract.js';
 export * from './ShadowSecurityRatificationGate.js';
 export * from './ShadowMigrationReadinessAssessment.js';
 export * from './CanonicalShadowBusinessScope.js';
+export * from './TrustedShadowAuthorizationPorts.js';
+export * from './BusinessScopedAbaPermissionContract.js';
