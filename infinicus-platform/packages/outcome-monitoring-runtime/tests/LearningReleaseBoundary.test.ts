@@ -84,6 +84,13 @@ describe('the boundary forwards only what the learning gate allows', () => {
     expect(calls.sink).toHaveLength(0);
   });
 
+  it('does not reclassify a reader-supplied unsupported source as OM-owned evidence', async () => {
+    const { boundary, calls } = harness(lookup([fact({ source: 'caller_supplied' })]));
+    const err = await refusal(boundary.release(ctx, handoff()));
+    expect(err.reasons).toContain('SOURCE_KIND_UNSUPPORTED');
+    expect(calls.sink).toHaveLength(0);
+  });
+
   it('conflicting facts for one execution are refused', async () => {
     const { boundary, calls } = harness(lookup([fact(), fact({ evidenceDigest: `sha256:${'b'.repeat(64)}` })]));
     expect((await refusal(boundary.release(ctx, handoff()))).reasons).toContain('SOURCE_CONFLICT');
