@@ -62,7 +62,7 @@ describe.runIf(run)('read-only BO sale evidence inspection on PostgreSQL', () =>
     expect(review.blockers).toContain('REFUND_APPLICATION_TIME_MISSING');
     await credit('80.0000');
     review = await read();
-    expect(review.linkedCredits.filter((c) => c.status === 'applied').map((c) => c.amountMinor)).toEqual(['2000', '8000']);
+    expect(review.linkedCredits.filter((c) => c.status === 'applied').map((c) => c.amountMinor).sort()).toEqual(['2000', '8000']);
     await credit('5.0000', 'USD', 'cancelled');
     await credit('1.0000', 'EUR');
     review = await read();

@@ -18,3 +18,4 @@ export * from './ShadowMigrationReadinessAssessment.js';
 export * from './CanonicalShadowBusinessScope.js';
 export * from './TrustedShadowAuthorizationPorts.js';
 export * from './BusinessScopedAbaPermissionContract.js';
+export * from './RevenuePolicyCandidate.js';
