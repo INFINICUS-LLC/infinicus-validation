@@ -29,6 +29,12 @@ describe('CL-ACT-06 preparatory operator authority', () => {
       expect(result.reasons).toContain('EXPIRED_OR_INVALID_TIME');
     }
   });
+  it('accepts five-segment UUIDs and refuses missing UUID groups', () => {
+    expect(assessShadowOperatorProposal(valid()).acceptedForReview).toBe(true);
+    const invalid = assessShadowOperatorProposal({ ...valid(), assignmentId: '66666666-6666-4666-666666666666' });
+    expect(invalid.acceptedForReview).toBe(false);
+    expect(invalid.reasons).toContain('INVALID_SCOPE_OR_IDENTITY');
+  });
   it('refuses self approval, revoked, expired, wrong permissions and malformed versions', () => {
     for (const [change, reason] of [
       [{ approverId: ids[3] }, 'SELF_APPROVAL'],
