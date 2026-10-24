@@ -18,6 +18,17 @@ describe('CL-ACT-06 preparatory operator authority', () => {
     expect(Object.isFrozen(r)).toBe(true);
     expect(Object.isFrozen(r.reasons)).toBe(true);
   });
+  it('accepts canonical UTC timestamp syntax for review only and rejects noncanonical timestamps', () => {
+    const acceptable = assessShadowOperatorProposal(valid());
+    expect(acceptable.acceptedForReview).toBe(true);
+    expect(acceptable.reasons).toEqual([]);
+    expect(acceptable.permitsEvaluation).toBe(false);
+    for (const expiresAt of ['2026-10-25', '2026-10-25T00:00:00Z', '2026-10-25T00:00:00.000+00:00', 'invalid']) {
+      const result = assessShadowOperatorProposal({ ...valid(), expiresAt });
+      expect(result.acceptedForReview, expiresAt).toBe(false);
+      expect(result.reasons).toContain('EXPIRED_OR_INVALID_TIME');
+    }
+  });
   it('refuses self approval, revoked, expired, wrong permissions and malformed versions', () => {
     for (const [change, reason] of [
       [{ approverId: ids[3] }, 'SELF_APPROVAL'],
