@@ -48,8 +48,8 @@ export function assessShadowOperatorProposal(input: ShadowAuthorityProposal): Sh
   const expiry = Date.parse(input.expiresAt);
   const evaluated = Date.parse(input.evaluatedAt);
   if (!Number.isFinite(expiry) || !Number.isFinite(evaluated) ||
-      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/.test(input.expiresAt) ||
-      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/.test(input.evaluatedAt) ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(input.expiresAt) ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(input.evaluatedAt) ||
       expiry <= evaluated) reasons.push('EXPIRED_OR_INVALID_TIME');
   return fail(reasons);
 }
