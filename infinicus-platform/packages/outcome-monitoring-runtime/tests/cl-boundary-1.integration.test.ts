@@ -14,6 +14,7 @@ import { createPool, closePool, withTenantTransaction, ActionExecutionVerificati
 import { CL_REQUIRED_TARGET_LAYER, OM_TO_CL_CONTRACT_VERSION, type OMToCLHandoff } from '@infinicus/handoff-contracts';
 import { createMonitoredAction } from '../../../apps/api/tests/helpers/omFixtures.js';
 import { LearningGateRefusedError, LearningReleaseBoundary } from '../src/LearningReleaseBoundary.js';
+import { evaluateLearningShadow } from '../src/LearningShadowEvaluation.js';
 
 const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const OM = 'outcome_monitoring';
@@ -130,6 +131,50 @@ describe.runIf(run)('CL-BOUNDARY-1 learning boundary (live PostgreSQL, applicati
     const { boundary, sinkCalls } = harness();
     await reasonsOf(boundary.release(a.ctx, handoff(a, { observationId: 'not-a-uuid' })));
     expect(sinkCalls).toHaveLength(0);
+  });
+
+  it('CL-ACT-04: real application-role OM facts rehearse in shadow mode without writes or eligibility', async () => {
+    // Create an actual pending verification; no test-only promotion to OUTCOME_VERIFIED.
+    await verification(a);
+    const reader = new ActionExecutionVerificationRepository();
+    const before = await snapshot();
+    const found = await reader.learningSourcesForObservation(a.ctx, a.bizId, a.observationId);
+    expect(found.observation).not.toBeNull();
+    expect(found.facts.length).toBeGreaterThan(0);
+    const input = {
+      handoff: handoff(a),
+      deliveryScope: { tenantId: a.ctx.tenantId, workspaceId: a.ctx.workspaceId },
+      observation: found.observation,
+      sources: found.facts,
+    };
+    const first = evaluateLearningShadow(input);
+    const second = evaluateLearningShadow(input);
+    expect(first).toEqual(second);
+    expect(first.candidateEligible).toBe(false);
+    expect(first.reasons).toContain('LEARNING_GATE_CLOSED');
+    expect(first).toMatchObject({
+      mode: 'SHADOW_ONLY', releaseAuthorized: false, learningApplied: false, mutationsPermitted: false,
+    });
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('CL-ACT-04: PostgreSQL RLS prevents cross-tenant source substitution during shadow evaluation', async () => {
+    const before = await snapshot();
+    const reader = new ActionExecutionVerificationRepository();
+    const foreign = await reader.learningSourcesForObservation(b.ctx, a.bizId, a.observationId);
+    expect(foreign).toEqual({ observation: null, facts: [] });
+    const candidate = evaluateLearningShadow({
+      handoff: handoff(b, { observationId: a.observationId, businessId: a.bizId }),
+      deliveryScope: { tenantId: b.ctx.tenantId, workspaceId: b.ctx.workspaceId },
+      observation: foreign.observation,
+      sources: foreign.facts,
+    });
+    expect(candidate.candidateEligible).toBe(false);
+    expect(candidate.reasons).toContain('OBSERVATION_NOT_FOUND');
+    expect(candidate.releaseAuthorized).toBe(false);
+    expect(candidate.learningApplied).toBe(false);
+    expect(candidate.mutationsPermitted).toBe(false);
+    expect(await snapshot()).toEqual(before);
   });
 
   it('refusals write nothing: no verification, observation, feedback, publication or intake row is created or changed', async () => {
