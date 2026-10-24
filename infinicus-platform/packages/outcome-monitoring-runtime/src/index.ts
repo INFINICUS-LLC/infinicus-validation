@@ -14,3 +14,4 @@ export * from './ShadowAuditChainRehearsal.js';
 export * from './ApprovedShadowPolicy.js';
 export * from './ShadowAuditSecurityContract.js';
 export * from './ShadowSecurityRatificationGate.js';
+export * from './ShadowMigrationReadinessAssessment.js';
