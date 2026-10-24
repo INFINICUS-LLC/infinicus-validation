@@ -12,7 +12,7 @@
  * needs OUTCOME_VERIFIED, which Outcome Monitoring cannot yet assign (no governed measurement model exists). Nothing in production constructs this
  * class yet; learning is not activated.
  */
-import { decideLearningRelease, LEARNING_SOURCE_KIND } from '@infinicus/handoff-contracts';
+import { decideLearningRelease } from '@infinicus/handoff-contracts';
 import type { LearningObservationRef, LearningSourceFact, OMToCLHandoff } from '@infinicus/handoff-contracts';
 import type { LearningSourceLookup, TenantContext } from '@infinicus/database';
 
@@ -65,7 +65,7 @@ export class LearningReleaseBoundary {
       try {
         const found = await this.deps.sources.learningSourcesForObservation(ctx, businessId, observationId);
         observation = found.observation;
-        sources = found.facts.map((f) => ({ ...f, source: LEARNING_SOURCE_KIND }));
+        sources = found.facts.map((f) => ({ ...f }));
       } catch {
         lookupFailed.push('SOURCE_LOOKUP_FAILED');
       }
