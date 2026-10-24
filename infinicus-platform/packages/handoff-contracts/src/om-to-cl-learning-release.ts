@@ -92,8 +92,14 @@ export function decideLearningRelease(input: LearningReleaseInput): LearningRele
           if (!byAction && !byApproval) reasons.add('SOURCE_NOT_LINKED_TO_OBSERVATION');
         }
         const prior = seen.get(fact.executionId);
-        if (prior && (prior.evidenceDigest !== fact.evidenceDigest || prior.outcomeState !== fact.outcomeState
-          || prior.executionOutcome !== fact.executionOutcome || prior.mutationResult !== fact.mutationResult)) reasons.add('SOURCE_CONFLICT');
+        if (prior && (
+          prior.source !== fact.source ||
+          prior.tenantId !== fact.tenantId || prior.workspaceId !== fact.workspaceId || prior.businessId !== fact.businessId ||
+          prior.monitoredActionId !== fact.monitoredActionId || prior.approvedActionId !== fact.approvedActionId ||
+          prior.evidenceDigest !== fact.evidenceDigest || prior.executionState !== fact.executionState ||
+          prior.outcomeState !== fact.outcomeState || prior.executionOutcome !== fact.executionOutcome ||
+          prior.mutationResult !== fact.mutationResult
+        )) reasons.add('SOURCE_CONFLICT');
         seen.set(fact.executionId, fact);
         // The ONE learning gate. Every fact must pass it; a single pending, inconclusive, failed or unverified fact closes the release.
         const gate = learningEligibility({ executionState: fact.executionState, outcomeState: fact.outcomeState, executionOutcome: fact.executionOutcome, mutationResult: fact.mutationResult });

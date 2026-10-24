@@ -150,6 +150,15 @@ describe('incomplete, mismatched, cross-tenant and improperly sourced evidence i
   it('conflicting facts for one execution (different digest or verdict) are refused', () => {
     expect(decideLearningRelease(input({ sources: [fact(), fact({ evidenceDigest: `sha256:${'b'.repeat(64)}` })] })).reasons).toContain('SOURCE_CONFLICT');
     expect(decideLearningRelease(input({ sources: [fact(), fact({ outcomeState: 'OUTCOME_PENDING' })] })).reasons).toContain('SOURCE_CONFLICT');
+    // Same execution ID cannot carry different provenance, scope, action linkage or execution state,
+    // even when its digest and outcome happen to match.
+    for (const change of [
+      { source: 'external_system' as never }, { tenantId: OTHER }, { workspaceId: OTHER },
+      { businessId: OTHER }, { monitoredActionId: OTHER }, { approvedActionId: OTHER },
+      { executionState: 'EXECUTION_PENDING' },
+    ]) {
+      expect(decideLearningRelease(input({ sources: [fact(), fact(change)] })).reasons).toContain('SOURCE_CONFLICT');
+    }
     // an exact duplicate is harmless
     expect(decideLearningRelease(input({ sources: [fact(), fact()] })).released).toBe(true);
   });
