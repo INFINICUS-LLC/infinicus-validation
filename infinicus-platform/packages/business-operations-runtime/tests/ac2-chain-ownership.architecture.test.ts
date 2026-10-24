@@ -145,9 +145,19 @@ describe('AC-2 Block 10: every layer in the first-action chain stays in its lane
     for (const f of om) {
       expect(f.code, f.rel).not.toMatch(BO_TRUTH);
       expect(f.code, f.rel).not.toMatch(SQL_WRITE);
-      for (const i of importsOf(f.code)) expect(i, f.rel).toMatch(/^(\.\/|@infinicus\/(database|event-contracts|handoff-contracts)$)/);
+      for (const i of importsOf(f.code)) expect(i, f.rel).toMatch(/^(\.\/|node:crypto$|@infinicus\/(database|event-contracts|handoff-contracts)$)/);
     }
     expect(pkgDeps('outcome-monitoring-runtime').sort()).toEqual(['@infinicus/database', '@infinicus/event-contracts', '@infinicus/handoff-contracts']);
+  });
+
+  it('OM import guard accepts Node crypto but still rejects unauthorized runtime packages', () => {
+    const allowed = /^(\\.\\/|node:crypto$|@infinicus\\/(database|event-contracts|handoff-contracts)$)/;
+    for (const spec of ['node:crypto', './LearningReleaseBoundary.js', '@infinicus/database', '@infinicus/event-contracts', '@infinicus/handoff-contracts']) {
+      expect(spec, spec).toMatch(allowed);
+    }
+    for (const spec of ['node:fs', '@infinicus/workflow', '@infinicus/business-operations-runtime', '@infinicus/database/private']) {
+      expect(spec, spec).not.toMatch(allowed);
+    }
   });
 
   it('CL cannot consume OUTCOME_PENDING: the gate refuses every pending or inconclusive outcome, CL code never reads execution verifications, and the table admits only pending or inconclusive', () => {
