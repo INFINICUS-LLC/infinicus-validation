@@ -31,7 +31,7 @@ export interface ShadowAuditPreflight {
   readonly auditPersisted: false;
   readonly reasons: readonly string[];
 }
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const REASON = /^[A-Z][A-Z0-9_]{0,63}$/;
 const TYPES: readonly string[] = ['REQUESTED', 'APPROVED', 'REVOKED', 'REFUSED', 'EVALUATED'];
