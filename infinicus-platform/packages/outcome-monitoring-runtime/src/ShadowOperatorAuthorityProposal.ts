@@ -27,7 +27,7 @@ export interface ShadowAuthorityAssessment {
   readonly permitsMutation: false;
   readonly reasons: readonly string[];
 }
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PERMISSION = 'cl:shadow:evaluate';
 const fail = (reasons: string[]): ShadowAuthorityAssessment => Object.freeze({
   acceptedForReview: reasons.length === 0, mode: 'PROPOSAL_ONLY',

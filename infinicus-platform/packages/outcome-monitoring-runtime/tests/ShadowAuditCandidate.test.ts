@@ -18,6 +18,12 @@ describe('CL-ACT-06C non-authorizing audit contract', () => {
     expect(Object.isFrozen(r)).toBe(true);
     expect(Object.isFrozen(r.reasons)).toBe(true);
   });
+  it('accepts five-segment UUIDs and rejects malformed four-segment identifiers', () => {
+    expect(preflightShadowAuditCandidate(candidate()).acceptedForSchemaReview).toBe(true);
+    const invalid = preflightShadowAuditCandidate({ ...candidate(), controlId: '11111111-1111-4111-111111111111' });
+    expect(invalid.acceptedForSchemaReview).toBe(false);
+    expect(invalid.reasons).toContain('INVALID_SCOPE');
+  });
   it('rejects self approval, missing approval lineage, malformed digest and invented authority', () => {
     const cases: Array<[Partial<ShadowAuditCandidate>, string]> = [
       [{ approverId: ids[3] }, 'APPROVAL_EVIDENCE_MISSING'],
