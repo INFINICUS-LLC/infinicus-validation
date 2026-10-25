@@ -72,6 +72,19 @@ describe.runIf(run)('delete-tenant-data.mjs — live PostgreSQL', () => {
 
     const systemRolesBefore = await adminPool.query(`SELECT count(*)::int AS n FROM tenancy.roles WHERE tenant_id IS NULL`);
 
+    const governedTables = [
+      'governed_measurement_definitions', 'governed_outcome_verdicts', 'om24_publication_receipts',
+    ];
+    for (const name of governedTables) {
+      const table = `outcome_monitoring.${name}`;
+      const state = await adminPool.query(`SELECT count(*)::int AS rows,
+        has_table_privilege('app_test_user',$1,'DELETE') AS can_delete,
+        (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid=$1::regclass) AS forced_rls,
+        (SELECT count(*)::int FROM pg_trigger WHERE tgrelid=$1::regclass AND NOT tgisinternal AND (tgtype & 8) = 8) AS delete_guards
+        FROM ${table} WHERE tenant_id=$2`, [table, tenantId]);
+      expect(state.rows[0]).toMatchObject({ rows: 0, can_delete: false, forced_rls: true, delete_guards: 1 });
+    }
+
     const { stdout } = await execFileAsync('node', [DELETE_SCRIPT], {
       env: {
         ...process.env,
@@ -99,17 +112,59 @@ describe.runIf(run)('delete-tenant-data.mjs — live PostgreSQL', () => {
     expect(systemRolesAfter.rows[0].n).toBe(systemRolesBefore.rows[0].n);
 
     const auditRow = await adminPool.query(
-      'SELECT tenant_name, deleted_by FROM platform.data_deletion_events WHERE tenant_id = $1',
+      'SELECT tenant_name, deleted_by, table_row_counts FROM platform.data_deletion_events WHERE tenant_id = $1',
       [tenantId]
     );
     expect(auditRow.rows).toHaveLength(1);
     expect(auditRow.rows[0].tenant_name).toBe('Delete-Me Tenant');
     expect(auditRow.rows[0].deleted_by).toBe('vitest-integration-test');
+    for (const name of governedTables) {
+      expect(auditRow.rows[0].table_row_counts.retainedRowCounts[`outcome_monitoring.${name}`]).toBe(0);
+      expect(auditRow.rows[0].table_row_counts.blockedByRetainedDependents[`outcome_monitoring.${name}`]).toBeUndefined();
+    }
+    expect(auditRow.rows[0].table_row_counts.remainingRows).toEqual({});
+    const password = new URL(process.env.DATABASE_URL!).password;
+    if (password) expect(JSON.stringify(auditRow.rows[0].table_row_counts)).not.toContain(password);
 
     // Cleanup the surviving fixture tenant (not touched by the script under test).
     await adminPool.query('DELETE FROM tenancy.workspaces WHERE tenant_id = $1', [otherTenantId]);
     await adminPool.query('DELETE FROM tenancy.tenants WHERE id = $1', [otherTenantId]);
-  }, 60_000);
+  }, 120_000);
+
+  it('reports partial erasure when an append-only tenant row remains without an FK', async () => {
+    const tenantId = randomUUID();
+    const workspaceId = randomUUID();
+    const survivorId = randomUUID();
+    const table = 'business_operations.erasure_retained_fixture';
+    await adminPool.query(`CREATE TABLE ${table} (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL, marker text NOT NULL)`);
+    await adminPool.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+    await adminPool.query(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`);
+    await adminPool.query(`CREATE POLICY erasure_retained_scope ON ${table} USING (tenant_id = current_setting('app.tenant_id',true)::uuid)`);
+    await adminPool.query(`CREATE TRIGGER erasure_retained_immutable BEFORE UPDATE OR DELETE ON ${table}
+      FOR EACH ROW EXECUTE FUNCTION business_operations.forbid_mutation()`);
+    try {
+      await adminPool.query(`INSERT INTO tenancy.tenants (id,name,slug,status,plan_code) VALUES ($1,'Retained test',$2,'active','test'),($3,'Survivor test',$4,'active','test')`,
+        [tenantId, `retained-${tenantId}`, survivorId, `survivor-${survivorId}`]);
+      await adminPool.query(`INSERT INTO tenancy.workspaces (id,tenant_id,name,slug,status) VALUES ($1,$2,'Retained',$3,'active')`,
+        [workspaceId, tenantId, `retained-${workspaceId}`]);
+      await adminPool.query(`INSERT INTO ${table} (tenant_id,marker) VALUES ($1,'retained'),($2,'other tenant')`, [tenantId, survivorId]);
+      const { stdout } = await execFileAsync('node', [DELETE_SCRIPT], {
+        env: { ...process.env, TENANT_ID: tenantId, DELETED_BY: 'vitest-retained-test' },
+      });
+      expect(stdout).toContain(`Partially erased tenant ${tenantId}`);
+      expect(stdout).not.toContain(`Deleted tenant ${tenantId}`);
+      expect((await adminPool.query(`SELECT count(*)::int AS n FROM ${table} WHERE tenant_id=$1`, [tenantId])).rows[0].n).toBe(1);
+      expect((await adminPool.query(`SELECT count(*)::int AS n FROM ${table} WHERE tenant_id=$1`, [survivorId])).rows[0].n).toBe(1);
+      const audit = await adminPool.query(`SELECT table_row_counts FROM platform.data_deletion_events WHERE tenant_id=$1`, [tenantId]);
+      expect(audit.rows[0].table_row_counts.retainedRowCounts[table]).toBe(1);
+      expect(audit.rows[0].table_row_counts.remainingRows[table]).toBe(1);
+      expect((await adminPool.query(`SELECT count(*)::int AS n FROM tenancy.tenants WHERE id=$1`, [survivorId])).rows[0].n).toBe(1);
+    } finally {
+      await adminPool.query(`DROP TABLE IF EXISTS ${table}`);
+      await adminPool.query(`DELETE FROM tenancy.workspaces WHERE tenant_id=$1`, [survivorId]);
+      await adminPool.query(`DELETE FROM tenancy.tenants WHERE id=$1`, [survivorId]);
+    }
+  }, 120_000);
 
   it('refuses to run against a BYPASSRLS/superuser DATABASE_URL', async () => {
     await expect(

@@ -27,6 +27,7 @@ for (const root of ['apps', 'packages', 'layers']) {
 }
 const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => f.endsWith('.sql')).sort();
 const sqlOf = (f: string): string => readFileSync(join(PLATFORM, 'infrastructure/database/migrations', f), 'utf8').split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+const RLS_WEAKENING = /NO\s+FORCE\s+ROW\s+LEVEL|DISABLE\s+ROW\s+LEVEL\s+SECURITY|\bBYPASSRLS\b|session_replication_role|ALTER\s+POLICY|DROP\s+POLICY/i;
 
 describe('inventory_movements FORCE RLS architecture (0186)', () => {
   it('scans the real production tree (not vacuous)', () => {
@@ -35,8 +36,17 @@ describe('inventory_movements FORCE RLS architecture (0186)', () => {
   });
 
   it('no production code weakens or bypasses row-level security', () => {
-    const offenders = production.filter((f) => /NO\s+FORCE\s+ROW\s+LEVEL|DISABLE\s+ROW\s+LEVEL\s+SECURITY|BYPASSRLS|session_replication_role|ALTER\s+POLICY|DROP\s+POLICY/i.test(f.code)).map((f) => f.rel);
+    const offenders = production.filter((f) => RLS_WEAKENING.test(f.code)).map((f) => f.rel);
     expect(offenders).toEqual([]);
+  });
+
+  it('still detects explicit RLS bypass grants while allowing defensive role inspection', () => {
+    expect(RLS_WEAKENING.test('SELECT rolbypassrls FROM pg_roles')).toBe(false);
+    for (const command of [
+      'ALTER ROLE app_role BYPASSRLS', 'CREATE ROLE unsafe BYPASSRLS',
+      'ALTER TABLE business_operations.inventory_movements NO FORCE ROW LEVEL SECURITY',
+      'ALTER TABLE business_operations.inventory_movements DISABLE ROW LEVEL SECURITY',
+    ]) expect(RLS_WEAKENING.test(command)).toBe(true);
   });
 
   it('no SECURITY DEFINER helper exists to escape RLS on the movement table', () => {

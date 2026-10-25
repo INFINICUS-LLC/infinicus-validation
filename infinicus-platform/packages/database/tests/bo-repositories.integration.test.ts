@@ -200,8 +200,11 @@ async function teardownBOIntegration(): Promise<void> {
                  WHERE tenant_id = ANY($1)`);
     await clean(`DELETE FROM business_operations.invoice_line_items
                  WHERE tenant_id = ANY($1)`);
-    await clean(`DELETE FROM business_operations.order_events
-                 WHERE tenant_id = ANY($1)`);
+    // This suite creates no order events. Assert that instead of deleting
+    // append-only history during teardown.
+    const eventCount = await adminPool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM business_operations.order_events WHERE tenant_id = ANY($1)`, [tenantFilter]);
+    expect(eventCount.rows[0].count).toBe('0');
     await clean(`DELETE FROM business_operations.order_line_items
                  WHERE tenant_id = ANY($1)`);
     await clean(`DELETE FROM business_operations.quotation_line_items

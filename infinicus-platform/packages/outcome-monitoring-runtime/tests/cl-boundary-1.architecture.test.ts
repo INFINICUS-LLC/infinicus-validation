@@ -37,6 +37,8 @@ const GATE = 'packages/handoff-contracts/src/execution-evidence/states.ts';
 const DECISION = 'packages/handoff-contracts/src/om-to-cl-learning-release.ts';
 const CONTRACT = 'packages/handoff-contracts/src/om-to-cl.ts';
 const BOUNDARY = 'packages/outcome-monitoring-runtime/src/LearningReleaseBoundary.ts';
+const SHADOW = 'packages/outcome-monitoring-runtime/src/LearningShadowEvaluation.ts';
+const CONTROLLED_SHADOW = 'packages/outcome-monitoring-runtime/src/ControlledShadowEvaluation.ts';
 const DB_SRC = 'packages/database/src/';
 const READER = 'packages/database/src/repositories/om/ActionExecutionVerificationRepository.ts';
 
@@ -46,9 +48,17 @@ describe('CL-BOUNDARY-1 - no way around the learning gate', () => {
     for (const rel of [GATE, DECISION, CONTRACT, BOUNDARY, READER]) expect(read(rel).length, rel).toBeGreaterThan(300);
   });
 
-  it('the chain is exactly gate <- decision <- boundary: each link has one production caller', () => {
+  it('only the governed boundary can release; shadow may consult the pure decision without a sink', () => {
     expect(users(/\blearningEligibility\(/, [GATE])).toEqual([DECISION]);
-    expect(users(/\bdecideLearningRelease\(/, [DECISION])).toEqual([BOUNDARY]);
+    expect(users(/\bdecideLearningRelease\(/, [DECISION])).toEqual([BOUNDARY, SHADOW]);
+    expect(read(SHADOW)).toMatch(/releaseAuthorized:\s*false/);
+    expect(read(SHADOW)).toMatch(/learningApplied:\s*false/);
+    expect(read(SHADOW)).toMatch(/mutationsPermitted:\s*false/);
+    expect(read(SHADOW)).not.toMatch(/LearningSink|\.sink\(|\b(?:INSERT INTO|UPDATE|DELETE FROM|publish|applyMutation)\b/);
+    expect(read(CONTROLLED_SHADOW)).toMatch(/releaseAuthorized:\s*false/);
+    expect(read(CONTROLLED_SHADOW)).toMatch(/learningApplied:\s*false/);
+    expect(read(CONTROLLED_SHADOW)).toMatch(/mutationsPermitted:\s*false/);
+    expect(users(/\bcandidateEligible\b/, [SHADOW, CONTROLLED_SHADOW])).toEqual([]);
     // the OM -> CL hand-off is validated by the decision and by nothing else
     expect(users(/\bvalidateOMToCLHandoff\(/, [CONTRACT])).toEqual([DECISION]);
   });

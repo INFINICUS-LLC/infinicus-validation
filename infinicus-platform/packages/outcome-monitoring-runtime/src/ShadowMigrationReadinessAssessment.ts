@@ -2,7 +2,7 @@
  * CL-ACT-06M — fail-closed, advisory-only migration readiness assessment.
  * No caller-supplied approval can authorize a migration or production use.
  */
-import { CL_06J_DECISIONS, reviewSecurityRatification, type SecurityDecisionRatification } from './ShadowSecurityRatificationGate.js';
+import { reviewSecurityRatification, type SecurityDecisionRatification } from './ShadowSecurityRatificationGate.js';
 
 export interface MigrationReadinessEvidence {
   readonly ratifications: readonly SecurityDecisionRatification[];

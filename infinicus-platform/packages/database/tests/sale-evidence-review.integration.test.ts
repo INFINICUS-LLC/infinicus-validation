@@ -51,8 +51,8 @@ describe.runIf(run)('read-only BO sale evidence inspection on PostgreSQL', () =>
     [ctx.tenantId, ctx.workspaceId, businessId, orderId]);
     await event();
     expect(await read()).toMatchObject({ authoritative: false, completionAt: '2026-10-01T09:00:00.000Z', saleMinor: '10000' });
-    await event();
-    expect((await read()).blockers).toContain('DUPLICATE_COMPLETION');
+    await expect(event()).rejects.toThrow();
+    expect((await read()).blockers).not.toContain('DUPLICATE_COMPLETION');
   });
 
   it('shows linked partial, full, cancelled, and mismatched-currency credits without certifying refunds', async () => {
@@ -108,9 +108,9 @@ describe.runIf(run)('read-only BO sale evidence inspection on PostgreSQL', () =>
     const after = await read();
     expect(after.sourceDigest).not.toBe(before.sourceDigest);
     expect(after.blockers).toContain('SOURCE_HISTORY_MUTABLE');
-    await admin.query(`UPDATE business_operations.order_events SET occurred_at='2026-10-01T09:01:00Z'
-      WHERE order_id=$1 AND event_type='completed'`, [orderId]);
-    expect((await read()).sourceDigest).not.toBe(after.sourceDigest);
+    await expect(admin.query(`UPDATE business_operations.order_events SET occurred_at='2026-10-01T09:01:00Z'
+      WHERE order_id=$1 AND event_type='completed'`, [orderId])).rejects.toThrow();
+    expect((await read()).sourceDigest).toBe(after.sourceDigest);
     const otherTenantReview = await reader.read({ ...ctx, tenantId: randomUUID() }, businessId, orderId);
     expect(otherTenantReview.blockers).toContain('ORDER_NOT_FOUND');
     // A review digest must bind the complete scope even when neither caller can see an order.

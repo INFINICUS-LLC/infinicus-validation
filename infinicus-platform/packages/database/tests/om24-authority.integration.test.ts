@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 import { closePool, createPool } from '../src/client.js';
 import { OM24AuthorityRepository } from '../src/repositories/om/OM24AuthorityRepository.js';
 
@@ -67,9 +68,9 @@ describe.runIf(run)('OM-24 authority source on disposable PostgreSQL', () => {
       expect(triggers.rows).toContainEqual({ tgname: name, tgenabled: 'O' });
     }
     // The receipt FK may reject a plain TRUNCATE before the append-only trigger runs.
-    await expect(admin.query('TRUNCATE outcome_monitoring.governed_outcome_verdicts'))
+    await expect(truncateRefusal(admin, 'TRUNCATE outcome_monitoring.governed_outcome_verdicts'))
       .rejects.toMatchObject({ code: '0A000' });
-    await expect(admin.query('TRUNCATE outcome_monitoring.governed_outcome_verdicts CASCADE'))
+    await expect(truncateRefusal(admin, 'TRUNCATE outcome_monitoring.governed_outcome_verdicts CASCADE'))
       .rejects.toMatchObject({ code: '23514' });
     await expect(admin.query(`INSERT INTO outcome_monitoring.governed_outcome_verdicts
       (tenant_id, workspace_id, business_id, execution_verification_id, observation_id, observation_version_id,

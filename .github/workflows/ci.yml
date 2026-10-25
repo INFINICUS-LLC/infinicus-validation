@@ -145,6 +145,22 @@ jobs:
       # OM-EVID-1: @infinicus/outcome-monitoring-runtime was missing from this list, so the P0-6d Outcome Monitoring tests (Guardrail Section XI) never ran in CI.
       # The output is also written to a file so that a failure can be named afterwards: GitHub's log view of this job ends with the
       # Postgres service container's own log, which buried the failing test on the two unexplained failures of 18 Oct 2026.
+      # CI restore-proof tests need PostgreSQL 16 server utilities as well as
+      # version-matched dump/restore clients. Do not skip restore tests.
+      - name: Install PostgreSQL 16 test tools
+        run: |
+          # Ubuntu 26.04 runners do not provide PostgreSQL 16 in their
+          # default apt sources; use the official PostgreSQL Apt repository.
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common ca-certificates
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16 postgresql-client-16
+          echo '/usr/lib/postgresql/16/bin' >> "$GITHUB_PATH"
+          /usr/lib/postgresql/16/bin/pg_restore --version
+          test -x /usr/lib/postgresql/16/bin/initdb
+          test -x /usr/lib/postgresql/16/bin/pg_ctl
+
       - name: Test
         run: |
           set -o pipefail

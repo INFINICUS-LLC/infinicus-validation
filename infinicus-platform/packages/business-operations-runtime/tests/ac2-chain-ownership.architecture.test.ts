@@ -151,7 +151,7 @@ describe('AC-2 Block 10: every layer in the first-action chain stays in its lane
   });
 
   it('OM import guard accepts Node crypto but still rejects unauthorized runtime packages', () => {
-    const allowed = /^(\\.\\/|node:crypto$|@infinicus\\/(database|event-contracts|handoff-contracts)$)/;
+    const allowed = /^(\.\/|node:crypto$|@infinicus\/(database|event-contracts|handoff-contracts)$)/;
     for (const spec of ['node:crypto', './LearningReleaseBoundary.js', '@infinicus/database', '@infinicus/event-contracts', '@infinicus/handoff-contracts']) {
       expect(spec, spec).toMatch(allowed);
     }
