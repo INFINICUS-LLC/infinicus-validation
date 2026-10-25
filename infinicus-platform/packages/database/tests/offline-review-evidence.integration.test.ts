@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
+import { truncateRefusal } from './helpers/truncateRefusal.js';
 
 const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const TABLE = 'business_operations.offline_review_evidence';
@@ -73,7 +74,7 @@ describe.runIf(run)('M1-A6 disabled review evidence (disposable PostgreSQL)', ()
     await expect(asApp({tenant,workspace}, q => q(`INSERT INTO ${TABLE} DEFAULT VALUES`))).rejects.toThrow();
     await expect(asApp({tenant,workspace}, q => q(`UPDATE ${TABLE} SET reason_code='CORRECTION'`))).rejects.toThrow();
     await expect(asApp({tenant,workspace}, q => q(`DELETE FROM ${TABLE}`))).rejects.toThrow();
-    await expect(asApp({tenant,workspace}, q => q(`TRUNCATE ${TABLE}`))).rejects.toThrow();
+    await expect(truncateRefusal(app, `TRUNCATE ${TABLE}`)).rejects.toThrow();
   });
 
   it('rejects foreign source and skips; database issues the timestamp and digest', async () => {
@@ -107,7 +108,7 @@ describe.runIf(run)('M1-A6 disabled review evidence (disposable PostgreSQL)', ()
     await expect(insert(event({event_version: 3, previous_event_id: second.event_id, previous_event_digest: second.event_digest, idempotency_key: second.idempotency_key}))).rejects.toThrow();
     await expect(admin.query(`UPDATE ${TABLE} SET reason_code='CORRECTION' WHERE event_id=$1`, [first.event_id])).rejects.toThrow();
     await expect(admin.query(`DELETE FROM ${TABLE} WHERE event_id=$1`, [first.event_id])).rejects.toThrow();
-    await expect(admin.query(`TRUNCATE ${TABLE}`)).rejects.toThrow();
+    await expect(truncateRefusal(admin, `TRUNCATE ${TABLE}`)).rejects.toThrow();
   });
 
   it('serializes concurrent next versions and rolls back failed transactions', async () => {
