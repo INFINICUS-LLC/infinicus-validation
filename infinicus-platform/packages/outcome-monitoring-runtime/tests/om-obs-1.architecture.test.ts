@@ -99,10 +99,36 @@ describe('OM-OBS-1 - read-only observability', () => {
       '0213_create_om_governed_publication_source.sql', '0214_enforce_governed_verdict_scope.sql',
       '0215_record_governed_measurement_assessments.sql',
       '0216_add_governed_confounder_reason.sql',
+      // BO-owned, disabled offline review evidence (M1-A6), its digest fix,
+      // and BO order-event integrity. These do not change OM observation authority.
+      '0217_create_disabled_offline_review_evidence.sql',
+      '0218_canonicalize_offline_review_digest.sql',
+      '0219_harden_bo_order_event_integrity.sql',
     ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);
     expect(read(ROUTE) + read(SERVICE)).not.toMatch(/['"](om|aba|bi|dt|sim|adi|cl):(admin|monitor|observe|health)['"]/);
+  });
+
+  it('the exact BO migrations exempted above cannot establish OM or CL authority', () => {
+    const files = [
+      '0217_create_disabled_offline_review_evidence.sql',
+      '0218_canonicalize_offline_review_digest.sql',
+      '0219_harden_bo_order_event_integrity.sql',
+    ];
+    const prohibited = /\b(?:outcome_monitoring|continuous_learning)\.|\b(?:GRANT|CREATE\s+ROLE)\b|\bOUTCOME_(?:VERIFIED|FAILED)\b/i;
+    for (const file of files) {
+      const sql = readFileSync(join(PLATFORM, 'infrastructure/database/migrations', file), 'utf8')
+        .split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+      expect(sql, file).toMatch(/business_operations\./);
+      expect(sql, file).not.toMatch(prohibited);
+    }
+    for (const forbidden of [
+      'INSERT INTO outcome_monitoring.outcome_observations',
+      'GRANT INSERT ON outcome_monitoring.governed_outcome_verdicts',
+      'UPDATE continuous_learning.cl_intake_packages',
+      "SELECT 'OUTCOME_VERIFIED'",
+    ]) expect(forbidden).toMatch(prohibited);
   });
 
   it('dead letters are listed, never replayed: nothing in the observability path touches replay', () => {
