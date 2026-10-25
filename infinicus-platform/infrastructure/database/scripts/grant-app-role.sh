@@ -97,6 +97,12 @@ BEGIN
     EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON outcome_monitoring.governed_outcome_verdicts FROM %I', app_role);
     EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON outcome_monitoring.om24_publication_receipts FROM %I', app_role);
   END IF;
+  -- M1-A6: disabled evidence is readable through BO scope checks, with no application writer.
+  -- Revoke after every blanket/default grant application so rerunning this script cannot reopen writes.
+  IF to_regclass('business_operations.offline_review_evidence') IS NOT NULL THEN
+    EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.offline_review_evidence FROM %I', app_role);
+    EXECUTE format('GRANT SELECT ON business_operations.offline_review_evidence TO %I', app_role);
+  END IF;
 END
 $hardening$;
 SQL
