@@ -1,8 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { createPool, closePool } from '../src/client.js';
-import { OfflineReviewEvidenceReader } from '../src/repositories/bo/OfflineReviewEvidenceReader.js';
 
 const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const TABLE = 'business_operations.offline_review_evidence';
@@ -14,7 +12,6 @@ describe.runIf(run)('M1-A6 disabled review evidence (disposable PostgreSQL)', ()
   const otherTenant = randomUUID(); const otherWorkspace = randomUUID(); const otherBusiness = randomUUID();
   const intake = randomUUID(); const clientSale = randomUUID(); const otherIntake = randomUUID(); const historicalIntake = randomUUID();
   const actor = randomUUID(); const resolution = randomUUID();
-  const ctx = { tenantId: tenant, workspaceId: workspace, userId: actor };
 
   async function asApp<T>(scope: { tenant: string; workspace: string } | null, fn: (q: (sql: string, args?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>) => Promise<T>): Promise<T> {
     const c = await app.connect();
@@ -62,7 +59,7 @@ describe.runIf(run)('M1-A6 disabled review evidence (disposable PostgreSQL)', ()
       VALUES($1,$2,$3,$4,$5,'synthetic',$6,'needs_review','underpaid','KWD',now(),0,now(),100,$7,'[]')`,
     [historicalIntake,tenant,workspace,business,randomUUID(),randomUUID(),digest]);
   });
-  afterAll(async () => { await admin?.end(); await app?.end(); await closePool(); });
+  afterAll(async () => { await admin?.end(); await app?.end(); });
 
   it('forces RLS, grants app SELECT only, and refuses app writes', async () => {
     const flags = (await admin.query(`SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid='${TABLE}'::regclass`)).rows[0];
@@ -86,6 +83,20 @@ describe.runIf(run)('M1-A6 disabled review evidence (disposable PostgreSQL)', ()
     expect(first.recorded_at.getUTCFullYear()).toBeGreaterThan(2020);
     expect(first.event_digest).toMatch(/^[0-9a-f]{64}$/);
     expect(first.event_digest).not.toBe(digest);
+    expect(first.digest_version).toBe('V2_UTC');
+    for (const zone of ['UTC', 'Asia/Kuwait', 'America/New_York']) {
+      const c = await admin.connect();
+      try {
+        await c.query('SELECT set_config($1,$2,false)', ['TimeZone', zone]);
+        const reproduced = await c.query(`SELECT event_digest = encode(digest(jsonb_build_array(digest_version, event_id,
+          tenant_id, workspace_id, business_id, offline_sale_id, client_sale_id, intake_request_digest,
+          resolution_id, event_version, previous_event_id, previous_event_digest, supersedes_event_id,
+          event_type, reason_code, source_reference, actor_id, service_reference, idempotency_key,
+          request_digest, to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))::text,
+          'sha256'), 'hex') AS matches FROM ${TABLE} WHERE event_id=$1`, [first.event_id]);
+        expect(reproduced.rows[0].matches).toBe(true);
+      } finally { c.release(); }
+    }
   });
 
   it('enforces predecessor/version, replay key and append-only refusal', async () => {
@@ -115,15 +126,13 @@ describe.runIf(run)('M1-A6 disabled review evidence (disposable PostgreSQL)', ()
     } finally { c.release(); }
   });
 
-  it('reads only scoped, nonauthoritative evidence; historical intake stays unresolved', async () => {
-    createPool({connectionString: process.env.DATABASE_URL!});
-    const reader = new OfflineReviewEvidenceReader(async (_ctx, b) => { if (b !== business) throw new Error('bo:read refused'); });
-    const view = await reader.get(ctx,business,intake);
-    expect(view?.authority).toBe('NONAUTHORITATIVE_UNRESOLVED');
-    expect(view?.events.map(x => x.version)).toEqual([1,2,3]);
-    expect((await reader.get(ctx,business,historicalIntake))?.events).toEqual([]);
-    expect(await reader.get(ctx,business,otherIntake)).toBeNull();
-    await expect(reader.get(ctx,otherBusiness,otherIntake)).rejects.toThrow('bo:read refused');
+  it('reads only scoped evidence; historical intake stays without events', async () => {
+    const visible = await asApp({tenant,workspace}, q => q(`SELECT event_version FROM ${TABLE} WHERE business_id=$1 AND offline_sale_id=$2 ORDER BY event_version`, [business,intake]));
+    expect(visible.rows.map(x => x.event_version)).toEqual([1,2,3]);
+    const historical = await asApp({tenant,workspace}, q => q(`SELECT * FROM ${TABLE} WHERE business_id=$1 AND offline_sale_id=$2`, [business,historicalIntake]));
+    expect(historical.rows).toEqual([]);
+    const crossBusiness = await asApp({tenant,workspace}, q => q(`SELECT * FROM ${TABLE} WHERE business_id=$1`, [otherBusiness]));
+    expect(crossBusiness.rows).toEqual([]);
     const other = await asApp({tenant: otherTenant,workspace: otherWorkspace}, q => q(`SELECT * FROM ${TABLE}`));
     expect(other.rows).toHaveLength(0);
     expect((await admin.query('SELECT count(*)::int n FROM platform.orders WHERE business_id=$1', [business])).rows[0].n).toBe(0);

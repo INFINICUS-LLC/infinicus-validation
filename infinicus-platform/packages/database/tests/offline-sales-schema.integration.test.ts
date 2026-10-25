@@ -247,7 +247,10 @@ describe.runIf(run)('migration 0210 - offline_sales schema - live PostgreSQL', (
     it('refuses UPDATE, DELETE and TRUNCATE for the superuser', async () => {
       await expect(admin.query(`UPDATE ${T} SET device_id = 'x' WHERE id = $1`, [id])).rejects.toThrow(APPEND_ONLY('UPDATE'));
       await expect(admin.query(`DELETE FROM ${T} WHERE id = $1`, [id])).rejects.toThrow(APPEND_ONLY('DELETE'));
-      await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(APPEND_ONLY('TRUNCATE'));
+      // 0217 adds a child FK. Include both tables so PostgreSQL reaches the
+      // append-only TRUNCATE triggers rather than stopping at the FK precheck.
+      await expect(truncateRefusal(admin, `TRUNCATE ${T}, business_operations.offline_review_evidence`))
+        .rejects.toThrow(/business_operations\.(offline_sales|offline_review_evidence): append-only table - TRUNCATE is not permitted/);
     });
     it('refuses UPDATE and DELETE for the application role inside its own tenant', async () => {
       await asApp({ t, ws }, async (q) => {
@@ -291,7 +294,7 @@ describe.runIf(run)('migration 0210 - offline_sales schema - live PostgreSQL', (
   });
 
   /** Every table the 0210 rollback / re-apply locks exclusively (measured with pg_locks): see helpers/ddlProof.ts for why this is taken up front with NOWAIT. */
-  const LOCKED = ['business_operations.offline_sales', 'platform.orders', 'platform.businesses', 'business_operations.register_sessions', 'tenancy.workspaces', 'tenancy.tenants', 'identity.users'];
+  const LOCKED = ['business_operations.offline_review_evidence', 'business_operations.offline_sales', 'platform.orders', 'platform.businesses', 'business_operations.register_sessions', 'tenancy.workspaces', 'tenancy.tenants', 'identity.users'];
 
   describe('rollback block and idempotency', () => {
     const rollbackStatements = (): string[] =>
@@ -311,12 +314,18 @@ describe.runIf(run)('migration 0210 - offline_sales schema - live PostgreSQL', (
         const before = await objects(c);
         expect(before).toMatchObject({ table: true, fn: true, idx: true, col: 1 });
         await c.query("SET LOCAL lock_timeout = '5s'");                  // a safety net only: the locks are already held, so nothing below waits
+        // Prove the historical 0210 rollback in a disposable transaction with
+        // its later 0217 dependent relation removed first. The outer rollback
+        // restores both; neither migration's production history is rewritten.
+        expect((await c.query("SELECT to_regclass('business_operations.offline_review_evidence') IS NOT NULL AS x")).rows[0].x).toBe(true);
+        await c.query('DROP TABLE business_operations.offline_review_evidence');
         for (const s of stmts) await c.query(s);
         const during = await objects(c);
         expect(during).toMatchObject({ table: false, fn: false, idx: false, col: 0, ordersCols: before.ordersCols - 1 });
         await c.query('ROLLBACK');
         await c.query('BEGIN');                                          // the helper rolls this one back too
         expect(await objects(c)).toEqual(before);
+        expect((await c.query("SELECT to_regclass('business_operations.offline_review_evidence') IS NOT NULL AS x")).rows[0].x).toBe(true);
       });
     });
 

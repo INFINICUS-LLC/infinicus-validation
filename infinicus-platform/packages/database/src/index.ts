@@ -14,8 +14,6 @@ export {
 } from './client.js';
 export type { DbConfig, TenantContext, PoolStats } from './client.js';
 export { runMigrations } from './migrate.js';
-export { OfflineReviewEvidenceReader } from './repositories/bo/OfflineReviewEvidenceReader.js';
-export type { OfflineReviewEvidence, OfflineReviewEvidenceView, OfflineReviewReadAuthority } from './repositories/bo/OfflineReviewEvidenceReader.js';
 
 
 // ── Cross-domain eventing repositories (BUILD-33) ───────────────────────────
