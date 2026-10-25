@@ -149,6 +149,11 @@ jobs:
       # version-matched dump/restore clients. Do not skip restore tests.
       - name: Install PostgreSQL 16 test tools
         run: |
+          # Ubuntu 26.04 runners do not provide PostgreSQL 16 in their
+          # default apt sources; use the official PostgreSQL Apt repository.
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common ca-certificates
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get update
           sudo apt-get install -y postgresql-16 postgresql-client-16
           echo '/usr/lib/postgresql/16/bin' >> "$GITHUB_PATH"
