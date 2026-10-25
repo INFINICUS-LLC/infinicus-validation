@@ -101,13 +101,28 @@ describe.runIf(run)('OM-EVID-1 execution verification table - database-enforced 
 
   it('the record is append-only: UPDATE, DELETE and TRUNCATE are refused for the application role and for the administrator, and the row is unchanged', async () => {
     const r = row(); const id = (await insert(a, r)).rows[0].id as string;
+    const before = await countFor(a);
     for (const sql of [`UPDATE ${T} SET outcome_state='OUTCOME_INCONCLUSIVE' WHERE id=$1`, `UPDATE ${T} SET execution_outcome='FAILED' WHERE id=$1`, `DELETE FROM ${T} WHERE id=$1`]) {
       await expect(withTenantTransaction(a.ctx, (c) => c.query(sql, [id]))).rejects.toMatchObject({ code: '23000' });
       await expect(admin.query(sql, [id])).rejects.toMatchObject({ code: '23000' });
     }
-    // TRUNCATE goes through the shared helper (bounded lock wait) so a refused statement can never convoy other test files on the shared database
-    await expect(truncateRefusal(appPool, `TRUNCATE ${T}`)).rejects.toThrow();
-    await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toThrow(/append-only/);
+    // A referencing FK rejects plain administrator TRUNCATE before PostgreSQL runs BEFORE TRUNCATE triggers.
+    // Verify that guard is enabled and bound to the intended function, then use CASCADE to reach the guard.
+    const truncateGuard = (await admin.query(`SELECT t.tgenabled, t.tgtype,
+      t.tgfoid::regprocedure::text AS function_name
+      FROM pg_trigger t WHERE t.tgrelid=$1::regclass AND t.tgname='forbid_truncate_action_execution_verifications'
+        AND NOT t.tgisinternal`, [T])).rows;
+    expect(truncateGuard).toEqual([{
+      tgenabled: 'O', tgtype: 34,
+      function_name: 'outcome_monitoring.forbid_action_execution_verification_mutation()',
+    }]);
+    // Keep both statements on the bounded-lock helper so a refusal cannot convoy other test files.
+    await expect(truncateRefusal(appPool, `TRUNCATE ${T}`)).rejects.toMatchObject({ code: '42501' });
+    await expect(truncateRefusal(admin, `TRUNCATE ${T}`)).rejects.toMatchObject({ code: '0A000' });
+    await expect(truncateRefusal(admin, `TRUNCATE ${T} CASCADE`)).rejects.toMatchObject({
+      code: '23000', message: expect.stringMatching(/append-only table - TRUNCATE is not permitted/),
+    });
+    expect(await countFor(a)).toBe(before);
     const now = (await admin.query(`SELECT outcome_state, execution_outcome FROM ${T} WHERE id=$1`, [id])).rows[0];
     expect(now).toEqual({ outcome_state: 'OUTCOME_PENDING', execution_outcome: 'SUCCEEDED' });
   });
