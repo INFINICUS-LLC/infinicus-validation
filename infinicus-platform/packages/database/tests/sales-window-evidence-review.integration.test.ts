@@ -68,13 +68,16 @@ describe.runIf(!!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL)('
     const first = await add('2026-10-02T12:00:00Z', { currency: 'EUR' });
     const before = await reader.read(ctx, bounds);
     expect(before.blockers).toContain('CURRENCY_MISMATCH');
-    await add('2026-10-02T12:01:00Z', { order: first.order });
+    await expect(add('2026-10-02T12:01:00Z', { order: first.order })).rejects.toThrow();
     await add('2026-10-02T12:02:00Z', { created: '2026-10-03T00:00:00Z' });
     const after = await reader.read(ctx, bounds);
-    expect(after.blockers).toContain('DUPLICATE_COMPLETION');
+    expect(after.blockers).not.toContain('DUPLICATE_COMPLETION');
     expect(after.blockers).toContain('INVALID_COMPLETION');
     expect(after.sourceDigest).not.toBe(before.sourceDigest);
-    await admin.query(`UPDATE business_operations.order_events SET occurred_at='2026-10-02T12:03:00Z' WHERE id=$1`, [first.event]);
+    await expect(admin.query(`UPDATE business_operations.order_events SET occurred_at='2026-10-02T12:03:00Z' WHERE id=$1`, [first.event])).rejects.toThrow();
+    // The existing mutable order amount still models a source correction;
+    // the completed event itself cannot be rewritten.
+    await admin.query(`UPDATE platform.orders SET total_amount=11.0000 WHERE id=$1`, [first.order]);
     expect((await reader.read(ctx, bounds)).sourceDigest).not.toBe(after.sourceDigest);
   });
 
@@ -83,7 +86,7 @@ describe.runIf(!!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL)('
     await admin.query(`INSERT INTO platform.businesses (id,tenant_id,workspace_id,legal_name,business_code,status) VALUES ($1,$2,$3,'M2 foreign',$4,'active')`, [foreignBusiness, ctx.tenantId, ctx.workspaceId, `m2-${foreignBusiness}`]);
     await add('2026-10-02T10:00:00Z', { business: foreignBusiness });
     const own = await reader.read(ctx, bounds);
-    expect(own.windowCount).toBe(4);
+    expect(own.windowCount).toBe(3);
     for (const foreign of [{ ...ctx, tenantId: randomUUID() }, { ...ctx, workspaceId: randomUUID() }]) {
       const review = await reader.read(foreign, bounds);
       expect(review).toMatchObject({ authoritative: false, baselineCount: 0, windowCount: 0 });

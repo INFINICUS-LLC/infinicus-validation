@@ -106,6 +106,11 @@ BEGIN
     EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.offline_review_evidence FROM %I', app_role);
     EXECUTE format('GRANT SELECT ON business_operations.offline_review_evidence TO %I', app_role);
   END IF;
+  -- Order events are insert-only operational history. Revoke blanket write privileges
+  -- after each grant application; the database trigger also protects privileged writes.
+  IF to_regclass('business_operations.order_events') IS NOT NULL THEN
+    EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON business_operations.order_events FROM %I', app_role);
+  END IF;
 END
 $hardening$;
 COMMIT;
