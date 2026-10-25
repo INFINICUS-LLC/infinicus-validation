@@ -49,6 +49,12 @@ function psqlTransaction(connectionString, statements) {
   return execFileSync('psql', [connectionString, '-v', 'ON_ERROR_STOP=1'], { input: script, encoding: 'utf8' });
 }
 
+function databaseFailureReason(error) {
+  const stderr = typeof error?.stderr === 'string' ? error.stderr : '';
+  return stderr.split('\n').map((line) => line.trim()).find((line) => line.startsWith('ERROR:'))
+    ?? 'Database operation failed (details withheld)';
+}
+
 async function main() {
   const { DATABASE_URL, ADMIN_DATABASE_URL, TENANT_ID, DELETED_BY } = process.env;
   if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
@@ -166,8 +172,9 @@ async function main() {
   // the whole surrounding transaction) and report them as retained, so
   // a caller can see exactly what was and was not erased rather than
   // the script silently claiming full erasure or crashing outright.
-  // Migration 0196: the governed activation table is append-only AND its direct DELETE privilege is withheld from the application role, so it is
-  // retained like the other append-only audit-trail tables (its own unconditional forbid trigger has a different function name).
+  // Migration 0196 activation and 0213 governed OM sources use their own
+  // unconditional mutation-refusal functions and remain protected even when
+  // the application role has no DELETE privilege.
   const appendOnlyRaw = psql(
     ADMIN_DATABASE_URL,
     `SELECT DISTINCT n.nspname||'.'||c.relname
@@ -175,7 +182,8 @@ async function main() {
      JOIN pg_class c ON c.oid = t.tgrelid
      JOIN pg_namespace n ON n.oid = c.relnamespace
      JOIN pg_proc p ON p.oid = t.tgfoid
-     WHERE p.proname IN ('forbid_mutation', 'forbid_execution_capability_activation_mutation');`
+     WHERE p.proname IN ('forbid_mutation', 'forbid_execution_capability_activation_mutation',
+                        'forbid_governed_source_mutation');`
   );
   const tablesAppendOnly = new Set(
     appendOnlyRaw.split('\n').map((l) => l.trim()).filter(Boolean).filter((t) => tenantScopedTables.has(t))
@@ -240,26 +248,28 @@ async function main() {
     return clause;
   }
 
+  function countScopedRows(table) {
+    const scopes = tablesRequiringWorkspaceScope.has(table) ? workspaceIds : [null];
+    let total = 0;
+    for (const ws of scopes) {
+      const countRaw = psql(DATABASE_URL,
+        `SELECT set_config('app.tenant_id', '${TENANT_ID}', true);` +
+        (ws ? ` SELECT set_config('app.workspace_id', '${ws}', true);` : '') +
+        ` SELECT count(*) FROM ${table}${scopedClause(table, ws)};`);
+      const lines = countRaw.split('\n').map((line) => line.trim()).filter(Boolean);
+      const value = Number(lines[lines.length - 1]);
+      if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Invalid scoped row count for ${table}`);
+      total += value;
+    }
+    if (!Number.isSafeInteger(total)) throw new Error(`Unsafe scoped row count for ${table}`);
+    return total;
+  }
+
   const deletableOrder = order.filter((table) => !tablesAppendOnly.has(table));
 
   const rowCounts = {};
   for (const table of deletableOrder) {
-    if (tablesRequiringWorkspaceScope.has(table)) {
-      let total = 0;
-      for (const ws of workspaceIds) {
-        const countRaw = psql(
-          DATABASE_URL,
-          `SELECT set_config('app.tenant_id', '${TENANT_ID}', true); SELECT set_config('app.workspace_id', '${ws}', true); SELECT count(*) FROM ${table}${scopedClause(table, ws)};`
-        );
-        const lines = countRaw.split('\n').map((l) => l.trim()).filter(Boolean);
-        total += Number(lines[lines.length - 1] ?? '0');
-      }
-      rowCounts[table] = total;
-    } else {
-      const countRaw = psql(DATABASE_URL, `SELECT set_config('app.tenant_id', '${TENANT_ID}', true); SELECT count(*) FROM ${table}${scopedClause(table)};`);
-      const lines = countRaw.split('\n').map((l) => l.trim()).filter(Boolean);
-      rowCounts[table] = Number(lines[lines.length - 1] ?? '0');
-    }
+    rowCounts[table] = countScopedRows(table);
   }
 
   // Each deletable table runs as its own short transaction rather than
@@ -290,7 +300,7 @@ async function main() {
         ]);
       }
     } catch (err) {
-      blockedTables[table] = String(err.message ?? err).split('\n')[0];
+      blockedTables[table] = databaseFailureReason(err);
     }
   }
 
@@ -302,12 +312,56 @@ async function main() {
     console.log('Could not delete (blocked by retained append-only dependents):', JSON.stringify(blockedTables, null, 2));
   }
 
+  // The presence of an append-only table is not retained tenant data. Count
+  // its actual scoped rows after the deletable pass and fail closed if any
+  // remain. This also prevents a missing FK from producing false "complete".
+  const retainedRowCounts = {};
+  for (const table of tablesAppendOnly) {
+    if (tablesWithTenantIdColumn.has(table)) {
+      // The explicit tenant predicate also detects rows a workspace RLS
+      // policy might hide after a workspace was removed or mislinked.
+      const count = Number(psql(ADMIN_DATABASE_URL,
+        `SELECT count(*) FROM ${table} WHERE tenant_id = '${TENANT_ID}';`).trim());
+      if (!Number.isSafeInteger(count) || count < 0) throw new Error(`Invalid retained row count for ${table}`);
+      retainedRowCounts[table] = count;
+    } else {
+      retainedRowCounts[table] = countScopedRows(table);
+    }
+  }
+  const retainedRows = Object.values(retainedRowCounts).reduce((sum, count) => sum + count, 0);
+  if (!Number.isSafeInteger(retainedRows)) throw new Error('Unsafe retained row total');
+
+  // Verify all remaining tenant rows, including deletable tables that RLS
+  // might have hidden from the application role. One privileged SELECT batch
+  // uses an explicit tenant predicate; it does not delete or bypass the
+  // application role for any mutation.
+  const directTables = [...tenantScopedTables].filter((table) => tablesWithTenantIdColumn.has(table));
+  const remainingRaw = directTables.length === 0 ? '' : psql(ADMIN_DATABASE_URL,
+    directTables.map((table) =>
+      `SELECT '${table}' AS table_name, count(*)::bigint AS n FROM ${table} WHERE tenant_id = '${TENANT_ID}'`
+    ).join(' UNION ALL '));
+  const remainingRows = {};
+  for (const line of remainingRaw.split('\n').map((value) => value.trim()).filter(Boolean)) {
+    const [table, textCount] = line.split('|');
+    const count = Number(textCount);
+    if (!directTables.includes(table) || !Number.isSafeInteger(count) || count < 0) {
+      throw new Error('Invalid remaining tenant row count');
+    }
+    if (count > 0) remainingRows[table] = count;
+  }
+  for (const table of tablesScopedIndirectly) {
+    const count = countScopedRows(table);
+    if (count > 0) remainingRows[table] = count;
+  }
+
   const tenantNameRaw = psql(ADMIN_DATABASE_URL, `SELECT name FROM tenancy.tenants WHERE id = '${TENANT_ID}';`).trim();
   const tenantName = tenantNameRaw.length > 0 ? tenantNameRaw.replace(/'/g, "''") : null;
 
   const auditPayload = {
     rowCounts,
     retainedAppendOnly: [...tablesAppendOnly],
+    retainedRowCounts,
+    remainingRows,
     blockedByRetainedDependents: blockedTables,
   };
 
@@ -319,7 +373,7 @@ async function main() {
     ]);
   } catch (err) {
     tenantFullyDeleted = false;
-    console.log(`tenancy.tenants/workspaces could not be deleted (blocked by retained dependents): ${String(err.message ?? err).split('\n')[0]}`);
+    console.log(`tenancy.tenants/workspaces could not be deleted (blocked by retained dependents): ${databaseFailureReason(err)}`);
   }
 
   psqlTransaction(ADMIN_DATABASE_URL, [
@@ -327,11 +381,11 @@ async function main() {
      VALUES ('${TENANT_ID}', ${tenantName ? `'${tenantName}'` : 'NULL'}, '${deletedBy}', '${JSON.stringify(auditPayload).replace(/'/g, "''")}'::jsonb);`,
   ]);
 
-  if (tenantFullyDeleted && Object.keys(blockedTables).length === 0) {
+  if (tenantFullyDeleted && Object.keys(blockedTables).length === 0 && retainedRows === 0 && Object.keys(remainingRows).length === 0) {
     console.log(`Deleted tenant ${TENANT_ID} (${tenantName ?? 'unknown name'}).`);
   } else {
     console.log(
-      `Partially erased tenant ${TENANT_ID} (${tenantName ?? 'unknown name'}): all erasable data was removed, but ${tablesAppendOnly.size} append-only audit-trail table(s) were retained by design (see platform.data_deletion_events for the full record).`
+      `Partially erased tenant ${TENANT_ID} (${tenantName ?? 'unknown name'}): ${retainedRows} append-only row(s) remain across ${tablesAppendOnly.size} protected table(s), or other deletion was blocked (see platform.data_deletion_events for the full record).`
     );
   }
 }
