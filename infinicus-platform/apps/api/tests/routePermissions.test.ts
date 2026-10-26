@@ -72,7 +72,19 @@ let routes: RouteInfo[] = [];
 
 function describeRoutes(a: any): RouteInfo[] {
   const out: RouteInfo[] = [];
-  const shape = (s: any): string[] => { try { const sh = s?._def?.shape?.() ?? s?.shape; return sh ? Object.keys(sh) : []; } catch { return []; } };
+  // Zod 3 may expose a shape factory; Zod 4 exposes an object via its public
+  // shape or internal definition. Never swallow shape introspection errors:
+  // permission and authority-surface audits must fail closed on drift.
+  const shape = (s: any): string[] => {
+    if (!s) return [];
+    const definition = s?._zod?.def?.shape ?? s?._def?.shape ?? s?.shape;
+    if (definition === undefined) return [];
+    const fields = typeof definition === 'function' ? definition() : definition;
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+      throw new Error('Unexpected Zod request schema shape representation');
+    }
+    return Object.keys(fields);
+  };
   for (const r of captured.routes) {
     for (const method of ([] as string[]).concat(r.method)) {
       if (method === 'HEAD' || method === 'OPTIONS') continue;
