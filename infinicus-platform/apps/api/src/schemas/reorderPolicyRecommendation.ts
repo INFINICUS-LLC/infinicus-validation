@@ -12,7 +12,7 @@ const recommended = z.object({
   riskClass: z.string().nullable(),
   validUntil: z.string().nullable(),
   /** The structured adi-proposed-action/1 document (validated by the producer before it is stored). */
-  proposal: z.record(z.unknown()),
+  proposal: z.record(z.string(), z.unknown()),
 });
 
 const noRecommendation = z.object({
