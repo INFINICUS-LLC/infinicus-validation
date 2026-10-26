@@ -127,7 +127,7 @@ const validationResultSchema = z.object({
   isValid: z.boolean(),
   errorCount: z.number(),
   warningCount: z.number(),
-  resultDetails: z.record(z.unknown()),
+  resultDetails: z.record(z.string(), z.unknown()),
   validatedAt: z.coerce.date(),
   createdAt: z.coerce.date(),
 });
@@ -143,8 +143,8 @@ const dataQualityScoreSchema = z.object({
   uniqueness: z.number(),
   conformity: z.number(),
   overallScore: z.number(),
-  weights: z.record(z.unknown()),
-  scoreDetails: z.record(z.unknown()),
+  weights: z.record(z.string(), z.unknown()),
+  scoreDetails: z.record(z.string(), z.unknown()),
   scoredAt: z.coerce.date(),
 });
 
@@ -167,7 +167,7 @@ const publicationPackageSchema = z.object({
   packageVersion: z.string(),
   targetLayer: z.string(),
   targetBlock: z.string(),
-  dataReference: z.record(z.unknown()),
+  dataReference: z.record(z.string(), z.unknown()),
   recordCount: z.number(),
   qualityScore: z.number().nullable(),
   status: z.string(),
@@ -184,7 +184,7 @@ export const createDataSourceBodySchema = z.object({
   sourceType: z.string().min(1).max(255),
   sensitivityLevel: z.string().max(50).optional(),
   description: z.string().max(2000).optional(),
-  configuration: z.record(z.unknown()).optional(),
+  configuration: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const updateSourceStatusBodySchema = z.object({
@@ -212,12 +212,12 @@ export const manualIntakeBodySchema = z.object({
   records: z.array(z.unknown()).min(1),
   submissionNotes: z.string().max(2000).optional(),
   sourceReference: z.string().max(500).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Externally-facing — deliberately permissive: an external system's raw delivery, not shaped to our conventions. A bare object is normalized to a one-element array by the route. */
 export const webhookDeliveryBodySchema = z.union([
-  z.record(z.unknown()),
+  z.record(z.string(), z.unknown()),
   z.array(z.unknown()).min(1),
 ]);
 
