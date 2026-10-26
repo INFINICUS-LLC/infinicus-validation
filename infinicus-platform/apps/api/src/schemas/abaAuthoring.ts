@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
-  z.union([z.string().max(2000), z.number().finite(), z.boolean(), z.null(), z.array(jsonValueSchema).max(100), z.record(jsonValueSchema)]));
+  z.union([z.string().max(2000), z.number().finite(), z.boolean(), z.null(), z.array(jsonValueSchema).max(100), z.record(z.string(), jsonValueSchema)]));
 
 const code = z.string().min(1).max(100).regex(/^[a-z][a-z0-9_]*$/);
 const schemaVersion = z.string().min(1).max(50).regex(/^[0-9][0-9.]*$/);
@@ -61,7 +61,7 @@ export const enablementViewSchema = z.object({
 export const captureBodySchema = z.object({
   actionType: z.object({ code, schemaVersion }).strict(),
   target: z.object({ kind: z.string().min(1).max(100), id: z.string().min(1).max(200) }).strict(),
-  proposedParameters: z.record(jsonValueSchema),
+  proposedParameters: z.record(z.string(), jsonValueSchema),
   modification: z.object({
     reason: reasonText,
     changes: z.array(z.object({
@@ -75,7 +75,7 @@ export const captureBodySchema = z.object({
 }).strict();
 export const captureViewSchema = z.object({
   captureId: z.string().uuid(), actionId: z.string().uuid(), decisionStatus: z.string(),
-  actionType: z.object({ code: z.string(), schemaVersion: z.string() }), finalParameters: z.record(z.unknown()), capturedAt: z.string(), created: z.boolean(),
+  actionType: z.object({ code: z.string(), schemaVersion: z.string() }), finalParameters: z.record(z.string(), z.unknown()), capturedAt: z.string(), created: z.boolean(),
 });
 
 // ── D. owner ────────────────────────────────────────────────────────────────────────────────────────────────────────

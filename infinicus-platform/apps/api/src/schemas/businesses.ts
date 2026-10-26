@@ -189,12 +189,12 @@ export const recordOutcomeBodySchema = z.object({
   effectiveAt: z.string().datetime(),
   measurements: z.array(z.object({
     metricCode: z.string().min(1).max(255),
-    measuredValue: z.record(z.unknown()),
+    measuredValue: z.record(z.string(), z.unknown()),
     unit: z.string().max(64).nullable().optional(),
   })).max(100).optional(),
   evidence: z.array(z.object({
     evidenceType: z.enum(['execution_record', 'external_system', 'manual_entry', 'other']),
-    evidenceReference: z.record(z.unknown()),
+    evidenceReference: z.record(z.string(), z.unknown()),
   })).max(100).optional(),
 });
 
