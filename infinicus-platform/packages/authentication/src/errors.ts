@@ -69,3 +69,11 @@ export class ManagedAccountEmailReservedError extends Error {
     this.name = 'ManagedAccountEmailReservedError';
   }
 }
+
+/** The required password-login lockout state could not be read. No password verification or session creation is permitted. */
+export class LockoutStateUnavailableError extends Error {
+  constructor() {
+    super('Password login is temporarily unavailable. Please try again later.');
+    this.name = 'LockoutStateUnavailableError';
+  }
+}
