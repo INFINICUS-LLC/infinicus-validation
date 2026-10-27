@@ -155,4 +155,15 @@ export class DTPublicationPackageRepository {
       return rowToPackage(result.rows[0]);
     });
   }
+
+  /** The package created under an idempotency key for a business, or null. Read-only (the replay lookup of a hand-off). */
+  async getByIdempotencyKey(ctx: TenantContext, businessId: string, idempotencyKey: string): Promise<DTPublicationPackage | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        'SELECT * FROM business_digital_twin.dt_publication_packages WHERE business_id = $1 AND idempotency_key = $2',
+        [businessId, idempotencyKey]
+      );
+      return result.rows.length === 0 ? null : rowToPackage(result.rows[0]);
+    });
+  }
 }

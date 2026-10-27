@@ -96,3 +96,6 @@ export * from './financial/periods.js';
 export * from './performance/BusinessPerformanceTwinService.js';
 export { assembleBiPerformanceEvidence, verifyBiPerformanceEvidence, crossCheckRevenue, canonicalJson, digestOf, SALES_REPORT_PROVENANCE_CONTRACT } from './performance/biPerformanceEvidence.js';
 export type { AssembleResult, PerformanceRefusalCode } from './performance/biPerformanceEvidence.js';
+export * from './performance/PerformanceSimulationHandoffService.js';
+export { buildPerformanceBaseline } from './performance/performanceBaseline.js';
+export type { PerformanceBaselineBuild } from './performance/performanceBaseline.js';

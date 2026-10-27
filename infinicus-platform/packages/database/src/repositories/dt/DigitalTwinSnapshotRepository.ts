@@ -243,4 +243,14 @@ export class DigitalTwinSnapshotRepository {
       }));
     });
   }
+  /** The id and number of the PUBLISHED version of a snapshot, or null when none is published. Read-only. */
+  async getPublishedVersion(ctx: TenantContext, snapshotId: string): Promise<{ id: string; versionNumber: number } | null> {
+    return withTenantTransaction(ctx, async (client) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT id, version_number FROM business_digital_twin.digital_twin_snapshot_versions WHERE snapshot_id = $1 AND status = 'published' ORDER BY version_number DESC LIMIT 1`,
+        [snapshotId]
+      );
+      return result.rows.length === 0 ? null : { id: result.rows[0].id as string, versionNumber: Number(result.rows[0].version_number) };
+    });
+  }
 }
