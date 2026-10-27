@@ -100,9 +100,9 @@ export class AuthenticationService {
   }
 
   /**
-   * Audit logging for a login outcome — never allowed to fail the request
-   * it's describing. See the fail-open comment on the lockout check in
-   * login() below for why: this is observability, not a security gate.
+   * Login outcome audit writes remain best-effort under the existing policy.
+   * This is distinct from the required lockout-state read, which fails closed.
+   * A separate block must review audit-write failure enforcement.
    */
   private async recordAuditEvent(
     userId: string | null,
