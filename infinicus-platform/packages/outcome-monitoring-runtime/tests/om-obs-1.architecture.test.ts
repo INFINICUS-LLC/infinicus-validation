@@ -104,6 +104,8 @@ describe('OM-OBS-1 - read-only observability', () => {
       '0217_create_disabled_offline_review_evidence.sql',
       '0218_canonicalize_offline_review_digest.sql',
       '0219_harden_bo_order_event_integrity.sql',
+      // AUTH-LOCKOUT-1.DB-02 normalizes only the audit access-event tenant setting.
+      '0220_normalize_access_event_tenant_context.sql',
     ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);
@@ -129,6 +131,14 @@ describe('OM-OBS-1 - read-only observability', () => {
       'UPDATE continuous_learning.cl_intake_packages',
       "SELECT 'OUTCOME_VERIFIED'",
     ]) expect(forbidden).toMatch(prohibited);
+  });
+
+  it('the exact authentication RLS migration cannot establish OM or CL authority', () => {
+    const sql = readFileSync(join(PLATFORM, 'infrastructure/database/migrations/0220_normalize_access_event_tenant_context.sql'), 'utf8')
+      .split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+    expect(sql).toMatch(/ALTER POLICY access_events_isolation ON audit\.access_events/);
+    expect(sql).toMatch(/NULLIF\(current_setting\('app\.tenant_id', true\), ''\)::uuid/);
+    expect(sql).not.toMatch(/\b(?:outcome_monitoring|continuous_learning)\.|\b(?:GRANT|CREATE\s+ROLE)\b|\bOUTCOME_(?:VERIFIED|FAILED)\b/i);
   });
 
   it('dead letters are listed, never replayed: nothing in the observability path touches replay', () => {
