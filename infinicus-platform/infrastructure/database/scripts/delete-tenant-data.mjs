@@ -40,31 +40,53 @@
 
 import { execFileSync } from 'node:child_process';
 
+class ErasureError extends Error {}
+
+const DATABASE_FAILURE = 'Database operation failed (details withheld)';
+
+function runPsql(connectionString, args, input) {
+  try {
+    // Explicit pipes also suppress execFileSync's automatic stderr forwarding
+    // on failure. Never expose child output, connection arguments or causes.
+    return execFileSync('psql', [connectionString, ...args], {
+      encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], input,
+    });
+  } catch {
+    throw new ErasureError(DATABASE_FAILURE);
+  }
+}
+
 function psql(connectionString, sql, args = []) {
-  return execFileSync('psql', [connectionString, '-tAc', sql, ...args], { encoding: 'utf8' });
+  return runPsql(connectionString, ['-tAc', sql, ...args]);
 }
 
 function psqlTransaction(connectionString, statements) {
   const script = ['\\set ON_ERROR_STOP on', 'BEGIN;', ...statements, 'COMMIT;'].join('\n');
-  return execFileSync('psql', [connectionString, '-v', 'ON_ERROR_STOP=1'], { input: script, encoding: 'utf8' });
+  return runPsql(connectionString, ['-v', 'ON_ERROR_STOP=1'], script);
 }
 
-function databaseFailureReason(error) {
-  const stderr = typeof error?.stderr === 'string' ? error.stderr : '';
-  return stderr.split('\n').map((line) => line.trim()).find((line) => line.startsWith('ERROR:'))
-    ?? 'Database operation failed (details withheld)';
+function databaseFailureReason() {
+  // Used in partial-erasure output AND the persisted audit record. Database
+  // error text can contain credentials or row payloads, even after "ERROR:".
+  return DATABASE_FAILURE;
 }
 
 async function main() {
   const { DATABASE_URL, ADMIN_DATABASE_URL, TENANT_ID, DELETED_BY } = process.env;
-  if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
-  if (!ADMIN_DATABASE_URL) throw new Error('ADMIN_DATABASE_URL is required');
-  if (!TENANT_ID) throw new Error('TENANT_ID is required');
+  if (!DATABASE_URL) throw new ErasureError('DATABASE_URL is required');
+  if (!ADMIN_DATABASE_URL) throw new ErasureError('ADMIN_DATABASE_URL is required');
+  if (!TENANT_ID) throw new ErasureError('TENANT_ID is required');
+  // Accept PostgreSQL UUID values only in canonical 8-4-4-4-12 hex form.
+  // Length also rejects a trailing newline (which a regexp $ can accept).
+  // Do not trim, coerce or echo rejected input. This runs before ANY psql.
+  if (TENANT_ID.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(TENANT_ID)) {
+    throw new ErasureError('TENANT_ID must be a canonical UUID');
+  }
   const deletedBy = (DELETED_BY ?? 'unknown').replace(/'/g, "''");
 
   const isRlsExempt = psql(DATABASE_URL, 'SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user;').trim();
   if (isRlsExempt === 't') {
-    throw new Error(
+    throw new ErasureError(
       "DATABASE_URL connects as a role that bypasses row-level security (superuser or BYPASSRLS) — refusing to run, since a bug in this script could then delete every tenant's data instead of just TENANT_ID's. Use the RLS-restricted application role."
     );
   }
@@ -299,8 +321,8 @@ async function main() {
           `DELETE FROM ${table}${scopedClause(table)};`,
         ]);
       }
-    } catch (err) {
-      blockedTables[table] = databaseFailureReason(err);
+    } catch {
+      blockedTables[table] = databaseFailureReason();
     }
   }
 
@@ -371,9 +393,9 @@ async function main() {
       `DELETE FROM tenancy.workspaces WHERE tenant_id = '${TENANT_ID}';`,
       `DELETE FROM tenancy.tenants WHERE id = '${TENANT_ID}';`,
     ]);
-  } catch (err) {
+  } catch {
     tenantFullyDeleted = false;
-    console.log(`tenancy.tenants/workspaces could not be deleted (blocked by retained dependents): ${databaseFailureReason(err)}`);
+    console.log(`tenancy.tenants/workspaces could not be deleted (blocked by retained dependents): ${databaseFailureReason()}`);
   }
 
   psqlTransaction(ADMIN_DATABASE_URL, [
@@ -391,6 +413,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err.message ?? err);
+  console.error(err instanceof ErasureError ? err.message : 'Tenant erasure failed (details withheld)');
   process.exit(1);
 });

@@ -166,6 +166,51 @@ describe.runIf(run)('delete-tenant-data.mjs — live PostgreSQL', () => {
     }
   }, 120_000);
 
+  it('keeps database failure details out of partial-erasure output and audit records', async () => {
+    const tenantId = randomUUID();
+    const survivorId = randomUUID();
+    const table = 'business_operations.erasure_failure_fixture';
+    const fn = 'business_operations.erasure_failure_fixture_guard';
+    const sensitive = 'postgresql://fixture_user:fixture%2Fpassword@synthetic.invalid/test fixture/password';
+    await adminPool.query(`CREATE TABLE ${table} (tenant_id uuid NOT NULL, marker text NOT NULL)`);
+    try {
+      await adminPool.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+      await adminPool.query(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`);
+      await adminPool.query(`CREATE POLICY erasure_failure_scope ON ${table} USING (tenant_id = current_setting('app.tenant_id',true)::uuid)`);
+      await adminPool.query(`GRANT SELECT, DELETE ON ${table} TO app_test_user`);
+      // A deliberately failing fixture, not an amendment to retention policy.
+      await adminPool.query(`CREATE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION '%', TG_ARGV[0]; END; $$`);
+      await adminPool.query(`CREATE TRIGGER erasure_failure_guard BEFORE DELETE ON ${table}
+        FOR EACH ROW EXECUTE FUNCTION ${fn}('${sensitive}')`);
+      await adminPool.query(`INSERT INTO tenancy.tenants (id,name,slug,status,plan_code)
+        VALUES ($1,'Failure test',$2,'active','test'),($3,'Failure survivor',$4,'active','test')`,
+      [tenantId, `failure-${tenantId}`, survivorId, `survivor-${survivorId}`]);
+      await adminPool.query(`INSERT INTO ${table} (tenant_id,marker) VALUES ($1,'retained'),($2,'survivor')`, [tenantId, survivorId]);
+
+      const { stdout, stderr } = await execFileAsync('node', [DELETE_SCRIPT], {
+        env: { ...process.env, TENANT_ID: tenantId, DELETED_BY: 'vitest-redaction-test' },
+      });
+      expect(stdout).toContain(`Partially erased tenant ${tenantId}`);
+      expect(stdout).not.toContain(`Deleted tenant ${tenantId}`);
+      const audit = await adminPool.query(`SELECT table_row_counts FROM platform.data_deletion_events WHERE tenant_id=$1`, [tenantId]);
+      expect(audit.rows).toHaveLength(1);
+      expect(audit.rows[0].table_row_counts.blockedByRetainedDependents[table]).toBe('Database operation failed (details withheld)');
+      expect(audit.rows[0].table_row_counts.remainingRows[table]).toBe(1);
+      const reported = stdout + stderr + JSON.stringify(audit.rows[0]);
+      for (const value of [sensitive, 'fixture%2Fpassword', 'fixture/password', process.env.DATABASE_URL!, process.env.ADMIN_DATABASE_URL!].filter(Boolean)) {
+        expect(reported).not.toContain(value);
+      }
+      expect((await adminPool.query(`SELECT count(*)::int AS n FROM ${table} WHERE tenant_id=$1`, [tenantId])).rows[0].n).toBe(1);
+      expect((await adminPool.query(`SELECT marker FROM ${table} WHERE tenant_id=$1`, [survivorId])).rows).toEqual([{ marker: 'survivor' }]);
+      expect((await adminPool.query(`SELECT count(*)::int AS n FROM tenancy.tenants WHERE id=$1`, [survivorId])).rows[0].n).toBe(1);
+    } finally {
+      await adminPool.query(`DROP TABLE IF EXISTS ${table}`);
+      await adminPool.query(`DROP FUNCTION IF EXISTS ${fn}()`);
+      await adminPool.query(`DELETE FROM tenancy.tenants WHERE id=ANY($1::uuid[])`, [[tenantId, survivorId]]);
+    }
+  }, 120_000);
+
   it('refuses to run against a BYPASSRLS/superuser DATABASE_URL', async () => {
     await expect(
       execFileAsync('node', [DELETE_SCRIPT], {
