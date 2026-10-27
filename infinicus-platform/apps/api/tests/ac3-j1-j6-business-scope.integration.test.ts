@@ -24,6 +24,7 @@ import { DEFAULT_APPROVER_ASSIGNMENT_CODE, DecisionWorkflowService } from '@infi
 import { buildApp } from '../src/app.js';
 import { createAbaFixture, APPROVABLE_FACTS, uc } from './helpers/abaFixtures.js';
 import { chainKit } from './helpers/authorizedPackageChain.js';
+import { changedTenantRows } from './helpers/tenantRowCountDiff.js';
 
 const run = !!process.env.DATABASE_URL;
 const STRONG_PASSWORD = 'Correct-Horse-9!';
@@ -109,10 +110,6 @@ async function authoritativeRows(tenants: string[], ignore: string[] = []): Prom
   for (const { s, t } of tables.filter(({ s, t }) => !ignore.includes(`${s}.${t}`))) out[`${s}.${t}`] = Number((await admin.query(`SELECT count(*)::int n FROM "${s}"."${t}" WHERE tenant_id = ANY($1)`, [tenants])).rows[0].n);
   return out;
 }
-
-/** Tables whose row count changed between two snapshots (empty means nothing was written anywhere). */
-const changed = (before: Record<string, number>, after: Record<string, number>) =>
-  Object.fromEntries(Object.keys(after).filter((k) => after[k] !== before[k]).map((k) => [k, `${before[k]} -> ${after[k]}`]));
 
 /** The caller-visible shape of an error, with the caller-supplied id masked and the per-request correlation id dropped. */
 const shape = (res: { statusCode: number; json(): { error?: { code?: string; message?: string } } }, ...ids: string[]) => {
@@ -218,7 +215,7 @@ describe.runIf(run)('AC-3 Block 2 - J-1 business scope + J-6 approver grantee me
         const res = await send(a, r, biz2);
         expect(res.statusCode, `${r.name}: ${res.body}`).toBe(404);
       }
-      expect(changed(before, await authoritativeRows([a.ctx.tenantId]))).toEqual({});
+      expect(changedTenantRows(before, await authoritativeRows([a.ctx.tenantId]))).toEqual({});
     });
 
     it('3. extra identity fields in a request body cannot choose the actor: the decision, its audit and the grant provenance all name the authenticated principal', async () => {
@@ -270,7 +267,7 @@ describe.runIf(run)('AC-3 Block 2 - J-1 business scope + J-6 approver grantee me
         const res = await send({ ctx: p.ctx, token: p.token }, r, a.bizId);
         expect(res.statusCode, `${r.name}: ${res.body}`).toBe(403);
       }
-      expect(changed(before, await authoritativeRows([a.ctx.tenantId], SECURITY_LOG))).toEqual({});
+      expect(changedTenantRows(before, await authoritativeRows([a.ctx.tenantId], SECURITY_LOG))).toEqual({});
     });
 
     it('6+7. a wrong-business principal and an unknown business get the IDENTICAL 404 (status, code, message shape): no existence oracle, no foreign-key 500', async () => {
@@ -302,7 +299,7 @@ describe.runIf(run)('AC-3 Block 2 - J-1 business scope + J-6 approver grantee me
           expect(res.statusCode, r.name).toBe(404);
         }
       }
-      expect(changed(before, await authoritativeRows(both))).toEqual({});
+      expect(changedTenantRows(before, await authoritativeRows(both))).toEqual({});
       expect(await decided(b.bizId)).toBe(0);
       expect(await outcomesFor(b.bizId)).toBe(0);
       // The only trace is API replay bookkeeping in the CALLER's own tenant: the route template (never the foreign id) and the answer.
@@ -323,7 +320,7 @@ describe.runIf(run)('AC-3 Block 2 - J-1 business scope + J-6 approver grantee me
         expect(unknown.statusCode, `${r.name} unknown: ${unknown.body}`).toBe(404);
         expect(shape(foreign, b.bizId), r.name).toEqual(shape(unknown, unknownBiz));
       }
-      expect(changed(before, await authoritativeRows([a.ctx.tenantId, b.ctx.tenantId]))).toEqual({});
+      expect(changedTenantRows(before, await authoritativeRows([a.ctx.tenantId, b.ctx.tenantId]))).toEqual({});
     });
   });
 
