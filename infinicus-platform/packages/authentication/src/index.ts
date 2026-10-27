@@ -1,6 +1,6 @@
 // @infinicus/authentication — password credentials, session lifecycle, service-account API keys.
 export {
-  InvalidCredentialsError, AccountNotActiveError, AccountLockedError,
+  InvalidCredentialsError, AccountNotActiveError, AccountLockedError, LockoutStateUnavailableError,
   SessionExpiredError, SessionRevokedError, SessionInvalidError,
   ApiKeyInvalidError, WeakPasswordError, VerificationTokenInvalidError, ManagedAccountEmailReservedError,
 } from './errors.js';
