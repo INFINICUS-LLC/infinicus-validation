@@ -136,7 +136,7 @@ describe.runIf(run)('Stage 2E Business Digital Twin — live PostgreSQL', () => 
       const result = await adminPool!.query(
         `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'business_digital_twin'`
       );
-      expect(result.rows[0].n).toBe(51);
+      expect(result.rows[0].n).toBe(52); // 51 Stage 2E tables + dt_handoff_envelopes (migration 0221, NEW-BDT-SIM-01.SEC-01)
     });
 
     it('every DT table has RLS enabled and forced', async () => {
@@ -146,7 +146,7 @@ describe.runIf(run)('Stage 2E Business Digital Twin — live PostgreSQL', () => 
          JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.schemaname
          WHERE t.schemaname = 'business_digital_twin' AND c.relrowsecurity AND c.relforcerowsecurity`
       );
-      expect(result.rows[0].n).toBe(51);
+      expect(result.rows[0].n).toBe(52); // 51 Stage 2E tables + dt_handoff_envelopes (migration 0221, NEW-BDT-SIM-01.SEC-01)
     });
 
     it('fails closed with no tenant context set (app_test_user, RLS enforced)', async () => {
