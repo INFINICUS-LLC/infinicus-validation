@@ -5,9 +5,9 @@
  * is a recorded fact copied as exact text with its unit (a currency code, `orders`, or `<CUR> minor units`), so no value is numeric and the contract's
  * probabilistic-uncertainty rule does not apply; no distribution is invented. Each currency stands alone (the currency is part of the variable code).
  *
- * Only a state that is integrity-verified and has BOTH domains provided is simulation-ready (verification ties `crossCheck.performed` to exactly that, so the cross-check is implied). The contract's numeric `confidence` is stated as
- * 1 only in that case, and means "recorded facts corroborated by two independent BI reports", NOT a predictive confidence; anything less is refused rather than
- * given a made-up partial score.
+ * Only a state that is integrity-verified and has BOTH domains provided is simulation-ready (verification ties `crossCheck.performed` to exactly that, so the cross-check is implied).
+ * The contract's numeric `confidence` is the Twin Confidence supplied by the caller AFTER it passed the confidence gate (`twinConfidencePolicy`): it is never defaulted or derived here,
+ * and integrity or agreement of the BI reports is not a confidence.
  */
 import type { BusinessPerformanceTwinState, DTQualityEvidence, DTVariableInput, FinancialKpis, SalesKpis } from '@infinicus/handoff-contracts';
 import { verifyBiPerformanceEvidence } from './biPerformanceEvidence.js';
@@ -54,19 +54,43 @@ const salesVariables = (k: SalesKpis): DTVariableInput[] => {
   return out;
 };
 
-export function buildPerformanceBaseline(input: { state: BusinessPerformanceTwinState; snapshotId: string; now: Date }): PerformanceBaselineBuild {
-  const { state, snapshotId, now } = input;
+/**
+ * The variable grammar of the performance hand-off (the vocabulary a future Simulation-owned intake must parse; documented in
+ * docs/architecture/bdt/NEW-BDT-SIM-01_VARIABLE_GRAMMAR.md). Every variable code is `<domain>.<CUR>.<metric>` or `domain.<domain>.status`, where CUR is a three-letter ISO 4217
+ * code; every value is exact TEXT (or a boolean for `reconciles`), never a JavaScript number; the unit says how to read it.
+ */
+export const PERFORMANCE_VARIABLE_GRAMMAR = Object.freeze({
+  code: /^(?:domain\.(?:financial|sales)\.status|(?:financial|sales)\.[A-Z]{3}\.[A-Za-z]+(?:\.[A-Za-z]+)*)$/,
+  /** A money amount: optional minus, digits, at most four decimals (unit = the currency code). */
+  decimalText: /^-?\d+(?:\.\d{1,4})?$/,
+  /** An integer count or a sales amount in minor units (unit = 'orders' | 'items' | 'lines' | '<CUR> minor units (10^-N)'). */
+  integerText: /^-?\d+$/,
+  unit: /^(?:[A-Z]{3}|%|orders|items|lines|[A-Z]{3} minor units \(10\^-[0-4]\))$/,
+});
+
+/** Whether a published twin state can be handed to Simulation at all (before any confidence is considered). Pure. */
+export function assessSimulationReadiness(state: BusinessPerformanceTwinState): { ok: true } | { ok: false; detail: string } {
   const ev = state.evidence;
   const integrity = verifyBiPerformanceEvidence(ev);
   if (!integrity.valid) return { ok: false, detail: `the twin state failed its integrity check: ${integrity.reasons.join(',')}` };
   if (ev.financial.status !== 'PROVIDED' || ev.sales.status !== 'PROVIDED') return { ok: false, detail: 'both the financial and the sales evidence must be provided; a partial state is not handed to Simulation' };
+  if (ev.financial.currencies.length + ev.sales.currencies.length === 0) return { ok: false, detail: 'the twin state records no currency, so there is nothing to simulate from' };
+  if (Number.isNaN(Date.parse(state.observedAt))) return { ok: false, detail: 'the twin state has no valid observation time' };
+  return { ok: true };
+}
+
+/** `confidence` is the already-gated Twin Confidence (see twinConfidencePolicy); this function never decides or defaults it. */
+export function buildPerformanceBaseline(input: { state: BusinessPerformanceTwinState; snapshotId: string; now: Date; confidence: number }): PerformanceBaselineBuild {
+  const { state, snapshotId, now, confidence } = input;
+  const ready = assessSimulationReadiness(state);
+  if (!ready.ok) return ready;
+  const ev = state.evidence;
+  if (ev.financial.status !== 'PROVIDED' || ev.sales.status !== 'PROVIDED') return { ok: false, detail: 'both domains must be provided' };   // narrows the type; unreachable after readiness
   const variables = [
     { variableCode: 'domain.financial.status', value: 'PROVIDED', unit: null }, { variableCode: 'domain.sales.status', value: 'PROVIDED', unit: null },
     ...ev.financial.currencies.flatMap(financialVariables), ...ev.sales.currencies.flatMap(salesVariables),
   ].sort((a, b) => (a.variableCode < b.variableCode ? -1 : a.variableCode > b.variableCode ? 1 : 0)) as DTVariableInput[];
-  if (ev.financial.currencies.length + ev.sales.currencies.length === 0) return { ok: false, detail: 'the twin state records no currency, so there is nothing to simulate from' };
   const observed = Date.parse(state.observedAt);
-  if (Number.isNaN(observed)) return { ok: false, detail: 'the twin state has no valid observation time' };
   const { from, to } = ev.period;
   return {
     ok: true,
@@ -84,6 +108,6 @@ export function buildPerformanceBaseline(input: { state: BusinessPerformanceTwin
       `twin-snapshot:${snapshotId}`, `bi-performance-evidence:${ev.evidenceDigest}`,
       `${ev.financial.provenance.contract}:${ev.financial.provenance.digest}`, `${ev.sales.provenance.contract}:${ev.sales.provenance.digest}`,
     ],
-    quality: { confidence: 1, freshnessSeconds: Math.max(0, Math.floor((now.getTime() - observed) / 1000)) },
+    quality: { confidence, freshnessSeconds: Math.max(0, Math.floor((now.getTime() - observed) / 1000)) },
   };
 }

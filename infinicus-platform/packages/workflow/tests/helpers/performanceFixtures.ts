@@ -37,3 +37,18 @@ export function readersFor(businessId: string, o: { fin?: () => FinancialReportO
     sales: { async report() { return o.sales ? o.sales() : salesFor(businessId); } },
   };
 }
+
+/**
+ * A TEST-ONLY Twin Confidence policy. It is NOT a methodology: the owner has ratified none, so the score is simply whatever the test passes in, with a complete
+ * seven-factor basis so the gate's structure can be exercised. Production code must never import this file (an architecture guard enforces it).
+ */
+import { TWIN_CONFIDENCE_FACTORS, type TwinConfidenceAssessment, type TwinConfidencePolicy } from '../../src/performance/twinConfidencePolicy.js';
+export const testAssessment = (score = 0.8125, over: Partial<Extract<TwinConfidenceAssessment, { status: 'ASSESSED' }>> = {}): TwinConfidenceAssessment => ({
+  status: 'ASSESSED', score,
+  methodology: { id: 'TEST-ONLY-NOT-A-METHODOLOGY', version: '0', ratification: 'none: test double' },
+  factors: TWIN_CONFIDENCE_FACTORS.map((factor) => ({ factor, evidenceRef: `test-evidence:${factor.toLowerCase()}` })), ...over,
+});
+export const testConfidencePolicy = (assessment: TwinConfidenceAssessment = testAssessment()): TwinConfidencePolicy & { calls: number } => {
+  const policy = { calls: 0, async assess() { policy.calls += 1; return assessment; } };
+  return policy;
+};

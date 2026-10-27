@@ -9,8 +9,9 @@ export const performanceSimulationHandoffBodySchema = z.object({ from: date, to:
 export const performanceSimulationHandoffResponseSchema = z.union([
   z.object({
     outcome: z.literal('HANDED_OFF'), replay: z.literal(false), publicationPackageId: z.string().uuid(), scenarioBaselineId: z.string().uuid(),
-    scenarioBaselineVersionId: z.string().uuid(), snapshotId: z.string().uuid(), handoff: z.record(z.string(), z.any()),
+    scenarioBaselineVersionId: z.string().uuid(), snapshotId: z.string().uuid(), confidenceScoreId: z.string().uuid(),
+    envelopeDigest: z.string().regex(/^[0-9a-f]{64}$/), handoff: z.record(z.string(), z.any()),
   }),
-  z.object({ outcome: z.literal('HANDED_OFF'), replay: z.literal(true), publicationPackageId: z.string().uuid(), publicationStatus: z.string(), snapshotId: z.string().uuid() }),
+  z.object({ outcome: z.literal('HANDED_OFF'), replay: z.literal(true), publicationPackageId: z.string().uuid(), publicationStatus: z.string(), snapshotId: z.string().uuid(), confidenceScoreId: z.string().uuid(), envelopeDigest: z.string().regex(/^[0-9a-f]{64}$/) }),
   z.object({ outcome: z.literal('NOT_HANDED_OFF'), code: z.string(), detail: z.string() }),
 ]);
