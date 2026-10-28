@@ -1,7 +1,7 @@
 {
   "version": 1,
   "asOf": "2026-10-28",
-  "mainCommit": "e552bc7",
+  "mainCommit": "844f5fc",
   "dimensions": {
     "spec": 0.1,
     "functional": 0.35,
@@ -955,12 +955,12 @@
       "title": "Data import screens",
       "covers": "manual and file intake, publication",
       "units": 1,
-      "impl": 0.0,
+      "impl": 0.3,
       "spec": 25,
       "integration": 0,
       "verification": 0,
       "operational": 0,
-      "evidence": "None (API exists)."
+      "evidence": "DATA-WEB-1 (#359, 844f5fc): one read-only Data screen over data sources and collection runs; no manual/file intake or publication."
     },
     {
       "id": "X-15",
@@ -1399,6 +1399,24 @@
       "notScored": [
         "Merges after #270 by the Core session (BDT-SIM-01 hand-off #350, #352, security and dependency fixes #342-#348): not re-audited or scored by this update; their owners record their own entries",
         "Overview/KPI screens: still not built (see docs/architecture/bi/PUR-WEB-1_PURCHASING.md)"
+      ]
+    },
+    {
+      "date": "2026-10-28",
+      "mainCommit": "844f5fc",
+      "label": "DATA-WEB-1 merged (#359)",
+      "changes": [
+        {
+          "workPackage": "X-14",
+          "field": "impl",
+          "from": 0.0,
+          "to": 0.3,
+          "criterion": "one functional read-only screen over real da:read contracts with tests (visibility only; no manual or file intake, no publication)",
+          "evidence": "#359 merged (844f5fc): 15 tests, real API responses parsed against the web schema; web 494/494; validate, image build and shell green on the PR head"
+        }
+      ],
+      "notScored": [
+        "Manual/file intake and publication screens: not built"
       ]
     }
   ]
