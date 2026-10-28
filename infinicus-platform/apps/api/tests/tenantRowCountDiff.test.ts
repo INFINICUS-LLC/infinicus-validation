@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { changedTenantRows } from './helpers/tenantRowCountDiff.js';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { changedTenantRows, isTestFixtureTable } from './helpers/tenantRowCountDiff.js';
 
 describe('AC-3 tenant row-count snapshots', () => {
   it('accepts unchanged counts', () => {
@@ -22,3 +24,26 @@ describe('AC-3 tenant row-count snapshots', () => {
     expect(changedTenantRows({ 'platform.orders': 2 }, {})).toEqual({ 'platform.orders': '2 -> missing' });
   });
 });
+
+describe('AC-3 snapshots ignore test fixture tables of other suites (shared CI database)', () => {
+  it('recognizes only names ending in _fixture, in any schema', () => {
+    expect(isTestFixtureTable('business_operations.erasure_retained_fixture')).toBe(true);
+    expect(isTestFixtureTable('business_operations.erasure_failure_fixture')).toBe(true);
+    expect(isTestFixtureTable('platform.orders')).toBe(false);
+    expect(isTestFixtureTable('platform.fixture_orders')).toBe(false);
+    expect(isTestFixtureTable('audit.access_events')).toBe(false);
+  });
+
+  it('no committed migration creates a table named *_fixture, so the exclusion cannot hide a product table', () => {
+    const dir = resolve(__dirname, '../../../infrastructure/database/migrations');
+    const offenders: string[] = [];
+    for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql'))) {
+      const sql = readFileSync(join(dir, file), 'utf8');
+      for (const m of sql.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([\w."]+)/gi)) {
+        if (isTestFixtureTable(m[1].replace(/"/g, ''))) offenders.push(`${file}: ${m[1]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+

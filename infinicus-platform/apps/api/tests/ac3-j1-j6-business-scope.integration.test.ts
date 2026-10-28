@@ -24,7 +24,7 @@ import { DEFAULT_APPROVER_ASSIGNMENT_CODE, DecisionWorkflowService } from '@infi
 import { buildApp } from '../src/app.js';
 import { createAbaFixture, APPROVABLE_FACTS, uc } from './helpers/abaFixtures.js';
 import { chainKit } from './helpers/authorizedPackageChain.js';
-import { changedTenantRows } from './helpers/tenantRowCountDiff.js';
+import { changedTenantRows, isTestFixtureTable } from './helpers/tenantRowCountDiff.js';
 
 const run = !!process.env.DATABASE_URL;
 const STRONG_PASSWORD = 'Correct-Horse-9!';
@@ -101,13 +101,16 @@ const decided = (bizId: string) => one(`SELECT count(*)::int n FROM ${ABA}.appro
 const outcomesFor = (bizId: string) => one(`SELECT count(*)::int n FROM outcome_monitoring.outcome_observations WHERE business_id=$1`, [bizId]);
 const auditRows = async (bizId: string) => (await admin.query(`SELECT event_type, detail FROM ${ABA}.approval_audit_events WHERE business_id=$1 ORDER BY created_at`, [bizId])).rows;
 
-/** Row counts of EVERY tenant-scoped table (all schemas except the API idempotency store and observability) for the given tenants. */
+/**
+ * Row counts of EVERY tenant-scoped table (all schemas except the API idempotency store and observability) for the given tenants. Test fixture tables
+ * that other suites create and drop in the shared database (`*_fixture`) are not product schema and are skipped, otherwise a concurrent drop makes the snapshot flaky.
+ */
 async function authoritativeRows(tenants: string[], ignore: string[] = []): Promise<Record<string, number>> {
   const tables = (await admin.query(
     `SELECT table_schema s, table_name t FROM information_schema.columns WHERE column_name = 'tenant_id' AND table_schema NOT IN ('api','observability','information_schema','pg_catalog')
      GROUP BY 1,2 ORDER BY 1,2`)).rows as { s: string; t: string }[];
   const out: Record<string, number> = {};
-  for (const { s, t } of tables.filter(({ s, t }) => !ignore.includes(`${s}.${t}`))) out[`${s}.${t}`] = Number((await admin.query(`SELECT count(*)::int n FROM "${s}"."${t}" WHERE tenant_id = ANY($1)`, [tenants])).rows[0].n);
+  for (const { s, t } of tables.filter(({ s, t }) => !ignore.includes(`${s}.${t}`) && !isTestFixtureTable(`${s}.${t}`))) out[`${s}.${t}`] = Number((await admin.query(`SELECT count(*)::int n FROM "${s}"."${t}" WHERE tenant_id = ANY($1)`, [tenants])).rows[0].n);
   return out;
 }
 
