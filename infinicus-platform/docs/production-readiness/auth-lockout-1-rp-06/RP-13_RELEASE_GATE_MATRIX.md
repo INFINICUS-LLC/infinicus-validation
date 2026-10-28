@@ -34,3 +34,15 @@ Release candidate: `bea03e66f00889fdfa6fa5aa69e3feaa3ee7b4e5`. Baseline: `main` 
 
 Technical design applicability is confirmed by production evidence: the live state equals the rehearsed baseline. Release remains **NO-GO**: G-4 is blocked, G-9,
 G-10 and G-12 are pending, and the corrected procedure has to be reviewed. Nothing here converts a pending gate to PASS.
+
+## RP-14 update (2026-10-28)
+
+| Gate | RP-14 result | Evidence |
+|---|---|---|
+| G-4 | **BLOCKED (unchanged).** No authorized backup, restore host or key existed in the session, so no restore was run. Tooling compatibility is now verified: the installed `backup-offsite.sh` is byte-identical to `main`'s and a rehearsal of that backup script plus `main`'s `restore-proof.sh` on a synthetic ledger-209 database passes; the older `restore-proof.sh` and the default profile fail (false negatives), so the procedure fixes the script version and the profile. | `RP-14A_RECOVERY_EVIDENCE.md` (RH) |
+| G-1, G-2, G-3, G-5, G-6 | unchanged (owner-observed at RP-12A; re-check in the window) | — |
+| G-7, G-8, G-11 | unchanged; RC identity re-confirmed as `bea03e66f00889fdfa6fa5aa69e3feaa3ee7b4e5` | VR |
+| G-9, G-10, G-12 | still pending; nothing in RP-14 changes them | — |
+| Hygiene H1/H3 | assessed from the evidence available; owner checks outstanding (see `RP-14B_EXPOSURE_ASSESSMENT.md`) | — |
+
+Verdict stays **NO-GO**.
