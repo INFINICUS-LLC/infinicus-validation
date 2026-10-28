@@ -211,6 +211,37 @@ describe.runIf(run)('delete-tenant-data.mjs — live PostgreSQL', () => {
     }
   }, 120_000);
 
+  it('AUDIT-LP-1: erases the tenant\'s access events over the admin connection; other tenants\' and tenantless events survive; the run reports complete erasure', async () => {
+    const tenantId = randomUUID();
+    const otherId = randomUUID();
+    const workspaceId = randomUUID();
+    const marker = `erase-access-events-${randomUUID()}`;
+    await adminPool.query(`INSERT INTO tenancy.tenants (id,name,slug,status,plan_code) VALUES ($1,'AE erase',$2,'active','test'),($3,'AE survivor',$4,'active','test')`,
+      [tenantId, `ae-erase-${tenantId}`, otherId, `ae-survivor-${otherId}`]);
+    await adminPool.query(`INSERT INTO tenancy.workspaces (id,tenant_id,name,slug,status) VALUES ($1,$2,'AE erase WS',$3,'active')`, [workspaceId, tenantId, `ae-erase-ws-${workspaceId}`]);
+    await adminPool.query(
+      `INSERT INTO audit.access_events (tenant_id,event_type,metadata) VALUES
+         ($1,'failed_auth',$3::jsonb),($1,'login',$3::jsonb),($2,'login',$3::jsonb),(NULL,'failed_auth',$3::jsonb)`,
+      [tenantId, otherId, JSON.stringify({ marker })]);
+    const count = async (where: string, arg: unknown[]) => (await adminPool.query(`SELECT count(*)::int AS n FROM audit.access_events WHERE metadata->>'marker' = $1 AND ${where}`, [marker, ...arg])).rows[0].n;
+    try {
+      expect(await count('tenant_id = $2', [tenantId])).toBe(2);
+      const { stdout } = await execFileAsync('node', [DELETE_SCRIPT], { env: { ...process.env, TENANT_ID: tenantId, DELETED_BY: 'vitest-audit-lp-1' } });
+      expect(stdout).toContain(`Deleted tenant ${tenantId}`);
+      expect(stdout).not.toContain('Partially erased');
+      expect(await count('tenant_id = $2', [tenantId])).toBe(0);
+      expect(await count('tenant_id = $2', [otherId])).toBe(1);
+      expect(await count('tenant_id IS NULL', [])).toBe(1);
+      const audit = await adminPool.query(`SELECT table_row_counts FROM platform.data_deletion_events WHERE tenant_id=$1`, [tenantId]);
+      expect(audit.rows[0].table_row_counts.rowCounts['audit.access_events']).toBe(2);
+      expect(audit.rows[0].table_row_counts.remainingRows).toEqual({});
+    } finally {
+      await adminPool.query(`DELETE FROM audit.access_events WHERE metadata->>'marker' = $1`, [marker]);
+      await adminPool.query(`DELETE FROM tenancy.workspaces WHERE tenant_id=ANY($1::uuid[])`, [[tenantId, otherId]]);
+      await adminPool.query(`DELETE FROM tenancy.tenants WHERE id=ANY($1::uuid[])`, [[tenantId, otherId]]);
+    }
+  }, 120_000);
+
   it('refuses to run against a BYPASSRLS/superuser DATABASE_URL', async () => {
     await expect(
       execFileAsync('node', [DELETE_SCRIPT], {

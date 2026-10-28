@@ -106,6 +106,13 @@ BEGIN
     EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.offline_review_evidence FROM %I', app_role);
     EXECUTE format('GRANT SELECT ON business_operations.offline_review_evidence TO %I', app_role);
   END IF;
+  -- AUDIT-LP-1: audit.access_events is a security log (it also carries the failed-login events that bound password guessing). The application only
+  -- INSERTs and SELECTs it, so UPDATE, DELETE and TRUNCATE are withheld; a compromised or buggy application session can no longer rewrite or erase it.
+  -- Tenant erasure removes a tenant's rows over the ADMIN connection (delete-tenant-data.mjs, ADMIN_ERASED_TABLES). Re-applied on every run, after
+  -- the blanket grants, so a rerun cannot reopen the privilege. Rows with a NULL tenant_id are not tenant data; their retention is an owner decision.
+  IF to_regclass('audit.access_events') IS NOT NULL THEN
+    EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON audit.access_events FROM %I', app_role);
+  END IF;
   -- Order events are insert-only operational history. Revoke blanket write privileges
   -- after each grant application; the database trigger also protects privileged writes.
   IF to_regclass('business_operations.order_events') IS NOT NULL THEN

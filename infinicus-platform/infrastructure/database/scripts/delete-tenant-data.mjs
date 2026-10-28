@@ -20,6 +20,8 @@
 // directory (export-tenant.sh, grant-app-role.sh, backup.sh, ...) is
 // psql-based for the same reason.
 //
+// Tables in ADMIN_ERASED_TABLES (AUDIT-LP-1) are the exception: the application role cannot delete from them, so their rows for the tenant are
+// removed over the admin connection with an explicit tenant predicate.
 // All tenant-scoped deletes run through the RLS-restricted role with
 // app.tenant_id set (DELETE FROM <table>, no WHERE needed — RLS already
 // scopes it to exactly that tenant, the same safety property
@@ -64,6 +66,12 @@ function psqlTransaction(connectionString, statements) {
   const script = ['\\set ON_ERROR_STOP on', 'BEGIN;', ...statements, 'COMMIT;'].join('\n');
   return runPsql(connectionString, ['-v', 'ON_ERROR_STOP=1'], script);
 }
+
+// AUDIT-LP-1: tables whose rows the APPLICATION role may no longer update, delete or truncate (see grant-app-role.sh). This tenant's rows in them are
+// erased over the ADMIN connection instead, always with an explicit `tenant_id = <tenant>` predicate. Rows with a NULL tenant_id (shared
+// pre-authentication events) belong to no tenant and are never touched. A table listed here that lacks a literal tenant_id column is reported as
+// blocked; the script never issues a blanket DELETE over the admin connection.
+const ADMIN_ERASED_TABLES = new Set(['audit.access_events']);
 
 function databaseFailureReason() {
   // Used in partial-erasure output AND the persisted audit record. Database
@@ -288,6 +296,9 @@ async function main() {
   }
 
   const deletableOrder = order.filter((table) => !tablesAppendOnly.has(table));
+  // AUDIT-LP-1: tables the application role cannot delete from are erased over the admin connection after the application-role pass.
+  const adminErasedOrder = deletableOrder.filter((table) => ADMIN_ERASED_TABLES.has(table));
+  const appRoleOrder = deletableOrder.filter((table) => !ADMIN_ERASED_TABLES.has(table));
 
   const rowCounts = {};
   for (const table of deletableOrder) {
@@ -305,7 +316,7 @@ async function main() {
   // audit-trail rows) is reported honestly instead of rolling back
   // everything that already succeeded.
   const blockedTables = {};
-  for (const table of deletableOrder) {
+  for (const table of appRoleOrder) {
     try {
       if (tablesRequiringWorkspaceScope.has(table)) {
         for (const ws of workspaceIds) {
@@ -321,6 +332,17 @@ async function main() {
           `DELETE FROM ${table}${scopedClause(table)};`,
         ]);
       }
+    } catch {
+      blockedTables[table] = databaseFailureReason();
+    }
+  }
+  for (const table of adminErasedOrder) {
+    if (!tablesWithTenantIdColumn.has(table)) {
+      blockedTables[table] = databaseFailureReason();
+      continue;
+    }
+    try {
+      psqlTransaction(ADMIN_DATABASE_URL, [`DELETE FROM ${table} WHERE tenant_id = '${TENANT_ID}';`]);
     } catch {
       blockedTables[table] = databaseFailureReason();
     }
