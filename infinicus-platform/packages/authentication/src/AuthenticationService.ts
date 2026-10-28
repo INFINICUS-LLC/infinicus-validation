@@ -6,7 +6,7 @@ import {
 import { hashPassword, verifyPassword } from './password.js';
 import { generateSessionToken, hashToken, defaultSessionExpiry } from './tokens.js';
 import {
-  InvalidCredentialsError, AccountNotActiveError, AccountLockedError,
+  InvalidCredentialsError, AccountNotActiveError, AccountLockedError, LockoutStateUnavailableError,
   SessionExpiredError, SessionRevokedError, SessionInvalidError,
   VerificationTokenInvalidError, ManagedAccountEmailReservedError,
 } from './errors.js';
@@ -100,9 +100,9 @@ export class AuthenticationService {
   }
 
   /**
-   * Audit logging for a login outcome — never allowed to fail the request
-   * it's describing. See the fail-open comment on the lockout check in
-   * login() below for why: this is observability, not a security gate.
+   * Login outcome audit writes remain best-effort under the existing policy.
+   * This is distinct from the required lockout-state read, which fails closed.
+   * A separate block must review audit-write failure enforcement.
    */
   private async recordAuditEvent(
     userId: string | null,
@@ -140,22 +140,17 @@ export class AuthenticationService {
     // and avoids doing real password-verification work on a request that's
     // going to be rejected regardless of what password was supplied.
     //
-    // This is best-effort telemetry, not a security boundary that must
-    // hold on every single request: under concurrent login attempts for
-    // the same account, a transient driver/pool-level fault here (seen in
-    // production as an intermittent "invalid input syntax for type uuid"
-    // from a value that traced back clean at every call site — a `pg`/
-    // connection-pooling race under concurrent load, not a real bad
-    // value) must never fail an otherwise-valid login. Fail open on the
-    // lockout check (treat as "not locked") rather than 500 the request;
-    // a real attacker's next attempt gets re-checked immediately after.
-    let recentFailures = 0;
+    // The lockout read is an authentication security gate. An unavailable
+    // failed-attempt count must never be interpreted as an unlocked account.
+    // Do not log the database exception: it may contain connection secrets.
+    let recentFailures: number;
     try {
       recentFailures = await this.accessEvents.countRecentFailedPasswordAttempts(
         user.id, new Date(Date.now() - LOCKOUT_WINDOW_MS)
       );
-    } catch (err) {
-      console.warn('[auth] lockout check failed (treating as not locked)', err);
+    } catch {
+      console.warn('[auth] password-login lockout state unavailable');
+      throw new LockoutStateUnavailableError();
     }
     if (recentFailures >= LOCKOUT_FAILURE_THRESHOLD) {
       await this.recordAuditEvent(user.id, 'failed_auth', meta, { reason: 'account_locked' });

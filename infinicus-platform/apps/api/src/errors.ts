@@ -41,6 +41,7 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   // account is rate-limited, not rejected (BUILD-18 known-limitations item,
   // closed: "No account lockout / rate limiting").
   AccountLockedError: 429,
+  LockoutStateUnavailableError: 503,
   SessionExpiredError: 401,
   SessionRevokedError: 401,
   SessionInvalidError: 401,
