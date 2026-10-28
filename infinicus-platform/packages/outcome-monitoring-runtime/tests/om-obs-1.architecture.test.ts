@@ -106,6 +106,8 @@ describe('OM-OBS-1 - read-only observability', () => {
       '0219_harden_bo_order_event_integrity.sql',
       // AUTH-LOCKOUT-1.DB-02 normalizes only the audit access-event tenant setting.
       '0220_normalize_access_event_tenant_context.sql',
+      // NEW-BDT-SIM-01.SEC-01: the Digital Twin's own append-only hand-off envelope record. It touches only business_digital_twin tables and does not change OM authority.
+      '0221_create_dt_handoff_envelopes.sql',
     ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);
@@ -139,6 +141,16 @@ describe('OM-OBS-1 - read-only observability', () => {
     expect(sql).toMatch(/ALTER POLICY access_events_isolation ON audit\.access_events/);
     expect(sql).toMatch(/NULLIF\(current_setting\('app\.tenant_id', true\), ''\)::uuid/);
     expect(sql).not.toMatch(/\b(?:outcome_monitoring|continuous_learning)\.|\b(?:GRANT|CREATE\s+ROLE)\b|\bOUTCOME_(?:VERIFIED|FAILED)\b/i);
+  });
+
+  it('the exact Digital Twin hand-off envelope migration cannot establish OM or CL authority', () => {
+    const sql = readFileSync(join(PLATFORM, 'infrastructure/database/migrations/0221_create_dt_handoff_envelopes.sql'), 'utf8')
+      .split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+    expect(sql).toMatch(/business_digital_twin\.dt_handoff_envelopes/);
+    expect(sql).not.toMatch(/\b(?:outcome_monitoring|continuous_learning|approved_business_action)\.|\b(?:GRANT|CREATE\s+ROLE)\b|\bOUTCOME_(?:VERIFIED|FAILED)\b/i);
+    // every relation it creates, alters or reads outside the twin schema is a plain identity/scope reference (tenancy, platform), never OM or CL data
+    const schemas = new Set([...sql.matchAll(/\b([a-z_]+)\.[a-z_]+/g)].map((m) => m[1]).filter((x) => ['tenancy', 'platform', 'business_digital_twin', 'outcome_monitoring', 'continuous_learning', 'business_operations', 'audit'].includes(x)));
+    expect([...schemas].sort()).toEqual(['business_digital_twin', 'platform', 'tenancy']);
   });
 
   it('dead letters are listed, never replayed: nothing in the observability path touches replay', () => {
