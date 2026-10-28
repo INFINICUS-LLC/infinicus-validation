@@ -287,6 +287,11 @@ button.danger {
 .automation-view .auto th, .automation-view .auto td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--color-border); vertical-align: top; }
 .automation-view .auto caption { text-align: left; color: var(--color-muted); padding-bottom: var(--space-1); }
 @media (max-width: 40rem) { .automation-view .card { overflow-x: auto; } }
+.data-view { display: grid; gap: var(--space-4); }
+.data-view .data { width: 100%; border-collapse: collapse; }
+.data-view .data th, .data-view .data td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.data-view .data caption { text-align: left; color: var(--color-muted); padding-bottom: var(--space-1); }
+@media (max-width: 40rem) { .data-view .card { overflow-x: auto; } }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media print {
   .business-tabs { display: none; }
