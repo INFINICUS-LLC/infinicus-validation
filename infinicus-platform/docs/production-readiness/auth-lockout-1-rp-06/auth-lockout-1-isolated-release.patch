@@ -1,0 +1,326 @@
+diff --git a/infinicus-platform/apps/api/src/errors.ts b/infinicus-platform/apps/api/src/errors.ts
+index 66caa5b8..597ab4b5 100644
+--- a/infinicus-platform/apps/api/src/errors.ts
++++ b/infinicus-platform/apps/api/src/errors.ts
+@@ -41,6 +41,7 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
+   // account is rate-limited, not rejected (BUILD-18 known-limitations item,
+   // closed: "No account lockout / rate limiting").
+   AccountLockedError: 429,
++  LockoutStateUnavailableError: 503,
+   SessionExpiredError: 401,
+   SessionRevokedError: 401,
+   SessionInvalidError: 401,
+diff --git a/infinicus-platform/apps/api/src/routes/auth.ts b/infinicus-platform/apps/api/src/routes/auth.ts
+index 6f06b84d..f3d8ef4f 100644
+--- a/infinicus-platform/apps/api/src/routes/auth.ts
++++ b/infinicus-platform/apps/api/src/routes/auth.ts
+@@ -46,7 +46,7 @@ export default async function authRoutes(app: FastifyInstance) {
+       tags: ['auth'],
+       summary: 'Log in with email and password; returns a bearer session token. 429 after too many recent failed attempts (account lockout), independent of whether this attempt\'s password is correct.',
+       body: loginBodySchema,
+-      response: { 200: loginResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 429: errorResponseSchema },
++      response: { 200: loginResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 429: errorResponseSchema, 503: errorResponseSchema },
+     },
+   }, async (request, reply) => {
+     const { user, session, rawSessionToken } = await authService.login(
+diff --git a/infinicus-platform/apps/api/tests/lockoutUnavailable.test.ts b/infinicus-platform/apps/api/tests/lockoutUnavailable.test.ts
+new file mode 100644
+index 00000000..46afecb6
+--- /dev/null
++++ b/infinicus-platform/apps/api/tests/lockoutUnavailable.test.ts
+@@ -0,0 +1,12 @@
++import { describe, expect, it } from 'vitest';
++import { LockoutStateUnavailableError } from '@infinicus/authentication';
++import { statusCodeFor } from '../src/errors.js';
++
++describe('AUTH-LOCKOUT-1 HTTP contract', () => {
++  it('maps the controlled lockout-state dependency failure to HTTP 503 without sensitive details', () => {
++    const error = new LockoutStateUnavailableError();
++    expect(statusCodeFor(error.name)).toBe(503);
++    expect(error.message).toBe('Password login is temporarily unavailable. Please try again later.');
++    expect(error.message).not.toMatch(/password=|postgresql:\/\/|database_url/i);
++  });
++});
+diff --git a/infinicus-platform/infrastructure/database/migrations/0220_normalize_access_event_tenant_context.sql b/infinicus-platform/infrastructure/database/migrations/0220_normalize_access_event_tenant_context.sql
+new file mode 100644
+index 00000000..c469f970
+--- /dev/null
++++ b/infinicus-platform/infrastructure/database/migrations/0220_normalize_access_event_tenant_context.sql
+@@ -0,0 +1,16 @@
++-- AUTH-LOCKOUT-1.DB-02: a transaction-local app.tenant_id can reset to the
++-- empty string on a reused PostgreSQL connection. Treat that value as absent
++-- for this policy's UUID comparison; tenant-scoped rows remain invisible.
++-- The tenantless access-event branch and all existing table privileges remain.
++BEGIN;
++
++ALTER POLICY access_events_isolation ON audit.access_events
++  USING (
++    tenant_id IS NULL
++    OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
++  );
++
++INSERT INTO _migrations (filename) VALUES ('0220_normalize_access_event_tenant_context.sql')
++  ON CONFLICT (filename) DO NOTHING;
++
++COMMIT;
+diff --git a/infinicus-platform/packages/authentication/src/AuthenticationService.ts b/infinicus-platform/packages/authentication/src/AuthenticationService.ts
+index 731156f9..9032ec0e 100644
+--- a/infinicus-platform/packages/authentication/src/AuthenticationService.ts
++++ b/infinicus-platform/packages/authentication/src/AuthenticationService.ts
+@@ -6,7 +6,7 @@ import {
+ import { hashPassword, verifyPassword } from './password.js';
+ import { generateSessionToken, hashToken, defaultSessionExpiry } from './tokens.js';
+ import {
+-  InvalidCredentialsError, AccountNotActiveError, AccountLockedError,
++  InvalidCredentialsError, AccountNotActiveError, AccountLockedError, LockoutStateUnavailableError,
+   SessionExpiredError, SessionRevokedError, SessionInvalidError,
+   VerificationTokenInvalidError, ManagedAccountEmailReservedError,
+ } from './errors.js';
+@@ -100,9 +100,9 @@ export class AuthenticationService {
+   }
+ 
+   /**
+-   * Audit logging for a login outcome — never allowed to fail the request
+-   * it's describing. See the fail-open comment on the lockout check in
+-   * login() below for why: this is observability, not a security gate.
++   * Login outcome audit writes remain best-effort under the existing policy.
++   * This is distinct from the required lockout-state read, which fails closed.
++   * A separate block must review audit-write failure enforcement.
+    */
+   private async recordAuditEvent(
+     userId: string | null,
+@@ -140,22 +140,17 @@ export class AuthenticationService {
+     // and avoids doing real password-verification work on a request that's
+     // going to be rejected regardless of what password was supplied.
+     //
+-    // This is best-effort telemetry, not a security boundary that must
+-    // hold on every single request: under concurrent login attempts for
+-    // the same account, a transient driver/pool-level fault here (seen in
+-    // production as an intermittent "invalid input syntax for type uuid"
+-    // from a value that traced back clean at every call site — a `pg`/
+-    // connection-pooling race under concurrent load, not a real bad
+-    // value) must never fail an otherwise-valid login. Fail open on the
+-    // lockout check (treat as "not locked") rather than 500 the request;
+-    // a real attacker's next attempt gets re-checked immediately after.
+-    let recentFailures = 0;
++    // The lockout read is an authentication security gate. An unavailable
++    // failed-attempt count must never be interpreted as an unlocked account.
++    // Do not log the database exception: it may contain connection secrets.
++    let recentFailures: number;
+     try {
+       recentFailures = await this.accessEvents.countRecentFailedPasswordAttempts(
+         user.id, new Date(Date.now() - LOCKOUT_WINDOW_MS)
+       );
+-    } catch (err) {
+-      console.warn('[auth] lockout check failed (treating as not locked)', err);
++    } catch {
++      console.warn('[auth] password-login lockout state unavailable');
++      throw new LockoutStateUnavailableError();
+     }
+     if (recentFailures >= LOCKOUT_FAILURE_THRESHOLD) {
+       await this.recordAuditEvent(user.id, 'failed_auth', meta, { reason: 'account_locked' });
+diff --git a/infinicus-platform/packages/authentication/src/errors.ts b/infinicus-platform/packages/authentication/src/errors.ts
+index f477fea4..bcbfdb13 100644
+--- a/infinicus-platform/packages/authentication/src/errors.ts
++++ b/infinicus-platform/packages/authentication/src/errors.ts
+@@ -69,3 +69,11 @@ export class ManagedAccountEmailReservedError extends Error {
+     this.name = 'ManagedAccountEmailReservedError';
+   }
+ }
++
++/** The required password-login lockout state could not be read. No password verification or session creation is permitted. */
++export class LockoutStateUnavailableError extends Error {
++  constructor() {
++    super('Password login is temporarily unavailable. Please try again later.');
++    this.name = 'LockoutStateUnavailableError';
++  }
++}
+diff --git a/infinicus-platform/packages/authentication/src/index.ts b/infinicus-platform/packages/authentication/src/index.ts
+index ea1dda42..c4dc3a7b 100644
+--- a/infinicus-platform/packages/authentication/src/index.ts
++++ b/infinicus-platform/packages/authentication/src/index.ts
+@@ -1,6 +1,6 @@
+ // @infinicus/authentication — password credentials, session lifecycle, service-account API keys.
+ export {
+-  InvalidCredentialsError, AccountNotActiveError, AccountLockedError,
++  InvalidCredentialsError, AccountNotActiveError, AccountLockedError, LockoutStateUnavailableError,
+   SessionExpiredError, SessionRevokedError, SessionInvalidError,
+   ApiKeyInvalidError, WeakPasswordError, VerificationTokenInvalidError, ManagedAccountEmailReservedError,
+ } from './errors.js';
+diff --git a/infinicus-platform/packages/authentication/tests/lockoutUnavailable.test.ts b/infinicus-platform/packages/authentication/tests/lockoutUnavailable.test.ts
+new file mode 100644
+index 00000000..030e9113
+--- /dev/null
++++ b/infinicus-platform/packages/authentication/tests/lockoutUnavailable.test.ts
+@@ -0,0 +1,52 @@
++import { describe, it, expect, vi } from 'vitest';
++import type { UserRepository, SessionRepository, AccessEventRepository } from '@infinicus/database';
++import { AuthenticationService } from '../src/AuthenticationService.js';
++import { LockoutStateUnavailableError } from '../src/errors.js';
++
++describe('AUTH-LOCKOUT-1: required lockout-state read', () => {
++  it('refuses login before password lookup or session creation when the lockout store fails; never emits sensitive exception text', async () => {
++    const secret = 'postgresql://operator:synthetic-secret@db.invalid/protected';
++    const users = {
++      getByEmail: vi.fn().mockResolvedValue({ id: '00000000-0000-4000-8000-000000000001', email: 'user@example.test', status: 'active' }),
++      getPasswordHash: vi.fn(),
++    };
++    const sessions = { create: vi.fn() };
++    const accessEvents = { countRecentFailedPasswordAttempts: vi.fn().mockRejectedValue(new Error(secret)), record: vi.fn() };
++    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
++    try {
++      const service = new AuthenticationService(
++        users as unknown as UserRepository,
++        sessions as unknown as SessionRepository,
++        accessEvents as unknown as AccessEventRepository,
++      );
++      await expect(service.login('user@example.test', 'a-password')).rejects.toBeInstanceOf(LockoutStateUnavailableError);
++      expect(users.getPasswordHash).not.toHaveBeenCalled();
++      expect(sessions.create).not.toHaveBeenCalled();
++      expect(accessEvents.record).not.toHaveBeenCalled();
++      expect(warn).toHaveBeenCalledOnce();
++      expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
++    } finally {
++      warn.mockRestore();
++    }
++  });
++
++  it('does not map a failed lockout read to a zero-failure state', async () => {
++    const users = {
++      getByEmail: vi.fn().mockResolvedValue({ id: '00000000-0000-4000-8000-000000000001' }),
++      getPasswordHash: vi.fn(),
++    };
++    const accessEvents = { countRecentFailedPasswordAttempts: vi.fn().mockRejectedValue(new Error('unavailable')) };
++    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
++    try {
++      const service = new AuthenticationService(
++        users as unknown as UserRepository,
++        { create: vi.fn() } as unknown as SessionRepository,
++        accessEvents as unknown as AccessEventRepository,
++      );
++      await expect(service.login('user@example.test', 'password')).rejects.toThrow('Password login is temporarily unavailable');
++      expect(users.getPasswordHash).not.toHaveBeenCalled();
++    } finally {
++      warn.mockRestore();
++    }
++  });
++});
+diff --git a/infinicus-platform/packages/database/tests/auth-lockout-tenant-context.integration.test.ts b/infinicus-platform/packages/database/tests/auth-lockout-tenant-context.integration.test.ts
+new file mode 100644
+index 00000000..a1d220f7
+--- /dev/null
++++ b/infinicus-platform/packages/database/tests/auth-lockout-tenant-context.integration.test.ts
+@@ -0,0 +1,113 @@
++/** AUTH-LOCKOUT-1.DB-02: live PostgreSQL proof for empty tenant context. */
++import { randomUUID } from 'node:crypto';
++import { afterAll, beforeAll, describe, expect, it } from 'vitest';
++import { Pool } from 'pg';
++import { closePool, createPool, getPool, withTransaction } from '../src/client.js';
++import { AccessEventRepository } from '../src/repositories/auth/AccessEventRepository.js';
++
++const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
++const tenantOne = randomUUID();
++const tenantTwo = randomUUID();
++const userId = randomUUID();
++const since = new Date(Date.now() - 15 * 60_000);
++const repo = new AccessEventRepository();
++let admin: Pool;
++
++const visible = () => withTransaction(async (client) => {
++  const result = await client.query<{ tenant_id: string | null }>(
++    "SELECT tenant_id FROM audit.access_events WHERE user_id = $1 AND metadata->>'reason' = 'bad_password' ORDER BY tenant_id NULLS FIRST", [userId],
++  );
++  return result.rows.map((row) => row.tenant_id);
++});
++
++describe.runIf(run)('AUTH-LOCKOUT-1.DB-02 access-event RLS', () => {
++  beforeAll(async () => {
++    createPool({ connectionString: process.env.DATABASE_URL!, poolMin: 0, poolMax: 4 });
++    admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL! });
++    await admin.query(`INSERT INTO tenancy.tenants (id,name,slug,status) VALUES
++      ($1,'DB-02 synthetic one',$3,'active'),($2,'DB-02 synthetic two',$4,'active')`,
++    [tenantOne, tenantTwo, `db02-${tenantOne}`, `db02-${tenantTwo}`]);
++    await admin.query(`INSERT INTO identity.users (id,email,status)
++      VALUES ($1,$2,'active')`, [userId, `db02-${userId}@example.invalid`]);
++    await admin.query(`INSERT INTO audit.access_events (tenant_id,user_id,event_type,metadata)
++      VALUES (NULL,$1,'failed_auth','{"reason":"bad_password"}'),
++             ($2,$1,'failed_auth','{"reason":"bad_password"}'),
++             ($3,$1,'failed_auth','{"reason":"bad_password"}')`, [userId, tenantOne, tenantTwo]);
++  });
++  afterAll(async () => { await admin?.end(); await closePool(); });
++
++  it('preserves tenantless visibility on a fresh connection and the lockout count', async () => {
++    expect(await visible()).toEqual([null]);
++    expect(await repo.countRecentFailedPasswordAttempts(userId, since)).toBe(1);
++  });
++
++  it('treats an explicit empty setting as absent, never as foreign-tenant authority', async () => {
++    const rows = await withTransaction(async (client) => {
++      await client.query("SELECT set_config('app.tenant_id', '', true)");
++      const result = await client.query<{ tenant_id: string | null }>(
++        "SELECT tenant_id FROM audit.access_events WHERE user_id = $1 AND metadata->>'reason' = 'bad_password'", [userId]);
++      return result.rows.map((row) => row.tenant_id);
++    });
++    expect(rows).toEqual([null]);
++  });
++
++  it('keeps valid tenant contexts isolated, including negative cross-tenant reads and writes', async () => {
++    for (const [own, foreign] of [[tenantOne, tenantTwo], [tenantTwo, tenantOne]]) {
++      await withTransaction(async (client) => {
++        await client.query("SELECT set_config('app.tenant_id', $1, true)", [own]);
++        const result = await client.query<{ tenant_id: string | null }>(
++          "SELECT tenant_id FROM audit.access_events WHERE user_id = $1 AND metadata->>'reason' = 'bad_password' ORDER BY tenant_id NULLS FIRST", [userId]);
++        expect(result.rows.map((row) => row.tenant_id)).toEqual([null, own]);
++        expect(result.rows.some((row) => row.tenant_id === foreign)).toBe(false);
++      });
++      await expect(withTransaction(async (client) => {
++        await client.query("SELECT set_config('app.tenant_id', $1, true)", [own]);
++        await client.query(`INSERT INTO audit.access_events (tenant_id,user_id,event_type)
++          VALUES ($1,$2,'failed_auth')`, [foreign, userId]);
++      })).rejects.toMatchObject({ code: '42501' });
++    }
++  });
++
++  it('preserves tenantless and correctly scoped audit writes without broadening empty-context writes', async () => {
++    const tenantless = await repo.record(null, userId, 'failed_auth', null, null, { reason: 'probe' });
++    const scoped = await repo.record(tenantOne, userId, 'failed_auth', null, null, { reason: 'probe' });
++    expect(tenantless.tenantId).toBeNull();
++    expect(scoped.tenantId).toBe(tenantOne);
++    await expect(withTransaction(async (client) => {
++      await client.query("SELECT set_config('app.tenant_id', '', true)");
++      await client.query(`INSERT INTO audit.access_events (tenant_id,user_id,event_type)
++        VALUES ($1,$2,'login')`, [tenantOne, userId]);
++    })).rejects.toMatchObject({ code: '42501' });
++  });
++
++  it('handles transaction-local reset and repeated repository reads on one reused connection', async () => {
++    await closePool();
++    createPool({ connectionString: process.env.DATABASE_URL!, poolMin: 0, poolMax: 1 });
++    await withTransaction(async (client) => {
++      await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantOne]);
++    });
++    expect(await visible()).toEqual([null]);
++    expect(await repo.countRecentFailedPasswordAttempts(userId, since)).toBe(1);
++    expect(await repo.countRecentFailedPasswordAttempts(userId, since)).toBe(1);
++    await closePool();
++    createPool({ connectionString: process.env.DATABASE_URL!, poolMin: 0, poolMax: 4 });
++  });
++
++  it('handles concurrent lockout reads on both fresh and reset pooled connections', async () => {
++    const counts = await Promise.all(Array.from({ length: 12 }, () => repo.countRecentFailedPasswordAttempts(userId, since)));
++    expect(counts).toEqual(Array(12).fill(1));
++    const clients = await Promise.all(Array.from({ length: 4 }, () => getPool().connect()));
++    try {
++      await Promise.all(clients.map(async (client) => {
++        await client.query('BEGIN');
++        await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantOne]);
++        await client.query('COMMIT');
++      }));
++    } finally {
++      clients.forEach((client) => client.release());
++    }
++    expect(getPool().totalCount).toBe(4);
++    const afterReset = await Promise.all(Array.from({ length: 12 }, () => repo.countRecentFailedPasswordAttempts(userId, since)));
++    expect(afterReset).toEqual(Array(12).fill(1));
++  });
++});
