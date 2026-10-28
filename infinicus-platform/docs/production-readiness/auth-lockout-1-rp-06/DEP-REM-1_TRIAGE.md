@@ -61,3 +61,7 @@ Recommendation: option 2 if a CI exception of any size is uncomfortable, because
 
 No RC change, no allowlist change, no `main` change, no dependency installed outside a discarded scratch checkout, no production access.
 Reachability statements are inferences from the repository; none was tested against the running production build.
+
+## 6. Outcome
+
+The owner chose option 2 and authorized RP-13. Tier 1 was applied to the RC as commit `bea03e66`; see `RP-13_RC_DEPENDENCY_REMEDIATION.md`.
