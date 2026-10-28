@@ -46,3 +46,9 @@ G-10 and G-12 are pending, and the corrected procedure has to be reviewed. Nothi
 | Hygiene H1/H3 | assessed from the evidence available; owner checks outstanding (see `RP-14B_EXPOSURE_ASSESSMENT.md`) | — |
 
 Verdict stays **NO-GO**.
+
+## RP-15 update (2026-10-28, after the owner ran the RP-14B pack)
+
+Hygiene finding H1 is assessed as **host-local (tier T0), INFERRED** on owner-observed output (no push/save/export/login in the history of `deploy`, local-only digest reference, no stored registry login, no
+archive, no container, one interactive account); the two database passwords in the artifact equal today's live values, the Anthropic and Resend keys in it are historical. Residual checks are listed in
+`RP-15_EXPOSURE_RECONCILIATION_AND_DECISION.md` §4. No gate changed: G-4 BLOCKED; G-9, G-10, G-12 pending. Verdict **NO-GO**.
