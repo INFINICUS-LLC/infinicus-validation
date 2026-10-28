@@ -22,11 +22,19 @@ describe('migration ordering', () => {
     const files = readdirSync(MIGRATIONS_DIR)
       .filter(f => f.endsWith('.sql'))
       .sort();
+    // AUTH-LOCKOUT-1 isolated release candidate only: it carries 0220 on top of the deployed 0209 and deliberately
+    // omits 0210-0219 (docs/production-readiness/auth-lockout-1-rp-06/). That single gap is tolerated, and only
+    // when ALL of 0210-0219 are absent; if any of them is present the numbering must be fully contiguous, as on main.
+    const present = new Set(files.map(f => Number(f.slice(0, 4))));
+    const documentedGapAbsent = Array.from({ length: 10 }, (_, k) => 210 + k).every(n => !present.has(n));
+    let next = 1;
     for (let i = 0; i < files.length; i++) {
-      const expected = String(i + 1).padStart(4, '0');
+      if (documentedGapAbsent && next === 210) next = 220;
+      const expected = String(next).padStart(4, '0');
       expect(files[i], `gap or disorder at position ${i + 1}`).toMatch(
         new RegExp(`^${expected}_`)
       );
+      next++;
     }
   });
 
