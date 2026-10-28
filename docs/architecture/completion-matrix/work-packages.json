@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "asOf": "2026-10-23",
-  "mainCommit": "bfc9914",
+  "asOf": "2026-10-28",
+  "mainCommit": "e552bc7",
   "dimensions": {
     "spec": 0.1,
     "functional": 0.35,
@@ -1045,12 +1045,12 @@
       "title": "Action execution and outcome monitoring screens",
       "covers": "execution, outcome evidence",
       "units": 1,
-      "impl": 0.25,
+      "impl": 0.4,
       "spec": 50,
       "integration": 50,
       "verification": 50,
       "operational": 0,
-      "evidence": "OutcomeForm and an outcomes section; no execution status or evidence view."
+      "evidence": "OutcomeForm and an outcomes section; Automation tab (#269, merged): read-only action execution health (claims, stranded/overdue, failed and refused by reason) and Outcome Monitoring health (verification, missing evidence, announced executions, dead letters, the contract's own limitations) over the existing bo:admin reads, 24 real API responses parsed by the web schemas. No recovery, replay or verified-outcome view (the contract says it does not produce them), and not exercised in a browser against a live API."
     }
   ],
   "guardrailSlice": [
@@ -1380,6 +1380,25 @@
         "BI-3, BI-6 and BDT-4: no duplicate credit for existing BI calculations, handoffs or lifecycle machinery",
         "Stack A, POS, H-5B, Continuous Learning activation and production readiness: outside this block",
         "AUTO-WEB-1: merged, but its experience scoring is left to its owning workstream"
+      ]
+    },
+    {
+      "date": "2026-10-28",
+      "mainCommit": "e552bc7",
+      "label": "AUTO-WEB-1 merged (#269)",
+      "changes": [
+        {
+          "workPackage": "X-20",
+          "field": "impl",
+          "from": 0.25,
+          "to": 0.4,
+          "criterion": "execution and outcome monitoring screens: one functional read-only screen over two real bo:admin contracts with tests (health only; no recovery, replay or verified-outcome view)",
+          "evidence": "#269 merged (0a2ac10), current main e552bc7: 25 tests, 3 mutants killed, 24 real API responses parsed; web 479/479; validate, image build and shell green on the PR head"
+        }
+      ],
+      "notScored": [
+        "Merges after #270 by the Core session (BDT-SIM-01 hand-off #350, #352, security and dependency fixes #342-#348): not re-audited or scored by this update; their owners record their own entries",
+        "Overview/KPI screens: still not built (see docs/architecture/bi/PUR-WEB-1_PURCHASING.md)"
       ]
     }
   ]
