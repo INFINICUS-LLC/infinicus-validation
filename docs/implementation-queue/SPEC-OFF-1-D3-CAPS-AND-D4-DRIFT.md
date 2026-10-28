@@ -37,7 +37,7 @@ A new table, e.g. `business_operations.offline_sale_limits`, one row per version
 - Writes through `PUT /v1/businesses/:businessId/offline-limits` guarded by `bo:admin` (D8 sets `bo:admin` as the resolver role for offline exceptions; the same role is proposed here for limits), active subscription, business-workspace visibility, Idempotency-Key, optimistic `expectedVersion`. Reads need `bo:read`.
 - Audit: every change records who, when, old and new value.
 - The numbers are entered by the owner through that endpoint (or a reviewed one-off) at enablement time. **Migrations seed nothing.**
-- Migration number: the next free number at write time (0211 is reserved for kitchen routing; the repository guard requires no gaps). It needs its own plan, rollback block, local proof, reference fingerprint, window and authorization, like 0208–0210.
+- Migration number: the next free number at write time (0211 is no longer free: it is the merged data-acquisition child-table security migration, and kitchen routing's number is set by the allocation rule in DECISION-RECORD-POS-9 section 6.1; re-check the migration history for the next free number, because the repository guard requires no gaps). It needs its own plan, rollback block, local proof, reference fingerprint, window and authorization, like 0208–0210.
 
 ### 1.4 Enforcement points
 1. **Enablement gate (route level, before idempotency).** After permission and business-workspace checks and the existing global gate, the route requires a cap row in force for the business's declared currency. If none: answer **503 "offline selling is not enabled for this business"** (not cached, no record), exactly like the global gate. Absent cap = closed.
