@@ -1,5 +1,7 @@
 # NEW-BDT-SIM-01: Digital Twin -> Simulation hand-off of the business performance state
 
+> **Superseded in part by SEC-01 (`NEW-BDT-SIM-01.SEC-01_REMEDIATION.md`).** The "confidence = 1 for corroborated facts" reasoning below was found unsupported: the hand-off now needs an owner-ratified Twin Confidence methodology (none exists, so it is closed), persists the complete envelope, and revalidates its BI source. Read that document for the current behaviour.
+
 Workstream CORE-ARCHITECTURE-01. Layer: Business Digital Twin publishing to Simulation. Status: implemented on a draft PR, not merged, not deployed. Builds on NEW-BDT-01 (#270, merged).
 
 ## What it does

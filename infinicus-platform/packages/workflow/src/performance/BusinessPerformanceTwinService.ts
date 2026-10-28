@@ -82,20 +82,28 @@ export class BusinessPerformanceTwinService {
     return this.d.instances.transitionStatus(ctx, instance.id, 'active', 'initial provisioning');
   }
 
-  async publish(ctx: TenantContext, request: { businessId: string; from: string; to: string }): Promise<PublishPerformanceTwinResult> {
-    const refuse = (code: Extract<PublishPerformanceTwinResult, { outcome: 'NOT_PUBLISHED' }>['code'], detail: string): PublishPerformanceTwinResult => ({ outcome: 'NOT_PUBLISHED', code, detail });
-    if (!UUID.test(request.businessId)) return refuse('INVALID_REQUEST', 'businessId must be a lowercase UUID');
-    if (!isRealDate(request.from) || !isRealDate(request.to)) return refuse('INVALID_REQUEST', 'from and to must be real YYYY-MM-DD dates');
-    if (request.from > request.to) return refuse('INVALID_REQUEST', 'from must not be after to');
+  /**
+   * Re-derives the performance evidence of a period from the BI reports AS THEY ARE NOW, without persisting anything (read-only). It is the one place the request
+   * is validated and the two BI reports are read and assembled, shared by `publish` and by the hand-off's source revalidation (NEW-BDT-SIM-01.SEC-01, D3).
+   */
+  async currentEvidence(ctx: TenantContext, request: { businessId: string; from: string; to: string }): Promise<{ ok: true; evidence: BiPerformanceEvidence } | { ok: false; code: 'INVALID_REQUEST' | PerformanceRefusalCode; detail: string }> {
+    if (!UUID.test(request.businessId)) return { ok: false, code: 'INVALID_REQUEST', detail: 'businessId must be a lowercase UUID' };
+    if (!isRealDate(request.from) || !isRealDate(request.to)) return { ok: false, code: 'INVALID_REQUEST', detail: 'from and to must be real YYYY-MM-DD dates' };
+    if (request.from > request.to) return { ok: false, code: 'INVALID_REQUEST', detail: 'from must not be after to' };
     const period: PerformancePeriod = { from: request.from, to: request.to };
-    if (rangeDays(period) > MAX_REPORT_DAYS) return refuse('INVALID_REQUEST', `the reporting period must not exceed ${MAX_REPORT_DAYS} days`);
-
+    if (rangeDays(period) > MAX_REPORT_DAYS) return { ok: false, code: 'INVALID_REQUEST', detail: `the reporting period must not exceed ${MAX_REPORT_DAYS} days` };
     // BI derives; the twin only reads. Both reports are asked for exactly the same reporting period.
     const financial = await this.d.financial.report(ctx, { businessId: request.businessId, ...period, granularity: 'month', compare: 'none' });
     const sales = await this.d.sales.report(ctx, { businessId: request.businessId, ...period });
     const assembled = assembleBiPerformanceEvidence({ businessId: request.businessId, period, financial, sales });
-    if (!assembled.ok) return refuse(assembled.code, assembled.detail);
-    const evidence: BiPerformanceEvidence = assembled.evidence;
+    return assembled.ok ? { ok: true, evidence: assembled.evidence } : { ok: false, code: assembled.code, detail: assembled.detail };
+  }
+
+  async publish(ctx: TenantContext, request: { businessId: string; from: string; to: string }): Promise<PublishPerformanceTwinResult> {
+    const period: PerformancePeriod = { from: request.from, to: request.to };
+    const current = await this.currentEvidence(ctx, request);
+    if (!current.ok) return { outcome: 'NOT_PUBLISHED', code: current.code, detail: current.detail };
+    const evidence: BiPerformanceEvidence = current.evidence;
 
     const observedAt = this.d.now();
     const state: BusinessPerformanceTwinState = { schema: BUSINESS_PERFORMANCE_TWIN_STATE_SCHEMA, model: BUSINESS_PERFORMANCE_TWIN_MODEL, observedAt: observedAt.toISOString(), evidence };

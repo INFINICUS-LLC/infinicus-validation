@@ -1,42 +1,57 @@
 /**
- * Business Digital Twin -> Simulation hand-off of the published business performance state (NEW-BDT-SIM-01). The twin PUBLISHES; Simulation receives and
- * executes independently (its intake is Simulation's own act and is not performed here). This service only reads the twin's own published state and writes the
- * twin-owned artifacts the frozen DT -> SIM contract describes: a published scenario baseline, a DT insight package version and a DISPATCHED DT publication
- * package. It touches no Business Operations, Business Intelligence or Simulation table, derives no KPI and issues no recommendation.
+ * Business Digital Twin -> Simulation hand-off of the published business performance state (NEW-BDT-SIM-01; corrected by SEC-01). The twin PUBLISHES; Simulation
+ * receives and executes independently (its intake is Simulation's own act and is not performed here). This service reads the twin's own published state and
+ * writes only twin-owned artifacts: a published scenario baseline, a DT insight package version, a Twin Confidence record, the persisted hand-off envelope and a
+ * DISPATCHED DT publication package. It touches no Business Operations, Business Intelligence or Simulation table, derives no KPI and issues no recommendation.
  *
- *  - Fail closed: an invalid request, a missing, integrity-failed or partial state, or a hand-off that does not satisfy `validateDTToSIMHandoff` publishes nothing.
- *  - Atomic: baseline, package and dispatch are created in ONE shared tenant transaction.
- *  - Idempotent: one hand-off per published snapshot version; the baseline code and the package idempotency key are derived from it and are unique in the
- *    database, so a repeat (or a concurrent duplicate) replays the existing package instead of creating a second one.
+ *  - D1 Twin Confidence: the contract's `quality.confidence` is NEVER defaulted. It comes from an explicit `TwinConfidencePolicy` (owner-ratified methodology), must
+ *    account for all seven BDT factors, must meet the platform minimum 0.75, and is recorded with its basis in `twin_confidence_scores`. The production policy is
+ *    the unratified one, so the gate is closed (default deny) until the owner ratifies a methodology.
+ *  - D2 Persistence: the COMPLETE validated envelope is persisted (with its digest, the confidence score and the revalidated source digest) while the package is still a
+ *    draft; the database refuses to ready or dispatch the package otherwise.
+ *  - D3 Freshness: immediately before committing, the BI evidence is re-derived and compared by digest with the evidence the twin state was published from; any change,
+ *    or any failure to re-derive it, refuses the hand-off. No maximum age is invented. A replay is subject to the same gates (it never bypasses them).
+ *  - Fail closed everywhere; atomic (one shared tenant transaction); idempotent per snapshot version (unique in the database), also under a concurrent race.
  */
 import { randomUUID } from 'node:crypto';
 import {
-  DTPublicationPackageRepository, DigitalTwinSnapshotRepository, ScenarioBaselineRepository, withSharedTenantTransaction, type TenantContext,
+  DTHandoffEnvelopeRepository, DTPublicationPackageRepository, DigitalTwinSnapshotRepository, ScenarioBaselineRepository, TwinConfidenceScoreRepository,
+  withSharedTenantTransaction, type TenantContext,
 } from '@infinicus/database';
 import type { LineageEntry } from '@infinicus/shared-types';
 import { DT_TO_SIM_CONTRACT_VERSION, validateDTToSIMHandoff, type DTToSIMHandoff, type PerformancePeriod } from '@infinicus/handoff-contracts';
 import { MAX_REPORT_DAYS } from '../financial/FinancialIntelligenceService.js';
 import { isRealDate, rangeDays } from '../financial/periods.js';
 import type { BusinessPerformanceTwinService } from './BusinessPerformanceTwinService.js';
-import { buildPerformanceBaseline } from './performanceBaseline.js';
+import { assessSimulationReadiness, buildPerformanceBaseline } from './performanceBaseline.js';
+import { handoffDigest, PERFORMANCE_HANDOFF_SCHEMA_VERSION, verifyPersistedHandoff } from './handoffEnvelope.js';
+import { DT_TO_SIM_MIN_CONFIDENCE, evaluateConfidenceGate, UnratifiedTwinConfidencePolicy, type ConfidenceRefusalCode, type TwinConfidencePolicy } from './twinConfidencePolicy.js';
 
 export const PERFORMANCE_SIM_SOURCE_BLOCK = 'BDT-PERFORMANCE-01';
 export const PERFORMANCE_SIM_TARGET_BLOCK = 'SIM-01';
 
-export type HandoffRefusalCode = 'INVALID_REQUEST' | 'TWIN_STATE_MISSING' | 'TWIN_STATE_INTEGRITY_FAILED' | 'NOT_SIMULATION_READY' | 'HANDOFF_INVALID';
+export type HandoffRefusalCode =
+  | 'INVALID_REQUEST' | 'TWIN_STATE_MISSING' | 'TWIN_STATE_INTEGRITY_FAILED' | 'NOT_SIMULATION_READY' | 'HANDOFF_INVALID'
+  | 'SOURCE_UNVERIFIABLE' | 'SOURCE_SUPERSEDED' | 'PERSISTED_HANDOFF_INVALID' | ConfidenceRefusalCode;
 export type PerformanceSimulationHandoffResult =
   | {
       outcome: 'HANDED_OFF'; replay: false; publicationPackageId: string; scenarioBaselineId: string; scenarioBaselineVersionId: string; snapshotId: string;
-      handoff: DTToSIMHandoff;
+      confidenceScoreId: string; envelopeDigest: string; handoff: DTToSIMHandoff;
     }
-  | { outcome: 'HANDED_OFF'; replay: true; publicationPackageId: string; publicationStatus: string; snapshotId: string }
+  | { outcome: 'HANDED_OFF'; replay: true; publicationPackageId: string; publicationStatus: string; snapshotId: string; confidenceScoreId: string; envelopeDigest: string }
   | { outcome: 'NOT_HANDED_OFF'; code: HandoffRefusalCode; detail: string };
 
 export interface PerformanceSimulationHandoffDependencies {
-  twin: Pick<BusinessPerformanceTwinService, 'getLatest'>;
+  twin: Pick<BusinessPerformanceTwinService, 'getLatest' | 'currentEvidence'>;
+  /** The ratified Twin Confidence methodology. Defaults to the UNRATIFIED policy, which keeps the hand-off closed. */
+  confidence: TwinConfidencePolicy;
+  /** The confidence threshold: the platform minimum (0.75) or a higher policy value; a lower value is refused at construction. */
+  minimumConfidence: number;
   snapshots: Pick<DigitalTwinSnapshotRepository, 'getById' | 'getPublishedVersion'>;
   baselines: Pick<ScenarioBaselineRepository, 'createBaseline' | 'addInput' | 'validateBaseline' | 'publishBaseline'>;
   packages: Pick<DTPublicationPackageRepository, 'createInsightPackage' | 'createVersion' | 'createPackage' | 'markReady' | 'dispatch' | 'getByIdempotencyKey'>;
+  scores: Pick<TwinConfidenceScoreRepository, 'record' | 'getById'>;
+  envelopes: Pick<DTHandoffEnvelopeRepository, 'record' | 'getByPackage'>;
   now: () => Date;
 }
 
@@ -49,11 +64,17 @@ const isUniqueViolation = (e: unknown): boolean => typeof e === 'object' && e !=
 export class PerformanceSimulationHandoffService {
   private readonly d: PerformanceSimulationHandoffDependencies;
   constructor(deps: Pick<PerformanceSimulationHandoffDependencies, 'twin'> & Partial<PerformanceSimulationHandoffDependencies>) {
+    const minimumConfidence = deps.minimumConfidence ?? DT_TO_SIM_MIN_CONFIDENCE;
+    if (!(minimumConfidence >= DT_TO_SIM_MIN_CONFIDENCE && minimumConfidence <= 1)) throw new RangeError(`minimumConfidence must be from the platform minimum ${DT_TO_SIM_MIN_CONFIDENCE} to 1`);
     this.d = {
       twin: deps.twin,
+      confidence: deps.confidence ?? new UnratifiedTwinConfidencePolicy(),
+      minimumConfidence,
       snapshots: deps.snapshots ?? new DigitalTwinSnapshotRepository(),
       baselines: deps.baselines ?? new ScenarioBaselineRepository(),
       packages: deps.packages ?? new DTPublicationPackageRepository(),
+      scores: deps.scores ?? new TwinConfidenceScoreRepository(),
+      envelopes: deps.envelopes ?? new DTHandoffEnvelopeRepository(),
       now: deps.now ?? (() => new Date()),
     };
   }
@@ -69,20 +90,42 @@ export class PerformanceSimulationHandoffService {
     const latest = await this.d.twin.getLatest(ctx, request.businessId, period);
     if (latest === null) return refuse('TWIN_STATE_MISSING', 'no business performance twin state has been published for this period');
     if (!latest.integrity.valid) return refuse('TWIN_STATE_INTEGRITY_FAILED', `the published twin state failed its integrity check: ${latest.integrity.reasons.join(',')}`);
+    const ready = assessSimulationReadiness(latest.state);
+    if (!ready.ok) return refuse('NOT_SIMULATION_READY', ready.detail);
     const snapshotVersion = await this.d.snapshots.getPublishedVersion(ctx, latest.snapshotId);
     if (snapshotVersion === null) return refuse('TWIN_STATE_MISSING', 'the twin snapshot has no published version');
     const snapshot = await this.d.snapshots.getById(ctx, latest.snapshotId);
 
+    // D3: the source BI evidence is re-derived NOW and must be exactly the evidence this twin state was published from. A replay is subject to the same check.
+    const current = await this.d.twin.currentEvidence(ctx, { businessId: request.businessId, ...period });
+    if (!current.ok) return refuse('SOURCE_UNVERIFIABLE', `the source BI evidence could not be re-derived (${current.code}): ${current.detail}`);
+    const stored = latest.state.evidence;
+    if (current.evidence.evidenceDigest !== stored.evidenceDigest) {
+      return refuse('SOURCE_SUPERSEDED', `the BI evidence for ${period.from}..${period.to} changed after the twin state was published (published ${stored.evidenceDigest.slice(0, 12)}, now ${current.evidence.evidenceDigest.slice(0, 12)}); publish a new twin state first`);
+    }
+    const revalidatedAt = this.d.now();
+
+    // D1: Twin Confidence must come from the ratified methodology, account for every factor and meet the threshold. Nothing is defaulted.
+    const assessment = await this.d.confidence.assess(ctx, { businessId: request.businessId, snapshotId: latest.snapshotId, evidence: stored });
+    const gate = evaluateConfidenceGate(assessment, this.d.minimumConfidence);
+    if (!gate.ok) return refuse(gate.code, gate.detail);
+
     const idempotencyKey = `bdt-performance-sim:${snapshotVersion.id}`;
     const replay = async (): Promise<PerformanceSimulationHandoffResult | null> => {
       const existing = await this.d.packages.getByIdempotencyKey(ctx, request.businessId, idempotencyKey);
-      return existing === null ? null : { outcome: 'HANDED_OFF', replay: true, publicationPackageId: existing.id, publicationStatus: existing.publicationStatus, snapshotId: latest.snapshotId };
+      if (existing === null) return null;
+      const record = await this.d.envelopes.getByPackage(ctx, request.businessId, existing.id);
+      if (record === null) return refuse('PERSISTED_HANDOFF_INVALID', 'the existing hand-off package has no persisted envelope');
+      const score = await this.d.scores.getById(ctx, record.confidenceScoreId);
+      const check = verifyPersistedHandoff(record, score, { tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, businessId: request.businessId });
+      if (!check.valid) return refuse('PERSISTED_HANDOFF_INVALID', `the persisted hand-off failed verification: ${check.reasons.join(',')}`);
+      return { outcome: 'HANDED_OFF', replay: true, publicationPackageId: existing.id, publicationStatus: existing.publicationStatus, snapshotId: latest.snapshotId, confidenceScoreId: record.confidenceScoreId, envelopeDigest: record.envelopeDigest };
     };
     const prior = await replay();
     if (prior !== null) return prior;
 
     const now = this.d.now();
-    const built = buildPerformanceBaseline({ state: latest.state, snapshotId: latest.snapshotId, now });
+    const built = buildPerformanceBaseline({ state: latest.state, snapshotId: latest.snapshotId, now, confidence: gate.score });
     if (!built.ok) return refuse('NOT_SIMULATION_READY', built.detail);
 
     const envelope = (ids: { packageId: string; baselineId: string; baselineVersion: number; correlationId: string }): DTToSIMHandoff => ({
@@ -109,14 +152,22 @@ export class PerformanceSimulationHandoffService {
         await this.d.baselines.publishBaseline(ctx, baseline.id, version.id);
         const insight = await this.d.packages.createInsightPackage(ctx, request.businessId, code);
         const insightVersion = await this.d.packages.createVersion(ctx, insight.id, request.businessId,
-          `Business performance baseline ${period.from}..${period.to} (evidence ${latest.state.evidence.evidenceDigest})`, { snapshotVersionId: snapshotVersion.id, scenarioBaselineVersionId: version.id });
+          `Business performance baseline ${period.from}..${period.to} (evidence ${stored.evidenceDigest})`, { snapshotVersionId: snapshotVersion.id, scenarioBaselineVersionId: version.id });
         const { package: pkg } = await this.d.packages.createPackage(ctx, request.businessId, insightVersion.id, 'simulation', PERFORMANCE_SIM_TARGET_BLOCK, idempotencyKey);
-        await this.d.packages.markReady(ctx, pkg.id);
-        await this.d.packages.dispatch(ctx, pkg.id);
+        const score = await this.d.scores.record(ctx, { businessId: request.businessId, instanceId: snapshot.instanceId, snapshotVersionId: snapshotVersion.id, confidence: gate.score, basis: gate.basis });
         const handoff = envelope({ packageId: pkg.id, baselineId: baseline.id, baselineVersion: version.versionNumber, correlationId: version.correlationId });
         const check = validateDTToSIMHandoff(handoff);
         if (!check.valid) throw new HandoffInvalidError(check.reasons.join(','));          // rolls the whole transaction back
-        return { outcome: 'HANDED_OFF' as const, replay: false as const, publicationPackageId: pkg.id, scenarioBaselineId: baseline.id, scenarioBaselineVersionId: version.id, snapshotId: latest.snapshotId, handoff };
+        // Persist-before-publication: the complete envelope is recorded while the package is still a draft (the database refuses ready/dispatched without it).
+        const digest = handoffDigest(handoff);
+        await this.d.envelopes.record(ctx, {
+          businessId: request.businessId, dtPublicationPackageId: pkg.id, snapshotVersionId: snapshotVersion.id, confidenceScoreId: score.id,
+          contractVersion: DT_TO_SIM_CONTRACT_VERSION, schemaVersion: PERFORMANCE_HANDOFF_SCHEMA_VERSION, correlationId: version.correlationId, causationId: snapshotVersion.id,
+          envelope: handoff, envelopeDigest: digest, sourceEvidenceDigest: current.evidence.evidenceDigest, sourceRevalidatedAt: revalidatedAt,
+        });
+        await this.d.packages.markReady(ctx, pkg.id);
+        await this.d.packages.dispatch(ctx, pkg.id);
+        return { outcome: 'HANDED_OFF' as const, replay: false as const, publicationPackageId: pkg.id, scenarioBaselineId: baseline.id, scenarioBaselineVersionId: version.id, snapshotId: latest.snapshotId, confidenceScoreId: score.id, envelopeDigest: digest, handoff };
       });
     } catch (error) {
       if (error instanceof HandoffInvalidError) return refuse('HANDOFF_INVALID', `the hand-off does not satisfy the DT -> SIM contract: ${error.message}`);

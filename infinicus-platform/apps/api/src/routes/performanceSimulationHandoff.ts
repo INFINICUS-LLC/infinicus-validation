@@ -10,7 +10,8 @@ import { buildPerformanceSimulationHandoffService, type PerformanceSimulationHan
  * (NEW-BDT-SIM-01). The twin publishes; Simulation's intake is Simulation's own act and is not performed here. Existing permission `dt:write`, active
  * subscription, Idempotency-Key; tenant, workspace and actor from the authenticated context only; the body carries the period and nothing the caller could
  * assert. 201 = handed off (the validated frozen DT -> SIM hand-off is returned); 200 = replay of an existing hand-off, or NOT_HANDED_OFF with a named code
- * (nothing persisted); 400 = an invalid reporting period. It writes only Digital Twin tables, derives no KPI, recommends nothing and executes nothing.
+ * (nothing persisted); 400 = an invalid reporting period. Default deny: until the owner ratifies a Twin Confidence methodology every request is refused with
+ * CONFIDENCE_UNAVAILABLE (SEC-01). It writes only Digital Twin tables, derives no KPI, recommends nothing and executes nothing.
  */
 export const PERFORMANCE_SIMULATION_HANDOFF_PERMISSION = 'dt:write';
 const errors = { 400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema, 409: errorResponseSchema };

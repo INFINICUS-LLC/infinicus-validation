@@ -99,3 +99,6 @@ export type { AssembleResult, PerformanceRefusalCode } from './performance/biPer
 export * from './performance/PerformanceSimulationHandoffService.js';
 export { buildPerformanceBaseline } from './performance/performanceBaseline.js';
 export type { PerformanceBaselineBuild } from './performance/performanceBaseline.js';
+export * from './performance/twinConfidencePolicy.js';
+export { assessSimulationReadiness, PERFORMANCE_VARIABLE_GRAMMAR } from './performance/performanceBaseline.js';
+export { verifyPersistedHandoff, handoffDigest, PERFORMANCE_HANDOFF_SCHEMA_VERSION } from './performance/handoffEnvelope.js';

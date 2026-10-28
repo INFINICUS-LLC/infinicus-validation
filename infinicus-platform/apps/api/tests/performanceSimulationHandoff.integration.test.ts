@@ -1,5 +1,6 @@
 /**
- * NEW-BDT-SIM-01 - the Digital Twin -> Simulation hand-off of the published business performance state: live PostgreSQL + the production buildApp (RLS enforced).
+ * NEW-BDT-SIM-01 + SEC-01 - the Digital Twin -> Simulation hand-off of the published business performance state: live PostgreSQL + the production buildApp (RLS enforced).
+ * The success paths inject a TEST-ONLY Twin Confidence policy (no methodology is ratified); a second app built with the DEFAULT composition proves the endpoint is closed.
  * The REAL BI services produce the evidence, the real twin publishes it, and the hand-off is cut from the published state. Checked end to end: the hand-off satisfies
  * the frozen DT -> SIM contract, its variables equal the BI figures, replay, refusal without a state, authorization, validation, tenant and business isolation, and
  * that Simulation, operational and BI tables are never written. Requires DATABASE_URL (application role) and ADMIN_DATABASE_URL (fixtures).
@@ -13,6 +14,8 @@ import { loadConfig } from '@infinicus/configuration';
 import { closePool, createPool, MembershipRepository, UserRepository, type TenantContext } from '@infinicus/database';
 import { validateDTToSIMHandoff } from '@infinicus/handoff-contracts';
 import { buildApp } from '../src/app.js';
+import { buildPerformanceSimulationHandoffService } from '../src/performanceSimulationHandoffComposition.js';
+import { testConfidencePolicy } from '../../../packages/workflow/tests/helpers/performanceFixtures.js';
 import { STRONG_PASSWORD, dalKit, unique, type World } from './helpers/dalIngestion.js';
 import { Seeder, addBusiness } from '../../../packages/database/tests/helpers/financialFixtures.js';
 
@@ -20,6 +23,7 @@ const run = !!process.env.DATABASE_URL && !!process.env.ADMIN_DATABASE_URL;
 const PERIOD = { from: '2026-10-01', to: '2026-10-31' };
 
 let app: FastifyInstance;
+let closedApp: FastifyInstance;        // built with the DEFAULT composition: no ratified Twin Confidence methodology
 let admin: Pool;
 const tenantIds: string[] = [];
 let kit: ReturnType<typeof dalKit>;
@@ -50,8 +54,10 @@ describe.runIf(run)('NEW-BDT-SIM-01: DT -> Simulation hand-off of the business p
   beforeAll(async () => {
     createPool({ connectionString: process.env.DATABASE_URL! });
     admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL });
-    app = await buildApp(loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '5000' }));
-    await app.ready();
+    const config = loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '5000' });
+    app = await buildApp(config, { performanceSimulationHandoff: { service: buildPerformanceSimulationHandoffService({ confidence: testConfidencePolicy() }) } });
+    closedApp = await buildApp(config);
+    await app.ready(); await closedApp.ready();
     kit = dalKit({ app, admin, tenantIds });
     a = await kit.world(); b = await kit.world();
     sibling = await addBusiness(admin, scopeOf(a));
@@ -64,13 +70,20 @@ describe.runIf(run)('NEW-BDT-SIM-01: DT -> Simulation hand-off of the business p
     await new Seeder(admin, scopeOf(b)).order({ date: '2026-10-05', currency: 'EUR', total: '12.00', lines: [{ quantity: '1', total: '12.00' }] });
     expect((await post(a, twinUrl(a.businessId))).statusCode).toBe(201);       // the twin state the hand-off is cut from
   }, 120_000);
-  afterAll(async () => { await app?.close(); await admin?.end(); await closePool(); });
+  afterAll(async () => { await app?.close(); await closedApp?.close(); await admin?.end(); await closePool(); });
 
   it('hands off the published state: 201, the frozen DT -> SIM contract satisfied, variables equal the BI report figures, a dispatched simulation package', async () => {
     const res = await post(a, handoffUrl(a.businessId));
     expect(res.statusCode, res.body).toBe(201);
     const body = res.json();
     expect(body).toMatchObject({ outcome: 'HANDED_OFF', replay: false });
+    expect(body.handoff.payload.quality.confidence).toBe(0.8125);                 // the gated score, never the old constant 1
+    expect(body.handoff.payload.quality.confidence).not.toBe(1);
+    // D2: the database, not the response, is the source of truth - the stored envelope equals what was returned, and the score row holds the basis
+    const stored = (await admin.query('SELECT envelope, envelope_digest, confidence_score_id FROM business_digital_twin.dt_handoff_envelopes WHERE dt_publication_package_id = $1', [body.publicationPackageId])).rows[0];
+    expect(stored.envelope).toEqual(body.handoff); expect(stored.envelope_digest).toBe(body.envelopeDigest); expect(stored.confidence_score_id).toBe(body.confidenceScoreId);
+    const score = (await admin.query('SELECT confidence, basis FROM business_digital_twin.twin_confidence_scores WHERE id = $1', [body.confidenceScoreId])).rows[0];
+    expect(Number(score.confidence)).toBe(0.8125); expect(JSON.parse(score.basis).factors).toHaveLength(7);
     expect(validateDTToSIMHandoff(body.handoff)).toEqual({ valid: true, reasons: [] });
     const vars = Object.fromEntries(body.handoff.payload.variables.map((v: any) => [v.variableCode, v]));
     const fin = (await app.inject({ method: 'GET', url: `/v1/businesses/${a.businessId}/intelligence/financial-report?from=${PERIOD.from}&to=${PERIOD.to}&granularity=month&compare=none`, headers: kit.headers(a) })).json();
@@ -88,11 +101,41 @@ describe.runIf(run)('NEW-BDT-SIM-01: DT -> Simulation hand-off of the business p
     const before = await dtRows(a.businessId);
     const again = await post(a, handoffUrl(a.businessId));
     expect(again.statusCode).toBe(200);
-    expect(again.json()).toMatchObject({ outcome: 'HANDED_OFF', replay: true, publicationStatus: 'dispatched' });
+    expect(again.json()).toMatchObject({ outcome: 'HANDED_OFF', replay: true, publicationStatus: 'dispatched', envelopeDigest: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(await dtRows(a.businessId)).toEqual(before);
     const key = unique('replay');
     const one = await post(a, handoffUrl(a.businessId), PERIOD, key); const two = await post(a, handoffUrl(a.businessId), PERIOD, key);
     expect(two.statusCode).toBe(one.statusCode); expect(two.json()).toEqual(one.json());
+  });
+
+  it('D1 default deny: the endpoint built with the DEFAULT composition refuses every request (CONFIDENCE_UNAVAILABLE) and persists nothing', async () => {
+    const w = await kit.world(); await new Seeder(admin, scopeOf(w)).order({ date: '2026-10-05', currency: 'USD', total: '10.00', lines: [{ quantity: '1', total: '10.00' }] });
+    const t = await closedApp.inject({ method: 'POST', url: twinUrl(w.businessId), headers: kit.headers(w, { 'idempotency-key': unique('k') }), payload: PERIOD });
+    expect(t.statusCode).toBe(201);                                              // the twin state itself is unaffected
+    const res = await closedApp.inject({ method: 'POST', url: handoffUrl(w.businessId), headers: kit.headers(w, { 'idempotency-key': unique('k') }), payload: PERIOD });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ outcome: 'NOT_HANDED_OFF', code: 'CONFIDENCE_UNAVAILABLE' });
+    expect(await dtRows(w.businessId)).toEqual({ scenario_baselines: 0, dt_publication_packages: 0, dt_insight_packages: 0 });
+    expect(Number((await admin.query('SELECT count(*) n FROM business_digital_twin.dt_handoff_envelopes WHERE business_id = $1', [w.businessId])).rows[0].n)).toBe(0);
+  });
+
+  it('D3: when the BI evidence changes after the twin state was published, the hand-off (and a replay) is refused until a new twin state is published', async () => {
+    const w = await kit.world(); const s = new Seeder(admin, scopeOf(w));
+    await s.order({ date: '2026-10-05', currency: 'USD', total: '10.00', lines: [{ quantity: '1', total: '10.00' }] });
+    expect((await post(w, twinUrl(w.businessId))).statusCode).toBe(201);
+    const first = await post(w, handoffUrl(w.businessId));
+    expect(first.statusCode).toBe(201);
+    await s.order({ date: '2026-10-09', currency: 'USD', total: '5.00', lines: [{ quantity: '1', total: '5.00' }] });          // a late order inside the period
+    const stale = await post(w, handoffUrl(w.businessId));
+    expect(stale.statusCode).toBe(200);
+    expect(stale.json()).toMatchObject({ outcome: 'NOT_HANDED_OFF', code: 'SOURCE_SUPERSEDED' });                                 // replay is gated too
+    expect(await dtRows(w.businessId)).toEqual({ scenario_baselines: 1, dt_publication_packages: 1, dt_insight_packages: 1 });   // the first hand-off's evidence is untouched
+    expect((await post(w, twinUrl(w.businessId))).statusCode).toBe(201);                                                          // a new twin state from the new BI evidence
+    const fresh = await post(w, handoffUrl(w.businessId));
+    expect(fresh.statusCode).toBe(201);
+    expect(fresh.json().publicationPackageId).not.toBe(first.json().publicationPackageId);
+    const net = fresh.json().handoff.payload.variables.find((v: any) => v.variableCode === 'sales.USD.netMinor');
+    expect(net.value).toBe('1500');
   });
 
   it('without a published twin state nothing is handed off: 200 NOT_HANDED_OFF TWIN_STATE_MISSING and no rows', async () => {

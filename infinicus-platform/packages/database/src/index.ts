@@ -242,6 +242,8 @@ export {
   ScenarioBaselineRepository,
   DTPublicationPackageRepository,
   DTComponentRegistryRepository,
+  TwinConfidenceScoreRepository,
+  DTHandoffEnvelopeRepository,
 } from './repositories/dt/index.js';
 export type {
   DTIntakePackage, ReceivePackageInput,
@@ -256,6 +258,7 @@ export type {
   ScenarioBaseline, ScenarioBaselineVersion,
   DTPublicationPackage,
   DTComponentRegistryEntry, DTDeployment,
+  TwinConfidenceScore, DTHandoffEnvelopeRecord, RecordHandoffEnvelopeInput,
 } from './repositories/dt/index.js';
 
 // ── Simulation repositories (Stage 2F) ────────────────────────────────────────────

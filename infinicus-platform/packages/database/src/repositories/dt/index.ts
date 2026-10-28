@@ -45,3 +45,9 @@ export type { DTPublicationPackage } from './DTPublicationPackageRepository.js';
 
 export { DTComponentRegistryRepository } from './DTComponentRegistryRepository.js';
 export type { DTComponentRegistryEntry, DTDeployment } from './DTComponentRegistryRepository.js';
+
+export { TwinConfidenceScoreRepository } from './TwinConfidenceScoreRepository.js';
+export type { TwinConfidenceScore } from './TwinConfidenceScoreRepository.js';
+
+export { DTHandoffEnvelopeRepository } from './DTHandoffEnvelopeRepository.js';
+export type { DTHandoffEnvelopeRecord, RecordHandoffEnvelopeInput } from './DTHandoffEnvelopeRepository.js';

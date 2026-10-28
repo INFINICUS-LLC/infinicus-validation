@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { DT_TO_SIM_CONTRACT_VERSION, validateDTToSIMHandoff, type BusinessPerformanceTwinState } from '@infinicus/handoff-contracts';
 import { assembleBiPerformanceEvidence, digestOf } from '../src/performance/biPerformanceEvidence.js';
-import { buildPerformanceBaseline } from '../src/performance/performanceBaseline.js';
+import { assessSimulationReadiness, buildPerformanceBaseline, PERFORMANCE_VARIABLE_GRAMMAR } from '../src/performance/performanceBaseline.js';
 import { financialFor, PERIOD, salesFor } from './helpers/performanceFixtures.js';
 
 const BIZ = '11111111-1111-4111-8111-111111111111';
@@ -15,7 +15,8 @@ const stateOf = (fin = financialFor(BIZ), sales = salesFor(BIZ)): BusinessPerfor
   if (!r.ok) throw new Error(r.detail);
   return { schema: 'business-performance-twin-state/1', model: { name: 'business-performance-representation', version: '1', method: 'VERBATIM_BI_EVIDENCE' }, observedAt: OBSERVED, evidence: r.evidence } as BusinessPerformanceTwinState;
 };
-const build = (state = stateOf()) => buildPerformanceBaseline({ state, snapshotId: SNAP, now: NOW });
+const CONFIDENCE = 0.8125;   // an arbitrary gated value supplied by the caller: the builder neither derives nor defaults it
+const build = (state = stateOf()) => buildPerformanceBaseline({ state, snapshotId: SNAP, now: NOW, confidence: CONFIDENCE });
 const ok = (b: ReturnType<typeof build>) => { if (!b.ok) throw new Error(b.detail); return b; };
 const byCode = (b: ReturnType<typeof ok>) => Object.fromEntries(b.variables.map((v) => [v.variableCode, v]));
 
@@ -62,9 +63,10 @@ describe('quality, evidence and assumptions', () => {
       expect.stringMatching(/^bi-financial-report\/1:[0-9a-f]{64}$/), expect.stringMatching(/^bi-sales-report \(BI-SALES-1\):[0-9a-f]{64}$/),
     ]);
   });
-  it('states confidence 1 only for corroborated recorded facts and freshness in whole seconds since the observation', () => {
-    expect(b.quality).toEqual({ confidence: 1, freshnessSeconds: 330 });
-    expect(buildPerformanceBaseline({ state: stateOf(), snapshotId: SNAP, now: new Date('2026-11-02T09:00:00.000Z') })).toMatchObject({ ok: true, quality: { freshnessSeconds: 0 } });
+  it('carries exactly the confidence it is given (never a default) and freshness in whole seconds since the observation', () => {
+    expect(b.quality).toEqual({ confidence: CONFIDENCE, freshnessSeconds: 330 });
+    expect(buildPerformanceBaseline({ state: stateOf(), snapshotId: SNAP, now: NOW, confidence: 0.9 })).toMatchObject({ ok: true, quality: { confidence: 0.9 } });
+    expect(buildPerformanceBaseline({ state: stateOf(), snapshotId: SNAP, now: new Date('2026-11-02T09:00:00.000Z'), confidence: 0.9 })).toMatchObject({ ok: true, quality: { freshnessSeconds: 0 } });
   });
   it('says what the values are and are not, and carries the BI coverage', () => {
     expect(b.assumptions.join(' ')).toMatch(/recorded fact/);
@@ -111,5 +113,36 @@ describe('the result satisfies the frozen DT -> SIM contract', () => {
       },
     };
     expect(validateDTToSIMHandoff(handoff)).toEqual({ valid: true, reasons: [] });
+  });
+});
+
+describe('readiness is separate from confidence', () => {
+  it('a ready state is ready regardless of any confidence; partial and tampered states are not', () => {
+    expect(assessSimulationReadiness(stateOf())).toEqual({ ok: true });
+    expect(assessSimulationReadiness(stateOf({ outcome: 'UNAVAILABLE', code: 'X', detail: 'd' } as never))).toMatchObject({ ok: false });
+  });
+});
+
+describe('the documented variable grammar (the vocabulary a future Simulation-owned intake must parse)', () => {
+  const b = ok(build());
+  it('every variable code, unit and value follows the grammar', () => {
+    for (const v of b.variables) {
+      expect(v.variableCode, v.variableCode).toMatch(PERFORMANCE_VARIABLE_GRAMMAR.code);
+      if (v.unit !== null) expect(v.unit, v.variableCode).toMatch(PERFORMANCE_VARIABLE_GRAMMAR.unit);
+      if (typeof v.value === 'string' && v.unit !== null && /^[A-Z]{3}$/.test(v.unit)) expect(v.value, v.variableCode).toMatch(PERFORMANCE_VARIABLE_GRAMMAR.decimalText);
+      if (typeof v.value === 'string' && v.unit !== null && /minor units|^(orders|items|lines)$/.test(v.unit)) expect(v.value, v.variableCode).toMatch(PERFORMANCE_VARIABLE_GRAMMAR.integerText);
+    }
+  });
+  it('the currency in a variable code is the currency of its unit, so a value can never be read in another currency', () => {
+    for (const v of b.variables) {
+      const m = /^(?:financial|sales)\.([A-Z]{3})\./.exec(v.variableCode);
+      const u = v.unit === null ? null : /^([A-Z]{3})(?: minor units.*)?$/.exec(v.unit);
+      if (m && u) expect(u[1], v.variableCode).toBe(m[1]);
+    }
+  });
+  it('the grammar rejects what it must: lower-case or wrong-length currencies, floats with exponents, free-form units', () => {
+    for (const bad of ['financial.usd.revenue', 'financial.US.revenue', 'financial..revenue', 'total.revenue']) expect(bad).not.toMatch(PERFORMANCE_VARIABLE_GRAMMAR.code);
+    for (const bad of ['1e3', '1.23456', 'NaN', '', '12,5']) expect(bad).not.toMatch(PERFORMANCE_VARIABLE_GRAMMAR.decimalText);
+    for (const bad of ['dollars', 'usd', 'USD minor units', 'USD minor units (10^-9)']) expect(bad).not.toMatch(PERFORMANCE_VARIABLE_GRAMMAR.unit);
   });
 });
