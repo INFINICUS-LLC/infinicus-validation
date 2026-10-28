@@ -12,7 +12,8 @@ Labels: VR = VERIFIED — REPOSITORY, OO = OWNER-OBSERVED — PRODUCTION (operat
 | Method | `backup-offsite.sh` via `infinicus-backup.timer` (daily ≈ 02:34Z), encrypted with a public key held on the VM, uploaded to an S3-compatible offsite store; both artifacts re-downloaded and verified; the job's own log says a restore proof is still required to call the backup recoverable | OO / VR |
 | Freshness | `check-backup-freshness.sh` OK, 11 h at observation (warning at 26 h, critical at 50 h) | OO |
 | Point-in-time recovery | none: `archive_mode=off`, `wal_level=replica`, archiver counters 0 | OO |
-| Restore proof | the repository profile `expectations/production-pre-0210.profile` records a passed proof on 2026-10-21 for a backup at the same schema head; no proof of any later backup is recorded on the VM | VR / OO |
+| Restore proof history | VR (`docs/architecture/reconciliation/PHASE_W2_EXECUTION_RECORD_0202-0209.md`): 2026-10-21 ~15:08Z `RESTORE_PROOF=PASS` for the pre-window backup (ledger 201); in the evening a restore of `…T172939Z-daily` (ledger 209) with **only the rotated key** decrypted and restored, ledger `209 / 0209`, all 15 row-count rules held (checked by hand because the script then reported a false FAIL at the fingerprint step: restored copy `68407667a5618dc9` vs manifest `325158ea2a54cde9`; since addressed by the `restored_fingerprint` rule in `production-pre-0210.profile`). No proof of any later backup, and no proof run with the profile fix, is on record. |
+| Backup key | VR (same record): rotated 2026-10-21 to key `F848EE01CFD25D1A88DB17DDD79DF16FA80298FE` (offline copies held by the owner); the old key still sits in the VM keyring and offline for older backups. Custody is an owner matter; this plan does not touch it. |
 | Production host capacity | 1 vCPU, 1.9 GB RAM, no swap; an earlier restore-test container on this host was OOM-killed (`oom=true`, 2026-10-14) | OO |
 | Hetzner server snapshots | not visible from the VM; unknown | UV |
 | Production database size | about 58 MB (dump ≈ 4.7 MB encrypted at the last run) | OO |
@@ -28,11 +29,16 @@ Labels: VR = VERIFIED — REPOSITORY, OO = OWNER-OBSERVED — PRODUCTION (operat
 
 ## 3. Disposable infrastructure (separate from production)
 
+Method used successfully before (VR, W2 record §5): the three encrypted objects were fetched on the VM with the installed backup settings, copied to the owner's PC, and
+`restore-proof.sh` ran inside a throwaway `postgres:16-bookworm` container (loopback only, `infinicus.restore_target=disposable`, no production route), with the offline
+key mounted read-only and the passphrase typed at the container prompt. Observed pitfall: Docker Desktop could not see a removable drive, so a single-file mount silently
+became an empty directory. Leftovers noted in that record for the owner to remove: temporary copies of the encrypted objects on the VM and on the PC.
+
 Required properties of the restore host (all checked by `restore-proof.sh --validate-target` where the script can check them):
-- not the production VM, and with no route, credentials or secrets for production;
+- not the production VM, and with no route, credentials or secrets for production (the owner's PC with Docker satisfied this in the previous proof);
 - encrypted disk; PostgreSQL 16 started on loopback only with `-c infinicus.restore_target=disposable` (the script refuses any other target); a superuser connection through a
   `PGPASSFILE` (mode 600) or socket, no password in a URL; no database named `infinicus`;
-- the **private** gpg key available only on this host (never on the production VM), and a **read-only** credential for the backup store, supplied for this task only;
+- the **private** gpg key available only on this host (never on the production VM), and either a **read-only** credential for the backup store or the previous method of fetching the encrypted objects on the VM and copying them over (which keeps the store credential on the VM);
 - enough memory for `pg_restore` of the dump plus the application test (the production VM's 1.9 GB was not enough for the earlier test container; size is an owner/infrastructure decision, not set here);
 - the repository checkout at the commit under test, so that the script, expectations profile and discovery script are the reviewed versions.
 
