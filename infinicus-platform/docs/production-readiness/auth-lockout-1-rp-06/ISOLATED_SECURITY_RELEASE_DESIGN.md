@@ -1,6 +1,6 @@
 # AUTH-LOCKOUT-1.RP-06 — Isolated Security Release Design
 
-Update 2026-10-28: see `RP-08_RC_BUILD_AND_CI_EXCEPTION.md` for the RC commit, CI results, the approved dependency-scan exception, and corrections to §1.1 and gate G-9.
+Update 2026-10-28 (RP-13): the build, switch-over and rollback steps of §6D are superseded by `RELEASE_BUILD_AND_DEPLOY_PROCEDURE.md` (clean export, project `oci`, external env file, image verification); gate status is in `RP-13_RELEASE_GATE_MATRIX.md`. Earlier update: see `RP-08_RC_BUILD_AND_CI_EXCEPTION.md` for the RC commit, CI results, the approved dependency-scan exception, and corrections to §1.1 and gate G-9.
 
 Status: DESIGN AND DOCUMENTATION ONLY. Nothing in this document has been executed against production.
 Authorization scope: design, rehearsal on disposable local databases, documentation. No migration, deployment,

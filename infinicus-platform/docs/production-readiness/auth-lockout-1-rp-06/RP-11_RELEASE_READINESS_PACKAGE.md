@@ -1,6 +1,6 @@
 # AUTH-LOCKOUT-1.RP-11 — Release Readiness Package (final RC `d41b08e4`)
 
-Status: EVIDENCE PACKAGE ONLY. Not a release authorization. No production access, migration or deployment was performed.
+Update (RP-13): §4 "What remains" is superseded by `RELEASE_BUILD_AND_DEPLOY_PROCEDURE.md` and `RP-13_RELEASE_GATE_MATRIX.md` (production evidence from RP-12A/RP-12B). Status: EVIDENCE PACKAGE ONLY. Not a release authorization. No production access, migration or deployment was performed.
 Labels: VR = VERIFIED — REPOSITORY, VC = VERIFIED — CI, RH = VERIFIED — REHEARSAL (disposable local PostgreSQL 16 + local Docker, synthetic data),
 OO = OWNER-OBSERVED — PRODUCTION, UV = UNVERIFIED, BL = BLOCKED.
 
