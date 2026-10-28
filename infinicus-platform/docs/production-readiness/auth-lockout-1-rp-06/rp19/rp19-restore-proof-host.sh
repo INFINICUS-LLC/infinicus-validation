@@ -11,7 +11,7 @@
 #     --key-file   the offline PRIVATE key file (armored). docker mode only (mounted read-only into the container)
 #   docker mode (default): starts postgres:16-bookworm with --network none, marked disposable, and runs the proof inside it (as on 2026-10-21).
 #   native mode: uses RESTORE_ADMIN_URL and RESTORE_GNUPGHOME from the environment (a disposable server you provisioned; the script validates it).
-# Profile selection is automatic and conservative: ledger_head 0209_create_print_jobs.sql -> production-pre-0210.profile. Any other head is REFUSED
+# Profile selection is automatic and conservative: ledger_head 0209_create_print_jobs.sql -> production-pre-0210.profile; 0220_normalize_access_event_tenant_context.sql -> production-post-0220.profile (needs the repo clone to contain it). Any other head is REFUSED
 # (a reviewed profile for that state is required; this script never invents expectations and never edits a profile).
 set -euo pipefail
 umask 077
@@ -24,15 +24,17 @@ while (( $# )); do case "$1" in
 [[ "$KEY" =~ ^[A-Za-z0-9._/:-]{1,300}$ && "$KEY" != *..* ]] || { echo "bad --prefix"; exit 2; }
 REPO="$(cd "$REPO" && pwd)"; OBJ="$(cd "$OBJ" && pwd)"
 P="$REPO/infinicus-platform/infrastructure/backups"
-for f in "$P/restore-proof.sh" "$P/expectations/production-pre-0210.profile" "$OBJ/$KEY/manifest.json" "$OBJ/$KEY/db.dump.gpg" "$OBJ/$KEY/roles.sql.gpg"; do
+for f in "$P/restore-proof.sh" "$OBJ/$KEY/manifest.json" "$OBJ/$KEY/db.dump.gpg" "$OBJ/$KEY/roles.sql.gpg"; do
   [[ -f "$f" ]] || { echo "missing: ${f#$REPO/}"; exit 2; }
 done
 grep -q restored_fingerprint "$P/restore-proof.sh" || { echo "restore-proof.sh in this clone cannot read restored_fingerprint (old copy); use main"; exit 2; }
 HEAD_L="$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1])).get("ledger_head"))' "$OBJ/$KEY/manifest.json")"
 case "$HEAD_L" in
   0209_create_print_jobs.sql) PROFILE=production-pre-0210.profile;;
-  *) echo "REFUSED: backup ledger_head is '$HEAD_L'. Only 0209_create_print_jobs.sql has a reviewed profile (production-pre-0210.profile). A backup from another schema state needs a new reviewed profile first; do not edit one to make it pass."; exit 3;;
+  0220_normalize_access_event_tenant_context.sql) PROFILE=production-post-0220.profile;;
+  *) echo "REFUSED: backup ledger_head is '$HEAD_L'. Only 0209 (production-pre-0210.profile) and 0220 (production-post-0220.profile) have reviewed profiles. A backup from another schema state needs a new reviewed profile first; do not edit one to make it pass."; exit 3;;
 esac
+[[ -f "$P/expectations/$PROFILE" ]] || { echo "missing profile in this clone: expectations/$PROFILE (use a newer main)"; exit 2; }
 {
 echo "RP-19 RESTORE PROOF EVIDENCE"
 echo "utc-start   $(date -u +%Y-%m-%dT%H:%M:%SZ)   mode=$MODE   operator=$(id -un)   restore-host=$(hostname)"
