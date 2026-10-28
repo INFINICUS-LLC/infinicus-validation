@@ -84,7 +84,7 @@ No tier is assigned in this document: the facts for §2.1 and §2.2 are not avai
 ```bash
 ls -l /opt/infinicus/repo/infinicus-platform/infrastructure/deployment/oci/.env.backup-before-preview-cors /home/deploy/infinicus-oci-env-backup-20261014T185738Z    # before
 chmod 600 /opt/infinicus/repo/infinicus-platform/infrastructure/deployment/oci/.env.backup-before-preview-cors /home/deploy/infinicus-oci-env-backup-20261014T185738Z
-ls -l …same two paths…                                                                                                                                       # after: -rw-------
+ls -l /opt/infinicus/repo/infinicus-platform/infrastructure/deployment/oci/.env.backup-before-preview-cors /home/deploy/infinicus-oci-env-backup-20261014T185738Z    # after: -rw-------
 ```
 
 Longer term: keep env backups outside any Git working tree or build context (for example a mode-700 directory under the deploy user's home), and delete them when the owner confirms they are
