@@ -1,5 +1,7 @@
 # AUTH-LOCKOUT-1.RP-06 — Isolated Security Release Design
 
+Update 2026-10-28: see `RP-08_RC_BUILD_AND_CI_EXCEPTION.md` for the RC commit, CI results, the approved dependency-scan exception, and corrections to §1.1 and gate G-9.
+
 Status: DESIGN AND DOCUMENTATION ONLY. Nothing in this document has been executed against production.
 Authorization scope: design, rehearsal on disposable local databases, documentation. No migration, deployment,
 container restart, configuration change, backup operation or production login attempt was performed or is authorized by this file.
