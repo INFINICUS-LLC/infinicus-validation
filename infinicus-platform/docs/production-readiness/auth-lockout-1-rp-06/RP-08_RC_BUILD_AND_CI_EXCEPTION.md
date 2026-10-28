@@ -8,9 +8,10 @@ Status: DOCUMENTATION ONLY. No migration, deployment, container restart or produ
 | Item | Value |
 |---|---|
 | Branch (remote) | `claude/auth-lockout-1-isolated-rc` (not for merge: `main` already contains #348) |
-| Commit | `c5936cefe1aad5503132f538bb01fc8fd0679211` |
+| Commit (final RC) | `d41b08e4db13343570ce1cdd2ff84d27b36324d1` (supersedes `c5936cef…`; adds one test-only commit, see §7) |
+| Initial RC commit | `c5936cefe1aad5503132f538bb01fc8fd0679211` (CI runs 40623929732 and RP-09 evidence were produced here) |
 | Base | `ccadbf51be90c35377e21b73ceda77a1d455a805` (deployed build, OWNER-OBSERVED) |
-| Delta vs base | 9 files, +215/−18; `git diff --stat ccadbf51 c5936cef` (VERIFIED — REPOSITORY) |
+| Delta vs base | 10 files, +224/−19 (the 9-file patch plus `packages/database/tests/migration-stage2a.test.ts` +9/−1) (VERIFIED — REPOSITORY) |
 | Patch sha256 (matches RP-06) | `c899bd167cd6dc227044dae8236f5d88433fb757a024ada4972611ad8333de00` |
 | `0220` file sha256 | `78a17188e4f01e7dbe78fb422578864345607c9a4eefeb30ea7f9913d1222472` |
 | Dependency/lockfile/CI-script files changed | 0 (VERIFIED — REPOSITORY) |
@@ -77,3 +78,13 @@ deploy-order rule: schema (0220) first, then the RC image.
 3. Owner to confirm in writing the exception in §3, including the 14 advisories, before the production window.
 4. Housekeeping: decide whether to delete `claude/auth-lockout-1-rc-control` (no longer needed) and keep the RC branch until release.
 5. DEP-REM-1 scoping, if the owner wants it.
+
+## 7. Update after RP-09/RP-10/RP-11 (final RC `d41b08e4`)
+
+- RP-09 found that the RC fails the repository test `migration-stage2a.test.ts` ("migration files are numerically ordered with no gaps"),
+  because the RC has 0220 directly after 0209. This was not covered by the dependency-scan exception.
+- RP-10 (owner-approved option (a)) changed only that test on the RC: the single gap 0210–0219 is tolerated if and only if ALL ten
+  files are absent; any other gap, or partial presence of 0210–0219, still fails; on `main` (all present) behavior is unchanged.
+  Commit `d41b08e4`, test-only, release branch only, never for merge to `main`.
+- CI run 40630982518 on `d41b08e4` fails only at "Dependency vulnerability scan" (the approved exception); the steps after it were not reached in CI.
+- RP-11 re-ran the evidence on `d41b08e4` (see `RP-11_RELEASE_READINESS_PACKAGE.md`).
