@@ -49,7 +49,8 @@ echo "-----"
 run_proof() { # runs inside the environment that has gpg, psql, pg_restore and a disposable RESTORE_ADMIN_URL
   local pp="$1" objs="$2" repo="$3"
   export BACKUP_FETCH_CMD="cat $objs/%KEY%"
-  for t in gpg psql pg_restore python3; do command -v $t >/dev/null || { echo "RESTORE_PROOF=FAIL (tool missing: $t)"; return 2; }; done
+  # python3 is needed on the HOST only (manifest head); postgres:16-bookworm has none and restore-proof.sh does not use it
+  for t in gpg psql pg_restore; do command -v $t >/dev/null || { echo "RESTORE_PROOF=FAIL (tool missing: $t)"; return 2; }; done
   bash "$pp/restore-proof.sh" --validate-target || return $?
   RESTORE_REPO_DIR="$repo" RESTORE_EXPECTATIONS="$pp/expectations/$PROFILE" bash "$pp/restore-proof.sh" "$KEY/manifest.json"
 }
@@ -59,6 +60,7 @@ if [[ "$MODE" == native ]]; then
   set +e; ( run_proof "$P" "$OBJ" "$REPO" ) 2>&1 | tee -a "$EVID"; rc=${PIPESTATUS[0]}; set -e
 elif [[ "$MODE" == docker ]]; then
   [[ -f "$KEYFILE" ]] || { echo "docker mode needs --key-file"; exit 2; }
+  KEYFILE="$(cd "$(dirname "$KEYFILE")" && pwd)/$(basename "$KEYFILE")"   # docker treats a relative -v source as a NAMED VOLUME (verified), so it must be absolute
   command -v docker >/dev/null || { echo "docker is not installed"; exit 2; }
   CN="rp19-restore-$$"
   cleanup() { docker rm -f "$CN" >/dev/null 2>&1 || true; }; trap cleanup EXIT INT TERM HUP
