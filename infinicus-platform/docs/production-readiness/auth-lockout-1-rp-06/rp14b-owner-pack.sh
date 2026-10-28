@@ -24,7 +24,8 @@ print("credsStore:", d.get("credsStore", "none"), "| credHelpers:", sorted((d.ge
 PY
 echo "--- shell history: counts only (lines are not printed)"
 for pat in 'docker +push' 'docker +save' 'docker +export' 'docker +login' 'docker +image +save' 'scp .*oci-image' 'rclone .*(copy|sync)'; do
-  printf '%-28s %s\n' "$pat" "$(grep -c -E "$pat" "$HOME_DIR/.bash_history" 2>/dev/null || echo n/a)"; done
+  if [ -r "$HOME_DIR/.bash_history" ]; then c=$(grep -c -E "$pat" "$HOME_DIR/.bash_history" 2>/dev/null); else c=n/a; fi
+  printf '%-28s %s\n' "$pat" "${c:-0}"; done
 echo "--- image or tar archives over 50 MB in home, /tmp, /var/tmp (metadata)"
 find "$HOME_DIR" /tmp /var/tmp -maxdepth 3 \( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' \) -size +50M -printf '%TY-%Tm-%Td %s %p\n' 2>/dev/null
 echo "--- containers using the image"
