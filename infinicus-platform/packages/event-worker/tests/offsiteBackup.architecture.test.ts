@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const DOCS = resolve(__dirname, '../../../../docs/architecture/reconciliation');
 
@@ -180,6 +181,22 @@ describe('off-VM backup scripts: structure and safety', () => {
     expect(p0210).toContain('ledger_head=0209_create_print_jobs.sql');
     expect(p0210).toContain('schema_fingerprint=325158ea2a54cde9');
     expect(p0210).toContain('restored_fingerprint=68407667a5618dc9');
+  });
+
+  it('the post-0220 profile pins the isolated-release state: ledger 210, head 0220, both fingerprints, the same stable row rules as the 0209 profile, and a hash-pinned 0220 migration', () => {
+    const dir = join(BACKUPS, 'expectations');
+    const lines = (n: string) => readFileSync(join(dir, n), 'utf8').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+    const post = lines('production-post-0220.profile');
+    expect(post).toContain('ledger_count=210');
+    expect(post).toContain('ledger_head=0220_normalize_access_event_tenant_context.sql');
+    expect(post).toContain('schema_fingerprint=c4d9f7f8aebfa5c8');
+    expect(post).toContain('restored_fingerprint=fd30bc44bee4dca0');
+    // data rules are carried unchanged from the 0209 profile: 0220 changes a policy, not data
+    const rules = (l: string[]) => l.filter((x) => /^(count|outbox) /.test(x)).sort();
+    expect(rules(post)).toEqual(rules(lines('production-pre-0210.profile')));
+    // the profile's fingerprints describe THIS migration: a changed 0220 file must be re-reviewed together with the profile
+    const mig = readFileSync(join(__dirname, '..', '..', '..', 'infrastructure', 'database', 'migrations', '0220_normalize_access_event_tenant_context.sql'));
+    expect(createHash('sha256').update(mig).digest('hex')).toBe('78a17188e4f01e7dbe78fb422578864345607c9a4eefeb30ea7f9913d1222472');
   });
 
   it('the plan states the owner ruling: no lifecycle deletion until retention is approved; any expiry value is a proposal only; Object Lock default is owner-configurable', () => {
