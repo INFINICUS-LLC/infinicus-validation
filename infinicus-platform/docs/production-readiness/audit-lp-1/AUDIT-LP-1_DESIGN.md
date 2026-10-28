@@ -1,5 +1,16 @@
 # AUDIT-LP-1 — Least-Privilege Design for `audit.access_events`
 
+**Update (RP-17): option B is implemented in the repository; production is unchanged.** Changes: `grant-app-role.sh` revokes `UPDATE, DELETE, TRUNCATE` on `audit.access_events`
+(guarded by `to_regclass`, in the hardening block after the blanket grants); `delete-tenant-data.mjs` erases that table's rows for the tenant over the admin connection with an explicit
+`tenant_id` predicate (`ADMIN_ERASED_TABLES`), never a blanket delete and never `tenant_id IS NULL`. Tests: static grant/erasure assertions
+(`audit-lp-1-access-events-authority.test.ts`), live privilege proof (`audit-lp-1-access-events-privileges.integration.test.ts`: INSERT/SELECT granted; UPDATE, DELETE, TRUNCATE refused with 42501;
+the repository still records and counts events) and a live erasure test with another tenant's and a tenantless event that must survive (`delete-tenant-data.integration.test.ts`).
+Mutants caught: dropping the revoke, dropping the admin pass (the existing full-footprint erasure test also fails against revoked grants), deleting without the tenant predicate.
+Decisions taken as the status quo, not invented: D1 erase (current behaviour), D2 tenantless rows untouched (no purge rule), D3 exit code of the erasure script unchanged (0 on partial erasure, still a hazard
+for monitoring), D4 AUDIT-AO-1 not started, D5 partly answered by RP-12A (no cron entry or timer references the table; root's crontab unchecked).
+Production rollout is a separate authorized change, §8; note that the operators' copy of `delete-tenant-data.mjs` on the VM is the 2026-10-13 version (stale `/opt/infinicus/repo`), so the new copy must be
+delivered with the release export before the revoke is applied.
+
 Status: DESIGN AND DOCUMENTATION ONLY. Nothing here was applied to production or to any shared environment. Rehearsals ran on a disposable local
 PostgreSQL 16 database built from the repository migrations (0220 applied), with synthetic tenants.
 Authorization: owner authorized the AUDIT-LP-1 design. Implementation, production change and the follow-on AUDIT-AO-1 each need separate authorization.
