@@ -17,10 +17,30 @@ dist/
 .next/
 next-env.d.ts
 
-# Env — never bake secrets into an image layer
-.env
-.env.local
-.env.*.local
+# Secrets — never bake credentials into an image layer (SEC-DOCKER-1).
+# Docker matches these patterns against the build-context root, so a bare ".env" only ever excluded the root file. The compose
+# environment file (infrastructure/deployment/oci/.env) and operator backups next to it were therefore copied into the image by
+# `COPY . .`. "**/" makes every pattern apply at any depth. Template files stay (".env.example" is tracked and harmless).
+**/.env
+**/.env.*
+!**/.env.example
+**/*.env
+**/*env-backup*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa*
+**/id_ed25519*
+**/id_ecdsa*
+**/.git-credentials
+**/.netrc
+**/.aws/
+**/.ssh/
+**/.gnupg/
+# Operator evidence files written next to the compose file by the production discovery scripts
+**/discovery-*.txt
+**/rp12*.txt
 
 # Logs
 *.log
