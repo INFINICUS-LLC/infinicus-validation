@@ -12,7 +12,7 @@ const files = readdirSync(DIR).filter((f) => f.endsWith('.ts')).map((f) => ({ f,
 const strip = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
 describe('R-01A preparation stage purity', () => {
-  it('exists', () => expect(files.map((x) => x.f).sort()).toEqual(['OperationalRecordPreparer.ts', 'exactDecimal.ts', 'operationalRecordProfile.ts', 'preparedKeyFindings.ts', 'textSafety.ts']));
+  it('exists', () => expect(files.map((x) => x.f).sort()).toEqual(['OperationalRecordPreparer.ts', 'exactDecimal.ts', 'operationalRecordProfile.ts', 'preparedKeyFindings.ts', 'referenceFormats.ts', 'textSafety.ts']));
   it('imports nothing but its own profile and DAL types (no database, pg, BO, fs, network)', () => {
     for (const { f, code } of files) {
       const specifiers = [...strip(code).matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);

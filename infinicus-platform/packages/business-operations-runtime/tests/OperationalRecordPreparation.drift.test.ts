@@ -55,3 +55,41 @@ describe('R-01A DAL preparation profile <-> BO intake contract', () => {
     }
   });
 });
+
+describe('R-01B-3 purchase_order: DAL preparation profile <-> BO mapper', () => {
+  const SUPPLIER = '3f2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e6f';
+  const base = { supplierId: SUPPLIER, poNumber: 'PO-1', currencyCode: 'KWD' };
+
+  it('everything the DAL prepares passes the BO purchase_order mapper unchanged, and the mapper then produces the matching command', () => {
+    const probes: Array<Record<string, unknown>> = [
+      {}, { totalAmount: 0 }, { totalAmount: '0.0001' }, { totalAmount: '12345678901234.5' }, { totalAmount: ' 10 ' },
+      { expectedDate: '2024-02-29' }, { expectedDate: '9999-12-31' }, { notes: '  note ' }, { poNumber: '  po 7/a ' },
+      { supplierId: SUPPLIER.toUpperCase() }, { currencyCode: 'USD' }, { currencyCode: 'EUR', totalAmount: 99.5, expectedDate: '2026-01-31', notes: 'x' },
+      { currencyCode: 'usd' }, { currencyCode: ' KWD' }, { supplierId: 'nope' }, { totalAmount: -1 }, { totalAmount: '1.23456' }, { expectedDate: '2026-02-31' },
+    ];
+    let accepted = 0; let rejected = 0;
+    const mapper = mapperFor('purchase_order');
+    for (const probe of probes) {
+      const outcome = preparer.prepareRecord({ recordType: 'purchase_order', data: { ...base, ...probe } }, 0);
+      if (outcome.status === 'REJECTED') { rejected++; continue; }
+      accepted++;
+      const data = outcome.prepared!.data;
+      expect(mapper.validate(data), JSON.stringify(data)).toEqual([]);
+      const [command] = mapper.map(data, { tenantId: 't', workspaceId: 'w', businessId: 'b', correlationId: 'c', sourceReference: 's' } as never);
+      expect(command.type).toBe('create_purchase_order');
+      expect((command as { payload: Record<string, unknown> }).payload).toMatchObject({ supplierId: SUPPLIER, currencyCode: data.currencyCode, poNumber: data.poNumber });
+    }
+    expect(accepted).toBeGreaterThan(10);
+    expect(rejected).toBe(6);
+  });
+
+  it('shares the currency rule exactly: whatever the BO mapper rejects as a currency, the DAL rejects too', () => {
+    const mapper = mapperFor('purchase_order');
+    for (const currencyCode of ['KWD', 'kwd', ' KWD', 'KW', 'KWDD', '', 'K1D', 'USD ']) {
+      const dal = preparer.prepareRecord({ recordType: 'purchase_order', data: { ...base, currencyCode } }, 0);
+      const bo = mapper.validate({ ...base, currencyCode });
+      if (bo.length > 0) expect(dal.status, currencyCode).toBe('REJECTED');
+      if (dal.status !== 'REJECTED') expect(bo, currencyCode).toEqual([]);
+    }
+  });
+});

@@ -8,6 +8,7 @@ import {
   MOVEMENT_QUANTITY_CONTRACT,
   MOVEMENT_REFERENCE_TYPES,
   MOVEMENT_UNIT_COST_CONTRACT,
+  PURCHASE_ORDER_TOTAL_CONTRACT,
   NATURAL_KEY_PATTERN,
   OFFSET_INSTANT_PATTERN,
   PREPARED_RECORD_TYPES,
@@ -16,12 +17,13 @@ import {
 } from './operationalRecordProfile.js';
 import { exactDecimal, type DecimalContract, type DecimalProblem } from './exactDecimal.js';
 import { findProhibitedCharacter } from './textSafety.js';
+import { canonicalUuid, strictCalendarDate } from './referenceFormats.js';
 
 export type PreparationStatus = 'VALID' | 'AUTO_CORRECTED' | 'REJECTED';
 
 export interface PreparationAction {
   field: string;
-  rule: 'trim' | 'unicode_nfc' | 'lowercase_enum' | 'numeric_string_to_number' | 'utc_instant' | 'null_omitted' | 'empty_omitted';
+  rule: 'trim' | 'unicode_nfc' | 'lowercase_enum' | 'lowercase_uuid' | 'numeric_string_to_number' | 'utc_instant' | 'null_omitted' | 'empty_omitted';
 }
 
 export interface PreparedRecord {
@@ -61,6 +63,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
     'inventoryItemId', 'sku', 'warehouseId', 'warehouseCode', 'occurredAt', 'movementType', 'quantity',
     'unitCost', 'unitCostCurrency', 'referenceType', 'referenceId', 'notes',
   ],
+  purchase_order: ['supplierId', 'poNumber', 'expectedDate', 'currencyCode', 'totalAmount', 'notes'],
 };
 
 /** Pattern match plus calendar sanity: Date.parse would roll 2026-02-31 over to March, silently changing the value. */
@@ -202,6 +205,32 @@ export class OperationalRecordPreparer {
       }
       return result.value;
     };
+    /** A reference to a typed uuid column: format only (lower-cased canonical form); existence in the business is Business Operations' decision. */
+    const uuidReference = (field: string, required: boolean): string | undefined => {
+      const value = text(field, required);
+      if (value === undefined) return undefined;
+      const canonical = canonicalUuid(value);
+      if (canonical === null) { fail(field, 'invalid', `${field} must be a UUID.`); return undefined; }
+      if (canonical !== value) actions.push({ field, rule: 'lowercase_uuid' });
+      return canonical;
+    };
+    /** A calendar date for a date column: exactly YYYY-MM-DD, never rolled over, no time or zone invented. */
+    const dateOnly = (field: string, required: boolean): string | undefined => {
+      const value = text(field, required);
+      if (value === undefined) return undefined;
+      if (strictCalendarDate(value) === null) { fail(field, 'invalid', `${field} must be a calendar date written as YYYY-MM-DD.`); return undefined; }
+      return value;
+    };
+    /** Currency exactly as supplied (owner ruling): not trimmed, not case-folded, never defaulted. */
+    const exactCurrency = (field: string, required: boolean): string | undefined => {
+      const value = raw[field];
+      if (value === undefined || value === null) {
+        if (required) fail(field, 'required', `${field} is required.`); else if (value === null) actions.push({ field, rule: 'null_omitted' });
+        return undefined;
+      }
+      if (typeof value !== 'string' || !CURRENCY_CODE_PATTERN.test(value)) { fail(field, 'invalid', `${field} must be exactly three upper-case letters.`); return undefined; }
+      return value;
+    };
     const put = (field: string, value: unknown): void => { if (value !== undefined) out[field] = value; };
 
     if (type === 'inventory_item') {
@@ -211,7 +240,7 @@ export class OperationalRecordPreparer {
     } else if (type === 'warehouse') {
       put('warehouseCode', naturalKey('warehouseCode', true));
       put('name', text('name', true, MAX_NAME_LENGTH));
-    } else {
+    } else if (type === 'inventory_movement') {
       const hasId = raw.inventoryItemId !== undefined; const hasSku = raw.sku !== undefined;
       if (hasId === hasSku) reject('exactly_one_of_inventoryitemid_and_sku', 'data', 'Exactly one of inventoryItemId and sku is required.');
       else if (hasId) put('inventoryItemId', text('inventoryItemId', true));
@@ -240,13 +269,7 @@ export class OperationalRecordPreparer {
         if (unitCost <= 0) fail('unitCost', 'not_positive', 'unitCost must be strictly positive.');
       }
       put('unitCost', unitCost);
-      // Currency: exactly as supplied (owner ruling) - not trimmed, not case-folded, never defaulted.
-      const rawCurrency = raw.unitCostCurrency;
-      let currency: string | undefined;
-      if (rawCurrency === undefined) currency = undefined;
-      else if (rawCurrency === null) actions.push({ field: 'unitCostCurrency', rule: 'null_omitted' });
-      else if (typeof rawCurrency !== 'string' || !CURRENCY_CODE_PATTERN.test(rawCurrency)) fail('unitCostCurrency', 'invalid', 'unitCostCurrency must be exactly three upper-case letters.');
-      else currency = rawCurrency;
+      const currency = exactCurrency('unitCostCurrency', false);
       put('unitCostCurrency', currency);
       if (unitCost !== undefined && currency === undefined && !issues.some((i) => i.fieldPath === 'data.unitCostCurrency')) {
         fail('unitCostCurrency', 'required_with_unitcost', 'unitCostCurrency is required when unitCost is present.');
@@ -256,6 +279,17 @@ export class OperationalRecordPreparer {
       }
       put('referenceType', enumeration('referenceType', MOVEMENT_REFERENCE_TYPES, false));
       put('referenceId', text('referenceId', false));
+      put('notes', text('notes', false));
+    } else {
+      // purchase_order. Field rules mirror the BO mapper and the purchase_orders columns; the DAL adds only column-type format checks.
+      // poNumber has no format rule in BO (free text, unique per business), so none is invented here beyond trim / NFC / non-empty.
+      put('supplierId', uuidReference('supplierId', true));
+      put('poNumber', text('poNumber', true));
+      put('expectedDate', dateOnly('expectedDate', false));
+      put('currencyCode', exactCurrency('currencyCode', true));
+      const total = decimal('totalAmount', false, PURCHASE_ORDER_TOTAL_CONTRACT);
+      if (total !== undefined && total < 0) fail('totalAmount', 'negative', 'totalAmount must not be negative.');
+      put('totalAmount', total);
       put('notes', text('notes', false));
     }
 
