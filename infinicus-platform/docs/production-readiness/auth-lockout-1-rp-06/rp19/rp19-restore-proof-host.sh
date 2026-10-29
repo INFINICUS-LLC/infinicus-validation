@@ -63,7 +63,7 @@ elif [[ "$MODE" == docker ]]; then
   KEYFILE="$(cd "$(dirname "$KEYFILE")" && pwd)/$(basename "$KEYFILE")"   # docker treats a relative -v source as a NAMED VOLUME (verified), so it must be absolute
   command -v docker >/dev/null || { echo "docker is not installed"; exit 2; }
   CN="rp19-restore-$$"
-  cleanup() { docker rm -f "$CN" >/dev/null 2>&1 || true; }; trap cleanup EXIT INT TERM HUP
+  cleanup() { docker rm -f -v "$CN" >/dev/null 2>&1 || true; }; trap cleanup EXIT INT TERM HUP   # -v: the image declares a data VOLUME; without it the restored database stays in an anonymous volume (verified)
   docker run -d --rm --name "$CN" --network none -v "$REPO:/repo:ro" -v "$OBJ:/objects:ro" -v "$KEYFILE:/key/offline.asc:ro" \
     -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16-bookworm -c infinicus.restore_target=disposable >/dev/null
   for _ in $(seq 1 60); do docker exec "$CN" pg_isready -q -h 127.0.0.1 && break; sleep 1; done
@@ -81,5 +81,5 @@ elif [[ "$MODE" == docker ]]; then
 else echo "--mode must be docker or native"; exit 2; fi
 { echo "-----"; echo "utc-end     $(date -u +%Y-%m-%dT%H:%M:%SZ)"; } | tee -a "$EVID"
 if grep -q '^RESTORE_PROOF=PASS' "$EVID"; then echo "RP19_RESULT=PASS (restore proof for $KEY; evidence: $EVID)" | tee -a "$EVID"; else echo "RP19_RESULT=NOT PASS (see lines above; do not edit the profile; evidence: $EVID)" | tee -a "$EVID"; rc=1; fi
-echo "Disposal: container is removed on exit; delete '$OBJ' and any temporary copy of the key file; record the times."
+echo "Disposal: container and its anonymous data volume are removed on exit (check: docker volume ls -q should list none from this run); delete '$OBJ' and any temporary copy of the key file; record the times."
 exit $rc
