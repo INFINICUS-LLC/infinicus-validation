@@ -23,6 +23,13 @@ export type {
   PreparationStatus,
   PreparedRecord,
 } from './preparation/OperationalRecordPreparer.js';
+export { detectPreparedKeyFindings, mergeKeyFindingsIntoValidation } from './preparation/preparedKeyFindings.js';
+export type {
+  PreparedKeyCandidate,
+  PreparedKeyFindingKind,
+  PreparedKeyFindings,
+  PreparedKeyGroup,
+} from './preparation/preparedKeyFindings.js';
 export {
   OPERATIONS_PREPARED_SUBMISSION_TYPE,
   OPERATIONAL_PROFILE_VERSION,
@@ -30,6 +37,7 @@ export {
   PREPARED_RECORD_TYPES,
   CURRENCY_CODE_PATTERN,
   UNIT_COST_MINIMUM,
+  PREPARED_KEY_RULE_CODES,
 } from './preparation/operationalRecordProfile.js';
 export { ManualRecordValidator } from './validation/ManualRecordValidator.js';
 
