@@ -28,6 +28,8 @@ export {
   OPERATIONAL_PROFILE_VERSION,
   NORMALIZE_TRANSFORMATION_TYPE,
   PREPARED_RECORD_TYPES,
+  CURRENCY_CODE_PATTERN,
+  UNIT_COST_MINIMUM,
 } from './preparation/operationalRecordProfile.js';
 export { ManualRecordValidator } from './validation/ManualRecordValidator.js';
 

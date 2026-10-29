@@ -34,3 +34,7 @@ export const MAX_UNIT_OF_MEASURE_LENGTH = 40;
 export const PLAIN_DECIMAL_PATTERN = /^[+-]?\d+(\.\d+)?$/;
 /** An ISO-8601 instant that states its own offset. Date-only and offset-less values are refused: the DAL will not invent a time or a zone. */
 export const OFFSET_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+
+/** Upper bounds applied BEFORE the patterns above run, so matching cost is bounded by construction. */
+export const MAX_DECIMAL_STRING_LENGTH = 64;
+export const MAX_INSTANT_STRING_LENGTH = 40;

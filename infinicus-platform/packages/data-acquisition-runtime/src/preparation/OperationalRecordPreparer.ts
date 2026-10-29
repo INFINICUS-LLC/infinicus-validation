@@ -2,6 +2,8 @@ import type { BatchValidationOutcome, RecordValidationIssue } from '../types.js'
 import {
   CURRENCY_CODE_PATTERN,
   INVENTORY_MOVEMENT_TYPES,
+  MAX_DECIMAL_STRING_LENGTH,
+  MAX_INSTANT_STRING_LENGTH,
   MAX_NAME_LENGTH,
   MAX_UNIT_OF_MEASURE_LENGTH,
   MOVEMENT_REFERENCE_TYPES,
@@ -49,7 +51,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
 
 /** Pattern match plus calendar sanity: Date.parse would roll 2026-02-31 over to March, silently changing the value. */
 function isRealCalendarInstant(value: string): boolean {
-  if (!OFFSET_INSTANT_PATTERN.test(value)) return false;
+  if (value.length > MAX_INSTANT_STRING_LENGTH || !OFFSET_INSTANT_PATTERN.test(value)) return false;
   const [year, month, day, hour, minute] = [value.slice(0, 4), value.slice(5, 7), value.slice(8, 10), value.slice(11, 13), value.slice(14, 16)].map(Number);
   const second = /^\d{2}:\d{2}:(\d{2})/.exec(value.slice(11))?.[1];
   const offset = /[+-](\d{2}):(\d{2})$/.exec(value);
@@ -155,7 +157,7 @@ export class OperationalRecordPreparer {
       }
       if (typeof value === 'string') {
         const trimmed = value.trim();
-        if (!PLAIN_DECIMAL_PATTERN.test(trimmed)) { fail(field, 'invalid_format', `${field} must be a plain decimal number.`); return undefined; }
+        if (trimmed.length > MAX_DECIMAL_STRING_LENGTH || !PLAIN_DECIMAL_PATTERN.test(trimmed)) { fail(field, 'invalid_format', `${field} must be a plain decimal number.`); return undefined; }
         const parsed = Number(trimmed);
         if (!Number.isFinite(parsed)) { fail(field, 'invalid', `${field} is out of range.`); return undefined; }
         if (trimmed !== value) actions.push({ field, rule: 'trim' });

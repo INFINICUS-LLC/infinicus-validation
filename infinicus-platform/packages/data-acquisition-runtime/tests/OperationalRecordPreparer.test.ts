@@ -75,6 +75,10 @@ describe('OperationalRecordPreparer: rejection with explicit reasons', () => {
     expect(r.prepared).toBeNull();
     expect(r.actions).toEqual([]);
   });
+  it('bounds numeric and instant strings before pattern matching', () => {
+    expect(codes(movement({ quantity: '1'.repeat(65) }))).toContain('PREP_QUANTITY_INVALID_FORMAT');
+    expect(codes(movement({ occurredAt: '2026-01-05T10:00:00Z' + ' '.repeat(40) + 'x' }))).toContain('PREP_OCCURREDAT_INVALID');
+  });
   it('rejects over-long names', () => {
     expect(codes({ recordType: 'warehouse', data: { warehouseCode: 'W', name: 'n'.repeat(201) } })).toContain('PREP_NAME_TOO_LONG');
   });
