@@ -70,3 +70,26 @@ Owner decision, in their words: "I Accept Used Space Only Encrypted plus Protect
 
 Recorded effect: the D2 condition is **accepted as met in that form** (not "Fully Encrypted"). The restored database is written after encryption and is therefore encrypted; unencrypted old deleted-file remnants in free space are the known residual risk and are accepted by the owner. This acceptance covers the restore proof only. G-4 stays BLOCKED until the evidence file shows `RP19_RESULT=PASS` and `RESTORE_PROOF=PASS`.
 
+### 5.2 G-4 restore proof result (owner-run, 2026-10-29)
+
+Source: the evidence file `rp19-restore-proof-20261029T154746Z.txt` produced by the owner on their Windows PC (WSL2 Ubuntu-24.04 + Docker Desktop, Docker `--network none`, BitLocker as accepted in 5.1). The owner pasted its result lines; Claude read them and did not run the restore. Sanitized summary, no secrets:
+
+| Item | Value |
+|---|---|
+| Backup | `infinicus-production/2026-10-28/20261028T023834Z-daily` (created 2026-10-28 02:38:34Z) |
+| Run | 2026-10-29 15:47:46Z to 15:49:54Z, mode docker, repo head `faea31ef` |
+| Scripts and objects | `restore-proof.sh` sha256 `9439ccaf…`, profile `production-pre-0210.profile` sha256 `4d4d2a01…`, `db.dump.gpg` sha256 `64f78309…`, `roles.sql.gpg` sha256 `1bcba35d…`; object hashes equal the manifest |
+| Ledger | 209 rows, head `0209_create_print_jobs.sql` |
+| Fingerprints | manifest `325158ea2a54cde9`; restored `68407667a5618dc9` (the reviewed dump-and-restore form) |
+| Row rules | all 15 verified: tenants 16, users 6, businesses 16, outbox events 59; audit_events, inventory_movements, purchase_receipts, inventory_balances, purchase_orders, purchase_order_line_items, orders, register_sessions, order_payments, printers and print_jobs all 0 |
+| Outbox | 48 `onboarding.step.completed` + 11 `billing.subscription.status_changed`, no unlisted event type |
+| Timings (evidence only, not an RTO) | download 0.1 s, decrypt 23.7 s, restore 37.8 s, verify 2.0 s, total 63.6 s |
+| Result | `RESTORE_PROOF=PASS`, `RP19_RESULT=PASS` |
+| An earlier attempt at 15:23:11Z | stopped before restoring (no key file); not part of this result |
+
+Disposal reported by the owner (owner-observed): key copy shredded, objects deleted on the PC and the VM, stray evidence file removed, no restore container left, Docker volume count back to 15 (before the restore: 15). The evidence file is kept 90 days (until about 2027-01-27, D5).
+
+**G-4: PASS** with these limits: the recovery point is the backup time (about 37 h before the restore; no point-in-time recovery, `archive_mode=off`); the restore proved a pre-release (head 0209) backup, not a post-0220 backup (profile `production-post-0220.profile` is untested on real data); the restore host's free-space wipe was not confirmed (5.1); shred on a virtual disk is not guaranteed, so BitLocker protection is what covers leftovers.
+
+G-4 PASS does not authorize anything. G-10 and G-12 stay PENDING, the G-1 rollback pin and the in-window repeat checks are still to do, and the verdict stays **NO-GO / INSUFFICIENT EVIDENCE**.
+
