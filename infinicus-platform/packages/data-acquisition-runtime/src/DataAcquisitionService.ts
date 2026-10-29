@@ -22,9 +22,9 @@ import {
 import { ManualRecordValidator } from './validation/ManualRecordValidator.js';
 import { MAX_RECORDS_PER_REQUEST } from './validation/schemas.js';
 import { DataQualityScoringService } from './quality/DataQualityScoringService.js';
-import { OperationalRecordPreparer, mergePreparationIntoValidation } from './preparation/OperationalRecordPreparer.js';
+import { OperationalRecordPreparer, mergePreparationIntoValidation, unstorableRawPlaceholder } from './preparation/OperationalRecordPreparer.js';
 import { OPERATIONS_PREPARED_SUBMISSION_TYPE, OPERATIONAL_PROFILE_VERSION } from './preparation/operationalRecordProfile.js';
-import { ProvenanceService } from './provenance/ProvenanceService.js';
+import { ProvenanceService, hashRecord } from './provenance/ProvenanceService.js';
 import { PublicationService } from './publication/PublicationService.js';
 import { NotFoundError, ValidationError, CollectionLimitExceededError, WebhookAuthenticationError } from './errors.js';
 import type { ManualIntakeRequest, ManualIntakeResult } from './types.js';
@@ -313,8 +313,11 @@ export class DataAcquisitionService {
     const preparation =
       request.submissionType === OPERATIONS_PREPARED_SUBMISSION_TYPE ? preparer.prepareBatch(request.records) : null;
     const validation = preparation ? mergePreparationIntoValidation(structural, preparation) : structural;
+    // A raw record containing characters jsonb cannot hold (NUL, unpaired surrogates) is stored as a placeholder carrying only its hash; it is always rejected.
+    const storableRaw = (i: number): unknown =>
+      preparation && !preparation[i].rawStorable ? unstorableRawPlaceholder(hashRecord(request.records[i])) : request.records[i];
     const handoffRecords = preparation
-      ? request.records.map((raw, i) => (validation.records[i].isValid ? preparation[i].prepared : raw))
+      ? request.records.map((_, i) => (validation.records[i].isValid ? preparation[i].prepared : storableRaw(i)))
       : request.records;
 
     // Step 7: persist the manual submission. Raw records stay immutable in `preparation.rawRecords`; `records` is what Business Operations reads.
@@ -332,7 +335,7 @@ export class DataAcquisitionService {
           ? {
               preparation: {
                 profileVersion: OPERATIONAL_PROFILE_VERSION,
-                rawRecords: request.records,
+                rawRecords: request.records.map((_, i) => storableRaw(i)),
                 outcomes: preparation.map((o, i) => ({
                   recordIndex: o.recordIndex,
                   status: validation.records[i].isValid ? o.status : 'REJECTED',

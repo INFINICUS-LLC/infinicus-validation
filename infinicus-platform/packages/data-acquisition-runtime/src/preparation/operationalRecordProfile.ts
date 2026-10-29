@@ -30,11 +30,14 @@ export const UNIT_COST_MINIMUM = 0.0001;
 export const MAX_NAME_LENGTH = 200;
 export const MAX_UNIT_OF_MEASURE_LENGTH = 40;
 
-/** A plain decimal: optional sign, digits, optional fraction. No thousands separators, exponents, hex or locale commas. */
-export const PLAIN_DECIMAL_PATTERN = /^[+-]?\d+(\.\d+)?$/;
+/**
+ * Column contracts the prepared numbers must satisfy exactly: business_operations.inventory_movements.quantity and .unit_cost are numeric(18,4).
+ * A PostgreSQL integration test compares these constants with the live columns, so a schema change cannot silently desynchronize them.
+ */
+export const MOVEMENT_QUANTITY_CONTRACT = { precision: 18, scale: 4 } as const;
+export const MOVEMENT_UNIT_COST_CONTRACT = { precision: 18, scale: 4 } as const;
 /** An ISO-8601 instant that states its own offset. Date-only and offset-less values are refused: the DAL will not invent a time or a zone. */
 export const OFFSET_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 
-/** Upper bounds applied BEFORE the patterns above run, so matching cost is bounded by construction. */
-export const MAX_DECIMAL_STRING_LENGTH = 64;
+/** Upper bound applied BEFORE the instant pattern runs, so matching cost is bounded by construction. */
 export const MAX_INSTANT_STRING_LENGTH = 40;
