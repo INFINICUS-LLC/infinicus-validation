@@ -15,7 +15,7 @@ export const OPERATIONS_PREPARED_SUBMISSION_TYPE = 'operations_prepared';
 export const OPERATIONAL_PROFILE_VERSION = '1.0';
 export const NORMALIZE_TRANSFORMATION_TYPE = 'normalize';
 
-export const PREPARED_RECORD_TYPES = ['inventory_item', 'warehouse', 'inventory_movement'] as const;
+export const PREPARED_RECORD_TYPES = ['inventory_item', 'warehouse', 'inventory_movement', 'purchase_order'] as const;
 export type PreparedRecordType = (typeof PREPARED_RECORD_TYPES)[number];
 
 export const INVENTORY_MOVEMENT_TYPES = [
@@ -36,6 +36,8 @@ export const MAX_UNIT_OF_MEASURE_LENGTH = 40;
  */
 export const MOVEMENT_QUANTITY_CONTRACT = { precision: 18, scale: 4 } as const;
 export const MOVEMENT_UNIT_COST_CONTRACT = { precision: 18, scale: 4 } as const;
+/** The purchase-order total column is numeric(18,4) as well; the same live-schema parity test covers it. */
+export const PURCHASE_ORDER_TOTAL_CONTRACT = { precision: 18, scale: 4 } as const;
 /** An ISO-8601 instant that states its own offset. Date-only and offset-less values are refused: the DAL will not invent a time or a zone. */
 export const OFFSET_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 

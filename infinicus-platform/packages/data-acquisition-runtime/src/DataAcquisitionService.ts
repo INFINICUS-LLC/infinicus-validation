@@ -321,8 +321,9 @@ export class DataAcquisitionService {
             const prepared = preparation[outcome.recordIndex].prepared;
             if (!outcome.isValid || !prepared) return [];
             const raw = request.records[outcome.recordIndex] as { data?: Record<string, unknown> };
-            const keyField = prepared.recordType === 'warehouse' ? 'warehouseCode' : 'sku';
-            const rawKey = raw.data?.[keyField];
+            // Only types the detector classifies carry a key; other prepared types (e.g. purchase_order) are skipped by it.
+            const keyField = prepared.recordType === 'warehouse' ? 'warehouseCode' : prepared.recordType === 'inventory_item' ? 'sku' : null;
+            const rawKey = keyField ? raw.data?.[keyField] : undefined;
             return [{
               recordIndex: outcome.recordIndex, prepared, rawHash: hashRecord(raw), preparedHash: hashRecord(prepared),
               rawKeyText: typeof rawKey === 'string' ? rawKey : null,
