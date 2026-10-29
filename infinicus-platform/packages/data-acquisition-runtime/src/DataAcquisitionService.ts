@@ -23,6 +23,7 @@ import { ManualRecordValidator } from './validation/ManualRecordValidator.js';
 import { MAX_RECORDS_PER_REQUEST } from './validation/schemas.js';
 import { DataQualityScoringService } from './quality/DataQualityScoringService.js';
 import { OperationalRecordPreparer, mergePreparationIntoValidation, unstorableRawPlaceholder } from './preparation/OperationalRecordPreparer.js';
+import { detectPreparedKeyFindings, mergeKeyFindingsIntoValidation } from './preparation/preparedKeyFindings.js';
 import { OPERATIONS_PREPARED_SUBMISSION_TYPE, OPERATIONAL_PROFILE_VERSION } from './preparation/operationalRecordProfile.js';
 import { ProvenanceService, hashRecord } from './provenance/ProvenanceService.js';
 import { PublicationService } from './publication/PublicationService.js';
@@ -312,7 +313,24 @@ export class DataAcquisitionService {
     const structural = validator.validateBatch(request.records);
     const preparation =
       request.submissionType === OPERATIONS_PREPARED_SUBMISSION_TYPE ? preparer.prepareBatch(request.records) : null;
-    const validation = preparation ? mergePreparationIntoValidation(structural, preparation) : structural;
+    const afterPreparation = preparation ? mergePreparationIntoValidation(structural, preparation) : structural;
+    // R-01B-2: prepared-key duplicate/conflict findings (report only; BO stays the final validator). Only records still valid take part.
+    const keyFindings = preparation
+      ? detectPreparedKeyFindings(
+          afterPreparation.records.flatMap((outcome) => {
+            const prepared = preparation[outcome.recordIndex].prepared;
+            if (!outcome.isValid || !prepared) return [];
+            const raw = request.records[outcome.recordIndex] as { data?: Record<string, unknown> };
+            const keyField = prepared.recordType === 'warehouse' ? 'warehouseCode' : 'sku';
+            const rawKey = raw.data?.[keyField];
+            return [{
+              recordIndex: outcome.recordIndex, prepared, rawHash: hashRecord(raw), preparedHash: hashRecord(prepared),
+              rawKeyText: typeof rawKey === 'string' ? rawKey : null,
+            }];
+          })
+        )
+      : null;
+    const validation = keyFindings ? mergeKeyFindingsIntoValidation(afterPreparation, keyFindings.issuesByRecord) : afterPreparation;
     // A raw record containing characters jsonb cannot hold (NUL, unpaired surrogates) is stored as a placeholder carrying only its hash; it is always rejected.
     const storableRaw = (i: number): unknown =>
       preparation && !preparation[i].rawStorable ? unstorableRawPlaceholder(hashRecord(request.records[i])) : request.records[i];
@@ -340,6 +358,7 @@ export class DataAcquisitionService {
                   recordIndex: o.recordIndex,
                   status: validation.records[i].isValid ? o.status : 'REJECTED',
                   actions: validation.records[i].isValid ? o.actions : [],
+                  ...(keyFindings?.kindsByRecord.has(i) ? { findings: keyFindings.kindsByRecord.get(i) } : {}),
                 })),
               },
             }
@@ -365,6 +384,7 @@ export class DataAcquisitionService {
         resultDetails: {
           recordCount: request.records.length,
           duplicateRecordIndexes: validation.duplicateRecordIndexes,
+          ...(keyFindings && keyFindings.groups.length > 0 ? { preparedKeyFindings: keyFindings.groups } : {}),
         },
         correlationId: run.correlationId,
       },

@@ -41,3 +41,16 @@ export const OFFSET_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\
 
 /** Upper bound applied BEFORE the instant pattern runs, so matching cost is bounded by construction. */
 export const MAX_INSTANT_STRING_LENGTH = 40;
+
+/**
+ * R-01B-2: prepared-key duplicate/conflict detection. The DAL only REPORTS; Business Operations remains the final validator and sole writer.
+ * Identity and comparison rules mirror what BO enforces today (OperationalCommandExecutor.createInventoryItem / createWarehouse); a BO-side agreement
+ * test runs the same cases through BO and fails if the two ever diverge. Inventory movements have no BO identity contract and are never classified.
+ */
+export const PREPARED_KEY_RULE_CODES = {
+  exactDuplicate: 'PREP_EXACT_DUPLICATE',
+  conflict: 'PREP_CONFLICT',
+  normalizationCollision: 'PREP_NORMALIZATION_COLLISION',
+} as const;
+/** BO stores this when an inventory item states no unit of measure (the INSERT's coalesce); a later record is compared against the stored value. */
+export const INVENTORY_ITEM_DEFAULT_UNIT_OF_MEASURE = 'unit';
