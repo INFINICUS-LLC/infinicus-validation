@@ -300,3 +300,6 @@ button.danger {
   .receipt { position: absolute; top: 0; left: 0; width: 100%; max-width: none; border: 0; box-shadow: none; background: #fff; color: #000; }
   .receipt-actions { display: none; }
 }
+.data-view .kv { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
+.data-view .kv dt { color: var(--color-muted); }
+.data-view .kv dd { margin: 0; }
