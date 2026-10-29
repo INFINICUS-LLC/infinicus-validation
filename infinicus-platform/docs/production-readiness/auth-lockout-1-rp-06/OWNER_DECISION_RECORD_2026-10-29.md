@@ -62,3 +62,11 @@ Source: the owner's completed "OWNER INPUT FORM (G-4, G-12)". Recorded as answer
 
 Gate effect of the update: G-12 stays **PENDING** (no window; rollback owner is the executor, with the risk above). G-4 stays **BLOCKED**. G-10 is not asked and no migration or deployment is authorized. A4 (not undisturbed) is a risk to resolve before any window is set. Verdict: NO-GO / INSUFFICIENT EVIDENCE.
 
+### 5.1 BitLocker acceptance (owner, 2026-10-29, after the form)
+
+`manage-bde -status C:` as pasted by the owner: `Used Space Only Encrypted`, 100.0%, AES 128, `Protection On`, key protectors TPM and Numerical Password (owner-observed; Claude cannot verify). A free-space wipe (`manage-bde -w C:`) was started by the owner; the status did not show a change and Claude cannot confirm that it finished.
+
+Owner decision, in their words: "I Accept Used Space Only Encrypted plus Protection On."
+
+Recorded effect: the D2 condition is **accepted as met in that form** (not "Fully Encrypted"). The restored database is written after encryption and is therefore encrypted; unencrypted old deleted-file remnants in free space are the known residual risk and are accepted by the owner. This acceptance covers the restore proof only. G-4 stays BLOCKED until the evidence file shows `RP19_RESULT=PASS` and `RESTORE_PROOF=PASS`.
+
