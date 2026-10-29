@@ -101,6 +101,10 @@ export interface ProvenanceInput {
   recordReference: string;
   sourceReference: string;
   record: unknown;
+  /** R-01A: the prepared (normalized) form of `record`. When present, a 'normalize' transformation (raw hash -> prepared hash) is recorded. */
+  preparedRecord?: unknown;
+  /** R-01A: normalization rules applied (field + rule only; never values). */
+  preparationActions?: ReadonlyArray<{ field: string; rule: string }>;
   parentProvenanceId?: string;
   correlationId?: string;
 }

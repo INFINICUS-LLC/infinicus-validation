@@ -22,7 +22,9 @@ import {
 import { ManualRecordValidator } from './validation/ManualRecordValidator.js';
 import { MAX_RECORDS_PER_REQUEST } from './validation/schemas.js';
 import { DataQualityScoringService } from './quality/DataQualityScoringService.js';
-import { ProvenanceService } from './provenance/ProvenanceService.js';
+import { OperationalRecordPreparer, mergePreparationIntoValidation, unstorableRawPlaceholder } from './preparation/OperationalRecordPreparer.js';
+import { OPERATIONS_PREPARED_SUBMISSION_TYPE, OPERATIONAL_PROFILE_VERSION } from './preparation/operationalRecordProfile.js';
+import { ProvenanceService, hashRecord } from './provenance/ProvenanceService.js';
 import { PublicationService } from './publication/PublicationService.js';
 import { NotFoundError, ValidationError, CollectionLimitExceededError, WebhookAuthenticationError } from './errors.js';
 import type { ManualIntakeRequest, ManualIntakeResult } from './types.js';
@@ -41,6 +43,7 @@ const publicationPackages = new PublicationPackageRepository();
 
 const validator = new ManualRecordValidator();
 const scoring = new DataQualityScoringService();
+const preparer = new OperationalRecordPreparer();
 const provenance = new ProvenanceService();
 const publication = new PublicationService();
 
@@ -304,20 +307,49 @@ export class DataAcquisitionService {
     dataSourceId: string,
     request: ManualIntakeRequest
   ): Promise<ManualIntakeResult> {
-    // Step 7: persist the manual submission.
+    // R-01A: opt-in operational preparation (submissionType 'operations_prepared'). Pure and runs before anything is written, so a rejected record
+    // never reaches the hand-off payload as anything other than its raw, provenance-less form (BO skips records without provenance).
+    const structural = validator.validateBatch(request.records);
+    const preparation =
+      request.submissionType === OPERATIONS_PREPARED_SUBMISSION_TYPE ? preparer.prepareBatch(request.records) : null;
+    const validation = preparation ? mergePreparationIntoValidation(structural, preparation) : structural;
+    // A raw record containing characters jsonb cannot hold (NUL, unpaired surrogates) is stored as a placeholder carrying only its hash; it is always rejected.
+    const storableRaw = (i: number): unknown =>
+      preparation && !preparation[i].rawStorable ? unstorableRawPlaceholder(hashRecord(request.records[i])) : request.records[i];
+    const handoffRecords = preparation
+      ? request.records.map((_, i) => (validation.records[i].isValid ? preparation[i].prepared : storableRaw(i)))
+      : request.records;
+
+    // Step 7: persist the manual submission. Raw records stay immutable in `preparation.rawRecords`; `records` is what Business Operations reads.
     const submission = await manualSubmissions.createOn(client, ctx, {
       businessId: request.businessId,
       dataSourceId,
       collectionRunId: run.id,
       submittedBy: request.submittedBy,
       submissionType: request.submissionType,
-      payload: { records: request.records, sourceReference: request.sourceReference, metadata: request.metadata },
+      payload: {
+        records: handoffRecords,
+        sourceReference: request.sourceReference,
+        metadata: request.metadata,
+        ...(preparation
+          ? {
+              preparation: {
+                profileVersion: OPERATIONAL_PROFILE_VERSION,
+                rawRecords: request.records.map((_, i) => storableRaw(i)),
+                outcomes: preparation.map((o, i) => ({
+                  recordIndex: o.recordIndex,
+                  status: validation.records[i].isValid ? o.status : 'REJECTED',
+                  actions: validation.records[i].isValid ? o.actions : [],
+                })),
+              },
+            }
+          : {}),
+      },
       submissionNotes: request.submissionNotes,
       correlationId: run.correlationId,
     });
 
-    // Step 8: validate every record deterministically.
-    const validation = validator.validateBatch(request.records);
+    // Step 8: validation (structural, plus preparation when opted in) was computed above.
 
     // Step 9: persist validation results and issues.
     const { result: validationResult } = await validationResults.createOn(
@@ -399,6 +431,12 @@ export class DataAcquisitionService {
         recordReference: `${submission.id}#${outcome.recordIndex}`,
         sourceReference: request.sourceReference ?? submission.id,
         record: request.records[outcome.recordIndex],
+        ...(preparation
+          ? {
+              preparedRecord: preparation[outcome.recordIndex].prepared,
+              preparationActions: preparation[outcome.recordIndex].actions,
+            }
+          : {}),
         correlationId: run.correlationId,
       });
       provenanceIds.push(id);
