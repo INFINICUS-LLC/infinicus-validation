@@ -42,3 +42,23 @@ Baseline: `main` 35d37cd2; RC `claude/auth-lockout-1-isolated-rc` @ `bea03e66f00
 
 ## 4. Not decided here
 Production migration, deployment, G-10, any merge of unrelated work, AUDIT-LP-1 rollout timing.
+
+## 5. Update 2026-10-29 (owner input form, same day)
+
+Source: the owner's completed "OWNER INPUT FORM (G-4, G-12)". Recorded as answered; blanks are not decided. This section amends row 9 above and adds the form's answers. It is not a release authorization.
+
+| Item | Owner's answer | Recorded as |
+|---|---|---|
+| Row 9 (rollback owner), changed | The owner is both executor and rollback owner, "under Claude's guidance" (no separate named person; no one on call, B3 = NO) | Option B. The independent second person recommended in the decision sheet is NOT provided. The owner states they will treat the stop conditions as binding (B4 YES) and keep the rollback commands open before starting (B5 YES). Claude gives guidance only and has no production access. |
+| Window (A1-A5) | Not ready (A5). Date and time not chosen. Time zone: Kuwait / Asia (KWT, UTC+3). A4: the owner does NOT expect to be undisturbed for the whole window. | **No window chosen.** The text "start immediately / the start is yours" is an intention to begin once readiness is confirmed, not a date and time. It is not an authorization. |
+| C1 BitLocker | NOT YET (encryption in progress: 11.7% at last check, TPM and recovery-password protectors present) | D2 condition still unmet |
+| C2 recovery key saved outside C: | YES | recorded as stated by the owner (not verifiable by Claude) |
+| C3 restore command run | NOT YET | G-4 stays BLOCKED |
+| C4, C5 | left blank | not done (the restore has not run) |
+| E1 rclone history lines | not yet | open |
+| E2 old Anthropic and Resend keys revoked | not yet | open |
+| E3 `chmod 600` on the two env backups | left blank | open |
+| D1, D2 of the form | YES, YES | this update was prepared at the owner's request; the owner merges it |
+
+Gate effect of the update: G-12 stays **PENDING** (no window; rollback owner is the executor, with the risk above). G-4 stays **BLOCKED**. G-10 is not asked and no migration or deployment is authorized. A4 (not undisturbed) is a risk to resolve before any window is set. Verdict: NO-GO / INSUFFICIENT EVIDENCE.
+
