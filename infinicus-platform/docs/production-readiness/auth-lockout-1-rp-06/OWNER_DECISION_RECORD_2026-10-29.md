@@ -9,7 +9,7 @@ Baseline: `main` 35d37cd2; RC `claude/auth-lockout-1-isolated-rc` @ `bea03e66f00
 | # | Decision | Answer | Recorded terms |
 |---|---|---|---|
 | 1 | D1 Backup | A, approved | Restore `infinicus-production/2026-10-28/20261028T023834Z-daily` for disaster-recovery validation only (expected: ledger 209, head `0209_create_print_jobs.sql`, fingerprint `325158ea2a54cde9`, profile `production-pre-0210.profile`). |
-| 2 | D2 Restore host | A, approved **conditionally** | The owner's Windows PC (WSL2 Ubuntu-24.04 + Docker Desktop, data on `C:`), only after `manage-bde -status C:` shows `Fully Decrypted`→ **Fully Encrypted and Protection On**. Not met at the time of writing (C: reported Fully Decrypted, no key protectors). |
+| 2 | D2 Restore host | A, approved **conditionally** | The owner's Windows PC (WSL2 Ubuntu-24.04 + Docker Desktop, data on `C:`), only after `manage-bde -status C:` shows **Fully Encrypted** and **Protection On**. Not met at the time of writing (`C:` reported Fully Decrypted, Protection Off, no key protectors). |
 | 3 | D3 Key custodian | A, approved | The owner personally; key and passphrase never in chat, logs or evidence. |
 | 4 | D4 Customer-data processing | A, approved | Read-only proof queries only; no export, copy, publication or connection to production. |
 | 5 | D5 Retention and disposal | A, approved | Keep only the sanitized evidence file for 90 days; delete objects, decrypted dumps, restored database volume and key copies right after evidence capture; record the time. |
