@@ -5,6 +5,7 @@ import {
 } from '@infinicus/database';
 import type { PoolClient } from 'pg';
 import type { ProvenanceInput } from '../types.js';
+import { NORMALIZE_TRANSFORMATION_TYPE, OPERATIONAL_PROFILE_VERSION } from '../preparation/operationalRecordProfile.js';
 
 /**
  * Canonicalizes a JSON-compatible value into a stable string: object keys
@@ -74,6 +75,27 @@ export class ProvenanceService {
     const canonical = canonicalizeRecord(input.record);
     const hash = hashRecord(input.record);
 
+    const transformations = [
+      {
+        transformationType: 'canonicalize',
+        transformationVersion: '1.0',
+        inputHash: hash,
+        outputHash: hash,
+        parameters: { canonicalLength: canonical.length } as Record<string, unknown>,
+        performedByType: 'system' as const,
+      },
+    ];
+    if (input.preparedRecord !== undefined) {
+      transformations.push({
+        transformationType: NORMALIZE_TRANSFORMATION_TYPE,
+        transformationVersion: OPERATIONAL_PROFILE_VERSION,
+        inputHash: hash,
+        outputHash: hashRecord(input.preparedRecord),
+        parameters: { actions: (input.preparationActions ?? []).map((a) => ({ field: a.field, rule: a.rule })) },
+        performedByType: 'system' as const,
+      });
+    }
+
     const { provenance } = await repo.createOn(
       client,
       ctx,
@@ -87,16 +109,7 @@ export class ProvenanceService {
         parentProvenanceId: input.parentProvenanceId,
         correlationId: input.correlationId,
       },
-      [
-        {
-          transformationType: 'canonicalize',
-          transformationVersion: '1.0',
-          inputHash: hash,
-          outputHash: hash,
-          parameters: { canonicalLength: canonical.length },
-          performedByType: 'system',
-        },
-      ]
+      transformations
     );
 
     return provenance.id;
