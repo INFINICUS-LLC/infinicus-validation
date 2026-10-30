@@ -228,3 +228,50 @@ describe('R-01B-6 asset_inspection: DAL preparation profile <-> BO mapper', () =
     }
   });
 });
+
+describe('R-01B-7 supplier_performance: DAL preparation profile <-> BO mapper', () => {
+  const mapper = mapperFor('supplier_performance');
+  const SUPPLIER = '3f2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e6f';
+  const rec = (data: Record<string, unknown>) => ({
+    recordType: 'supplier_performance',
+    data: { supplierId: SUPPLIER, periodStart: '2026-01-01', periodEnd: '2026-03-31', qualityScore: 90, deliveryScore: 80, priceScore: 70, serviceScore: 60, overallScore: 75, ...data },
+  });
+
+  it('everything the DAL prepares passes the BO mapper unchanged, and the mapper produces the matching command', () => {
+    const probes: Array<Record<string, unknown>> = [
+      {}, { qualityScore: 0 }, { overallScore: 100 }, { priceScore: '99.99' }, { serviceScore: ' 12.5 ' }, { supplierId: SUPPLIER.toUpperCase() },
+      { periodStart: '2024-02-29', periodEnd: '2024-02-29' }, { notes: ' n ' }, { periodStart: ' 2026-01-01 ' },
+      { qualityScore: 100.01 }, { qualityScore: -1 }, { priceScore: '85.123' }, { supplierId: 'S-1' }, { periodStart: '2026-02-31' }, { periodStart: '2026-05-01' }, { notes: 5 },
+    ];
+    let accepted = 0; let rejected = 0;
+    for (const probe of probes) {
+      const outcome = preparer.prepareRecord(rec(probe), 0);
+      if (outcome.status === 'REJECTED') { rejected++; continue; }
+      accepted++;
+      const data = outcome.prepared!.data;
+      expect(mapper.validate(data), JSON.stringify(data)).toEqual([]);
+      const [command] = mapper.map(data, { tenantId: 't', workspaceId: 'w', businessId: 'b', correlationId: 'c', sourceReference: 's' } as never);
+      expect(command.type).toBe('record_supplier_performance');
+      expect((command as { payload: Record<string, unknown> }).payload).toMatchObject({
+        supplierId: SUPPLIER, periodStart: data.periodStart, periodEnd: data.periodEnd, qualityScore: data.qualityScore, overallScore: data.overallScore,
+      });
+    }
+    expect(accepted).toBe(9);
+    expect(rejected).toBe(7);
+  });
+
+  it('the DAL is deliberately stricter than BO where the column would lose or refuse data, and never looser', () => {
+    // BO accepts these (it checks only the 0..100 range / date parse), the columns would round or reject them; the DAL refuses them.
+    for (const data of [{ priceScore: 85.123 }, { periodStart: '2026-04-01', periodEnd: '2026-03-31' }, { periodStart: '2026-03-01T10:00:00Z' }]) {
+      expect(mapper.validate(rec(data).data), JSON.stringify(data)).toEqual([]);
+      expect(preparer.prepareRecord(rec(data), 0).status, JSON.stringify(data)).toBe('REJECTED');
+    }
+  });
+
+  it('what BO rejects the DAL rejects: missing or mistyped required fields and out-of-range scores', () => {
+    for (const data of [{ supplierId: undefined }, { supplierId: 5 }, { periodStart: undefined }, { qualityScore: undefined }, { overallScore: 101 }, { deliveryScore: -1 }, { notes: [] }]) {
+      expect(mapper.validate(rec(data).data).length, JSON.stringify(data)).toBeGreaterThan(0);
+      expect(preparer.prepareRecord(rec(data), 0).status, JSON.stringify(data)).toBe('REJECTED');
+    }
+  });
+});

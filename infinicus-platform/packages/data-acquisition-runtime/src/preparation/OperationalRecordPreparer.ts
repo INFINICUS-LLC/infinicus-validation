@@ -11,6 +11,10 @@ import {
   MOVEMENT_REFERENCE_TYPES,
   MOVEMENT_UNIT_COST_CONTRACT,
   PURCHASE_ORDER_TOTAL_CONTRACT,
+  SUPPLIER_SCORE_CONTRACT,
+  SUPPLIER_SCORE_FIELDS,
+  SUPPLIER_SCORE_MAXIMUM,
+  SUPPLIER_SCORE_MINIMUM,
   NATURAL_KEY_PATTERN,
   OPERATIONAL_FACT_ACTIONS,
   OPERATIONAL_FACT_AMOUNT_CONTRACT,
@@ -74,6 +78,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
   purchase_order: ['supplierId', 'poNumber', 'expectedDate', 'currencyCode', 'totalAmount', 'notes'],
   workforce_event: ['memberId', 'action', 'hours', 'notes'],
   asset_inspection: ['assetId', 'inspectionType', 'conditionRating', 'pass', 'findings', 'actionsRequired', 'nextInspectionDate'],
+  supplier_performance: ['supplierId', 'periodStart', 'periodEnd', 'qualityScore', 'deliveryScore', 'priceScore', 'serviceScore', 'overallScore', 'notes'],
   operational_fact: ['eventType', 'amount', 'quantity', 'category', 'customerId', 'memberId', 'action', 'notes'],
 };
 
@@ -318,6 +323,27 @@ export class OperationalRecordPreparer {
       if (out.memberId === undefined && out.action === undefined && out.hours === undefined && issues.length === 0) { // judged on the prepared form: null / blank values were omitted
         reject('workforce_event_empty', 'data', 'A workforce event needs at least one of memberId, action and hours.');
       }
+    } else if (type === 'supplier_performance') {
+      // Field rules mirror the BO mapper and the supplier_performance_scores columns. supplierId is a uuid column (format only; that the supplier exists in
+      // the business is BO's decision). Periods are date columns. The five scores are required numbers in 0..100 stored as numeric(5,2); BO would round a
+      // third decimal silently, so the DAL refuses it. sps_period_check (period_end >= period_start) is enforced by the table and would abort the whole
+      // atomic handoff with a raw database error, so the DAL refuses a reversed period too. evaluatedBy is not part of the BO contract. BO defines no
+      // identity rule for a score row (no unique constraint), so no duplicate or conflict is reported.
+      put('supplierId', uuidReference('supplierId', true));
+      const periodStart = dateOnly('periodStart', true);
+      const periodEnd = dateOnly('periodEnd', true);
+      put('periodStart', periodStart);
+      put('periodEnd', periodEnd);
+      if (periodStart !== undefined && periodEnd !== undefined && periodEnd < periodStart) {
+        fail('periodEnd', 'before_periodstart', 'periodEnd must not be earlier than periodStart.');
+      }
+      for (const field of SUPPLIER_SCORE_FIELDS) {
+        const value = decimal(field, true, SUPPLIER_SCORE_CONTRACT);
+        if (value !== undefined && (value < SUPPLIER_SCORE_MINIMUM || value > SUPPLIER_SCORE_MAXIMUM)) {
+          fail(field, 'out_of_range', `${field} must be between ${SUPPLIER_SCORE_MINIMUM} and ${SUPPLIER_SCORE_MAXIMUM}.`);
+        } else put(field, value);
+      }
+      put('notes', text('notes', false));
     } else if (type === 'operational_fact') {
       // Field rules mirror the BO mapper and the business_events columns. customerId / memberId / category are TEXT columns in BO (not uuid), so they
       // get trim / NFC / non-empty only. BO defines no identity rule for a fact (no natural key), so no duplicate or conflict is reported.

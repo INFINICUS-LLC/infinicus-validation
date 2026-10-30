@@ -43,6 +43,7 @@ export {
   WORKFORCE_EVENT_ACTIONS,
   ASSET_INSPECTION_TYPES,
   ASSET_CONDITION_RATINGS,
+  SUPPLIER_SCORE_CONTRACT,
 } from './preparation/operationalRecordProfile.js';
 export { ManualRecordValidator } from './validation/ManualRecordValidator.js';
 
