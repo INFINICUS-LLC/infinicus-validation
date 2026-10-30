@@ -101,6 +101,17 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
   const balance = async (s: Scenario) => (await q(`SELECT reorder_point::float rp, reorder_quantity::float rq, version, reorder_policy_state state, reorder_policy_configured_source source FROM ${BO}.inventory_balances WHERE id=$1`, [s.ew.balanceId]))[0];
   const verifications = (s: Scenario) => q('SELECT * FROM outcome_monitoring.action_execution_verifications WHERE tenant_id=$1', [t(s)]);
   const dead = (s: Scenario) => q('SELECT * FROM events.dead_letter_events WHERE tenant_id=$1', [t(s)]);
+  /**
+   * Where the pipeline stopped, for the failure message of an "expected one execution" assertion (CI-STAB-04). Without it a missing execution
+   * reads only "expected [] to have a length of 1": the attempt rows and the claim/outbox/dead-letter state say whether BO retried an operational
+   * error, the worker never reached the event, or the event was dead-lettered. Computed only when the count is wrong, so a passing run issues no extra query.
+   */
+  const pipelineState = async (s: Scenario) => {
+    const att = await attempts(s);
+    const outbox = await q(`SELECT event_type, status, attempt_count FROM events.outbox_events WHERE tenant_id=$1 ORDER BY created_at`, [t(s)]);
+    const letters = await dead(s);
+    return `executions missing | claims=${(await claims(s)).length} attempts=${JSON.stringify(att.map((a) => ({ n: a.attempt_number, outcome: a.outcome, reason: a.reason_code, detail: String(a.detail ?? '').slice(0, 160) })))} outbox=${JSON.stringify(outbox)} deadLetters=${letters.length}`;
+  };
   const executedEvents = (s: Scenario) => q(`SELECT * FROM events.outbox_events WHERE tenant_id=$1 AND event_type='operations.action.executed'`, [t(s)]);
   const untouched = async (s: Scenario) => expect(await balance(s)).toMatchObject({ rp: 100, rq: 200, version: 1, state: 'UNSET' });
 
@@ -117,7 +128,7 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
     expect(claim).toHaveLength(1);
     expect(s.mirrors).toHaveLength(1); // ABA is told the claim; BO's claim stays canonical
     const ex = await executions(s);
-    expect(ex).toHaveLength(1);
+    expect(ex, ex.length === 1 ? undefined : await pipelineState(s)).toHaveLength(1);
     expect(ex[0]).toMatchObject({ outcome: 'SUCCEEDED', mutation_result: 'APPLIED', authority_verdict: 'CURRENT', claim_id: claim[0].id });
     expect(await balance(s)).toMatchObject({ rp: 150, rq: 250, version: 2, state: 'CONFIGURED', source: 'AUTHORIZED_ACTION_PACKAGE' });
     expect(ex[0].evidence.contractVersion).toBe('execution-evidence/1');
@@ -215,7 +226,7 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
       s.revoked = true;
       await drain(worker(s));
       const ex = await executions(s);
-      expect(ex).toHaveLength(1);
+      expect(ex, ex.length === 1 ? undefined : await pipelineState(s)).toHaveLength(1);
       expect(ex[0]).toMatchObject({ outcome: 'REFUSED', reason_code: 'AUTHORITY_REVOKED', mutation_result: 'NOT_APPLICABLE' });
       await untouched(s);
       const v = await verifications(s);
@@ -233,7 +244,7 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
       for (let i = 0; i < 5; i += 1) { await worker(s, { clock }).runOnce(); offset += 60_000; }
       expect((await attempts(s)).map((a) => a.attempt_number)).toEqual([1, 2]); // the third attempt is the terminal outcome
       const ex = await executions(s);
-      expect(ex).toHaveLength(1);
+      expect(ex, ex.length === 1 ? undefined : await pipelineState(s)).toHaveLength(1);
       expect(ex[0]).toMatchObject({ outcome: 'REFUSED', reason_code: 'RETRIES_EXHAUSTED', mutation_result: 'NOT_APPLICABLE', attempt_count: 3 });
       await untouched(s);
       const v = await verifications(s);
@@ -255,7 +266,7 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
       offset += 60_000;
       await drain(worker(s, { clock }));
       const ex = await executions(s);
-      expect(ex).toHaveLength(1);
+      expect(ex, ex.length === 1 ? undefined : await pipelineState(s)).toHaveLength(1);
       expect(ex[0]).toMatchObject({ outcome: 'SUCCEEDED', attempt_count: 2 });
       expect(await balance(s)).toMatchObject({ rp: 150, rq: 250, version: 2 });
     });
@@ -328,7 +339,7 @@ describe.runIf(run)('P0-6e: controlled execution wiring (real components, script
         await admin.query(`DROP FUNCTION public.${fn}()`);
       }
       const ex = await executions(s);
-      expect(ex).toHaveLength(1);
+      expect(ex, ex.length === 1 ? undefined : await pipelineState(s)).toHaveLength(1);
       expect(ex[0]).toMatchObject({ outcome: 'SUCCEEDED', mutation_result: 'APPLIED' });
       expect(await balance(s)).toMatchObject({ rp: 150, rq: 250, version: 2 });
       expect(await verifications(s)).toHaveLength(0);
