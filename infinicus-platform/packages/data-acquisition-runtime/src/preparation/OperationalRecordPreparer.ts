@@ -1,6 +1,8 @@
 import type { BatchValidationOutcome, RecordValidationIssue } from '../types.js';
 import {
   CURRENCY_CODE_PATTERN,
+  ASSET_CONDITION_RATINGS,
+  ASSET_INSPECTION_TYPES,
   INVENTORY_MOVEMENT_TYPES,
   MAX_INSTANT_STRING_LENGTH,
   MAX_NAME_LENGTH,
@@ -83,6 +85,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
     'unitCost', 'unitCostCurrency', 'referenceType', 'referenceId', 'notes',
   ],
   purchase_order: ['supplierId', 'poNumber', 'expectedDate', 'currencyCode', 'totalAmount', 'notes'],
+  asset_inspection: ['assetId', 'inspectionType', 'conditionRating', 'pass', 'findings', 'actionsRequired', 'nextInspectionDate'],
   workforce_event: ['memberId', 'action', 'hours', 'notes'],
   purchase_receipt: ['purchaseOrderId', 'warehouseId', 'receiptNumber', 'receivedAt', 'notes', 'lines'],
   operational_fact: ['eventType', 'amount', 'quantity', 'category', 'customerId', 'memberId', 'action', 'notes'],
@@ -362,6 +365,20 @@ export class OperationalRecordPreparer {
         });
         out.lines = preparedLines;
       }
+    } else if (type === 'asset_inspection') {
+      // Field rules mirror the BO mapper and the asset_inspections columns. assetId is a uuid column (format only; that the asset exists in the business is
+      // BO's decision). pass must already be a boolean: the DAL does not guess "yes" / "true" / 1. nextInspectionDate is a date column. inspectedBy,
+      // inspectedAt and checklistResults are not part of the BO contract. BO defines no identity rule for an inspection, so none is reported.
+      put('assetId', uuidReference('assetId', true));
+      put('inspectionType', enumeration('inspectionType', ASSET_INSPECTION_TYPES, false));
+      put('conditionRating', enumeration('conditionRating', ASSET_CONDITION_RATINGS, true));
+      const pass = raw.pass;
+      if (typeof pass === 'boolean') out.pass = pass;
+      else if (pass === undefined || pass === null) fail('pass', 'required', 'pass is required.');
+      else fail('pass', 'invalid', 'pass must be true or false.');
+      put('findings', text('findings', false));
+      put('actionsRequired', text('actionsRequired', false));
+      put('nextInspectionDate', dateOnly('nextInspectionDate', false));
     } else if (type === 'workforce_event') {
       // Field rules mirror the BO mapper: memberId is free text (member_id is TEXT, not uuid), action is hire|fire|review, hours is a non-negative
       // number stored in numeric(18,4). BO requires at least one of memberId, action and hours; notes alone is not an event. BO defines no identity rule

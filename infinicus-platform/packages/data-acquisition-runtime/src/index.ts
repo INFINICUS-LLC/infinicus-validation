@@ -41,6 +41,8 @@ export {
   OPERATIONAL_FACT_EVENT_TYPES,
   OPERATIONAL_FACT_ACTIONS,
   WORKFORCE_EVENT_ACTIONS,
+  ASSET_INSPECTION_TYPES,
+  ASSET_CONDITION_RATINGS,
 } from './preparation/operationalRecordProfile.js';
 export { ManualRecordValidator } from './validation/ManualRecordValidator.js';
 
