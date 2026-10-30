@@ -67,6 +67,22 @@ function psqlTransaction(connectionString, statements) {
   return runPsql(connectionString, ['-v', 'ON_ERROR_STOP=1'], script);
 }
 
+// Read-only count batching. Each count is emitted as `CNT|<index>|<count>` and matched back to its table by index, never by position or by guessing.
+// A missing, repeated or non-numeric result is an error: a count that could not be read is never reported as zero.
+function parseCountLines(output, expected, what) {
+  const counts = new Array(expected).fill(null);
+  for (const line of output.split('\n').map((value) => value.trim())) {
+    const match = /^CNT\|(\d+)\|(\d+)$/.exec(line);
+    if (!match) continue; // set_config() echoes its value into the output of a scoped session
+    const index = Number(match[1]);
+    const count = Number(match[2]);
+    if (index >= expected || counts[index] !== null || !Number.isSafeInteger(count) || count < 0) throw new Error(`Invalid ${what} count result`);
+    counts[index] = count;
+  }
+  if (counts.some((count) => count === null)) throw new Error(`Missing ${what} count result`);
+  return counts;
+}
+
 // AUDIT-LP-1: tables whose rows the APPLICATION role may no longer update, delete or truncate (see grant-app-role.sh). This tenant's rows in them are
 // erased over the ADMIN connection instead, always with an explicit `tenant_id = <tenant>` predicate. Rows with a NULL tenant_id (shared
 // pre-authentication events) belong to no tenant and are never touched. A table listed here that lacks a literal tenant_id column is reported as
@@ -278,21 +294,43 @@ async function main() {
     return clause;
   }
 
-  function countScopedRows(table) {
-    const scopes = tablesRequiringWorkspaceScope.has(table) ? workspaceIds : [null];
-    let total = 0;
-    for (const ws of scopes) {
-      const countRaw = psql(DATABASE_URL,
-        `SELECT set_config('app.tenant_id', '${TENANT_ID}', true);` +
-        (ws ? ` SELECT set_config('app.workspace_id', '${ws}', true);` : '') +
-        ` SELECT count(*) FROM ${table}${scopedClause(table, ws)};`);
-      const lines = countRaw.split('\n').map((line) => line.trim()).filter(Boolean);
-      const value = Number(lines[lines.length - 1]);
-      if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Invalid scoped row count for ${table}`);
-      total += value;
+  // Counts under the APPLICATION role with RLS context, exactly as before, but in at most two psql sessions instead of one process per table and
+  // workspace. Every count keeps its own transaction (BEGIN ... COMMIT) so its transaction-local app.tenant_id / app.workspace_id exist only for that
+  // count. Sessions are split by scope signature: once a session has set a custom variable, PostgreSQL keeps it as an EMPTY STRING (not unset) after the
+  // transaction ends, and a policy that casts `current_setting('app.workspace_id', true)::uuid` would then fail instead of seeing NULL. The tenant-only
+  // session therefore never sets app.workspace_id, and every count in the workspace session sets both variables itself. Any failure aborts the whole run.
+  function countScopedRowsBatch(tables) {
+    const totals = new Map(tables.map((table) => [table, 0]));
+    const plan = [];
+    for (const table of tables) {
+      const scopes = tablesRequiringWorkspaceScope.has(table) ? workspaceIds : [null];
+      for (const ws of scopes) plan.push({ table, ws });
     }
-    if (!Number.isSafeInteger(total)) throw new Error(`Unsafe scoped row count for ${table}`);
-    return total;
+    for (const workspaceScoped of [false, true]) {
+      const items = plan.filter((item) => (item.ws !== null) === workspaceScoped);
+      if (items.length === 0) continue;
+      const script = ['\\set ON_ERROR_STOP on'];
+      items.forEach((item, index) => {
+        script.push('BEGIN;', `SELECT set_config('app.tenant_id', '${TENANT_ID}', true);`);
+        if (item.ws) script.push(`SELECT set_config('app.workspace_id', '${item.ws}', true);`);
+        script.push(`SELECT 'CNT|${index}|' || count(*) FROM ${item.table}${scopedClause(item.table, item.ws)};`, 'COMMIT;');
+      });
+      const counts = parseCountLines(runPsql(DATABASE_URL, ['-tA', '-v', 'ON_ERROR_STOP=1'], script.join('\n')), items.length, 'scoped row');
+      items.forEach((item, index) => totals.set(item.table, totals.get(item.table) + counts[index]));
+    }
+    for (const [table, total] of totals) if (!Number.isSafeInteger(total)) throw new Error(`Unsafe scoped row count for ${table}`);
+    return totals;
+  }
+
+  // Counts over the ADMIN connection with an explicit tenant predicate (no RLS context involved): one UNION ALL, the same shape as the
+  // remaining-rows check below.
+  function countTenantRowsAdmin(tables) {
+    const totals = new Map();
+    if (tables.length === 0) return totals;
+    const query = tables.map((table, index) => `SELECT 'CNT|${index}|' || count(*) FROM ${table} WHERE tenant_id = '${TENANT_ID}'`).join(' UNION ALL ') + ';';
+    const counts = parseCountLines(runPsql(ADMIN_DATABASE_URL, ['-tA', '-v', 'ON_ERROR_STOP=1'], query), tables.length, 'retained row');
+    tables.forEach((table, index) => totals.set(table, counts[index]));
+    return totals;
   }
 
   const deletableOrder = order.filter((table) => !tablesAppendOnly.has(table));
@@ -301,8 +339,9 @@ async function main() {
   const appRoleOrder = deletableOrder.filter((table) => !ADMIN_ERASED_TABLES.has(table));
 
   const rowCounts = {};
+  const preDeleteCounts = countScopedRowsBatch(deletableOrder);
   for (const table of deletableOrder) {
-    rowCounts[table] = countScopedRows(table);
+    rowCounts[table] = preDeleteCounts.get(table);
   }
 
   // Each deletable table runs as its own short transaction rather than
@@ -360,17 +399,11 @@ async function main() {
   // its actual scoped rows after the deletable pass and fail closed if any
   // remain. This also prevents a missing FK from producing false "complete".
   const retainedRowCounts = {};
+  // The explicit tenant predicate also detects rows a workspace RLS policy might hide after a workspace was removed or mislinked.
+  const retainedByTenantColumn = countTenantRowsAdmin([...tablesAppendOnly].filter((table) => tablesWithTenantIdColumn.has(table)));
+  const retainedByScope = countScopedRowsBatch([...tablesAppendOnly].filter((table) => !tablesWithTenantIdColumn.has(table)));
   for (const table of tablesAppendOnly) {
-    if (tablesWithTenantIdColumn.has(table)) {
-      // The explicit tenant predicate also detects rows a workspace RLS
-      // policy might hide after a workspace was removed or mislinked.
-      const count = Number(psql(ADMIN_DATABASE_URL,
-        `SELECT count(*) FROM ${table} WHERE tenant_id = '${TENANT_ID}';`).trim());
-      if (!Number.isSafeInteger(count) || count < 0) throw new Error(`Invalid retained row count for ${table}`);
-      retainedRowCounts[table] = count;
-    } else {
-      retainedRowCounts[table] = countScopedRows(table);
-    }
+    retainedRowCounts[table] = tablesWithTenantIdColumn.has(table) ? retainedByTenantColumn.get(table) : retainedByScope.get(table);
   }
   const retainedRows = Object.values(retainedRowCounts).reduce((sum, count) => sum + count, 0);
   if (!Number.isSafeInteger(retainedRows)) throw new Error('Unsafe retained row total');
@@ -393,8 +426,9 @@ async function main() {
     }
     if (count > 0) remainingRows[table] = count;
   }
+  const indirectCounts = countScopedRowsBatch(tablesScopedIndirectly);
   for (const table of tablesScopedIndirectly) {
-    const count = countScopedRows(table);
+    const count = indirectCounts.get(table);
     if (count > 0) remainingRows[table] = count;
   }
 

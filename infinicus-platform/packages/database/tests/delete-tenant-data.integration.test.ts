@@ -61,6 +61,22 @@ describe.runIf(run)('delete-tenant-data.mjs — live PostgreSQL', () => {
       [randomUUID(), tenantId, workspaceId, 'active']
     );
 
+    // CI-STAB-06C: a SECOND workspace with two more businesses. platform.businesses is workspace-scoped, so its pre-delete count is the sum of one count
+    // per workspace (1 + 2). The expected total below comes from this fixture, not from the script, so a count that is mapped to the wrong workspace or
+    // table, or dropped, fails here against a real database.
+    const secondWorkspaceId = randomUUID();
+    await adminPool.query(
+      `INSERT INTO tenancy.workspaces (id, tenant_id, name, slug, status) VALUES ($1,$2,'Delete-Me WS 2',$3,'active')`,
+      [secondWorkspaceId, tenantId, `delete-me-ws2-${tenantId}`]
+    );
+    for (const code of ['DEL-BIZ-2', 'DEL-BIZ-3']) {
+      await adminPool.query(
+        `INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status, industry, correlation_id)
+         VALUES ($1,$2,$3,'Delete-Me Biz',$4,$5,'tech',gen_random_uuid())`,
+        [randomUUID(), tenantId, secondWorkspaceId, code, 'active']
+      );
+    }
+
     await adminPool.query(
       `INSERT INTO tenancy.tenants (id, name, slug, status, plan_code) VALUES ($1,'Survivor Tenant',$2,'active','test')`,
       [otherTenantId, `survivor-${otherTenantId}`]
@@ -123,6 +139,7 @@ describe.runIf(run)('delete-tenant-data.mjs — live PostgreSQL', () => {
       expect(auditRow.rows[0].table_row_counts.blockedByRetainedDependents[`outcome_monitoring.${name}`]).toBeUndefined();
     }
     expect(auditRow.rows[0].table_row_counts.remainingRows).toEqual({});
+    expect(auditRow.rows[0].table_row_counts.rowCounts['platform.businesses']).toBe(3); // 1 in the first workspace + 2 in the second
     const password = new URL(process.env.DATABASE_URL!).password;
     if (password) expect(JSON.stringify(auditRow.rows[0].table_row_counts)).not.toContain(password);
 
