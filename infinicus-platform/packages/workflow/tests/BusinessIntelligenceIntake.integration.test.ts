@@ -33,7 +33,7 @@ describe.runIf(run)('BusinessIntelligenceIntakeService (live PostgreSQL, applica
 
   interface Published { packageId: string; handoffId: string; correlationId: string; version: number; handoff: BOToBIHandoff }
   /** What BO does on dispatch: a package row, a dispatch record, and the handoff built from them. */
-  async function publish(w: World, o: { targetBlock?: string; status?: string; targetLayer?: string; recordCount?: number; payloadReference?: Record<string, unknown>; dispatch?: boolean } = {}): Promise<Published> {
+  async function publish(w: World, o: { targetBlock?: string; status?: string; targetLayer?: string; recordCount?: number; payloadReference?: Record<string, string | number | boolean | null>; dispatch?: boolean } = {}): Promise<Published> {
     const packageId = randomUUID(); const handoffId = randomUUID(); const correlationId = randomUUID();
     const targetBlock = o.targetBlock ?? 'BI-16'; const recordCount = o.recordCount ?? 42; const payloadReference = o.payloadReference ?? { table: 'inventory_movements', rows: 42 };
     const packageCode = `pkg-${Date.now()}-${++seq}`;
@@ -134,7 +134,7 @@ describe.runIf(run)('BusinessIntelligenceIntakeService (live PostgreSQL, applica
       const p = before(await publish(w)); const h = mutate(p);
       const out = await svc.ingest(ctxOf(w), h);
       expect(out, name).toMatchObject({ outcome: 'REJECTED', idempotentReplay: false });
-      expect((out as { reasons: string[] }).reasons, name).toEqual([reason]);
+      expect((out as unknown as { reasons: string[] }).reasons, name).toEqual([reason]);
       const id = (out as { intakePackageId: string }).intakePackageId;
       expect((await q(`SELECT status, rejection_reason FROM business_intelligence.intelligence_intake_packages WHERE id = $1`, [id]))[0], name).toEqual({ status: 'rejected', rejection_reason: reason });
       for (const t of ['intelligence_intake_package_versions', 'intelligence_source_references', 'intelligence_domain_inputs']) {
