@@ -40,6 +40,7 @@ export interface RecordInventoryMovementCommand {
     /** Explicit ISO 4217-style code of `unitCost`; present exactly when `unitCost` is present. Never defaulted. */
     unitCostCurrency?: string;
     referenceType?: 'purchase_receipt' | 'order_line' | 'transfer' | 'adjustment' | 'manual' | 'other';
+    /** Stored in a typed uuid column: a canonical UUID (either letter case on input, stored lower-case) or absent. Anything else is refused before any SQL (BO-REF-UUID-01). */
     referenceId?: string;
     notes?: string;
   };
