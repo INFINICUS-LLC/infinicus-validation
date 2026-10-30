@@ -145,3 +145,65 @@ describe('R-01B-4 operational_fact: DAL preparation profile <-> BO mapper', () =
     }
   });
 });
+
+describe('R-01B-8 purchase_receipt: DAL preparation profile <-> BO mapper', () => {
+  const mapper = mapperFor('purchase_receipt');
+  const PO = '3f2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e6f';
+  const WH = '4a2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e60';
+  const ITEM = '5b2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e61';
+  const POLINE = '7d2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e63';
+  const rec = (data: Record<string, unknown>) => ({
+    recordType: 'purchase_receipt',
+    data: { purchaseOrderId: PO, warehouseId: WH, receiptNumber: 'GRN-1', receivedAt: '2026-10-01T09:30:00.250Z', lines: [{ inventoryItemId: ITEM, quantity: 10 }], ...data },
+  });
+  const line = (data: Record<string, unknown>) => ({ inventoryItemId: ITEM, quantity: 10, ...data });
+
+  it('everything the DAL prepares passes the BO mapper unchanged, and the mapper produces the matching command', () => {
+    const probes: Array<Record<string, unknown>> = [
+      {}, { notes: ' n ' }, { receiptNumber: ' GRN-2 ' }, { receivedAt: '2026-10-01T11:30:00+02:00' }, { receivedAt: '2026-10-01T09:30Z' },
+      { lines: [line({ purchaseOrderLineId: POLINE, quantity: '1.5', unitCost: '2.50', unitCostCurrency: 'USD' })] },
+      { lines: [line({ quantity: '0.0001', unitCost: '0.0001', unitCostCurrency: 'KWD' }), line({ quantity: '99999999999999' })] },
+      { lines: [line({ unitCost: null, unitCostCurrency: null, purchaseOrderLineId: null })] },
+      { purchaseOrderId: PO.toUpperCase() }, { warehouseId: 'WH' }, { receivedAt: '2026-10-01' }, { receivedAt: '2026-10-01T09:30:00.123456Z' }, { lines: [] },
+      { lines: [line({ quantity: 0 })] }, { lines: [line({ quantity: '1.00001' })] }, { lines: [line({ unitCost: 1 })] }, { lines: [line({ inventoryItemId: ITEM.toUpperCase() })] },
+      { receiptNumber: 'x'.repeat(101) }, { tenantId: 't' },
+    ];
+    let accepted = 0; let rejected = 0;
+    for (const probe of probes) {
+      const outcome = preparer.prepareRecord(rec(probe), 0);
+      if (outcome.status === 'REJECTED') { rejected++; continue; }
+      accepted++;
+      const data = outcome.prepared!.data;
+      expect(mapper.validate(data), JSON.stringify(data)).toEqual([]);
+      const [command] = mapper.map(data, { tenantId: 't', workspaceId: 'w', businessId: 'b', correlationId: 'c', sourceReference: 's' } as never);
+      expect(command.type).toBe('record_purchase_receipt');
+      const payload = (command as { payload: { purchaseOrderId: string; receiptNumber: string; receivedAt: string; lines: Array<Record<string, unknown>> } }).payload;
+      expect(payload).toMatchObject({ purchaseOrderId: PO, warehouseId: WH, receiptNumber: data.receiptNumber, receivedAt: data.receivedAt });
+      expect(payload.lines).toHaveLength((data.lines as unknown[]).length);
+    }
+    expect(accepted).toBe(8);
+    expect(rejected).toBe(11);
+  });
+
+  it('owner ruling: the BO mapper and the DAL agree on identifiers - both reject every non-lower-case form, and the DAL never folds one into acceptance', () => {
+    for (const value of [PO.toUpperCase(), `${PO.slice(0, 8).toUpperCase()}${PO.slice(8)}`, `{${PO}}`, PO.replace(/-/g, ''), ` ${PO.toUpperCase()}`]) {
+      expect(mapper.validate(rec({ purchaseOrderId: value }).data).length, value).toBeGreaterThan(0);
+      expect(preparer.prepareRecord(rec({ purchaseOrderId: value }), 0).status, value).toBe('REJECTED');
+      expect(mapper.validate(rec({ lines: [line({ inventoryItemId: value })] }).data).length, value).toBeGreaterThan(0);
+      expect(preparer.prepareRecord(rec({ lines: [line({ inventoryItemId: value })] }), 0).status, value).toBe('REJECTED');
+    }
+  });
+
+  it('what BO rejects the DAL rejects: required fields, line bounds, positivity, scale, cost/currency pairing and unsupported fields', () => {
+    const bad: Array<Record<string, unknown>> = [
+      { purchaseOrderId: undefined }, { warehouseId: 5 }, { receiptNumber: '  ' }, { receivedAt: undefined }, { notes: 'x'.repeat(2001) }, { lines: undefined },
+      { lines: Array.from({ length: 501 }, () => line({})) }, { lines: [line({ quantity: -1 })] }, { lines: [line({ quantity: '1.00001' })] },
+      { lines: [line({ unitCost: '0.00001', unitCostCurrency: 'USD' })] }, { lines: [line({ unitCost: 1, unitCostCurrency: 'usd' })] },
+      { lines: [line({ unitCostCurrency: 'USD' })] }, { lines: [line({ extra: 1 })] }, { extra: 1 },
+    ];
+    for (const data of bad) {
+      expect(mapper.validate(rec(data).data).length, JSON.stringify(data).slice(0, 80)).toBeGreaterThan(0);
+      expect(preparer.prepareRecord(rec(data), 0).status, JSON.stringify(data).slice(0, 80)).toBe('REJECTED');
+    }
+  });
+});
