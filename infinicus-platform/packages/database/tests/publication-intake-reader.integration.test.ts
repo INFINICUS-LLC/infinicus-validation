@@ -31,13 +31,29 @@ describe.runIf(RUN)('PublicationIntakeReader: Data Acquisition owns the read pat
     owned.unshift([table, r.rows[0].id]);
     return r.rows[0].id as string;
   };
-  const counts = async () => Object.fromEntries(await Promise.all(['publication_packages', 'manual_submissions', 'provenance_records', 'publication_deliveries'].map(
-    async (t) => [t, Number((await admin.query(`SELECT count(*)::int n FROM ${DA}.${t}`)).rows[0].n)] as const)));
+  // The "reads only" proof counts the Data Acquisition rows of THIS file's tenants (T1 owns every fixture row; T2 is the isolation probe). The tables are
+  // shared with every other suite running against the same database at the same time (turbo runs the packages in parallel), so counting whole tables made
+  // the proof fail whenever an unrelated suite inserted a package, submission or provenance row in between. Nothing this file owns is excluded, and a write
+  // to a row of these tenants is still caught; rows of other tenants are not this test's evidence. publication_deliveries has no tenant column, so it is
+  // counted through its package.
+  const OWN = () => [T1, T2];
+  const counts = async () => {
+    const own = OWN();
+    const scalar = async (sql: string) => Number((await admin.query(sql, [own])).rows[0].n);
+    return {
+      publication_packages: await scalar(`SELECT count(*)::int n FROM ${DA}.publication_packages WHERE tenant_id = ANY($1::uuid[])`),
+      manual_submissions: await scalar(`SELECT count(*)::int n FROM ${DA}.manual_submissions WHERE tenant_id = ANY($1::uuid[])`),
+      provenance_records: await scalar(`SELECT count(*)::int n FROM ${DA}.provenance_records WHERE tenant_id = ANY($1::uuid[])`),
+      publication_deliveries: await scalar(`SELECT count(*)::int n FROM ${DA}.publication_deliveries d JOIN ${DA}.publication_packages p ON p.id = d.publication_package_id WHERE p.tenant_id = ANY($1::uuid[])`),
+    };
+  };
+  // A third tenant that no reader call is made for: its writes stand for "unrelated suite activity".
+  const T3 = randomUUID(); const WS3 = randomUUID();
 
   beforeAll(async () => {
     await setupIntegration();
     admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
-    for (const [t, w] of [[T1, WS1], [T2, WS2]]) {
+    for (const [t, w] of [[T1, WS1], [T2, WS2], [T3, WS3]]) {
       await admin.query(`INSERT INTO tenancy.tenants (id, name, slug, status, plan_code) VALUES ($1,'Reader Tenant',$2,'active','test')`, [t, `rdr-${t.slice(0, 8)}`]);
       await admin.query(`INSERT INTO tenancy.workspaces (id, tenant_id, name, slug, status) VALUES ($1,$2,'Reader WS',$3,'active')`, [w, t, `rdw-${w.slice(0, 8)}`]);
     }
@@ -59,8 +75,8 @@ describe.runIf(RUN)('PublicationIntakeReader: Data Acquisition owns the read pat
   });
   afterAll(async () => {
     for (const [table, rowId] of owned) await admin.query(`DELETE FROM ${DA}.${table} WHERE id = $1`, [rowId]).catch(() => undefined);
-    await admin.query('DELETE FROM tenancy.workspaces WHERE id = ANY($1)', [[WS1, WS2]]).catch(() => undefined);
-    await admin.query('DELETE FROM tenancy.tenants WHERE id = ANY($1)', [[T1, T2]]).catch(() => undefined);
+    await admin.query('DELETE FROM tenancy.workspaces WHERE id = ANY($1)', [[WS1, WS2, WS3]]).catch(() => undefined);
+    await admin.query('DELETE FROM tenancy.tenants WHERE id = ANY($1)', [[T1, T2, T3]]).catch(() => undefined);
     await admin.end();
     await teardownIntegration();
   });
@@ -124,5 +140,27 @@ describe.runIf(RUN)('PublicationIntakeReader: Data Acquisition owns the read pat
     });
     expect(await counts()).toEqual(before);
     expect((await admin.query(`SELECT status, record_count, updated_at FROM ${DA}.publication_packages WHERE id = $1`, [pkg])).rows[0]).toEqual(snap);
+  });
+
+  it('regression: rows written for an UNRELATED tenant while the proof runs cannot cause a false failure (and would have broken a whole-table count)', async () => {
+    const wholeTable = async () => Number((await admin.query(`SELECT count(*)::int n FROM ${DA}.publication_packages`)).rows[0].n);
+    const before = await counts();
+    const wholeBefore = await wholeTable();
+    await withTenantTransaction(ctx1, async (c) => {
+      await reader.lockPackageOn(c, pkg);
+      // unrelated suite activity, in the middle of the read: a package and a submission for a tenant this file does not own
+      await ins('publication_packages', 'tenant_id,workspace_id,package_type,target_layer,target_block,status,record_count', [T3, WS3, 'operations_data', 'business_operations', 'BO-X', 'draft', 0]);
+      await reader.submissionsForCollectionRunOn(c, run);
+    });
+    expect(await counts()).toEqual(before);                    // the scoped proof is unaffected ...
+    expect(await wholeTable()).toBeGreaterThanOrEqual(wholeBefore + 1);   // ... while the table-wide count demonstrably moved by at least our own write (more under real noise: this is the old assertion's false failure)
+  });
+
+  it('the scoped proof still detects a real write to a row of the tenants it covers', async () => {
+    const before = await counts();
+    await ins('publication_packages', 'tenant_id,workspace_id,package_type,target_layer,target_block,status,record_count', [T1, WS1, 'operations_data', 'business_operations', 'BO-Y', 'draft', 0]);
+    expect(await counts()).not.toEqual(before);
+    await ins('manual_submissions', 'tenant_id,workspace_id,data_source_id,collection_run_id,submission_type,payload', [T1, WS1, source, otherRun, 'records', JSON.stringify({ records: [] })]);
+    expect((await counts()).manual_submissions).toBe(before.manual_submissions + 1);
   });
 });
