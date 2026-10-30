@@ -705,7 +705,11 @@ esac`);
       writeFileSync(release, '');
       const result = await exited;
       // ONE line, most useful part first: CI's failure summary prints only the first 300 characters of the first line of a message.
-      const tail = output.replace(/\s+/g, ' ').trim().slice(-170);
+      const flat = output.replace(/\s+/g, ' ').trim();
+      // CI-STAB-04: the last 170 characters alone lost the start of an intermittent bash "trap: line 2: unexpected EOF" report (its script path ate the budget),
+      // so the shell's own message is also matched out whole and put first.
+      const shellMessage = /[^ ]*restore-proof\.sh: [^ ]*trap[^ ]*: line \d+: .{0,90}/.exec(flat)?.[0].replace(/^.*\/(restore-proof\.sh)/, '$1') ?? '';
+      const tail = shellMessage ? `${shellMessage} || ${flat.slice(-100)}` : flat.slice(-170);
       expect(result.code, `exit ${result.code} signal ${result.signal} | script said: ${tail || '(nothing)'} | dirs at kill: ${dirsAtKill.length}`).toBe(143);
       noTemp();
       await noScratch();

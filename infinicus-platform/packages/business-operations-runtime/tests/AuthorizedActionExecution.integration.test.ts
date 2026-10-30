@@ -33,9 +33,27 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
   });
   afterAll(async () => { await deleteMovementsForTenants(admin, tenantIds).catch(() => undefined); await admin?.end(); await closePool(); });
 
-  const engine = (provider: ScriptedProvider, over: Record<string, unknown> = {}) => new AuthorizedActionExecutionService({
-    statusProvider: provider, executionStatusMaxAgeMs: MAX_AGE, gate: OPEN, capabilities: SUPPORTED, ...over,
-  });
+  /**
+   * A RETRY result carries only its reason code; the underlying database condition is on the attempt row's detail. It is read back when a RETRY is
+   * returned so that "expected a terminal result" names the cause (CI-STAB-04) instead of only OPERATIONAL_ERROR. Diagnostic only: no result is changed.
+   */
+  const retryDetails: string[] = [];
+  const noteRetry = async (claimId: string) => {
+    const r = await admin.query(`SELECT attempt_number, reason_code, detail FROM ${S}.authorized_action_execution_attempts WHERE claim_id=$1 ORDER BY attempt_number DESC LIMIT 1`, [claimId]);
+    retryDetails.push(r.rows[0] ? `attempt ${r.rows[0].attempt_number} ${r.rows[0].reason_code}: ${r.rows[0].detail}` : 'no attempt row');
+  };
+  const engine = (provider: ScriptedProvider, over: Record<string, unknown> = {}) => {
+    const svc = new AuthorizedActionExecutionService({
+      statusProvider: provider, executionStatusMaxAgeMs: MAX_AGE, gate: OPEN, capabilities: SUPPORTED, ...over,
+    });
+    const executeClaim = svc.executeClaim.bind(svc);
+    svc.executeClaim = async (ctx: TenantContext, claimId: string) => {
+      const result = await executeClaim(ctx, claimId);
+      if (result.state === 'RETRY') await noteRetry(claimId);
+      return result;
+    };
+    return svc;
+  };
   const ctxOf = (ew: ExecWorld): TenantContext => ({ tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: randomUUID() });
 
   interface Case { ew: ExecWorld; pkg: AuthorizedActionPackageV1; claimId: string; receiptId: string; provider: ScriptedProvider; ctx: TenantContext }
@@ -50,7 +68,7 @@ describe.runIf(run)('P0-6c: BO authorized-action execution engine', () => {
   const balance = async (c: Case) => (await admin.query(`SELECT reorder_point::float AS rp, reorder_quantity::float AS rq, version, reorder_policy_state AS state, reorder_policy_configured_source AS source FROM ${S}.inventory_balances WHERE id=$1`, [c.ew.balanceId])).rows[0];
   const execRows = async (c: Case) => (await admin.query(`SELECT * FROM ${S}.authorized_action_executions WHERE claim_id=$1`, [c.claimId])).rows;
   const attemptRows = async (c: Case) => (await admin.query(`SELECT * FROM ${S}.authorized_action_execution_attempts WHERE claim_id=$1 ORDER BY attempt_number`, [c.claimId])).rows;
-  const terminal = (r: ExecutionResult) => { if (r.state !== 'TERMINAL') throw new Error(`expected a terminal result, got ${JSON.stringify(r)}`); return r.execution; };
+  const terminal = (r: ExecutionResult) => { if (r.state !== 'TERMINAL') throw new Error(`expected a terminal result, got ${JSON.stringify(r)}${retryDetails.length ? ` | last retry: ${retryDetails[retryDetails.length - 1]}` : ''}`); return r.execution; };
 
   describe('success', () => {
     it('applies the authorized values under lock, records CONFIGURED (source AUTHORIZED_ACTION_PACKAGE), the before/requested/after state and a sealed evidence document', async () => {
