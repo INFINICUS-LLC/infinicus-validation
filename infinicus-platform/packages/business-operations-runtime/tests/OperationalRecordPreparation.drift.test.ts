@@ -93,3 +93,55 @@ describe('R-01B-3 purchase_order: DAL preparation profile <-> BO mapper', () => 
     }
   });
 });
+
+describe('R-01B-4 operational_fact: DAL preparation profile <-> BO mapper', () => {
+  const mapper = mapperFor('operational_fact');
+  const base = { eventType: 'sale' };
+
+  it('the DAL enums equal the BO mapper enums exactly (every value the BO accepts is accepted, and nothing else)', () => {
+    for (const eventType of ['sale', 'expense', 'inventory', 'customer', 'team', 'refund', 'Sale', '']) {
+      const dal = preparer.prepareRecord({ recordType: 'operational_fact', data: { eventType } }, 0);
+      const bo = mapper.validate({ eventType });
+      expect(dal.status === 'REJECTED', eventType).toBe(bo.length > 0 && eventType !== 'Sale'); // 'Sale' is normalized by the DAL to a value BO accepts
+    }
+    for (const action of ['new', 'return', 'churn', 'hire', 'fire', 'review', 'quit', 'NEW', '']) {
+      const dal = preparer.prepareRecord({ recordType: 'operational_fact', data: { ...base, action } }, 0);
+      const boOnPrepared = dal.prepared ? mapper.validate(dal.prepared.data) : null;
+      if (boOnPrepared) expect(boOnPrepared, action).toEqual([]);
+    }
+    // the exact set: probe each BO value through the DAL and each non-BO value too
+    const boAccepts = (data: Record<string, unknown>) => mapper.validate(data).length === 0;
+    for (const action of ['new', 'return', 'churn', 'hire', 'fire', 'review', 'quit']) {
+      const dal = preparer.prepareRecord({ recordType: 'operational_fact', data: { ...base, action } }, 0).status !== 'REJECTED';
+      expect(dal, action).toBe(boAccepts({ ...base, action }));
+    }
+  });
+
+  it('everything the DAL prepares passes the BO mapper unchanged, and the mapper produces the matching command', () => {
+    const probes: Array<Record<string, unknown>> = [
+      {}, { amount: 0 }, { amount: '0.0001' }, { amount: '-12.5' }, { amount: ' 10 ' }, { quantity: '3' }, { quantity: -2 }, { amount: 99.5, quantity: 1.25 },
+      { category: ' retail ' }, { customerId: 'C-1' }, { memberId: ' m ' }, { notes: '  note ' }, { action: 'HIRE' }, { eventType: ' TEAM ' },
+      { amount: '1.23456' }, { amount: 'x' }, { eventType: 'refund' }, { action: 'quit' }, { customerId: 5 }, { occurredAt: '2026-01-01T00:00:00Z' },
+    ];
+    let accepted = 0; let rejected = 0;
+    for (const probe of probes) {
+      const outcome = preparer.prepareRecord({ recordType: 'operational_fact', data: { ...base, ...probe } }, 0);
+      if (outcome.status === 'REJECTED') { rejected++; continue; }
+      accepted++;
+      const data = outcome.prepared!.data;
+      expect(mapper.validate(data), JSON.stringify(data)).toEqual([]);
+      const [command] = mapper.map(data, { tenantId: 't', workspaceId: 'w', businessId: 'b', correlationId: 'c', sourceReference: 's' } as never);
+      expect(command.type).toBe('record_operational_fact');
+      expect((command as { payload: Record<string, unknown> }).payload).toMatchObject({ eventType: data.eventType, amount: data.amount, quantity: data.quantity, notes: data.notes });
+    }
+    expect(accepted).toBe(14);
+    expect(rejected).toBe(6);
+  });
+
+  it('what BO rejects the DAL never silently fixes into acceptance with a different meaning: non-string text and non-number amounts stay rejected', () => {
+    for (const data of [{ customerId: 1 }, { memberId: true }, { category: {} }, { notes: [] }, { amount: true }, { quantity: {} }]) {
+      expect(mapper.validate({ ...base, ...data }).length, JSON.stringify(data)).toBeGreaterThan(0);
+      expect(preparer.prepareRecord({ recordType: 'operational_fact', data: { ...base, ...data } }, 0).status, JSON.stringify(data)).toBe('REJECTED');
+    }
+  });
+});

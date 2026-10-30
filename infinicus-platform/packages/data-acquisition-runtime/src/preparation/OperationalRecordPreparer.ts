@@ -10,6 +10,10 @@ import {
   MOVEMENT_UNIT_COST_CONTRACT,
   PURCHASE_ORDER_TOTAL_CONTRACT,
   NATURAL_KEY_PATTERN,
+  OPERATIONAL_FACT_ACTIONS,
+  OPERATIONAL_FACT_AMOUNT_CONTRACT,
+  OPERATIONAL_FACT_EVENT_TYPES,
+  OPERATIONAL_FACT_QUANTITY_CONTRACT,
   OFFSET_INSTANT_PATTERN,
   PREPARED_RECORD_TYPES,
   UNIT_COST_MINIMUM,
@@ -64,6 +68,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
     'unitCost', 'unitCostCurrency', 'referenceType', 'referenceId', 'notes',
   ],
   purchase_order: ['supplierId', 'poNumber', 'expectedDate', 'currencyCode', 'totalAmount', 'notes'],
+  operational_fact: ['eventType', 'amount', 'quantity', 'category', 'customerId', 'memberId', 'action', 'notes'],
 };
 
 /** Pattern match plus calendar sanity: Date.parse would roll 2026-02-31 over to March, silently changing the value. */
@@ -279,6 +284,18 @@ export class OperationalRecordPreparer {
       }
       put('referenceType', enumeration('referenceType', MOVEMENT_REFERENCE_TYPES, false));
       put('referenceId', text('referenceId', false));
+      put('notes', text('notes', false));
+    } else if (type === 'operational_fact') {
+      // Field rules mirror the BO mapper and the business_events columns. customerId / memberId / category are TEXT columns in BO (not uuid), so they
+      // get trim / NFC / non-empty only. BO defines no identity rule for a fact (no natural key), so no duplicate or conflict is reported.
+      // occurredAt is not part of the BO contract (the database stamps it) and is therefore an unsupported field.
+      put('eventType', enumeration('eventType', OPERATIONAL_FACT_EVENT_TYPES, true));
+      put('amount', decimal('amount', false, OPERATIONAL_FACT_AMOUNT_CONTRACT));
+      put('quantity', decimal('quantity', false, OPERATIONAL_FACT_QUANTITY_CONTRACT));
+      put('category', text('category', false));
+      put('customerId', text('customerId', false));
+      put('memberId', text('memberId', false));
+      put('action', enumeration('action', OPERATIONAL_FACT_ACTIONS, false));
       put('notes', text('notes', false));
     } else {
       // purchase_order. Field rules mirror the BO mapper and the purchase_orders columns; the DAL adds only column-type format checks.
