@@ -10,14 +10,12 @@
  * Guard pattern: describe.runIf(!!process.env.DATABASE_URL)
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runScript } from './helpers/subprocessDiagnostics.js';
 import { Pool } from 'pg';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const execFileAsync = promisify(execFile);
 const run = !!process.env.DATABASE_URL;
 
 const EXPORT_SH = resolve(__dirname, '../../../infrastructure/database/scripts/export-tenant.sh');
@@ -84,21 +82,37 @@ describe.runIf(run)('export-tenant.sh — live PostgreSQL', () => {
     if (outputDir) await rm(outputDir, { recursive: true, force: true });
   });
 
+  /**
+   * CI-STAB-02 R3: evaluated ONLY when the script fails. Table NAMES and counts only (never rows): which temporary fixture tables other suites have
+   * in the shared database right now, how many sessions are waiting on a lock, and how many tenant-scoped policies the script's discovery query sees.
+   */
+  const catalogContext = async (): Promise<string> => {
+    const q = async (sql: string) => (await adminPool.query(sql)).rows;
+    const fixtures = (await q(`SELECT schemaname || '.' || tablename AS t FROM pg_tables WHERE tablename LIKE '%\\_fixture' ORDER BY 1`)).map((r) => r.t);
+    const waiting = (await q(`SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted`))[0].n;
+    const policies = (await q(`SELECT count(DISTINCT schemaname || '.' || tablename)::int AS n FROM pg_policies WHERE qual LIKE '%app.tenant_id%'`))[0].n;
+    const policyFixtures = (await q(`SELECT count(*)::int AS n FROM pg_policies WHERE qual LIKE '%app.tenant_id%' AND tablename LIKE '%\\_fixture'`))[0].n;
+    return `fixtureTables=[${fixtures.join(', ')}] ungrantedLocks=${waiting} tenantScopedTables=${policies} fixturePolicies=${policyFixtures}`;
+  };
+
   it('exports only the target tenant\'s data, never another tenant\'s', async () => {
     const outputFile = join(outputDir, 'export.sql');
-    await execFileAsync('bash', [EXPORT_SH], {
-      env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL, TENANT_ID: T1, OUTPUT_FILE: outputFile },
-    });
+    await runScript(EXPORT_SH, { ...process.env, DATABASE_URL: process.env.DATABASE_URL, TENANT_ID: T1, OUTPUT_FILE: outputFile }, 'export-tenant.sh (target tenant export)', catalogContext);
 
     const contents = await readFile(outputFile, 'utf8');
-    expect(contents).toContain(BIZ_CODE_T1);
-    expect(contents).not.toContain(BIZ_CODE_T2);
-    expect(contents).toContain(T1);
-    expect(contents).not.toContain(T2);
-    // Regression coverage for the BUILD-27-discovered workspace-scoping
-    // gap: a table whose RLS policy requires app.workspace_id (not just
+    // The same five requirements as before, reported by NAME when one fails, with structural facts instead of the export's contents (customer data).
+    // Regression coverage for the BUILD-27-discovered workspace-scoping gap: a table whose RLS policy requires app.workspace_id (not just
     // app.tenant_id) must still appear in the export.
-    expect(contents).toContain(MODEL_CODE_T1);
+    const checks: Record<string, boolean> = {
+      'target business code present': contents.includes(BIZ_CODE_T1),
+      'other tenant business code absent': !contents.includes(BIZ_CODE_T2),
+      'target tenant id present': contents.includes(T1),
+      'other tenant id absent': !contents.includes(T2),
+      'workspace-scoped model code present': contents.includes(MODEL_CODE_T1),
+    };
+    const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([name]) => name);
+    const copyBlocks = (contents.match(/^COPY /gm) ?? []).length;
+    expect(failed, `export-tenant isolation checks failed: ${failed.join('; ')} (bytes=${contents.length} copyBlocks=${copyBlocks})`).toEqual([]);
   }, 30_000);
 
   it('refuses to run against a superuser/BYPASSRLS connection', async () => {
@@ -106,16 +120,31 @@ describe.runIf(run)('export-tenant.sh — live PostgreSQL', () => {
     if (!adminUrl) return; // no separate admin credential configured in this environment
 
     const outputFile = join(outputDir, 'should-not-exist.sql');
-    let caught: { stderr?: string } | undefined;
+    let caught: Error | undefined;
     try {
-      await execFileAsync('bash', [EXPORT_SH], {
-        env: { ...process.env, DATABASE_URL: adminUrl, TENANT_ID: T1, OUTPUT_FILE: outputFile },
-      });
+      await runScript(EXPORT_SH, { ...process.env, DATABASE_URL: adminUrl, TENANT_ID: T1, OUTPUT_FILE: outputFile }, 'export-tenant.sh (BYPASSRLS refusal)');
     } catch (err) {
-      caught = err as { stderr?: string };
+      caught = err as Error;
     }
     expect(caught, 'export-tenant.sh should have refused a BYPASSRLS connection').toBeDefined();
-    expect(caught?.stderr).toMatch(/bypasses row-level security/);
+    expect(caught?.message).toMatch(/bypasses row-level security/);   // the script's stderr is carried by the diagnostic
+  }, 30_000);
+
+  it('CI-STAB-02 R3: a failing script rejects with its exit status and a redacted stderr tail, and never echoes the credential it was given', async () => {
+    const secret = 'FAKE-PASSWORD-for-diagnostics-test';
+    let caught: Error | undefined;
+    try {
+      await runScript(EXPORT_SH, { ...process.env, DATABASE_URL: `postgresql://nobody:${secret}@127.0.0.1:1/nodb`, TENANT_ID: T1, OUTPUT_FILE: join(outputDir, 'never.sql') },
+        'export-tenant.sh (unreachable database)', async () => 'context-evaluated-on-failure');
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught, 'a failing script must still reject').toBeDefined();
+    expect(caught?.message).toMatch(/export-tenant\.sh \(unreachable database\) failed: exit=\d+ signal=none killed=false elapsedMs=\d+/);
+    expect(caught?.message).toContain('stderr(tail):');
+    expect(caught?.message).toContain('context: context-evaluated-on-failure');
+    expect(caught?.message).not.toContain(secret);
+    expect(caught?.message).not.toContain('postgresql://');
   }, 30_000);
 });
 
