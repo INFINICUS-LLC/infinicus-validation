@@ -38,6 +38,8 @@ export {
   CURRENCY_CODE_PATTERN,
   UNIT_COST_MINIMUM,
   PREPARED_KEY_RULE_CODES,
+  OPERATIONAL_FACT_EVENT_TYPES,
+  OPERATIONAL_FACT_ACTIONS,
 } from './preparation/operationalRecordProfile.js';
 export { ManualRecordValidator } from './validation/ManualRecordValidator.js';
 
