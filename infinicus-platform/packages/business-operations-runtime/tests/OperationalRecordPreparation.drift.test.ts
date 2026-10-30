@@ -185,3 +185,46 @@ describe('R-01B-5 workforce_event: DAL preparation profile <-> BO mapper', () =>
     }
   });
 });
+
+describe('R-01B-6 asset_inspection: DAL preparation profile <-> BO mapper', () => {
+  const mapper = mapperFor('asset_inspection');
+  const ASSET = '3f2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e6f';
+  const rec = (data: Record<string, unknown>) => ({ recordType: 'asset_inspection', data: { assetId: ASSET, conditionRating: 'good', pass: true, ...data } });
+
+  it('the enums are identical: DAL accepts a type / rating exactly when the BO mapper does', () => {
+    for (const inspectionType of ['routine', 'safety', 'regulatory', 'pre_use', 'post_use', 'other', 'annual', 'Safety-x']) {
+      expect(preparer.prepareRecord(rec({ inspectionType }), 0).status !== 'REJECTED', inspectionType).toBe(mapper.validate(rec({ inspectionType }).data).length === 0);
+    }
+    for (const conditionRating of ['excellent', 'good', 'fair', 'poor', 'critical', 'ok', 'bad']) {
+      expect(preparer.prepareRecord(rec({ conditionRating }), 0).status !== 'REJECTED', conditionRating).toBe(mapper.validate(rec({ conditionRating }).data).length === 0);
+    }
+  });
+
+  it('everything the DAL prepares passes the BO mapper unchanged, and the mapper produces the matching command', () => {
+    const probes: Array<Record<string, unknown>> = [
+      {}, { pass: false }, { inspectionType: 'pre_use' }, { conditionRating: ' CRITICAL ' }, { assetId: ASSET.toUpperCase() }, { findings: ' f ', actionsRequired: ' a ' },
+      { nextInspectionDate: '2024-02-29' }, { nextInspectionDate: '9999-12-31' }, { findings: null, inspectionType: null },
+      { assetId: 'ASSET-1' }, { pass: 'true' }, { pass: 1 }, { conditionRating: 'ok' }, { nextInspectionDate: '2026-02-31' }, { findings: 5 }, { inspectedBy: ASSET },
+    ];
+    let accepted = 0; let rejected = 0;
+    for (const probe of probes) {
+      const outcome = preparer.prepareRecord(rec(probe), 0);
+      if (outcome.status === 'REJECTED') { rejected++; continue; }
+      accepted++;
+      const data = outcome.prepared!.data;
+      expect(mapper.validate(data), JSON.stringify(data)).toEqual([]);
+      const [command] = mapper.map(data, { tenantId: 't', workspaceId: 'w', businessId: 'b', correlationId: 'c', sourceReference: 's' } as never);
+      expect(command.type).toBe('record_asset_inspection');
+      expect((command as { payload: Record<string, unknown> }).payload).toMatchObject({ assetId: ASSET, conditionRating: data.conditionRating, pass: data.pass, findings: data.findings });
+    }
+    expect(accepted).toBe(9);
+    expect(rejected).toBe(7);
+  });
+
+  it('what BO rejects the DAL rejects: missing or mistyped required fields', () => {
+    for (const data of [{ assetId: undefined }, { assetId: 5 }, { conditionRating: undefined }, { pass: undefined }, { pass: 'true' }, { findings: [] }]) {
+      expect(mapper.validate(rec(data).data).length, JSON.stringify(data)).toBeGreaterThan(0);
+      expect(preparer.prepareRecord(rec(data), 0).status, JSON.stringify(data)).toBe('REJECTED');
+    }
+  });
+});
