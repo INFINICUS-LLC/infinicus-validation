@@ -15,7 +15,7 @@ export const OPERATIONS_PREPARED_SUBMISSION_TYPE = 'operations_prepared';
 export const OPERATIONAL_PROFILE_VERSION = '1.0';
 export const NORMALIZE_TRANSFORMATION_TYPE = 'normalize';
 
-export const PREPARED_RECORD_TYPES = ['inventory_item', 'warehouse', 'inventory_movement', 'purchase_order', 'operational_fact', 'workforce_event', 'asset_inspection', 'purchase_receipt'] as const;
+export const PREPARED_RECORD_TYPES = ['inventory_item', 'warehouse', 'inventory_movement', 'purchase_order', 'operational_fact', 'workforce_event', 'asset_inspection', 'supplier_performance', 'purchase_receipt'] as const;
 export type PreparedRecordType = (typeof PREPARED_RECORD_TYPES)[number];
 
 export const INVENTORY_MOVEMENT_TYPES = [
@@ -79,6 +79,16 @@ export const WORKFORCE_EVENT_HOURS_CONTRACT = { precision: 18, scale: 4 } as con
  */
 export const ASSET_INSPECTION_TYPES = ['routine', 'safety', 'regulatory', 'pre_use', 'post_use', 'other'] as const;
 export const ASSET_CONDITION_RATINGS = ['excellent', 'good', 'fair', 'poor', 'critical'] as const;
+
+/**
+ * R-01B-7: the five supplier_performance_scores score columns are numeric(5,2) with CHECK (0 <= score <= 100). BO's mapper checks only the range, so a value
+ * with more than two decimals would be rounded silently by the column; the DAL refuses such a value instead. A PostgreSQL integration test compares these
+ * constants with the live columns.
+ */
+export const SUPPLIER_SCORE_CONTRACT = { precision: 5, scale: 2 } as const;
+export const SUPPLIER_SCORE_MINIMUM = 0;
+export const SUPPLIER_SCORE_MAXIMUM = 100;
+export const SUPPLIER_SCORE_FIELDS = ['qualityScore', 'deliveryScore', 'priceScore', 'serviceScore', 'overallScore'] as const;
 
 /**
  * R-01B-8: the purchase_receipt contract of Business Operations (src/procurement/purchaseReceipt.ts), mirrored because the DAL cannot import it. A BO-side

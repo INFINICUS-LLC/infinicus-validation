@@ -15,6 +15,10 @@ import {
   PURCHASE_RECEIPT_NOTES_MAX_LENGTH,
   PURCHASE_RECEIPT_NUMBER_MAX_LENGTH,
   RECEIPT_LINE_QUANTITY_CONTRACT,
+  SUPPLIER_SCORE_CONTRACT,
+  SUPPLIER_SCORE_FIELDS,
+  SUPPLIER_SCORE_MAXIMUM,
+  SUPPLIER_SCORE_MINIMUM,
   RECEIPT_LINE_UNIT_COST_CONTRACT,
   RECEIPT_UUID_PATTERN,
   NATURAL_KEY_PATTERN,
@@ -87,6 +91,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
   purchase_order: ['supplierId', 'poNumber', 'expectedDate', 'currencyCode', 'totalAmount', 'notes'],
   asset_inspection: ['assetId', 'inspectionType', 'conditionRating', 'pass', 'findings', 'actionsRequired', 'nextInspectionDate'],
   workforce_event: ['memberId', 'action', 'hours', 'notes'],
+  supplier_performance: ['supplierId', 'periodStart', 'periodEnd', 'qualityScore', 'deliveryScore', 'priceScore', 'serviceScore', 'overallScore', 'notes'],
   purchase_receipt: ['purchaseOrderId', 'warehouseId', 'receiptNumber', 'receivedAt', 'notes', 'lines'],
   operational_fact: ['eventType', 'amount', 'quantity', 'category', 'customerId', 'memberId', 'action', 'notes'],
 };
@@ -308,6 +313,27 @@ export class OperationalRecordPreparer {
       }
       put('referenceType', enumeration('referenceType', MOVEMENT_REFERENCE_TYPES, false));
       put('referenceId', text('referenceId', false));
+      put('notes', text('notes', false));
+    } else if (type === 'supplier_performance') {
+      // Field rules mirror the BO mapper and the supplier_performance_scores columns. supplierId is a uuid column (format only; that the supplier exists in
+      // the business is BO's decision). Periods are date columns. The five scores are required numbers in 0..100 stored as numeric(5,2); BO would round a
+      // third decimal silently, so the DAL refuses it. sps_period_check (period_end >= period_start) is enforced by the table and would abort the whole
+      // atomic handoff with a raw database error, so the DAL refuses a reversed period too. evaluatedBy is not part of the BO contract. BO defines no
+      // identity rule for a score row (no unique constraint), so no duplicate or conflict is reported.
+      put('supplierId', uuidReference('supplierId', true));
+      const periodStart = dateOnly('periodStart', true);
+      const periodEnd = dateOnly('periodEnd', true);
+      put('periodStart', periodStart);
+      put('periodEnd', periodEnd);
+      if (periodStart !== undefined && periodEnd !== undefined && periodEnd < periodStart) {
+        fail('periodEnd', 'before_periodstart', 'periodEnd must not be earlier than periodStart.');
+      }
+      for (const field of SUPPLIER_SCORE_FIELDS) {
+        const value = decimal(field, true, SUPPLIER_SCORE_CONTRACT);
+        if (value !== undefined && (value < SUPPLIER_SCORE_MINIMUM || value > SUPPLIER_SCORE_MAXIMUM)) {
+          fail(field, 'out_of_range', `${field} must be between ${SUPPLIER_SCORE_MINIMUM} and ${SUPPLIER_SCORE_MAXIMUM}.`);
+        } else put(field, value);
+      }
       put('notes', text('notes', false));
     } else if (type === 'purchase_receipt') {
       // Field rules mirror BO's purchase-receipt rule set (src/procurement/purchaseReceipt.ts), which the intake mapper and the executor share. Owner ruling:
