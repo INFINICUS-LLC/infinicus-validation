@@ -1,6 +1,7 @@
 import type { IntakeMapper, OperationalCommand } from '../types.js';
 import { unitCostProblem } from '../unitCost.js';
 import { purchaseReceiptProblems } from '../procurement/purchaseReceipt.js';
+import { canonicalUuidReference } from '../uuidReference.js';
 import {
   optionalFiniteNumber,
   optionalString,
@@ -168,7 +169,9 @@ export const inventoryMovementMapper: IntakeMapper = {
     if (unitCost !== undefined && unitCostCurrency === undefined && !errors.includes('unitCostCurrency_invalid')) errors.push('unitCostCurrency_required_with_unitCost');
     if (unitCost === undefined && unitCostCurrency !== undefined && !errors.includes('unitCost_invalid')) errors.push('unitCost_required_with_unitCostCurrency');
     enumString(data, 'referenceType', REFERENCE_TYPES, errors, false);
-    optionalString(data, 'referenceId', errors);
+    // BO-REF-UUID-01: referenceId lands in a typed uuid column, so a malformed value is refused here as a validation reason, not left for the database.
+    const referenceId = optionalString(data, 'referenceId', errors);
+    if (referenceId !== undefined && canonicalUuidReference(referenceId) === null) errors.push('referenceId_invalid');
     optionalString(data, 'notes', errors);
     return errors;
   },

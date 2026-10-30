@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import type { TenantContext } from '@infinicus/database';
 import { OperationalMappingError, ReorderBaselineChangedError, ReorderPolicyAlreadyConfiguredError } from './errors.js';
+import { canonicalUuidReference, referenceIdProblem } from './uuidReference.js';
 import { UNIT_COST_MINIMUM_STORABLE, unitCostProblem } from './unitCost.js';
 import { Decimal } from './inventory-policy/decimal.js';
 import type { ConfigureInventoryReorderPolicyCommand, OperationalCommand } from './types.js';
@@ -48,6 +49,18 @@ async function requireBusinessEntity(
   if (result.rowCount === 0) {
     throw new OperationalMappingError(`${table} entity not found in business scope: ${entityId}`);
   }
+}
+
+/**
+ * BO-REF-UUID-01: the movement `referenceId` is stored in a typed uuid column. Returns the lower-case canonical value (or null when absent) and refuses
+ * anything else with one deterministic message that does not repeat the value. Called before the first SQL statement of every movement command, so a
+ * malformed reference can never reach the database, whichever way the command was built.
+ */
+function movementReferenceId(referenceId: string | null | undefined): string | null {
+  if (referenceId === undefined || referenceId === null) return null;
+  const canonical = canonicalUuidReference(referenceId);
+  if (canonical === null) throw new OperationalMappingError(referenceIdProblem());
+  return canonical;
 }
 
 function assertCommandScope(ctx: TenantContext, command: { context: { tenantId: string; workspaceId: string } }): void {
@@ -179,6 +192,7 @@ export class OperationalCommandExecutor {
     assertCommandScope(ctx, command);
     const { inventoryItemId, inventoryItemSku, warehouseId, warehouseCode, occurredAt, ...rest } = command.payload;
     const businessId = command.context.businessId;
+    movementReferenceId(rest.referenceId); // before the SKU / code lookups: nothing is queried for a command that cannot be applied
     if ((inventoryItemId === undefined) === (inventoryItemSku === undefined)) throw new OperationalMappingError('Exactly one of inventoryItemId and sku identifies the item.');
     if ((warehouseId === undefined) === (warehouseCode === undefined)) throw new OperationalMappingError('Exactly one of warehouseId and warehouseCode identifies the warehouse.');
     let itemId = inventoryItemId;
@@ -224,6 +238,7 @@ export class OperationalCommandExecutor {
   ): Promise<string> {
     const p = command.payload;
     const businessId = command.context.businessId;
+    const referenceId = movementReferenceId(p.referenceId);
     // Defence in depth for commands built outside the intake mapper: a cost and its currency are both present or both absent.
     if ((p.unitCost === undefined) !== (p.unitCostCurrency === undefined)) {
       throw new OperationalMappingError('unitCost and unitCostCurrency must be supplied together.');
@@ -275,7 +290,7 @@ export class OperationalCommandExecutor {
        RETURNING id`,
       [
         ctx.tenantId, ctx.workspaceId, businessId, p.inventoryItemId, p.warehouseId,
-        p.movementType, p.quantity, p.referenceType ?? null, p.referenceId ?? null,
+        p.movementType, p.quantity, p.referenceType ?? null, referenceId,
         p.unitCost ?? null, p.unitCostCurrency ?? null, p.notes ?? null, command.context.correlationId, occurredAt ?? null,
       ]
     );
