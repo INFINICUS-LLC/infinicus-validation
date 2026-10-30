@@ -262,12 +262,40 @@ describe.runIf(run)('business currency declarations (0185) - live PostgreSQL', (
   });
 
   describe('migration safety', () => {
+    // The nonmutation proof covers every row of the tenants THIS file created (worlds a and b, including a's second workspace). The table is shared
+    // with every other suite that runs against the same database at the same time (turbo runs the packages in parallel), so hashing the whole table
+    // made the proof fail whenever any unrelated suite declared a currency in between. Nothing is excluded that this file owns; rows of other tenants
+    // are not this test's evidence and are outside its claim.
+    const ownRowsHash = async (tenants: string[] = [a.t, b.t]) => (await admin.query(
+      `SELECT md5(coalesce(string_agg(to_jsonb(d)::text,'|' ORDER BY id), '')) h, count(*)::int n FROM ${T} d WHERE tenant_id = ANY($1::uuid[])`, [tenants])).rows[0] as { h: string; n: number };
+    const wholeTableHash = async () => (await admin.query(`SELECT md5(string_agg(to_jsonb(d)::text,'|' ORDER BY id)) h FROM ${T} d`)).rows[0].h as string;
+
     it('re-applying the migration is idempotent: same triggers, same table, one registration, rows untouched', async () => {
-      const before = (await admin.query(`SELECT md5(string_agg(to_jsonb(d)::text,'|' ORDER BY id)) h FROM ${T} d`)).rows[0].h;
+      const before = await ownRowsHash();
+      expect(before.n).toBeGreaterThan(0); // the proof must cover real rows, not an empty set
       await runMigrationWithoutWaiting(admin, MIGRATION); await runMigrationWithoutWaiting(admin, MIGRATION);   // helpers/ddlProof.ts: never waits on a lock
       expect((await admin.query(`SELECT count(*)::int n FROM pg_trigger WHERE tgrelid = '${T}'::regclass AND NOT tgisinternal`)).rows[0].n).toBe(3);
       expect((await admin.query(`SELECT count(*)::int n FROM _migrations WHERE filename = '0185_create_business_currency_declarations.sql'`)).rows[0].n).toBe(1);
-      expect((await admin.query(`SELECT md5(string_agg(to_jsonb(d)::text,'|' ORDER BY id)) h FROM ${T} d`)).rows[0].h).toBe(before);
+      expect(await ownRowsHash()).toEqual(before);
+    });
+
+    it('regression: a declaration written for an UNRELATED tenant while the proof runs does not change the evidence (and would have broken a whole-table hash)', async () => {
+      const unrelated = await world();
+      const wholeBefore = await wholeTableHash();
+      const before = await ownRowsHash();
+      await declare(unrelated);                                                  // unrelated suite activity, exactly what the parallel CI run produces
+      await runMigrationWithoutWaiting(admin, MIGRATION);
+      await declare(await world());                                              // and again, after the re-application
+      expect(await ownRowsHash()).toEqual(before);                               // the scoped evidence is stable ...
+      expect(await wholeTableHash()).not.toBe(wholeBefore);                      // ... while the table-wide hash demonstrably moved (the old assertion's false failure)
+    });
+
+    it('the scoped proof still detects a genuine change to rows it owns', async () => {
+      const w = await world();
+      await declare(w);
+      const before = await ownRowsHash([w.t]);
+      await declare(w, { currency: 'EUR', expectedVersion: 1, reason: 'owned-row change' });   // a real new row for an owned tenant
+      expect(await ownRowsHash([w.t])).not.toEqual(before);
     });
   });
 });
