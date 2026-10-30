@@ -1,6 +1,8 @@
 import type { BatchValidationOutcome, RecordValidationIssue } from '../types.js';
 import {
   CURRENCY_CODE_PATTERN,
+  ASSET_CONDITION_RATINGS,
+  ASSET_INSPECTION_TYPES,
   INVENTORY_MOVEMENT_TYPES,
   MAX_INSTANT_STRING_LENGTH,
   MAX_NAME_LENGTH,
@@ -75,6 +77,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
   ],
   purchase_order: ['supplierId', 'poNumber', 'expectedDate', 'currencyCode', 'totalAmount', 'notes'],
   workforce_event: ['memberId', 'action', 'hours', 'notes'],
+  asset_inspection: ['assetId', 'inspectionType', 'conditionRating', 'pass', 'findings', 'actionsRequired', 'nextInspectionDate'],
   supplier_performance: ['supplierId', 'periodStart', 'periodEnd', 'qualityScore', 'deliveryScore', 'priceScore', 'serviceScore', 'overallScore', 'notes'],
   operational_fact: ['eventType', 'amount', 'quantity', 'category', 'customerId', 'memberId', 'action', 'notes'],
 };
@@ -293,6 +296,33 @@ export class OperationalRecordPreparer {
       put('referenceType', enumeration('referenceType', MOVEMENT_REFERENCE_TYPES, false));
       put('referenceId', text('referenceId', false));
       put('notes', text('notes', false));
+    } else if (type === 'asset_inspection') {
+      // Field rules mirror the BO mapper and the asset_inspections columns. assetId is a uuid column (format only; that the asset exists in the business is
+      // BO's decision). pass must already be a boolean: the DAL does not guess "yes" / "true" / 1. nextInspectionDate is a date column. inspectedBy,
+      // inspectedAt and checklistResults are not part of the BO contract. BO defines no identity rule for an inspection, so none is reported.
+      put('assetId', uuidReference('assetId', true));
+      put('inspectionType', enumeration('inspectionType', ASSET_INSPECTION_TYPES, false));
+      put('conditionRating', enumeration('conditionRating', ASSET_CONDITION_RATINGS, true));
+      const pass = raw.pass;
+      if (typeof pass === 'boolean') out.pass = pass;
+      else if (pass === undefined || pass === null) fail('pass', 'required', 'pass is required.');
+      else fail('pass', 'invalid', 'pass must be true or false.');
+      put('findings', text('findings', false));
+      put('actionsRequired', text('actionsRequired', false));
+      put('nextInspectionDate', dateOnly('nextInspectionDate', false));
+    } else if (type === 'workforce_event') {
+      // Field rules mirror the BO mapper: memberId is free text (member_id is TEXT, not uuid), action is hire|fire|review, hours is a non-negative
+      // number stored in numeric(18,4). BO requires at least one of memberId, action and hours; notes alone is not an event. BO defines no identity rule
+      // for a workforce event, so no duplicate or conflict is reported.
+      put('memberId', text('memberId', false));
+      put('action', enumeration('action', WORKFORCE_EVENT_ACTIONS, false));
+      const hours = decimal('hours', false, WORKFORCE_EVENT_HOURS_CONTRACT);
+      if (hours !== undefined && hours < 0) fail('hours', 'negative', 'hours must not be negative.');
+      put('hours', hours);
+      put('notes', text('notes', false));
+      if (out.memberId === undefined && out.action === undefined && out.hours === undefined && issues.length === 0) { // judged on the prepared form: null / blank values were omitted
+        reject('workforce_event_empty', 'data', 'A workforce event needs at least one of memberId, action and hours.');
+      }
     } else if (type === 'supplier_performance') {
       // Field rules mirror the BO mapper and the supplier_performance_scores columns. supplierId is a uuid column (format only; that the supplier exists in
       // the business is BO's decision). Periods are date columns. The five scores are required numbers in 0..100 stored as numeric(5,2); BO would round a
@@ -314,19 +344,6 @@ export class OperationalRecordPreparer {
         } else put(field, value);
       }
       put('notes', text('notes', false));
-    } else if (type === 'workforce_event') {
-      // Field rules mirror the BO mapper: memberId is free text (member_id is TEXT, not uuid), action is hire|fire|review, hours is a non-negative
-      // number stored in numeric(18,4). BO requires at least one of memberId, action and hours; notes alone is not an event. BO defines no identity rule
-      // for a workforce event, so no duplicate or conflict is reported.
-      put('memberId', text('memberId', false));
-      put('action', enumeration('action', WORKFORCE_EVENT_ACTIONS, false));
-      const hours = decimal('hours', false, WORKFORCE_EVENT_HOURS_CONTRACT);
-      if (hours !== undefined && hours < 0) fail('hours', 'negative', 'hours must not be negative.');
-      put('hours', hours);
-      put('notes', text('notes', false));
-      if (out.memberId === undefined && out.action === undefined && out.hours === undefined && issues.length === 0) { // judged on the prepared form: null / blank values were omitted
-        reject('workforce_event_empty', 'data', 'A workforce event needs at least one of memberId, action and hours.');
-      }
     } else if (type === 'operational_fact') {
       // Field rules mirror the BO mapper and the business_events columns. customerId / memberId / category are TEXT columns in BO (not uuid), so they
       // get trim / NFC / non-empty only. BO defines no identity rule for a fact (no natural key), so no duplicate or conflict is reported.
