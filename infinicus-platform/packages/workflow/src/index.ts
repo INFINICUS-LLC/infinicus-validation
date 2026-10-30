@@ -102,3 +102,6 @@ export type { PerformanceBaselineBuild } from './performance/performanceBaseline
 export * from './performance/twinConfidencePolicy.js';
 export { assessSimulationReadiness, PERFORMANCE_VARIABLE_GRAMMAR } from './performance/performanceBaseline.js';
 export { verifyPersistedHandoff, handoffDigest, PERFORMANCE_HANDOFF_SCHEMA_VERSION } from './performance/handoffEnvelope.js';
+
+export { BusinessIntelligenceIntakeService, BiIntakeRejectedError, BI_INTAKE_DOMAINS, biDomainForTargetBlock } from './BusinessIntelligenceIntakeService.js';
+export type { BiIntakeDomain, BusinessIntelligenceIntakeResult } from './BusinessIntelligenceIntakeService.js';
