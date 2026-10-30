@@ -91,6 +91,14 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # CI-STAB-03 R2: the test files were never type-checked (each package's tsconfig compiles src only). This is a ratchet against a recorded baseline
+      # of the errors that already existed: a new test type error fails, and so does a baseline entry that no longer occurs. It runs after Build because
+      # workspace packages are resolved from their build output.
+      - name: Typecheck tests (ratchet against the known-error baseline)
+        run: |
+          node --test scripts/typecheck-tests.test.mjs
+          pnpm typecheck:tests
+
       # POS-8d-2a: the device shell bundles the counter as static files. This proves the web app still exports (every business screen under the
       # placeholder id, no api folder, no source maps, no baked business id). Web only; no deploy.
       - name: Static export check (counter bundle for the device shell)

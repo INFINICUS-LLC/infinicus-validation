@@ -1,0 +1,17 @@
+{
+  // CI-STAB-03 R2: type-checks this package's TEST files (the production tsconfig.json compiles only src). noEmit; same strict settings as the build.
+  // Module resolution mirrors vitest (ESM, bundler-style) rather than the CommonJS output the package builds to. Run via `pnpm typecheck:tests`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "rootDir": "../.."
+  },
+  "include": ["src", "tests"]
+}

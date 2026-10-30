@@ -10,6 +10,7 @@
     "test": "turbo run test",
     "clean": "turbo run clean",
     "typecheck": "turbo run typecheck",
+    "typecheck:tests": "node scripts/typecheck-tests.mjs",
     "workspace:validate": "node scripts/validate-workspace.mjs"
   },
   "devDependencies": {
