@@ -1,6 +1,8 @@
 import type { BatchValidationOutcome, RecordValidationIssue } from '../types.js';
 import {
   CURRENCY_CODE_PATTERN,
+  ASSET_CONDITION_RATINGS,
+  ASSET_INSPECTION_TYPES,
   INVENTORY_MOVEMENT_TYPES,
   MAX_INSTANT_STRING_LENGTH,
   MAX_NAME_LENGTH,
@@ -68,6 +70,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
     'unitCost', 'unitCostCurrency', 'referenceType', 'referenceId', 'notes',
   ],
   purchase_order: ['supplierId', 'poNumber', 'expectedDate', 'currencyCode', 'totalAmount', 'notes'],
+  asset_inspection: ['assetId', 'inspectionType', 'conditionRating', 'pass', 'findings', 'actionsRequired', 'nextInspectionDate'],
   operational_fact: ['eventType', 'amount', 'quantity', 'category', 'customerId', 'memberId', 'action', 'notes'],
 };
 
@@ -285,6 +288,20 @@ export class OperationalRecordPreparer {
       put('referenceType', enumeration('referenceType', MOVEMENT_REFERENCE_TYPES, false));
       put('referenceId', text('referenceId', false));
       put('notes', text('notes', false));
+    } else if (type === 'asset_inspection') {
+      // Field rules mirror the BO mapper and the asset_inspections columns. assetId is a uuid column (format only; that the asset exists in the business is
+      // BO's decision). pass must already be a boolean: the DAL does not guess "yes" / "true" / 1. nextInspectionDate is a date column. inspectedBy,
+      // inspectedAt and checklistResults are not part of the BO contract. BO defines no identity rule for an inspection, so none is reported.
+      put('assetId', uuidReference('assetId', true));
+      put('inspectionType', enumeration('inspectionType', ASSET_INSPECTION_TYPES, false));
+      put('conditionRating', enumeration('conditionRating', ASSET_CONDITION_RATINGS, true));
+      const pass = raw.pass;
+      if (typeof pass === 'boolean') out.pass = pass;
+      else if (pass === undefined || pass === null) fail('pass', 'required', 'pass is required.');
+      else fail('pass', 'invalid', 'pass must be true or false.');
+      put('findings', text('findings', false));
+      put('actionsRequired', text('actionsRequired', false));
+      put('nextInspectionDate', dateOnly('nextInspectionDate', false));
     } else if (type === 'operational_fact') {
       // Field rules mirror the BO mapper and the business_events columns. customerId / memberId / category are TEXT columns in BO (not uuid), so they
       // get trim / NFC / non-empty only. BO defines no identity rule for a fact (no natural key), so no duplicate or conflict is reported.
