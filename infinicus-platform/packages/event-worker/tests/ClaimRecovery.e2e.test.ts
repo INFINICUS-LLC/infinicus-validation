@@ -30,6 +30,7 @@ import { seedAdminUser } from '../../business-operations-runtime/tests/helpers/a
 import { answerFor } from '../../business-operations-runtime/tests/helpers/intakeFixture.js';
 import { deleteMovementsForTenants } from '../../business-operations-runtime/tests/helpers/movementCleanup.js';
 import { buildEventWorker } from '../src/index.js';
+import { assertNoScopeErrors, newScopeErrorLog, recordScopeErrors, type ScopeErrorLog } from './helpers/scopeErrors.js';
 
 const run = Boolean(process.env.DATABASE_URL && process.env.ADMIN_DATABASE_URL);
 const ACTOR = randomUUID();
@@ -59,13 +60,15 @@ describe.runIf(run)('P0-6g: durable stranded-claim recovery (real components, sc
     /** Authoritative status unavailable AFTER the claim: a POST-claim retryable condition. */
     statusDown: boolean;
     revoked: boolean;
+    /** Scope errors the worker swallowed (CI-STAB-02 R2): any cycle that swallows one fails with its cause. */
+    scopeErrors: ScopeErrorLog;
   }
   /** A claimable approval (baseline 100/200 -> 150/250), announced, scripted ABA ports. Nothing is activated yet. */
   async function scenario(announce = true): Promise<Scenario> {
     const ew = await makeExecWorld(admin, tenantIds, {});
     const pkg = await buildPackage(ew, { reorderPoint: 150, reorderQuantity: 250, modified: { baseline: [100, 200] } });
     const ctx: TenantContext = { tenantId: ew.w.tenantId, workspaceId: ew.w.workspaceId, userId: await seedAdminUser(admin, ew.w.tenantId, ew.w.workspaceId) };
-    const s = { ew, pkg, ctx, businessId: ew.ctx.businessId, mirrors: [], sourceAvailable: true, statusDown: false, revoked: false } as Scenario;
+    const s = { ew, pkg, ctx, businessId: ew.ctx.businessId, mirrors: [], sourceAvailable: true, statusDown: false, revoked: false, scopeErrors: newScopeErrorLog() } as Scenario;
     s.provider = new ScriptedProvider(async () => {
       const claimed = Number((await admin.query(`SELECT count(*) n FROM ${BO}.authorized_action_claims WHERE package_id=$1`, [pkg.identity.packageId])).rows[0].n) > 0;
       if (!claimed) return answerFor(pkg);
@@ -84,7 +87,7 @@ describe.runIf(run)('P0-6g: durable stranded-claim recovery (real components, sc
   const enable = (s: Scenario, state: 'ENABLED' | 'DISABLED' = 'ENABLED') =>
     activation.setActivation(s.ctx, 'bo:admin', { businessId: s.businessId, actionType: ACTION, state, reason: 'p0-6g', correlationId: randomUUID() });
 
-  const worker = (s: Scenario, clock?: () => Date) => buildEventWorker({
+  const buildWorker = (s: Scenario, clock?: () => Date) => buildEventWorker({
     config: { workerId: `w-${randomUUID().slice(0, 6)}`, actorUserId: ACTOR, discoveryDatabaseUrl: 'unused', intakeStatusMaxAgeMs: MAX_AGE, executionStatusMaxAgeMs: MAX_AGE, claimTimeoutMs: 60_000, batchSize: 10, maxScopesPerCycle: 5, pollIntervalMs: 1000 },
     discovery: { discover: async () => [{ tenantId: s.ctx.tenantId, workspaceId: s.ctx.workspaceId }] },
     ports: {
@@ -92,8 +95,14 @@ describe.runIf(run)('P0-6g: durable stranded-claim recovery (real components, sc
       source: { get: async () => (s.sourceAvailable ? { document: s.pkg as any, digest: s.pkg.integrity.digest } : null) },
       recorder: { recordConsumed: async (r) => { s.mirrors.push(r); return { outcome: 'RECORDED', recordedAt: new Date().toISOString() } as never; } },
     },
+    onScopeError: recordScopeErrors(s.scopeErrors),
     ...(clock ? { clock } : {}),
   });
+  /** The scenario's worker. Every cycle must finish without swallowing a scope error; otherwise the test fails there, naming the cause. */
+  const worker = (s: Scenario, clock?: () => Date) => {
+    const w = buildWorker(s, clock);
+    return { runOnce: async () => { const summary = await w.runOnce(); assertNoScopeErrors(s.scopeErrors, summary); return summary; } };
+  };
   /** A time source `offsetSeconds` ahead of the real clock (the worker's `now` only gates outbox availability). */
   const ahead = (offsetSeconds: number) => () => new Date(Date.now() + offsetSeconds * 1000);
 
