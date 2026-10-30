@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import type { TenantContext } from '@infinicus/database';
 import { OperationalMappingError, ReorderBaselineChangedError, ReorderPolicyAlreadyConfiguredError } from './errors.js';
 import { canonicalUuidReference, referenceIdProblem } from './uuidReference.js';
+import { contextIdentifierFields, firstIdentifierProblem, idOptional, idRequired, type IdentifierField } from './commandIdentifiers.js';
 import { UNIT_COST_MINIMUM_STORABLE, unitCostProblem } from './unitCost.js';
 import { Decimal } from './inventory-policy/decimal.js';
 import type { ConfigureInventoryReorderPolicyCommand, OperationalCommand } from './types.js';
@@ -69,6 +70,45 @@ function assertCommandScope(ctx: TenantContext, command: { context: { tenantId: 
   }
 }
 
+/**
+ * BO-ID-UUID-02: the identifiers of a command that are stored in typed uuid columns, in a fixed order so the first problem reported is deterministic.
+ * Fields that map to `text` columns (memberId, customerId) are not listed on purpose. See commandIdentifiers.ts.
+ */
+function commandIdentifierFields(command: OperationalCommand): IdentifierField[] {
+  const p = command.payload as unknown as Record<string, unknown>;
+  const fields = contextIdentifierFields(command.context);
+  switch (command.type) {
+    case 'record_inventory_movement':
+      fields.push(idRequired('inventoryItemId', p.inventoryItemId), idRequired('warehouseId', p.warehouseId));
+      break;
+    case 'record_keyed_inventory_movement':
+      // The handler requires exactly one of id / natural key itself; an id, when given, must be a UUID.
+      fields.push(idOptional('inventoryItemId', p.inventoryItemId), idOptional('warehouseId', p.warehouseId));
+      break;
+    case 'create_purchase_order':
+    case 'record_supplier_performance':
+      fields.push(idRequired('supplierId', p.supplierId));
+      break;
+    // record_purchase_receipt is deliberately absent: its identifiers are already checked before any SQL by purchaseReceiptProblems (an established, stricter
+    // lower-case-only contract with its own `<field>_invalid` reason codes, asserted by existing tests). Only its context identifiers are checked above.
+    case 'record_asset_inspection':
+      fields.push(idRequired('assetId', p.assetId));
+      break;
+    default:
+      break; // create_inventory_item, create_warehouse, record_workforce_event, record_operational_fact: no uuid-typed identifier in the payload
+  }
+  return fields;
+}
+
+/**
+ * Every uuid-typed identifier of the command (and of its context) must be a canonical UUID BEFORE the first SQL statement. One deterministic message that
+ * names the field, never the value; a refused command has run no query. The scope check stays first and unchanged.
+ */
+function assertCommandIdentifiers(command: OperationalCommand): void {
+  const problem = firstIdentifierProblem(commandIdentifierFields(command));
+  if (problem !== null) throw new OperationalMappingError(problem);
+}
+
 /** The reorder values of a balance as exact decimal text (never a float). */
 export interface ReorderValuesSnapshot {
   reorderPoint: string;
@@ -96,6 +136,7 @@ export class OperationalCommandExecutor {
     command: OperationalCommand
   ): Promise<CommandExecutionResult> {
     assertCommandScope(ctx, command);
+    assertCommandIdentifiers(command);
 
     switch (command.type) {
       case 'create_inventory_item':
@@ -431,6 +472,8 @@ export class OperationalCommandExecutor {
     command: ConfigureInventoryReorderPolicyCommand
   ): Promise<ReorderPolicyConfigurationResult> {
     assertCommandScope(ctx, command);
+    const identifierProblem = firstIdentifierProblem([...contextIdentifierFields(command.context), idRequired('inventoryItemId', command.payload.inventoryItemId), idRequired('warehouseId', command.payload.warehouseId)]);
+    if (identifierProblem !== null) throw new OperationalMappingError(identifierProblem);
     const p = command.payload;
     const businessId = command.context.businessId;
     const source = p.configurationSource ?? 'BO_COMMAND';

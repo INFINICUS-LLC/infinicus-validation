@@ -316,12 +316,15 @@ describe.runIf(RUN)('R-01B-3 DAL purchase_order preparation to BO handoff', () =
     expect(stored).toHaveLength(1); // stored with its padding
   });
 
-  it('F9 evidence: a non-UUID supplier on the legacy path aborts the whole handoff with the raw driver message; the preparation path refuses it earlier, with a stable code', async () => {
+  it('F9 (resolved by BO-ID-UUID-02): a non-UUID supplier on the legacy path is refused by BO with a deterministic message that names the field and not the value, before any SQL; the preparation path still refuses it earlier, with a stable code', async () => {
     const handoff = await createPublishedHandoff([po('SUP-NOT-A-UUID')], 'operations');
     const error = await bo.processHandoff(ctx, handoff).then(() => null, (e: unknown) => e);
-    // BO wraps the driver failure, so it is a controlled error type, but its message is the raw database text and nothing is written
+    // Before BO-ID-UUID-02 this message was the raw database text ("invalid input syntax for type uuid: ..."), which repeated the value and aborted the
+    // transaction from inside PostgreSQL. It is now BO's own refusal, raised before the first query; nothing is written.
     expect(error).toBeInstanceOf(OperationalMappingError);
-    expect((error as Error).message).toMatch(/invalid input syntax for type uuid/);
+    expect((error as Error).message).toBe('supplierId must be a canonical UUID (8-4-4-4-12 hexadecimal characters).');
+    expect((error as Error).message).not.toMatch(/invalid input syntax|uuid:/i);
+    expect((error as Error).message).not.toContain('SUP-NOT-A-UUID');
 
     const source = await da.registerSource(ctx, { businessId, name: 'R-01B-3 bad supplier', sourceCode: unique('r01b3-bad'), sourceType: 'manual', sensitivityLevel: 'internal', status: 'active' });
     const intake = await da.submitManualIntake(ctx, { businessId, dataSourceId: source.id, submissionType: OPERATIONS_PREPARED_SUBMISSION_TYPE, records: [po('SUP-NOT-A-UUID')] });

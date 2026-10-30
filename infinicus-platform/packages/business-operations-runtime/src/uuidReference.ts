@@ -25,7 +25,12 @@ export function canonicalUuidReference(value: unknown): string | null {
   return value.toLowerCase();
 }
 
-/** The one message for a rejected reference: it names the field and the rule, never the value. */
+/** The one message for a rejected uuid field: it names the field and the rule, never the value. */
+export function uuidFieldProblem(field: string): string {
+  return `${field} must be a canonical UUID (8-4-4-4-12 hexadecimal characters).`;
+}
+
+/** The one message for a rejected movement reference (BO-REF-UUID-01). */
 export function referenceIdProblem(): string {
-  return 'referenceId must be a canonical UUID (8-4-4-4-12 hexadecimal characters).';
+  return uuidFieldProblem('referenceId');
 }
