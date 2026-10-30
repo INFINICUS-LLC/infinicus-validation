@@ -66,8 +66,12 @@ type Raw = Record<string, unknown>;
 
 const isObject = (value: unknown): value is Raw => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-/** The fields of one receipt line (R-01B-8); mirrors BO's PURCHASE_RECEIPT_LINE_FIELDS. */
-const RECEIPT_LINE_FIELDS = ['purchaseOrderLineId', 'inventoryItemId', 'quantity', 'unitCost', 'unitCostCurrency'] as const;
+/**
+ * The fields of one receipt line (R-01B-8): the subset of BO's PURCHASE_RECEIPT_LINE_FIELDS that preparation accepts. BO's optional link from a receipt line to a
+ * purchase-order line is deliberately NOT in this set: the frozen Data-capture Block D guard (event-worker dataCaptureBlockD.architecture.test.ts) forbids
+ * DAL production code from touching purchase-order lines or the item link, so a record that carries it is rejected as an unsupported field and quarantined.
+ */
+const RECEIPT_LINE_FIELDS = ['inventoryItemId', 'quantity', 'unitCost', 'unitCostCurrency'] as const;
 
 const FIELDS: Record<PreparedRecordType, readonly string[]> = {
   inventory_item: ['sku', 'name', 'unitOfMeasure'],
@@ -338,7 +342,6 @@ export class OperationalRecordPreparer {
             }
             const line: Raw = {};
             const lineLevel = (field: string, value: unknown): void => { if (value !== undefined) line[field] = value; };
-            lineLevel('purchaseOrderLineId', lowercaseUuid('purchaseOrderLineId', false));
             lineLevel('inventoryItemId', lowercaseUuid('inventoryItemId', true));
             const quantity = decimal('quantity', true, RECEIPT_LINE_QUANTITY_CONTRACT);
             if (quantity !== undefined && quantity <= 0) fail('quantity', 'not_positive', 'quantity must be strictly positive.');

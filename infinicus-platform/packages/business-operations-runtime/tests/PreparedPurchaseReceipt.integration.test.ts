@@ -298,7 +298,7 @@ describe.runIf(RUN)('R-01B-8 DAL purchase_receipt preparation to BO handoff', ()
     const handoff = await createPublishedHandoff([
       receipt(w, { receiptNumber: ` ${number} `, receivedAt: '2026-10-01T11:30:00.25+02:00', notes: ' dock 3 ',
         lines: [
-          { purchaseOrderLineId: w.poLine, inventoryItemId: w.itemA, quantity: ' 10.50 ', unitCost: '2.50', unitCostCurrency: 'USD' },
+          { inventoryItemId: w.itemA, quantity: ' 10.50 ', unitCost: '2.50', unitCostCurrency: 'USD' },
           { inventoryItemId: w.itemB, quantity: 4.25 },
         ] }),
     ], OPERATIONS_PREPARED_SUBMISSION_TYPE);
@@ -311,7 +311,7 @@ describe.runIf(RUN)('R-01B-8 DAL purchase_receipt preparation to BO handoff', ()
     expect(new Date(h.received_at).toISOString()).toBe('2026-10-01T09:30:00.250Z');
     const lines = await lineRows(h.id);
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatchObject({ line_number: 1, purchase_order_line_id: w.poLine, inventory_item_id: w.itemA, quantity: '10.5000', unit_cost: '2.5000', unit_cost_currency: 'USD', movement_type: 'receipt', reference_type: 'purchase_receipt', movement_quantity: '10.5000' });
+    expect(lines[0]).toMatchObject({ line_number: 1, purchase_order_line_id: null, inventory_item_id: w.itemA, quantity: '10.5000', unit_cost: '2.5000', unit_cost_currency: 'USD', movement_type: 'receipt', reference_type: 'purchase_receipt', movement_quantity: '10.5000' });
     expect(lines[1]).toMatchObject({ line_number: 2, purchase_order_line_id: null, inventory_item_id: w.itemB, quantity: '4.2500', unit_cost: null, unit_cost_currency: null });
     for (const l of lines) expect(new Date(l.occurred_at).toISOString()).toBe('2026-10-01T09:30:00.250Z');
 
@@ -319,6 +319,21 @@ describe.runIf(RUN)('R-01B-8 DAL purchase_receipt preparation to BO handoff', ()
       `SELECT delivery_status FROM data_acquisition.publication_deliveries WHERE publication_package_id=$1 AND destination_reference='business_operations'`,
       [handoff.payload.publicationPackageId]);
     expect(delivery.rows[0].delivery_status).toBe('delivered');
+  });
+
+  it('the optional order-line link: BO stores it on the legacy path, the prepared path quarantines the record (frozen Block D guard), and nothing reaches BO', async () => {
+    const w = await world();
+    const linked = (number: string) => receipt(w, { receiptNumber: number, lines: [{ purchaseOrderLineId: w.poLine, inventoryItemId: w.itemA, quantity: 2 }] });
+    const legacyNumber = unique('GRN-LINK');
+    await bo.processHandoff(ctx, await createPublishedHandoff([linked(legacyNumber)], 'operations'));
+    expect((await lineRows((await header(legacyNumber))[0].id))[0]).toMatchObject({ purchase_order_line_id: w.poLine });
+
+    const source = await da.registerSource(ctx, { businessId, name: 'R-01B-8 link', sourceCode: unique('r01b8-l'), sourceType: 'manual', sensitivityLevel: 'internal', status: 'active' });
+    const preparedNumber = unique('GRN-LINKP');
+    const intake = await da.submitManualIntake(ctx, { businessId, dataSourceId: source.id, submissionType: OPERATIONS_PREPARED_SUBMISSION_TYPE, records: [linked(preparedNumber)] });
+    expect(intake.state).toBe('quarantined');
+    await expect(da.preparePublicationPackage(ctx, businessId, intake.collectionRunId, { targetBlock: 'BO-RUNTIME' })).rejects.toBeDefined();
+    expect(await header(preparedNumber)).toEqual([]);
   });
 
   it('numeric boundaries survive the real numeric(18,4) columns exactly', async () => {

@@ -161,9 +161,9 @@ describe('R-01B-8 purchase_receipt: DAL preparation profile <-> BO mapper', () =
   it('everything the DAL prepares passes the BO mapper unchanged, and the mapper produces the matching command', () => {
     const probes: Array<Record<string, unknown>> = [
       {}, { notes: ' n ' }, { receiptNumber: ' GRN-2 ' }, { receivedAt: '2026-10-01T11:30:00+02:00' }, { receivedAt: '2026-10-01T09:30Z' },
-      { lines: [line({ purchaseOrderLineId: POLINE, quantity: '1.5', unitCost: '2.50', unitCostCurrency: 'USD' })] },
+      { lines: [line({ quantity: '1.5', unitCost: '2.50', unitCostCurrency: 'USD' })] },
       { lines: [line({ quantity: '0.0001', unitCost: '0.0001', unitCostCurrency: 'KWD' }), line({ quantity: '99999999999999' })] },
-      { lines: [line({ unitCost: null, unitCostCurrency: null, purchaseOrderLineId: null })] },
+      { lines: [line({ unitCost: null, unitCostCurrency: null })] },
       { purchaseOrderId: PO.toUpperCase() }, { warehouseId: 'WH' }, { receivedAt: '2026-10-01' }, { receivedAt: '2026-10-01T09:30:00.123456Z' }, { lines: [] },
       { lines: [line({ quantity: 0 })] }, { lines: [line({ quantity: '1.00001' })] }, { lines: [line({ unitCost: 1 })] }, { lines: [line({ inventoryItemId: ITEM.toUpperCase() })] },
       { receiptNumber: 'x'.repeat(101) }, { tenantId: 't' },
@@ -183,6 +183,14 @@ describe('R-01B-8 purchase_receipt: DAL preparation profile <-> BO mapper', () =
     }
     expect(accepted).toBe(8);
     expect(rejected).toBe(11);
+  });
+
+  it('the one deliberate difference: BO accepts the optional order-line link on a receipt line, the DAL does not (frozen Block D guard), so the record is quarantined, never altered', () => {
+    const withLink = rec({ lines: [line({ purchaseOrderLineId: POLINE })] });
+    expect(mapper.validate(withLink.data)).toEqual([]);
+    const outcome = preparer.prepareRecord(withLink, 0);
+    expect(outcome.status).toBe('REJECTED');
+    expect(outcome.issues.map((i) => i.ruleCode)).toContain('PREP_UNSUPPORTED_FIELD');
   });
 
   it('owner ruling: the BO mapper and the DAL agree on identifiers - both reject every non-lower-case form, and the DAL never folds one into acceptance', () => {

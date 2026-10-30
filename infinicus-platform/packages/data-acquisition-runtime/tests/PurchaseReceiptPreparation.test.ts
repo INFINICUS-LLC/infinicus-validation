@@ -8,7 +8,7 @@ const PO = '3f2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e6f';
 const WH = '4a2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e60';
 const ITEM = '5b2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e61';
 const ITEM2 = '6c2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e62';
-const POLINE = '7d2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e63';
+const POLINE = '7d2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e63'; // BO's optional order-line link: deliberately unsupported here (frozen Block D guard)
 const line = (data: Record<string, unknown> = {}) => ({ inventoryItemId: ITEM, quantity: 10, ...data });
 const pr = (data: Record<string, unknown> = {}) => ({
   recordType: 'purchase_receipt',
@@ -25,15 +25,15 @@ describe('purchase_receipt: valid records', () => {
     expect(r.prepared!.data).not.toHaveProperty('notes');
     expect(r.prepared!.data.lines).toEqual([{ inventoryItemId: ITEM, quantity: 10 }]);
   });
-  it('a full receipt with several lines, order-line links and costs passes', () => {
+  it('a full receipt with several lines and costs passes', () => {
     const lines = [
-      line({ purchaseOrderLineId: POLINE, quantity: '10.5', unitCost: 2.5, unitCostCurrency: 'USD' }),
+      line({ quantity: '10.5', unitCost: 2.5, unitCostCurrency: 'USD' }),
       line({ inventoryItemId: ITEM2, quantity: 0.0001, unitCost: '0.0001', unitCostCurrency: 'EUR' }),
     ];
     const r = prep(pr({ notes: 'dock 3', lines }));
     expect(r.issues).toEqual([]);
     expect(r.prepared!.data.lines).toEqual([
-      { purchaseOrderLineId: POLINE, inventoryItemId: ITEM, quantity: 10.5, unitCost: 2.5, unitCostCurrency: 'USD' },
+      { inventoryItemId: ITEM, quantity: 10.5, unitCost: 2.5, unitCostCurrency: 'USD' },
       { inventoryItemId: ITEM2, quantity: 0.0001, unitCost: 0.0001, unitCostCurrency: 'EUR' },
     ]);
   });
@@ -57,7 +57,6 @@ describe('purchase_receipt: owner ruling - lower-case UUIDs only, never widened 
       expect(codes(pr({ purchaseOrderId: value })), value).toContain('PREP_PURCHASEORDERID_INVALID');
       expect(codes(pr({ warehouseId: value })), value).toContain('PREP_WAREHOUSEID_INVALID');
       expect(codes(pr({ lines: [line({ inventoryItemId: value })] })), value).toContain('PREP_LINE_INVENTORYITEMID_INVALID');
-      expect(codes(pr({ lines: [line({ purchaseOrderLineId: value })] })), value).toContain('PREP_LINE_PURCHASEORDERLINEID_INVALID');
     }
   });
   it('never emits a lower_case_uuid action: a valid identifier is passed through, surrounding whitespace is the only change', () => {
@@ -82,11 +81,11 @@ describe('purchase_receipt: deterministic normalization', () => {
     ]));
   });
   it('omits null / blank optionals and records that it did so', () => {
-    const r = prep(pr({ notes: '  ', lines: [line({ purchaseOrderLineId: null, unitCost: null, unitCostCurrency: null })] }));
+    const r = prep(pr({ notes: '  ', lines: [line({ unitCost: null, unitCostCurrency: null })] }));
     expect(r.prepared!.data).not.toHaveProperty('notes');
     expect(r.prepared!.data.lines).toEqual([{ inventoryItemId: ITEM, quantity: 10 }]);
     expect(r.actions).toEqual(expect.arrayContaining([
-      { field: 'notes', rule: 'empty_omitted' }, { field: 'lines[0].purchaseOrderLineId', rule: 'null_omitted' }, { field: 'lines[0].unitCost', rule: 'null_omitted' },
+      { field: 'notes', rule: 'empty_omitted' }, { field: 'lines[0].unitCost', rule: 'null_omitted' },
     ]));
   });
   it('is pure, idempotent and deterministic; hashes differ exactly when something was normalized', () => {
@@ -135,6 +134,7 @@ describe('purchase_receipt: rejection with stable PREP_* codes, nothing partiall
     ['lower-case currency is not folded', { lines: [line({ unitCost: 1, unitCostCurrency: 'usd' })] }, 'PREP_LINE_UNITCOSTCURRENCY_INVALID'],
     ['padded currency is not trimmed', { lines: [line({ unitCost: 1, unitCostCurrency: ' USD' })] }, 'PREP_LINE_UNITCOSTCURRENCY_INVALID'],
     ['unsupported line field', { lines: [line({ lineNumber: 1 })] }, 'PREP_UNSUPPORTED_FIELD'],
+    ['the optional order-line link is not accepted through preparation (frozen Block D guard keeps the DAL away from order lines)', { lines: [line({ purchaseOrderLineId: POLINE })] }, 'PREP_UNSUPPORTED_FIELD'],
     ['unsupported record field', { receivedBy: PO }, 'PREP_UNSUPPORTED_FIELD'],
   ];
   for (const [name, data, code] of cases) {
