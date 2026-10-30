@@ -21,6 +21,8 @@ import {
   OFFSET_INSTANT_PATTERN,
   PREPARED_RECORD_TYPES,
   UNIT_COST_MINIMUM,
+  WORKFORCE_EVENT_ACTIONS,
+  WORKFORCE_EVENT_HOURS_CONTRACT,
   type PreparedRecordType,
 } from './operationalRecordProfile.js';
 import { exactDecimal, type DecimalContract, type DecimalProblem } from './exactDecimal.js';
@@ -72,6 +74,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
     'unitCost', 'unitCostCurrency', 'referenceType', 'referenceId', 'notes',
   ],
   purchase_order: ['supplierId', 'poNumber', 'expectedDate', 'currencyCode', 'totalAmount', 'notes'],
+  workforce_event: ['memberId', 'action', 'hours', 'notes'],
   supplier_performance: ['supplierId', 'periodStart', 'periodEnd', 'qualityScore', 'deliveryScore', 'priceScore', 'serviceScore', 'overallScore', 'notes'],
   operational_fact: ['eventType', 'amount', 'quantity', 'category', 'customerId', 'memberId', 'action', 'notes'],
 };
@@ -311,6 +314,19 @@ export class OperationalRecordPreparer {
         } else put(field, value);
       }
       put('notes', text('notes', false));
+    } else if (type === 'workforce_event') {
+      // Field rules mirror the BO mapper: memberId is free text (member_id is TEXT, not uuid), action is hire|fire|review, hours is a non-negative
+      // number stored in numeric(18,4). BO requires at least one of memberId, action and hours; notes alone is not an event. BO defines no identity rule
+      // for a workforce event, so no duplicate or conflict is reported.
+      put('memberId', text('memberId', false));
+      put('action', enumeration('action', WORKFORCE_EVENT_ACTIONS, false));
+      const hours = decimal('hours', false, WORKFORCE_EVENT_HOURS_CONTRACT);
+      if (hours !== undefined && hours < 0) fail('hours', 'negative', 'hours must not be negative.');
+      put('hours', hours);
+      put('notes', text('notes', false));
+      if (out.memberId === undefined && out.action === undefined && out.hours === undefined && issues.length === 0) { // judged on the prepared form: null / blank values were omitted
+        reject('workforce_event_empty', 'data', 'A workforce event needs at least one of memberId, action and hours.');
+      }
     } else if (type === 'operational_fact') {
       // Field rules mirror the BO mapper and the business_events columns. customerId / memberId / category are TEXT columns in BO (not uuid), so they
       // get trim / NFC / non-empty only. BO defines no identity rule for a fact (no natural key), so no duplicate or conflict is reported.

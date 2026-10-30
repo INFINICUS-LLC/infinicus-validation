@@ -146,6 +146,46 @@ describe('R-01B-4 operational_fact: DAL preparation profile <-> BO mapper', () =
   });
 });
 
+describe('R-01B-5 workforce_event: DAL preparation profile <-> BO mapper', () => {
+  const mapper = mapperFor('workforce_event');
+  const rec = (data: Record<string, unknown>) => ({ recordType: 'workforce_event', data });
+
+  it('the action set is identical: DAL accepts an action exactly when the BO mapper does', () => {
+    for (const action of ['hire', 'fire', 'review', 'churn', 'new', 'return', 'promote']) {
+      const dal = preparer.prepareRecord(rec({ memberId: 'm', action }), 0).status !== 'REJECTED';
+      expect(dal, action).toBe(mapper.validate({ memberId: 'm', action }).length === 0);
+    }
+  });
+
+  it('everything the DAL prepares passes the BO mapper unchanged, and the mapper produces the matching command', () => {
+    const probes: Array<Record<string, unknown>> = [
+      { memberId: 'm' }, { action: 'hire' }, { hours: 0 }, { hours: '0.0001' }, { hours: ' 8 ' }, { hours: 7.25, action: 'review' },
+      { memberId: ' x ', action: ' FIRE ', hours: '12', notes: ' n ' }, { memberId: 'not-a-uuid/é' }, { action: 'review', notes: 'n' },
+      { notes: 'only' }, {}, { memberId: null, hours: null }, { hours: -1 }, { hours: '1.23456' }, { action: 'churn' }, { memberId: 4 }, { tenantId: 't', memberId: 'm' },
+    ];
+    let accepted = 0; let rejected = 0;
+    for (const probe of probes) {
+      const outcome = preparer.prepareRecord(rec(probe), 0);
+      if (outcome.status === 'REJECTED') { rejected++; continue; }
+      accepted++;
+      const data = outcome.prepared!.data;
+      expect(mapper.validate(data), JSON.stringify(data)).toEqual([]);
+      const [command] = mapper.map(data, { tenantId: 't', workspaceId: 'w', businessId: 'b', correlationId: 'c', sourceReference: 's' } as never);
+      expect(command.type).toBe('record_workforce_event');
+      expect((command as { payload: Record<string, unknown> }).payload).toMatchObject({ memberId: data.memberId, action: data.action, hours: data.hours, notes: data.notes });
+    }
+    expect(accepted).toBe(9);
+    expect(rejected).toBe(8);
+  });
+
+  it('what BO rejects the DAL rejects: the empty event, negative hours, non-string ids and non-number hours', () => {
+    for (const data of [{}, { notes: 'x' }, { hours: -1 }, { memberId: 1 }, { hours: true }, { memberId: 'm', notes: [] }]) {
+      expect(mapper.validate(data).length, JSON.stringify(data)).toBeGreaterThan(0);
+      expect(preparer.prepareRecord(rec(data), 0).status, JSON.stringify(data)).toBe('REJECTED');
+    }
+  });
+});
+
 describe('R-01B-7 supplier_performance: DAL preparation profile <-> BO mapper', () => {
   const mapper = mapperFor('supplier_performance');
   const SUPPLIER = '3f2b8c1e-9d4a-4e6b-8c7d-1a2b3c4d5e6f';

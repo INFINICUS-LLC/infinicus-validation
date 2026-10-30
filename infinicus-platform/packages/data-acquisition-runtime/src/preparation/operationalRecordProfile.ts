@@ -15,7 +15,7 @@ export const OPERATIONS_PREPARED_SUBMISSION_TYPE = 'operations_prepared';
 export const OPERATIONAL_PROFILE_VERSION = '1.0';
 export const NORMALIZE_TRANSFORMATION_TYPE = 'normalize';
 
-export const PREPARED_RECORD_TYPES = ['inventory_item', 'warehouse', 'inventory_movement', 'purchase_order', 'operational_fact', 'supplier_performance'] as const;
+export const PREPARED_RECORD_TYPES = ['inventory_item', 'warehouse', 'inventory_movement', 'purchase_order', 'operational_fact', 'workforce_event', 'supplier_performance'] as const;
 export type PreparedRecordType = (typeof PREPARED_RECORD_TYPES)[number];
 
 export const INVENTORY_MOVEMENT_TYPES = [
@@ -65,6 +65,13 @@ export const PREPARED_KEY_RULE_CODES = {
 } as const;
 /** BO stores this when an inventory item states no unit of measure (the INSERT's coalesce); a later record is compared against the stored value. */
 export const INVENTORY_ITEM_DEFAULT_UNIT_OF_MEASURE = 'unit';
+
+/**
+ * R-01B-5: workforce events are stored in business_operations.business_events as event_type 'team' (hours -> quantity numeric(18,4), memberId -> member_id
+ * text). The action enum mirrors the BO workforce_event mapper (narrower than the table CHECK); parity is asserted by a BO-side drift-guard test.
+ */
+export const WORKFORCE_EVENT_ACTIONS = ['hire', 'fire', 'review'] as const;
+export const WORKFORCE_EVENT_HOURS_CONTRACT = { precision: 18, scale: 4 } as const;
 
 /**
  * R-01B-7: the five supplier_performance_scores score columns are numeric(5,2) with CHECK (0 <= score <= 100). BO's mapper checks only the range, so a value
