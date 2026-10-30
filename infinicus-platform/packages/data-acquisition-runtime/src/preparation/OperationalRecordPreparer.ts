@@ -9,6 +9,12 @@ import {
   MOVEMENT_REFERENCE_TYPES,
   MOVEMENT_UNIT_COST_CONTRACT,
   PURCHASE_ORDER_TOTAL_CONTRACT,
+  PURCHASE_RECEIPT_MAX_LINES,
+  PURCHASE_RECEIPT_NOTES_MAX_LENGTH,
+  PURCHASE_RECEIPT_NUMBER_MAX_LENGTH,
+  RECEIPT_LINE_QUANTITY_CONTRACT,
+  RECEIPT_LINE_UNIT_COST_CONTRACT,
+  RECEIPT_UUID_PATTERN,
   NATURAL_KEY_PATTERN,
   OPERATIONAL_FACT_ACTIONS,
   OPERATIONAL_FACT_AMOUNT_CONTRACT,
@@ -60,6 +66,9 @@ type Raw = Record<string, unknown>;
 
 const isObject = (value: unknown): value is Raw => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+/** The fields of one receipt line (R-01B-8); mirrors BO's PURCHASE_RECEIPT_LINE_FIELDS. */
+const RECEIPT_LINE_FIELDS = ['purchaseOrderLineId', 'inventoryItemId', 'quantity', 'unitCost', 'unitCostCurrency'] as const;
+
 const FIELDS: Record<PreparedRecordType, readonly string[]> = {
   inventory_item: ['sku', 'name', 'unitOfMeasure'],
   warehouse: ['warehouseCode', 'name'],
@@ -68,6 +77,7 @@ const FIELDS: Record<PreparedRecordType, readonly string[]> = {
     'unitCost', 'unitCostCurrency', 'referenceType', 'referenceId', 'notes',
   ],
   purchase_order: ['supplierId', 'poNumber', 'expectedDate', 'currencyCode', 'totalAmount', 'notes'],
+  purchase_receipt: ['purchaseOrderId', 'warehouseId', 'receiptNumber', 'receivedAt', 'notes', 'lines'],
   operational_fact: ['eventType', 'amount', 'quantity', 'category', 'customerId', 'memberId', 'action', 'notes'],
 };
 
@@ -142,23 +152,27 @@ export class OperationalRecordPreparer {
     }
 
     const out: Raw = {};
-    const fail = (field: string, code: string, message: string): void => reject(`${field}_${code}`, `data.${field}`, message);
+    /** Where the helpers read from and report to: the record's `data`, or (R-01B-8) one object of a nested array such as a receipt line. */
+    interface Scope { src: Raw; path: string; codePrefix: string; actionPrefix: string }
+    let scope: Scope = { src: raw, path: 'data', codePrefix: '', actionPrefix: '' };
+    const within = <T>(next: Scope, work: () => T): T => { const previous = scope; scope = next; try { return work(); } finally { scope = previous; } };
+    const fail = (field: string, code: string, message: string): void => reject(`${scope.codePrefix}${field}_${code}`, `${scope.path}.${field}`, message);
 
     /** Trim + NFC. Returns undefined when absent. `required` fields that are absent/empty are rejected here. */
     const text = (field: string, required: boolean, maxLength?: number): string | undefined => {
-      const value = raw[field];
+      const value = scope.src[field];
       if (value === undefined) { if (required) fail(field, 'required', `${field} is required.`); return undefined; }
       if (value === null) {
-        if (required) fail(field, 'required', `${field} is required.`); else actions.push({ field, rule: 'null_omitted' });
+        if (required) fail(field, 'required', `${field} is required.`); else actions.push({ field: scope.actionPrefix + field, rule: 'null_omitted' });
         return undefined;
       }
       if (typeof value !== 'string') { fail(field, 'invalid', `${field} must be a string.`); return undefined; }
       const trimmed = value.trim();
       const normalized = trimmed.normalize('NFC');
-      if (trimmed !== value) actions.push({ field, rule: 'trim' });
-      if (normalized !== trimmed) actions.push({ field, rule: 'unicode_nfc' });
+      if (trimmed !== value) actions.push({ field: scope.actionPrefix + field, rule: 'trim' });
+      if (normalized !== trimmed) actions.push({ field: scope.actionPrefix + field, rule: 'unicode_nfc' });
       if (normalized.length === 0) {
-        if (required) fail(field, 'required', `${field} is required.`); else actions.push({ field, rule: 'empty_omitted' });
+        if (required) fail(field, 'required', `${field} is required.`); else actions.push({ field: scope.actionPrefix + field, rule: 'empty_omitted' });
         return undefined;
       }
       if (maxLength !== undefined && normalized.length > maxLength) { fail(field, 'too_long', `${field} exceeds ${maxLength} characters.`); return undefined; }
@@ -174,7 +188,7 @@ export class OperationalRecordPreparer {
       if (t === undefined) return undefined;
       const lowered = t.toLowerCase();
       if (!allowed.includes(lowered as T)) { fail(field, 'invalid', `${field} is not an allowed value.`); return undefined; }
-      if (lowered !== t) actions.push({ field, rule: 'lowercase_enum' });
+      if (lowered !== t) actions.push({ field: scope.actionPrefix + field, rule: 'lowercase_enum' });
       return lowered as T;
     };
     const DECIMAL_MESSAGES: Record<DecimalProblem, (field: string, c: DecimalContract) => [string, string]> = {
@@ -185,9 +199,9 @@ export class OperationalRecordPreparer {
     };
     /** F1: a decimal is accepted only if the resulting number is exactly the supplied decimal within the field's column contract. */
     const decimal = (field: string, required: boolean, contract: DecimalContract, floor?: number): number | undefined => {
-      const value = raw[field];
+      const value = scope.src[field];
       if (value === undefined || value === null) {
-        if (required) fail(field, 'required', `${field} is required.`); else if (value === null) actions.push({ field, rule: 'null_omitted' });
+        if (required) fail(field, 'required', `${field} is required.`); else if (value === null) actions.push({ field: scope.actionPrefix + field, rule: 'null_omitted' });
         return undefined;
       }
       if (typeof value !== 'number' && typeof value !== 'string') { fail(field, 'invalid', `${field} must be a number.`); return undefined; }
@@ -205,8 +219,8 @@ export class OperationalRecordPreparer {
         return undefined;
       }
       if (typeof value === 'string') {
-        if (supplied !== value) actions.push({ field, rule: 'trim' });
-        actions.push({ field, rule: 'numeric_string_to_number' });
+        if (supplied !== value) actions.push({ field: scope.actionPrefix + field, rule: 'trim' });
+        actions.push({ field: scope.actionPrefix + field, rule: 'numeric_string_to_number' });
       }
       return result.value;
     };
@@ -216,7 +230,7 @@ export class OperationalRecordPreparer {
       if (value === undefined) return undefined;
       const canonical = canonicalUuid(value);
       if (canonical === null) { fail(field, 'invalid', `${field} must be a UUID.`); return undefined; }
-      if (canonical !== value) actions.push({ field, rule: 'lowercase_uuid' });
+      if (canonical !== value) actions.push({ field: scope.actionPrefix + field, rule: 'lowercase_uuid' });
       return canonical;
     };
     /** A calendar date for a date column: exactly YYYY-MM-DD, never rolled over, no time or zone invented. */
@@ -228,9 +242,9 @@ export class OperationalRecordPreparer {
     };
     /** Currency exactly as supplied (owner ruling): not trimmed, not case-folded, never defaulted. */
     const exactCurrency = (field: string, required: boolean): string | undefined => {
-      const value = raw[field];
+      const value = scope.src[field];
       if (value === undefined || value === null) {
-        if (required) fail(field, 'required', `${field} is required.`); else if (value === null) actions.push({ field, rule: 'null_omitted' });
+        if (required) fail(field, 'required', `${field} is required.`); else if (value === null) actions.push({ field: scope.actionPrefix + field, rule: 'null_omitted' });
         return undefined;
       }
       if (typeof value !== 'string' || !CURRENCY_CODE_PATTERN.test(value)) { fail(field, 'invalid', `${field} must be exactly three upper-case letters.`); return undefined; }
@@ -285,6 +299,63 @@ export class OperationalRecordPreparer {
       put('referenceType', enumeration('referenceType', MOVEMENT_REFERENCE_TYPES, false));
       put('referenceId', text('referenceId', false));
       put('notes', text('notes', false));
+    } else if (type === 'purchase_receipt') {
+      // Field rules mirror BO's purchase-receipt rule set (src/procurement/purchaseReceipt.ts), which the intake mapper and the executor share. Owner ruling:
+      // identifiers are LOWER-CASE canonical UUIDs only - an upper-case or braced UUID is rejected here exactly as BO rejects it, never case-folded. Nothing
+      // is defaulted or inferred. BO owns existence checks (order, warehouse, items, order lines), the future-instant check (it needs the database clock) and
+      // the receipt-number identity rule (unique per business; an identical replay is a no-op, a different one is refused), so none of that is reported here.
+      const lowercaseUuid = (field: string, required: boolean): string | undefined => {
+        const value = text(field, required);
+        if (value === undefined) return undefined;
+        if (!RECEIPT_UUID_PATTERN.test(value)) { fail(field, 'invalid', `${field} must be a lower-case UUID.`); return undefined; }
+        return value;
+      };
+      put('purchaseOrderId', lowercaseUuid('purchaseOrderId', true));
+      put('warehouseId', lowercaseUuid('warehouseId', true));
+      put('receiptNumber', text('receiptNumber', true, PURCHASE_RECEIPT_NUMBER_MAX_LENGTH));
+      const receivedAt = text('receivedAt', true);
+      if (receivedAt !== undefined) {
+        const ms = isRealCalendarInstant(receivedAt) ? Date.parse(receivedAt) : Number.NaN;
+        if (Number.isNaN(ms)) fail('receivedAt', 'invalid', 'receivedAt must be an ISO-8601 instant with an explicit offset (Z or ±hh:mm) and at most three fractional digits.');
+        else {
+          const iso = new Date(ms).toISOString();
+          if (iso !== receivedAt) actions.push({ field: 'receivedAt', rule: 'utc_instant' });
+          out.receivedAt = iso;
+        }
+      }
+      put('notes', text('notes', false, PURCHASE_RECEIPT_NOTES_MAX_LENGTH));
+
+      const rawLines = raw.lines;
+      if (!Array.isArray(rawLines) || rawLines.length === 0) fail('lines', 'required', 'lines must be a non-empty array.');
+      else if (rawLines.length > PURCHASE_RECEIPT_MAX_LINES) fail('lines', 'too_many', `A receipt has at most ${PURCHASE_RECEIPT_MAX_LINES} lines.`);
+      else {
+        const preparedLines: Raw[] = [];
+        rawLines.forEach((rawLine: unknown, i: number) => {
+          if (!isObject(rawLine)) { reject('line_not_object', `data.lines[${i}]`, 'Each line must be an object.'); return; }
+          within({ src: rawLine, path: `data.lines[${i}]`, codePrefix: 'line_', actionPrefix: `lines[${i}].` }, () => {
+            for (const key of Object.keys(rawLine)) {
+              if (!(RECEIPT_LINE_FIELDS as readonly string[]).includes(key)) reject('unsupported_field', `data.lines[${i}].${clip(key)}`, `Field "${clip(key)}" is not part of the receipt line contract.`);
+            }
+            const line: Raw = {};
+            const lineLevel = (field: string, value: unknown): void => { if (value !== undefined) line[field] = value; };
+            lineLevel('purchaseOrderLineId', lowercaseUuid('purchaseOrderLineId', false));
+            lineLevel('inventoryItemId', lowercaseUuid('inventoryItemId', true));
+            const quantity = decimal('quantity', true, RECEIPT_LINE_QUANTITY_CONTRACT);
+            if (quantity !== undefined && quantity <= 0) fail('quantity', 'not_positive', 'quantity must be strictly positive.');
+            lineLevel('quantity', quantity);
+            const cost = decimal('unitCost', false, RECEIPT_LINE_UNIT_COST_CONTRACT, UNIT_COST_MINIMUM);
+            if (cost !== undefined && cost <= 0) fail('unitCost', 'not_positive', 'unitCost must be strictly positive.');
+            lineLevel('unitCost', cost);
+            const currency = exactCurrency('unitCostCurrency', false);
+            lineLevel('unitCostCurrency', currency);
+            const lineIssue = (field: string): boolean => issues.some((issue) => issue.fieldPath === `data.lines[${i}].${field}`);
+            if (cost !== undefined && currency === undefined && !lineIssue('unitCostCurrency')) fail('unitCostCurrency', 'required_with_unitcost', 'unitCostCurrency is required when unitCost is present.');
+            if (cost === undefined && currency !== undefined && !lineIssue('unitCost')) fail('unitCost', 'required_with_unitcostcurrency', 'unitCost is required when unitCostCurrency is present.');
+            preparedLines.push(line);
+          });
+        });
+        out.lines = preparedLines;
+      }
     } else if (type === 'operational_fact') {
       // Field rules mirror the BO mapper and the business_events columns. customerId / memberId / category are TEXT columns in BO (not uuid), so they
       // get trim / NFC / non-empty only. BO defines no identity rule for a fact (no natural key), so no duplicate or conflict is reported.
