@@ -10,11 +10,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer, type AddressInfo } from 'node:net';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { Pool } from 'pg';
+import { awaitExit, processesMatching, sendSignal, waitForNoProcesses, waitForReadiness } from './helpers/signalSync.js';
 
 // Each script run spawns pg_dump/gpg/psql (and the fingerprint query); allow for a loaded shared test server.
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
@@ -686,33 +687,52 @@ esac`);
     });
 
     it('wipes the temporary directory when interrupted (SIGTERM) and refuses to run with shell tracing on', async () => {
-      // Deterministic, not timing-based: the fetch blocks until the test creates `release`, and the test does so only AFTER sending SIGTERM. Bash runs the
-      // TERM trap between commands, so the signal is always pending when the blocked fetch returns and the script exits 143 however slow the runner is.
-      // (A fixed `sleep 3` raced against a loaded CI runner: if the kill landed after the sleep, the script finished the fetch and exited with its own code.)
-      // The 300 x 0.1 s cap only keeps a broken test from hanging.
+      // Deterministic, not timing-based, in TWO steps (CI-STAB-06A):
+      //  1. READINESS. The mocked fetch writes a unique token to `ready` (atomically) as its first action and then blocks until the test creates `release`. The test
+      //     sends SIGTERM only after it has read that token, so the script is provably parked in its fetch - long after every start-up command substitution has
+      //     finished. (Signalling when the temporary directory merely appeared hit bash 5.2's "trap: line 2: unexpected EOF" defect: the signal was swallowed and the
+      //     script exited 2 instead of 143; see helpers/signalSync.ts.) No sleep stands in for readiness, and every wait is bounded and fails with the script's output.
+      //  2. ORDER. `release` is created only AFTER the signal was sent. Bash runs the TERM trap between commands, so the signal is always pending when the blocked
+      //     fetch returns and the script exits 143 however slow the runner is. (An earlier fixed `sleep 3` raced a loaded runner.)
       const release = join(work, 'release-fetch');
-      const blockUntilReleased = `n=0; while [ ! -e '${release}' ] && [ $n -lt 300 ]; do sleep 0.1; n=$((n+1)); done # %KEY%`;
+      const ready = join(work, 'fetch-ready');
+      const token = `ready-${randomUUID()}`;
+      const blockUntilReleased = `printf '%s' '${token}' > '${ready}.tmp' && mv '${ready}.tmp' '${ready}'; n=0; while [ ! -e '${release}' ] && [ $n -lt 300 ]; do sleep 0.1; n=$((n+1)); done # %KEY%`;
       const child = spawn('bash', [RESTORE, manifestKey()], { env: { PATH: process.env.PATH as string, HOME: work, TMPDIR: work, ...restoreEnv({ BACKUP_FETCH_CMD: blockUntilReleased }) } });
       // The script's own output is kept so a failure explains itself (which stage it was in, which exit path it took) instead of only "expected 2 to be 143".
       let output = '';
       child.stdout.on('data', (d: Buffer) => { output += d.toString(); });
       child.stderr.on('data', (d: Buffer) => { output += d.toString(); });
-      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((ok) => child.on('exit', (code, signal) => ok({ code, signal })));
-      for (let i = 0; i < 50 && !readdirSync(work).some((f) => f.startsWith('restore-proof.')); i++) await new Promise((r) => setTimeout(r, 100));
-      expect(readdirSync(work).some((f) => f.startsWith('restore-proof.')), `no temporary directory appeared; script output so far:\n${output}`).toBe(true);
-      const dirsAtKill = readdirSync(work).filter((f) => f.startsWith('restore-proof.'));
-      child.kill('SIGTERM');
-      writeFileSync(release, '');
-      const result = await exited;
+      const flatOutput = (): string => output.replace(/\s+/g, ' ').trim();
+      const scriptSaid = (): string => `script output so far: ${flatOutput().slice(-300) || '(nothing)'}`;
+      let result: { code: number | null; signal: NodeJS.Signals | null };
+      let dirsAtKill: string[];
+      try {
+        await waitForReadiness(child, ready, token, { context: scriptSaid });
+        dirsAtKill = readdirSync(work).filter((f) => f.startsWith('restore-proof.'));
+        expect(dirsAtKill.length, `the fetch is running but no temporary directory exists; ${scriptSaid()}`).toBeGreaterThan(0);
+        // The marker proves the fetch STARTED; this proves it is still there, blocked: its command line holds the unique release path, and it can leave only by
+        // exiting (a fetch that publishes the marker and returns would let the script run on, and the signal would then test something else).
+        expect(processesMatching(release).length, `the mocked fetch is not blocked on the release file; ${scriptSaid()}`).toBeGreaterThan(0);
+        sendSignal(child, 'SIGTERM', { context: scriptSaid });
+        writeFileSync(release, '');
+        result = await awaitExit(child, { context: scriptSaid });
+      } finally {
+        for (const f of [ready, `${ready}.tmp`, release]) rmSync(f, { force: true });
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }
       // ONE line, most useful part first: CI's failure summary prints only the first 300 characters of the first line of a message.
-      const flat = output.replace(/\s+/g, ' ').trim();
+      const flat = flatOutput();
       // CI-STAB-04: the last 170 characters alone lost the start of an intermittent bash "trap: line 2: unexpected EOF" report (its script path ate the budget),
       // so the shell's own message is also matched out whole and put first.
       const shellMessage = /[^ ]*restore-proof\.sh: [^ ]*trap[^ ]*: line \d+: .{0,90}/.exec(flat)?.[0].replace(/^.*\/(restore-proof\.sh)/, '$1') ?? '';
       const tail = shellMessage ? `${shellMessage} || ${flat.slice(-100)}` : flat.slice(-170);
       expect(result.code, `exit ${result.code} signal ${result.signal} | script said: ${tail || '(nothing)'} | dirs at kill: ${dirsAtKill.length}`).toBe(143);
+      expect(output, 'an interrupted restore proof must not report a result').not.toMatch(/RESTORE_PROOF=PASS/);
       noTemp();
       await noScratch();
+      // No orphans: the mocked fetch (whose command line holds the unique release path) and anything it started must be gone.
+      expect(await waitForNoProcesses(release), 'a helper process outlived the interrupted restore proof').toEqual([]);
 
       const x = sh('bash', ['-x', RESTORE, '--validate-target'], { RESTORE_ADMIN_URL: targetMaint });
       expect(x.stdout).toContain('shell tracing is enabled');
