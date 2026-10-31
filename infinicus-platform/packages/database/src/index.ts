@@ -203,8 +203,10 @@ export type {
 } from './repositories/bo/index.js';
 
 // ── Business Intelligence repositories (Stage 2D) ───────────────────────────────
+export { ConflictError as BiConflictError, ValidationError as BiValidationError } from './repositories/bi/errors.js';
 export {
   IntelligenceIntakeRepository,
+  BoToBiIntakeRepository,
   MetricDefinitionRepository,
   MetricCalculationRepository,
   AnalysisRunRepository,
@@ -216,7 +218,7 @@ export {
   BIPublicationPackageRepository,
 } from './repositories/bi/index.js';
 export type {
-  IntakePackage, CreateIntakePackageInput, AnalyticalDataset, DatasetVersion,
+  IntakePackage, CreateIntakePackageInput, AnalyticalDataset, DatasetVersion, BoToBiIntakeInput, BoToBiIntakeOutcome,
   MetricDefinition, MetricDefinitionVersion, CreateMetricDefinitionInput,
   MetricCalculatedValue, RecordCalculationInput, TimeSeriesPoint,
   AnalysisRequest, AnalysisRun, CreateAnalysisRequestInput,
