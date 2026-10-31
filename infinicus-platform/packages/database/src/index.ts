@@ -215,6 +215,7 @@ export {
   MetricDefinitionRepository,
   BiMetricRegistryRepository,
   BiMetricRegistryReadRepository,
+  METRIC_READ_BOUNDS,
   MetricCalculationRepository,
   AnalysisRunRepository,
   AnalysisResultRepository,
