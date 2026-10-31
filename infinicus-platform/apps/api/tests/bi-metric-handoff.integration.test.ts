@@ -85,10 +85,13 @@ describe.runIf(run)('BI-2-DEV-04: BI-09 -> BI-10 calculation hand-off API', () =
     }
     return { ctx, token: login.json().rawSessionToken as string };
   }
+  // Scoped to this file's own tenants: other test files run concurrently against the same database and legitimately create metrics, so a table-wide count is a race, not evidence.
   const state = async () => (await admin.query(
-    `SELECT (SELECT count(*) FROM business_intelligence.metric_definitions) AS defs, (SELECT count(*) FROM business_intelligence.metric_definition_versions) AS vers,
-            (SELECT md5(coalesce(string_agg(id::text || content_hash, ',' ORDER BY id), '')) FROM business_intelligence.metric_definition_versions) AS fingerprint,
-            (SELECT count(*) FROM business_intelligence.analytical_datasets) AS datasets, (SELECT count(*) FROM audit.audit_events WHERE tenant_id = $1) AS audits`, [a.ctx.tenantId])).rows[0];
+    `SELECT (SELECT count(*) FROM business_intelligence.metric_definitions WHERE tenant_id = ANY($1::uuid[])) AS defs,
+            (SELECT count(*) FROM business_intelligence.metric_definition_versions WHERE tenant_id = ANY($1::uuid[])) AS vers,
+            (SELECT md5(coalesce(string_agg(id::text || content_hash, ',' ORDER BY id), '')) FROM business_intelligence.metric_definition_versions WHERE tenant_id = ANY($1::uuid[])) AS fingerprint,
+            (SELECT count(*) FROM business_intelligence.analytical_datasets WHERE tenant_id = ANY($1::uuid[])) AS datasets, (SELECT count(*) FROM audit.audit_events WHERE tenant_id = $2) AS audits`,
+    [[a.ctx.tenantId, b.ctx.tenantId, empty.ctx.tenantId], a.ctx.tenantId])).rows[0];
 
   describe('content', () => {
     it('returns the approved, active metrics at their latest version, ordered by code, in the BI-10 contract shape', async () => {
