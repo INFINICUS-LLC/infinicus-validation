@@ -6,8 +6,7 @@ deterministic, exactly calculated **run** comes out. Frozen sources: `layers/bus
 
 Where it lives: `packages/workflow/src/bi10/` (`exactDecimal.ts`, `metricCalculation.ts`; pure) and
 `packages/workflow/src/BusinessIntelligenceMetricCalculationService.ts` (read-only composition). BI-10 sits in its own folder so the BI-09 rules module keeps its
-boundary ("BI-09 defines metrics, BI-10 calculates them"). **Not provided in this block:** persistence of results, an API route, events, the BI-11…BI-18
-hand-off, a warehouse row source. Those need decisions and, for persistence, a migration (see the end).
+boundary ("BI-09 defines metrics, BI-10 calculates them"). **Not provided:** persistence of results, an API route, events, a warehouse row source. Those need decisions and, for persistence, a migration (see the end).
 
 ## Pipeline
 
@@ -95,6 +94,23 @@ The row source is asked only for datasets of base metrics in the hand-off, with 
 `DATASET_ROWS_UNAVAILABLE` and its cause is never returned. The calculation reads the registry tables only: no write statement, no Business Operations table,
 no `metric_calculated_values` row.
 
+## Intelligence hand-off to BI-11…BI-18 (BI-2-DEV-06)
+
+`buildIntelligenceHandoff(run)` (`bi10/intelligenceHandoff.ts`) turns a calculation run into the frozen "BI-10 to BI-11–BI-18" package: calculation run id, metric result ids,
+metric values, dimensional groups, time buckets, units, target status, threshold status, source row counts, correlation id. It addresses all of BI-11…BI-18, exactly as the
+frozen engine does (routing by metric domain is not part of the frozen contract). `BusinessIntelligenceMetricCalculationService.calculateForIntelligence` returns the run and
+this package together. Pure and deterministic: nothing is stored, published or timestamped.
+
+**The run is verified before anything is handed on.** The run id must equal the id derived from its hand-off id and the datasets (row count + fingerprint) it read; every result id
+must equal the id derived from that run, metric version and group; the group key must match the group; values and targets must be canonical decimal text; status, threshold status
+and `no_data` must agree with the value; row counts must be non-negative integers; ids must be unique. A run that fails any check is refused (`RUN_IDENTITY_MISMATCH`,
+`RESULT_INVALID`, `RUN_INVALID`); a run with no results is refused (`RUN_HAS_NO_RESULTS`) instead of being published empty (the frozen engine published it).
+
+**Identity.** `intelligenceHandoffId` is derived from the run id, the target blocks and `resultsFingerprint` (SHA-256 of the canonical results), so it names exactly what was handed
+over and changes with any value. The request correlation id and the clock are not part of it; the package carries `handoffSourceTimestamp` (the stored source time, D-C) where the
+frozen package had a `createdAt` from the clock. Fields: `intelligenceHandoffId`, `sourceBlock` (`BI-10`), `targetBlocks`, `calculationRunId`, `calculationHandoffId`,
+`warehouseSnapshotId`, `correlationId`, `handoffSourceTimestamp`, `metricResultIds`, `metricResults` (copies), `resultsFingerprint`, `status` (`ready`).
+
 ## Remaining BI-10 functionality and what later blocks need
 
 - **Warehouse row source.** Stack B has no warehouse row store: `analytical_dataset_versions` and `dataset_data_references` hold references and counts, not rows. An
@@ -102,4 +118,4 @@ no `metric_calculated_values` row.
 - **Result persistence** (frozen step 9): needs tables for calculation runs and metric results (or an owner decision to use the existing
   `metric_calculated_values`, which has no run/handoff/group-key/hash columns), versioning and idempotent replay keyed by `calculationRunId` / `metricResultId`. Migration required.
 - **API route and permission** for executing a calculation and reading runs/results; **time grains** `week` and `quarter` (in the persisted vocabulary, not in the
-  frozen grouping); **BI-11…BI-18 intelligence hand-off**; **warehouse snapshot** reference (D-A); a **metric-count limit** (D-F).
+  frozen grouping); **warehouse snapshot** reference (D-A); a **metric-count limit** (D-F).
