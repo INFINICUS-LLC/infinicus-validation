@@ -37,3 +37,5 @@ export { BIPublicationPackageRepository } from './PublicationPackageRepository.j
 export type { BIPublicationPackage, ComponentDeployment, TargetLayer } from './PublicationPackageRepository.js';
 export { BiMetricRegistryRepository } from './BiMetricRegistryRepository.js';
 export type { MetricRegistryTx, MetricRegistrySnapshot, StoredMetricVersion, RegistryDatasetRef, MetricHeaderWrite, MetricVersionWrite, StoredWrite } from './BiMetricRegistryRepository.js';
+export { BiMetricRegistryReadRepository } from './BiMetricRegistryReadRepository.js';
+export type { MetricListFilter, MetricPage, GovernedMetricView, GovernedMetricVersionView, GovernedMetricDetail } from './BiMetricRegistryReadRepository.js';

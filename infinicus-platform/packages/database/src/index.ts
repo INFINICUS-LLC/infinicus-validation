@@ -213,6 +213,7 @@ export {
   schemaReferenceOf,
   MetricDefinitionRepository,
   BiMetricRegistryRepository,
+  BiMetricRegistryReadRepository,
   MetricCalculationRepository,
   AnalysisRunRepository,
   AnalysisResultRepository,
@@ -594,3 +595,4 @@ export type {
 
 export { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from './currency/minorUnits.js';
 export type { MetricRegistryTx, MetricRegistrySnapshot, StoredMetricVersion, RegistryDatasetRef, MetricHeaderWrite, MetricVersionWrite, StoredWrite } from './repositories/bi/index.js';
+export type { MetricListFilter, MetricPage, GovernedMetricView, GovernedMetricVersionView, GovernedMetricDetail } from './repositories/bi/index.js';
