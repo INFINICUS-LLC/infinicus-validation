@@ -77,6 +77,11 @@ export interface CalculationRun {
 }
 export type CalculationOutcome = { ok: true; run: CalculationRun } | CalculationFailure;
 
+/** The fingerprint of a dataset's rows as the calculation records it: SHA-256 of their canonical JSON, row order included. */
+export function fingerprintRows(rows: readonly WarehouseRow[]): string {
+  return createHash('sha256').update(canonicalJson(rows)).digest('hex');
+}
+
 /** The run identity: the hand-off it calculates and the exact datasets (row count and fingerprint) it read. */
 export function deriveCalculationRunId(calculationHandoffId: string, datasets: readonly CalculationDatasetInput[]): string {
   return deterministicUuid(canonicalJson({ kind: 'bi-calculation-run/v1', calculationHandoffId, datasets }));
@@ -361,9 +366,9 @@ export function calculateMetrics(req: CalculationRequest): CalculationOutcome {
     if (!Array.isArray(rows)) return fail('ROWS_INVALID', 'dataset rows must be an array.');
     if (rows.length > MAX_DATASET_ROWS) return fail('DATASET_TOO_LARGE', `a dataset has more than ${MAX_DATASET_ROWS} rows; it is refused, not truncated.`);
     if (rows.some((r) => !isRecord(r))) return fail('ROWS_INVALID', 'every dataset row must be a plain object.');
-    let text: string;
-    try { text = canonicalJson(rows); } catch { return fail('ROWS_INVALID', 'dataset rows must be plain JSON data.'); }
-    datasets.push({ warehouseDatasetId: id, rowCount: rows.length, rowsFingerprint: createHash('sha256').update(text).digest('hex') });
+    let rowsFingerprint: string;
+    try { rowsFingerprint = fingerprintRows(rows); } catch { return fail('ROWS_INVALID', 'dataset rows must be plain JSON data.'); }
+    datasets.push({ warehouseDatasetId: id, rowCount: rows.length, rowsFingerprint });
   }
   const calculationRunId = deriveCalculationRunId(h.calculationHandoffId, datasets);
 

@@ -53,6 +53,7 @@ describe('BI-09 registry rules - boundaries', () => {
     }
     // BI-2-DEV-04: the read-only hand-off service applies the same pure rules to the stored registry (no route, no repository imports them)
     // BI-2-DEV-05/06: the BI-10 calculation and intelligence hand-off (src/bi10) and the calculation service consume BI-09 definitions and hand-offs; no route and no repository imports the rules
-    expect([...importers].sort()).toEqual(['BusinessIntelligenceCalculationHandoffService.ts', 'BusinessIntelligenceMetricCalculationService.ts', 'BusinessIntelligenceMetricRegistryService.ts', 'index.ts', 'intelligenceHandoff.ts', 'metricCalculation.ts']);
+    // BI-2-DEV-07: the calculation persistence service and the warehouse row source (canonical JSON and the run/result shapes) are further BI-10 consumers of the BI-09 rules
+    expect([...importers].sort()).toEqual(['BusinessIntelligenceCalculationHandoffService.ts', 'BusinessIntelligenceCalculationPersistenceService.ts', 'BusinessIntelligenceMetricCalculationService.ts', 'BusinessIntelligenceMetricRegistryService.ts', 'PostgresWarehouseRowSource.ts', 'index.ts', 'intelligenceHandoff.ts', 'metricCalculation.ts']);
   });
 });

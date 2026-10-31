@@ -124,11 +124,12 @@ describe.runIf(run)('Stage 2D Business Intelligence — live PostgreSQL', () => 
 
   // ── 1. Schema and security posture sanity ─────────────────────────────────
   describe('schema and RLS posture', () => {
-    it('business_intelligence schema exists with 48 tables', async () => {
+    // 48 Stage 2D tables + 5 added by migration 0223 (warehouse rows, version seals, calculation runs, run inputs, metric results). The count stays an exact pin.
+    it('business_intelligence schema exists with 53 tables', async () => {
       const result = await adminPool!.query(
         `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'business_intelligence'`
       );
-      expect(result.rows[0].n).toBe(48);
+      expect(result.rows[0].n).toBe(53);
     });
 
     it('every BI table has RLS enabled and forced', async () => {
@@ -138,7 +139,7 @@ describe.runIf(run)('Stage 2D Business Intelligence — live PostgreSQL', () => 
          JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.schemaname
          WHERE t.schemaname = 'business_intelligence' AND c.relrowsecurity AND c.relforcerowsecurity`
       );
-      expect(result.rows[0].n).toBe(48);
+      expect(result.rows[0].n).toBe(53);
     });
 
     it('fails closed with no tenant context set (app_test_user, RLS enforced)', async () => {

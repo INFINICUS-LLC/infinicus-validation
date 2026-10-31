@@ -101,9 +101,13 @@ export { calculateMetrics, MAX_DATASET_ROWS, SUPPORTED_TIME_GRAINS, SUPPORTED_FI
 export type { CalculationErrorCode, CalculationFailure, CalculationOutcome, CalculationRun, CalculationRequest, CalculationDatasetInput, MetricGroup, MetricResult, ThresholdOutcome, WarehouseRow, WarehouseRows } from './bi10/metricCalculation.js';
 export { buildIntelligenceHandoff, INTELLIGENCE_TARGET_BLOCKS } from './bi10/intelligenceHandoff.js';
 export type { IntelligenceHandoff, IntelligenceHandoffErrorCode, IntelligenceHandoffFailure, IntelligenceHandoffOutcome } from './bi10/intelligenceHandoff.js';
-export { deriveCalculationRunId, deriveMetricResultId } from './bi10/metricCalculation.js';
+export { deriveCalculationRunId, deriveMetricResultId, fingerprintRows } from './bi10/metricCalculation.js';
+export { PostgresWarehouseRowSource } from './PostgresWarehouseRowSource.js';
+export type { SealedDatasetInput } from './PostgresWarehouseRowSource.js';
+export { BusinessIntelligenceCalculationPersistenceService, runDigest } from './BusinessIntelligenceCalculationPersistenceService.js';
+export type { PersistRunErrorCode, PersistRunResult, StoredRunResult } from './BusinessIntelligenceCalculationPersistenceService.js';
 export { BusinessIntelligenceMetricCalculationService } from './BusinessIntelligenceMetricCalculationService.js';
-export type { MetricCalculationServiceResult, MetricCalculationWithHandoffResult, WarehouseRowSource } from './BusinessIntelligenceMetricCalculationService.js';
+export type { MetricCalculationServiceResult, MetricCalculationWithHandoffResult, MetricCalculationPersistedResult, WarehouseRowSource } from './BusinessIntelligenceMetricCalculationService.js';
 export { BusinessIntelligenceCalculationHandoffService } from './BusinessIntelligenceCalculationHandoffService.js';
 export type { CalculationHandoffReadRequest, CalculationHandoffReadResult } from './BusinessIntelligenceCalculationHandoffService.js';
 export { BusinessIntelligenceMetricRegistryService, PERSISTABLE_TIME_GRAINS, PERSISTABLE_STATUSES } from './BusinessIntelligenceMetricRegistryService.js';
