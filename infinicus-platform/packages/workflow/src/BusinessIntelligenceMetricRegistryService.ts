@@ -4,7 +4,7 @@
  * Every call runs in ONE tenant transaction that holds the business's registry lock (BiMetricRegistryRepository.transaction): it loads the governed registry,
  * resolves the dataset the definition names (the business's own analytical dataset, or the definition is refused), runs the rules, and only then writes. A
  * rule failure writes nothing. The definition's domain is the domain of its dataset; nothing is guessed. Metrics are defined here, never calculated (BI-10),
- * and the BI -> BI-10 hand-off is built from the stored registry on request and is not itself stored. Writes metric_definitions / metric_definition_versions only.
+ * and the BI -> BI-10 hand-off is built from the stored registry on request, with a derived identity, and is not itself stored. Writes metric_definitions / metric_definition_versions only.
  */
 import { randomUUID } from 'node:crypto';
 import {
@@ -14,7 +14,7 @@ import {
   metricContentHash, type MetricDefinition, type MetricDefinitionContent, type MetricDefinitionInput, type MetricScope,
 } from './bi/metricDefinition.js';
 import {
-  buildCalculationHandoff, latestVersions, registerMetric, reviseMetric, type CalculationHandoff, type MetricLineage, type MetricRegistryErrorCode,
+  buildDeterministicCalculationHandoff, latestVersions, registerMetric, reviseMetric, type CalculationHandoff, type MetricLineage, type MetricRegistryErrorCode,
   type WarehouseDatasetRef,
 } from './bi/metricRegistry.js';
 
@@ -90,13 +90,13 @@ export class BusinessIntelligenceMetricRegistryService {
     return [...latestVersions(toDefinitions(snapshot, scope)).values()].sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
   }
 
-  /** The BI-09 -> BI-10 calculation hand-off over the stored registry. Built on request; not stored. */
+  /** The BI-09 -> BI-10 calculation hand-off over the stored registry. Built on request; not stored. Its id and timestamp are derived from the registry state (BI-2-DEV-04). */
   async calculationHandoff(
     ctx: TenantContext, businessId: string, request: { metricIds?: readonly string[]; warehouseSnapshotId: string | null; correlationId: string },
   ): Promise<MetricHandoffResult> {
     const scope: MetricScope = { tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, businessId };
     const snapshot = await this.repository.load(ctx, businessId);
-    return buildCalculationHandoff({ scope, registry: toDefinitions(snapshot, scope), ...request, calculationHandoffId: randomUUID(), now: new Date() });
+    return buildDeterministicCalculationHandoff({ scope, registry: toDefinitions(snapshot, scope), ...request });
   }
 
   /** The dataset the submitted definition names, as the business's own analytical dataset. Null when it is not one (the rules then refuse the definition). */

@@ -55,6 +55,7 @@ import inventoryBiEvidenceRoutes from './routes/inventoryBiEvidence.js';
 import financialIntelligenceRoutes from './routes/financialIntelligence.js';
 import inventoryItemTwinRoutes from './routes/inventoryItemTwin.js';
 import biMetricRoutes, { type BiMetricRoutesOptions } from './routes/biMetrics.js';
+import biMetricHandoffRoutes, { type BiMetricHandoffRoutesOptions } from './routes/biMetricHandoff.js';
 import businessPerformanceTwinRoutes from './routes/businessPerformanceTwin.js';
 import performanceSimulationHandoffRoutes from './routes/performanceSimulationHandoff.js';
 import type { InventoryItemTwinCompositionOptions } from './inventoryItemTwinComposition.js';
@@ -95,6 +96,8 @@ export interface BuildAppOptions {
   inventoryItemTwin?: InventoryItemTwinCompositionOptions;
   /** BI-2-DEV-03: test seam for the read-only governed metric registry (production leaves it unset). */
   biMetrics?: BiMetricRoutesOptions;
+  /** BI-2-DEV-04: test seam for the read-only BI-09 -> BI-10 calculation hand-off (production leaves it unset). */
+  biMetricHandoff?: BiMetricHandoffRoutesOptions;
   /** NEW-BDT-01: test seam for the business performance twin (production leaves it unset). */
   businessPerformanceTwin?: BusinessPerformanceTwinCompositionOptions;
   /** NEW-BDT-SIM-01: test seam for the performance state hand-off to Simulation (production leaves it unset). */
@@ -248,6 +251,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(inventoryItemTwinRoutes, options.inventoryItemTwin ?? {});
   // BI-2-DEV-03: read-only view of the governed BI-09 metric registry (bi:read); two GETs, no mutation.
   await app.register(biMetricRoutes, options.biMetrics ?? {});
+  // BI-2-DEV-04: read-only BI-09 -> BI-10 calculation hand-off of the approved governed metrics (bi:read); one GET, nothing stored.
+  await app.register(biMetricHandoffRoutes, options.biMetricHandoff ?? {});
   // NEW-BDT-01: the twin's representation of governed BI financial and sales evidence (dt:write / dt:read); derives no KPI.
   await app.register(businessPerformanceTwinRoutes, options.businessPerformanceTwin ?? {});
   // NEW-BDT-SIM-01: hand-off of the published performance state to Simulation as a scenario baseline (dt:write); writes only twin tables.

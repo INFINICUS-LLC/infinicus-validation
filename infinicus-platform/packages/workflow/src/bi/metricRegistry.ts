@@ -4,7 +4,8 @@
  * the CALLER supplies; nothing is stored here (the registry tables are not authorized yet) and nothing is calculated here (that is BI-10).
  * Ids and the clock are passed in so the same input always gives the same output.
  */
-import { buildMetricDefinitionContent, metricContentHash, type MetricDefinition, type MetricDefinitionInput, type MetricScope } from './metricDefinition.js';
+import { createHash } from 'node:crypto';
+import { buildMetricDefinitionContent, canonicalJson, metricContentHash, type MetricDefinition, type MetricDefinitionContent, type MetricDefinitionInput, type MetricScope } from './metricDefinition.js';
 
 export type MetricRegistryErrorCode =
   | 'METRIC_DEFINITION_INVALID'
@@ -219,14 +220,13 @@ export type CalculationHandoffOutcome = { ok: true; handoff: CalculationHandoff 
 
 const isHandoffReady = (m: MetricDefinition): boolean => m.status === 'active' && m.governanceStatus === 'approved';
 
-/**
- * The BI-09 -> BI-10 hand-off: only approved, active metrics, at their latest version, ordered by code. The frozen engine let an explicit id list skip
- * the approval check; the frozen architecture says only approved metrics are published to BI-10, so an unapproved metric named explicitly is refused.
- */
-export function buildCalculationHandoff(req: CalculationHandoffRequest): CalculationHandoffOutcome {
+type HandoffSelection = { ok: true; selected: MetricDefinition[] } | MetricRegistryFailure;
+
+/** The shared selection rules of both builders: scope check, approved + active only, latest versions, dependencies inside the hand-off, ordered by code. */
+function selectForHandoff(req: { scope: MetricScope; registry: readonly MetricDefinition[]; metricIds?: readonly string[]; warehouseSnapshotId: string | null; correlationId: string; calculationHandoffId?: string }): HandoffSelection {
   const registryProblem = checkRegistry(req.scope, req.registry);
   if (registryProblem) return registryProblem;
-  if (!nonEmpty(req.correlationId) || !nonEmpty(req.calculationHandoffId)) return fail('HANDOFF_INVALID', 'a correlation id and a hand-off id are required.');
+  if (!nonEmpty(req.correlationId) || (req.calculationHandoffId !== undefined && !nonEmpty(req.calculationHandoffId))) return fail('HANDOFF_INVALID', 'a correlation id and a hand-off id are required.');
   if (req.warehouseSnapshotId !== null && !nonEmpty(req.warehouseSnapshotId)) return fail('HANDOFF_INVALID', 'warehouseSnapshotId must be a non-empty string or null.');
   const latest = latestVersions(req.registry);
   let selected: MetricDefinition[];
@@ -248,18 +248,70 @@ export function buildCalculationHandoff(req: CalculationHandoffRequest): Calcula
     if (missing.length > 0) return fail('HANDOFF_INVALID', `metric ${m.code} depends on metrics that are not part of the hand-off: ${missing.join(', ')}.`);
   }
   selected.sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
-  return {
-    ok: true,
-    handoff: {
-      calculationHandoffId: req.calculationHandoffId,
-      targetBlock: 'BI-10',
-      scope: { ...req.scope },
-      warehouseSnapshotId: req.warehouseSnapshotId,
-      correlationId: req.correlationId,
-      metrics: selected.map(copy),
-      metricVersions: selected.map((m) => ({ metricId: m.metricId, version: m.version })),
-      status: 'ready',
-      createdAt: req.now.toISOString(),
-    },
-  };
+  return { ok: true, selected };
+}
+
+const toHandoff = (req: { scope: MetricScope; warehouseSnapshotId: string | null; correlationId: string }, selected: MetricDefinition[], calculationHandoffId: string, createdAt: string): CalculationHandoff => ({
+  calculationHandoffId,
+  targetBlock: 'BI-10',
+  scope: { ...req.scope },
+  warehouseSnapshotId: req.warehouseSnapshotId,
+  correlationId: req.correlationId,
+  metrics: selected.map(copy),
+  metricVersions: selected.map((m) => ({ metricId: m.metricId, version: m.version })),
+  status: 'ready',
+  createdAt,
+});
+
+/**
+ * The BI-09 -> BI-10 hand-off: only approved, active metrics, at their latest version, ordered by code. The frozen engine let an explicit id list skip
+ * the approval check; the frozen architecture says only approved metrics are published to BI-10, so an unapproved metric named explicitly is refused.
+ */
+export function buildCalculationHandoff(req: CalculationHandoffRequest): CalculationHandoffOutcome {
+  const picked = selectForHandoff({ ...req, calculationHandoffId: req.calculationHandoffId ?? '' });
+  if (!picked.ok) return picked;
+  return { ok: true, handoff: toHandoff(req, picked.selected, req.calculationHandoffId, req.now.toISOString()) };
+}
+
+/**
+ * The hand-off identity (BI-2-DEV-04, D-B): a UUID derived (SHA-256, RFC 4122 version/variant bits set) from what the hand-off IS - the business scope, the
+ * target block, the snapshot id and, for every handed-over metric, its id, version and content hash. The same registry state gives the same id on every
+ * replay; any change to a handed-over definition (a new version, a different content, a different set, a different snapshot) gives a different one. The
+ * correlation id and the clock are deliberately NOT part of it: they describe a request, not the hand-off.
+ */
+export function deriveCalculationHandoffId(scope: MetricScope, warehouseSnapshotId: string | null, selected: readonly MetricDefinition[]): string {
+  const ordered = [...selected].sort((a, b) => (a.metricId < b.metricId ? -1 : a.metricId > b.metricId ? 1 : a.version - b.version));
+  const material = canonicalJson({
+    kind: 'bi-calculation-handoff/v1',
+    scope: { tenantId: scope.tenantId, workspaceId: scope.workspaceId, businessId: scope.businessId },
+    targetBlock: 'BI-10',
+    warehouseSnapshotId,
+    metrics: ordered.map((m) => ({ metricId: m.metricId, version: m.version, contentHash: metricContentHash(contentOfDefinition(m)) })),
+  });
+  const bytes = createHash('sha256').update(material).digest().subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const h = bytes.toString('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+function contentOfDefinition(m: MetricDefinition): MetricDefinitionContent {
+  const { metricId: _id, scope: _scope, createdAt: _created, updatedAt: _updated, ...content } = m;
+  return content;
+}
+
+export type DeterministicHandoffRequest = Omit<CalculationHandoffRequest, 'calculationHandoffId' | 'now'>;
+
+/**
+ * The deterministic hand-off (BI-2-DEV-04): same selection rules as buildCalculationHandoff, but the identity is derived (deriveCalculationHandoffId) and
+ * `createdAt` is taken from the stored, immutable creation time of the newest handed-over version (D-C) - never from a clock - so a replay over unchanged
+ * registry state returns an identical hand-off (apart from the request's own correlation id).
+ */
+export function buildDeterministicCalculationHandoff(req: DeterministicHandoffRequest): CalculationHandoffOutcome {
+  const picked = selectForHandoff(req);
+  if (!picked.ok) return picked;
+  const stamps = picked.selected.map((m) => Date.parse(m.updatedAt));
+  if (stamps.some((t) => Number.isNaN(t))) return fail('HANDOFF_INVALID', 'a handed-over metric has no valid stored timestamp.');
+  const createdAt = new Date(Math.max(...stamps)).toISOString();
+  return { ok: true, handoff: toHandoff(req, picked.selected, deriveCalculationHandoffId(req.scope, req.warehouseSnapshotId, picked.selected), createdAt) };
 }

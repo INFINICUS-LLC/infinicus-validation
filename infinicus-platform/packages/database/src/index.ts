@@ -203,7 +203,7 @@ export type {
 } from './repositories/bo/index.js';
 
 // ── Business Intelligence repositories (Stage 2D) ───────────────────────────────
-export { ConflictError as BiConflictError, ValidationError as BiValidationError } from './repositories/bi/errors.js';
+export { ConflictError as BiConflictError, NotFoundError as BiNotFoundError, ValidationError as BiValidationError } from './repositories/bi/errors.js';
 export {
   IntelligenceIntakeRepository,
   BoToBiIntakeRepository,
