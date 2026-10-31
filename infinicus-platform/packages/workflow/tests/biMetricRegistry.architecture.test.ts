@@ -39,7 +39,7 @@ describe('BI-09 registry rules - boundaries', () => {
     }
   });
 
-  it('is not wired into any route, repository or migration: only the package index exports it', () => {
+  it('is not wired into any route or repository: only the package index and the registry service import it', () => {
     const src = resolve(__dirname, '..', 'src');
     const stack = [src];
     const importers: string[] = [];
@@ -51,6 +51,6 @@ describe('BI-09 registry rules - boundaries', () => {
         if (e.name.endsWith('.ts') && /\.\/bi\/|\.\.\/bi\//.test(readFileSync(p, 'utf8'))) importers.push(e.name);
       }
     }
-    expect(importers).toEqual(['index.ts']);
+    expect([...importers].sort()).toEqual(['BusinessIntelligenceMetricRegistryService.ts', 'index.ts']);
   });
 });

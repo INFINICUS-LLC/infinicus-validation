@@ -208,6 +208,7 @@ export {
   IntelligenceIntakeRepository,
   BoToBiIntakeRepository,
   MetricDefinitionRepository,
+  BiMetricRegistryRepository,
   MetricCalculationRepository,
   AnalysisRunRepository,
   AnalysisResultRepository,
@@ -588,3 +589,4 @@ export type {
 } from './eventing/index.js';
 
 export { minorUnitsOf, roundToCurrency, UnsupportedCurrencyError } from './currency/minorUnits.js';
+export type { MetricRegistryTx, MetricRegistrySnapshot, StoredMetricVersion, RegistryDatasetRef, MetricHeaderWrite, MetricVersionWrite, StoredWrite } from './repositories/bi/index.js';

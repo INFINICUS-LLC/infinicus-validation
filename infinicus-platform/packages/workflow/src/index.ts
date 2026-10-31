@@ -109,3 +109,5 @@ export { METRIC_TYPES, METRIC_AGGREGATIONS, normalizeMetricCode, buildMetricDefi
 export type { MetricType, MetricAggregation, MetricScope, MetricDefinition, MetricDefinitionContent, MetricDefinitionInput, MetricDefinitionResult } from './bi/metricDefinition.js';
 export { registerMetric, reviseMetric, buildCalculationHandoff, buildMetricLineage, checkMetricDependencies, hasDependencyCycle, latestVersions, validateScope } from './bi/metricRegistry.js';
 export type { MetricLineage, WarehouseDatasetRef, CalculationHandoff, MetricRegistryErrorCode, RegisterOutcome, CalculationHandoffOutcome } from './bi/metricRegistry.js';
+export { BusinessIntelligenceMetricRegistryService, PERSISTABLE_TIME_GRAINS, PERSISTABLE_STATUSES } from './BusinessIntelligenceMetricRegistryService.js';
+export type { MetricWriteResult, MetricHandoffResult, MetricRegistryServiceFailure, MetricRegistryServiceErrorCode } from './BusinessIntelligenceMetricRegistryService.js';
