@@ -56,6 +56,7 @@ import financialIntelligenceRoutes from './routes/financialIntelligence.js';
 import inventoryItemTwinRoutes from './routes/inventoryItemTwin.js';
 import biMetricRoutes, { type BiMetricRoutesOptions } from './routes/biMetrics.js';
 import biMetricHandoffRoutes, { type BiMetricHandoffRoutesOptions } from './routes/biMetricHandoff.js';
+import biCalculationRoutes, { type BiCalculationRoutesOptions } from './routes/biCalculations.js';
 import businessPerformanceTwinRoutes from './routes/businessPerformanceTwin.js';
 import performanceSimulationHandoffRoutes from './routes/performanceSimulationHandoff.js';
 import type { InventoryItemTwinCompositionOptions } from './inventoryItemTwinComposition.js';
@@ -98,6 +99,8 @@ export interface BuildAppOptions {
   biMetrics?: BiMetricRoutesOptions;
   /** BI-2-DEV-04: test seam for the read-only BI-09 -> BI-10 calculation hand-off (production leaves it unset). */
   biMetricHandoff?: BiMetricHandoffRoutesOptions;
+  /** BI-2-DEV-08: test seam for the governed BI-10 calculation execution, run retrieval and result querying (production leaves it unset). */
+  biCalculations?: BiCalculationRoutesOptions;
   /** NEW-BDT-01: test seam for the business performance twin (production leaves it unset). */
   businessPerformanceTwin?: BusinessPerformanceTwinCompositionOptions;
   /** NEW-BDT-SIM-01: test seam for the performance state hand-off to Simulation (production leaves it unset). */
@@ -253,6 +256,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(biMetricRoutes, options.biMetrics ?? {});
   // BI-2-DEV-04: read-only BI-09 -> BI-10 calculation hand-off of the approved governed metrics (bi:read); one GET, nothing stored.
   await app.register(biMetricHandoffRoutes, options.biMetricHandoff ?? {});
+  // BI-2-DEV-08: governed BI-10 calculation: execute (bi:write + bi:read, idempotent, no data in the request), retrieve a stored run, query stored results (bi:read).
+  await app.register(biCalculationRoutes, options.biCalculations ?? {});
   // NEW-BDT-01: the twin's representation of governed BI financial and sales evidence (dt:write / dt:read); derives no KPI.
   await app.register(businessPerformanceTwinRoutes, options.businessPerformanceTwin ?? {});
   // NEW-BDT-SIM-01: hand-off of the published performance state to Simulation as a scenario baseline (dt:write); writes only twin tables.

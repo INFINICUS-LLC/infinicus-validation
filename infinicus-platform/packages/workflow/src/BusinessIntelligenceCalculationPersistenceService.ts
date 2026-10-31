@@ -11,7 +11,7 @@
  */
 import { createHash } from 'node:crypto';
 import {
-  BiCalculationRunRepository, BiConflictError, BiNotFoundError, BiValidationError, BiWarehouseRowRepository, type CalculationRunRecord, type MetricResultRecord, type StoredCalculationRun,
+  BiCalculationRunRepository, BiConflictError, BiNotFoundError, BiValidationError, BiWarehouseRowRepository, type CalculationRunInputRecord, type CalculationRunRecord, type MetricResultRecord, type StoredCalculationRun,
   type TenantContext,
 } from '@infinicus/database';
 import { canonicalJson } from './bi/metricDefinition.js';
@@ -22,9 +22,9 @@ import type { SealedDatasetInput } from './PostgresWarehouseRowSource.js';
 
 export type PersistRunErrorCode = IntelligenceHandoffErrorCode | 'INPUT_MISMATCH' | 'RUN_NOT_REPRODUCIBLE' | 'RUN_CONFLICT' | 'PERSISTENCE_REJECTED' | 'STORED_RUN_INTEGRITY';
 export type PersistRunResult =
-  | { ok: true; run: CalculationRun; replayed: boolean; persistedAt: Date }
+  | { ok: true; run: CalculationRun; replayed: boolean; persistedAt: Date; inputs: CalculationRunInputRecord[] }
   | { ok: false; code: PersistRunErrorCode; detail: string };
-export type StoredRunResult = { ok: true; run: CalculationRun; persistedAt: Date } | { ok: false; code: 'STORED_RUN_INTEGRITY'; detail: string };
+export type StoredRunResult = { ok: true; run: CalculationRun; persistedAt: Date; inputs: CalculationRunInputRecord[] } | { ok: false; code: 'STORED_RUN_INTEGRITY'; detail: string };
 
 const fail = (code: PersistRunErrorCode, detail: string): { ok: false; code: PersistRunErrorCode; detail: string } => ({ ok: false, code, detail });
 
@@ -99,7 +99,7 @@ export class BusinessIntelligenceCalculationPersistenceService {
     }
     // Return what is STORED (a replay keeps its first correlation id), verified.
     const stored = await this.get(ctx, businessId, run.calculationRunId);
-    return stored.ok ? { ok: true, run: stored.run, replayed: outcome.replayed, persistedAt: stored.persistedAt } : stored;
+    return stored.ok ? { ok: true, run: stored.run, replayed: outcome.replayed, persistedAt: stored.persistedAt, inputs: stored.inputs } : stored;
   }
 
   /**
@@ -123,6 +123,6 @@ export class BusinessIntelligenceCalculationPersistenceService {
     const run = toRun(stored);
     const verified = buildIntelligenceHandoff(run);
     if (!verified.ok || runDigest(run) !== stored.runDigest) return { ok: false, code: 'STORED_RUN_INTEGRITY', detail: 'the stored run no longer matches its recorded identity and digest.' };
-    return { ok: true, run, persistedAt: stored.persistedAt };
+    return { ok: true, run, persistedAt: stored.persistedAt, inputs: stored.inputs };
   }
 }

@@ -48,3 +48,6 @@ export type { WarehouseRowInput, AppendRowsInput, AppendRowsResult, SealResult, 
 
 export { BiCalculationRunRepository } from './BiCalculationRunRepository.js';
 export type { CalculationRunRecord, CalculationRunInputRecord, MetricResultRecord, StoredCalculationRun, StoredDatasetFingerprint, PersistRunOutcome } from './BiCalculationRunRepository.js';
+
+export { BiMetricResultReadRepository, RESULT_QUERY_BOUNDS, RESULT_THRESHOLD_STATUSES, RESULT_CALCULATION_STATUSES } from './BiMetricResultReadRepository.js';
+export type { MetricResultFilter, MetricResultPage, MetricResultView } from './BiMetricResultReadRepository.js';

@@ -219,6 +219,10 @@ export {
   BiWarehouseRowRepository,
   WAREHOUSE_APPEND_BATCH_MAX,
   BiCalculationRunRepository,
+  BiMetricResultReadRepository,
+  RESULT_QUERY_BOUNDS,
+  RESULT_THRESHOLD_STATUSES,
+  RESULT_CALCULATION_STATUSES,
   MetricCalculationRepository,
   AnalysisRunRepository,
   AnalysisResultRepository,
@@ -241,6 +245,7 @@ export type {
   BIPublicationPackage, ComponentDeployment, TargetLayer,
   WarehouseRowInput, AppendRowsInput, AppendRowsResult, SealResult, SealedDatasetRows,
   CalculationRunRecord, CalculationRunInputRecord, MetricResultRecord, StoredCalculationRun, StoredDatasetFingerprint, PersistRunOutcome,
+  MetricResultFilter, MetricResultPage, MetricResultView,
 } from './repositories/bi/index.js';
 
 // ── Business Digital Twin repositories (Stage 2E) ────────────────────────────────

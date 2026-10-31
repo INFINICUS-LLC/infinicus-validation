@@ -4,7 +4,7 @@
  * the pure calculation (calculateMetrics). Nothing is written and nothing is invented: the platform has no warehouse row store yet, so rows can only come from a
  * source that is authorised to provide them, and the source is asked only for datasets that belong to the hand-off, in the hand-off's own scope.
  */
-import type { TenantContext } from '@infinicus/database';
+import type { CalculationRunInputRecord, TenantContext } from '@infinicus/database';
 import { BusinessIntelligenceCalculationHandoffService, type CalculationHandoffReadRequest } from './BusinessIntelligenceCalculationHandoffService.js';
 import type { MetricScope } from './bi/metricDefinition.js';
 import { calculateMetrics, type CalculationErrorCode, type CalculationRun, type WarehouseRow } from './bi10/metricCalculation.js';
@@ -16,17 +16,20 @@ import type { MetricRegistryErrorCode } from './bi/metricRegistry.js';
 /** Supplies the rows of one warehouse dataset of one business, in the dataset's stable order. Called only with a scope and dataset id taken from the hand-off. */
 export interface WarehouseRowSource { rows(scope: MetricScope, warehouseDatasetId: string): Promise<readonly WarehouseRow[]> }
 
+/** The hand-off request, optionally asserting the hand-off the caller expects (BI-2-DEV-08): if the registry now yields another hand-off, nothing is calculated. */
+export interface MetricCalculationRequest extends CalculationHandoffReadRequest { expectedCalculationHandoffId?: string }
+
 export type MetricCalculationServiceResult =
   | { ok: true; run: CalculationRun }
-  | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode; detail: string };
+  | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode | 'HANDOFF_CHANGED'; detail: string };
 
 export type MetricCalculationWithHandoffResult =
   | { ok: true; run: CalculationRun; intelligenceHandoff: IntelligenceHandoff }
-  | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode | IntelligenceHandoffErrorCode; detail: string };
+  | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode | IntelligenceHandoffErrorCode | 'HANDOFF_CHANGED'; detail: string };
 
 export type MetricCalculationPersistedResult =
-  | { ok: true; run: CalculationRun; replayed: boolean; persistedAt: Date }
-  | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode | PersistRunErrorCode; detail: string };
+  | { ok: true; run: CalculationRun; replayed: boolean; persistedAt: Date; inputs: CalculationRunInputRecord[] }
+  | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode | PersistRunErrorCode | 'HANDOFF_CHANGED'; detail: string };
 
 export class BusinessIntelligenceMetricCalculationService {
   constructor(
@@ -34,10 +37,14 @@ export class BusinessIntelligenceMetricCalculationService {
     private readonly persistence: BusinessIntelligenceCalculationPersistenceService = new BusinessIntelligenceCalculationPersistenceService(),
   ) {}
 
-  async calculate(ctx: TenantContext, businessId: string, request: CalculationHandoffReadRequest, source: WarehouseRowSource): Promise<MetricCalculationServiceResult> {
-    const built = await this.handoffs.calculationHandoff(ctx, businessId, request);
+  async calculate(ctx: TenantContext, businessId: string, request: MetricCalculationRequest, source: WarehouseRowSource): Promise<MetricCalculationServiceResult> {
+    const { expectedCalculationHandoffId, ...handoffRequest } = request;
+    const built = await this.handoffs.calculationHandoff(ctx, businessId, handoffRequest);
     if (!built.ok) return built;
     const handoff = built.handoff;
+    if (expectedCalculationHandoffId !== undefined && expectedCalculationHandoffId !== handoff.calculationHandoffId) {
+      return { ok: false, code: 'HANDOFF_CHANGED', detail: 'the governed hand-off is not the one the caller expected; nothing was calculated.' };
+    }
     const rows = new Map<string, readonly WarehouseRow[]>();
     for (const id of [...new Set(handoff.metrics.filter((m) => m.metricType === 'base').map((m) => m.warehouseDatasetId))].sort()) {
       try { rows.set(id, await source.rows({ ...handoff.scope }, id)); }
@@ -56,9 +63,9 @@ export class BusinessIntelligenceMetricCalculationService {
 
   /**
    * The calculation over the business's SEALED warehouse rows, persisted (BI-2-DEV-07). Rows come only from the BI warehouse (PostgresWarehouseRowSource); the run is
-   * verified against the sealed evidence, stored atomically and idempotently, and returned as stored. No route and no permission: the execution API is a later block.
+   * verified against the sealed evidence, stored atomically and idempotently, and returned as stored. The execution route (BI-2-DEV-08) is the one caller.
    */
-  async calculateAndPersist(ctx: TenantContext, businessId: string, request: CalculationHandoffReadRequest): Promise<MetricCalculationPersistedResult> {
+  async calculateAndPersist(ctx: TenantContext, businessId: string, request: MetricCalculationRequest): Promise<MetricCalculationPersistedResult> {
     const source = new PostgresWarehouseRowSource(ctx);
     const calculated = await this.calculate(ctx, businessId, request, source);
     if (!calculated.ok) return calculated;
