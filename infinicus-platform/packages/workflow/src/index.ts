@@ -105,3 +105,7 @@ export { verifyPersistedHandoff, handoffDigest, PERFORMANCE_HANDOFF_SCHEMA_VERSI
 
 export { BusinessIntelligenceIntakeService, BiIntakeRejectedError, BI_INTAKE_DOMAINS, biDomainForTargetBlock } from './BusinessIntelligenceIntakeService.js';
 export type { BiIntakeDomain, BusinessIntelligenceIntakeResult } from './BusinessIntelligenceIntakeService.js';
+export { METRIC_TYPES, METRIC_AGGREGATIONS, normalizeMetricCode, buildMetricDefinitionContent, canonicalMetricContent, metricContentHash } from './bi/metricDefinition.js';
+export type { MetricType, MetricAggregation, MetricScope, MetricDefinition, MetricDefinitionContent, MetricDefinitionInput, MetricDefinitionResult } from './bi/metricDefinition.js';
+export { registerMetric, reviseMetric, buildCalculationHandoff, buildMetricLineage, checkMetricDependencies, hasDependencyCycle, latestVersions, validateScope } from './bi/metricRegistry.js';
+export type { MetricLineage, WarehouseDatasetRef, CalculationHandoff, MetricRegistryErrorCode, RegisterOutcome, CalculationHandoffOutcome } from './bi/metricRegistry.js';
