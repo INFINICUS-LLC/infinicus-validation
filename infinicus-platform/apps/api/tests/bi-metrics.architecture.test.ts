@@ -71,7 +71,8 @@ describe('BI-09 registry read API - schemas', () => {
 describe('BI-09 registry read API - read repository', () => {
   it('found the statements it is about to judge (guards against a pattern that matches nothing)', () => {
     expect(latest.length).toBeGreaterThan(200);
-    expect(literals.length).toBe(4);
+    // four statements of the read/detail API plus listAllLatest (BI-2-DEV-04, the hand-off source); every statement is judged by all of the checks below
+    expect(literals.length).toBe(5);
   });
 
   it('is SELECT-only: it never inserts, updates, deletes, locks or alters anything', () => {

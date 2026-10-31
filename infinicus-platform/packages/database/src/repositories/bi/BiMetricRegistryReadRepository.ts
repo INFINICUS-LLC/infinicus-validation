@@ -108,6 +108,19 @@ export class BiMetricRegistryReadRepository {
     });
   }
 
+  /**
+   * BI-2-DEV-04: the latest version of EVERY governed metric of the business, ordered like list(), for the BI-09 -> BI-10 calculation hand-off. The hand-off
+   * must see the whole registry (an explicit selection is checked against it, and a dependency outside the selection is a hand-off error), so this is not
+   * paged. The contract documents no size cap for a hand-off; none is invented here (open decision D-F). SELECT only, in the same tenant/workspace/business scope.
+   */
+  async listAllLatest(ctx: TenantContext, businessId: string): Promise<GovernedMetricView[]> {
+    return this.scoped(ctx, businessId, async (query, scope) => {
+      const rows = await query(`${LATEST}
+      ORDER BY d.metric_code ASC, d.id ASC`, scope);
+      return rows.map(toView);
+    });
+  }
+
   /** One governed metric with its newest versions (newest first). NotFoundError for an id that is not a governed metric of this business. */
   async get(ctx: TenantContext, businessId: string, metricId: string, versionLimit: number): Promise<GovernedMetricDetail> {
     const id = canonicalUuid(metricId);
