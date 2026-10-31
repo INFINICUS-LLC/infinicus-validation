@@ -6,13 +6,15 @@ import { METRIC_AGGREGATIONS, METRIC_TYPES, PERSISTABLE_STATUSES, PERSISTABLE_TI
  * parameters are refused; filters are limited to the dataset a metric is defined on, its status and its time grain, each using the values the persisted
  * registry can hold. Responses are allow-lists: no tenant, workspace, correlation or storage details.
  */
+/** A UUID in either letter case, canonicalized to lower case (the platform identifier contract), so the route guard, the repository and the response all see one form. */
+const uuid = z.string().uuid().transform((value) => value.toLowerCase());
 const status = z.enum(PERSISTABLE_STATUSES);
 const timeGrain = z.enum(PERSISTABLE_TIME_GRAINS);
 const page = { limit: z.coerce.number().int().min(1).max(100).default(20), offset: z.coerce.number().int().min(0).max(100_000).default(0) };
 
-export const biMetricBusinessParamsSchema = z.object({ businessId: z.string().uuid() });
-export const biMetricParamsSchema = z.object({ businessId: z.string().uuid(), metricId: z.string().uuid() });
-export const biMetricListQuerySchema = z.object({ datasetId: z.string().uuid().optional(), status: status.optional(), timeGrain: timeGrain.optional(), ...page }).strict();
+export const biMetricBusinessParamsSchema = z.object({ businessId: uuid });
+export const biMetricParamsSchema = z.object({ businessId: uuid, metricId: uuid });
+export const biMetricListQuerySchema = z.object({ datasetId: uuid.optional(), status: status.optional(), timeGrain: timeGrain.optional(), ...page }).strict();
 export const biMetricDetailQuerySchema = z.object({ versionLimit: z.coerce.number().int().min(1).max(100).default(20) }).strict();
 
 const summary = z.object({
