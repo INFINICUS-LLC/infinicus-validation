@@ -129,3 +129,7 @@ export type { BiIntakeDomain, BusinessIntelligenceIntakeResult } from './Busines
 
 export { BusinessIntelligenceDatasetService, IntakeNotMaterializableError } from './BusinessIntelligenceDatasetService.js';
 export type { IntakeDatasetResult } from './BusinessIntelligenceDatasetService.js';
+export { prepareWarehouseRows, validateContract as validateWarehouseDatasetContract, contractHash as warehouseContractHash, WAREHOUSE_LOAD_LIMITS, FIELD_DATA_TYPES, DATASET_TYPES, SOURCE_RECORD_ID_KEY, SOURCE_INDEX_KEY } from './bi08/warehouseLoad.js';
+export type { WarehouseDatasetContract, WarehouseFieldDefinition, TransformedRecord, LoadIssue, LoadIssueCode, LoadPreparation, LoadPreparationCode, PreparedRow, PreparedWarehouseRows, FieldDataType, DatasetType } from './bi08/warehouseLoad.js';
+export { BusinessIntelligenceWarehouseLoadPreparationService } from './BusinessIntelligenceWarehouseLoadPreparationService.js';
+export type { PreparedWarehouseLoad, WarehouseLoadPreparationRequest, WarehouseLoadPreparationResult, WarehouseLoadRefusalCode } from './BusinessIntelligenceWarehouseLoadPreparationService.js';
