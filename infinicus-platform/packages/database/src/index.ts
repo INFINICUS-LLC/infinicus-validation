@@ -207,6 +207,10 @@ export { ConflictError as BiConflictError, ValidationError as BiValidationError 
 export {
   IntelligenceIntakeRepository,
   BoToBiIntakeRepository,
+  IntakeDatasetRepository,
+  IntakeNotMaterializableError,
+  datasetCodeFor,
+  schemaReferenceOf,
   MetricDefinitionRepository,
   MetricCalculationRepository,
   AnalysisRunRepository,
@@ -218,7 +222,7 @@ export {
   BIPublicationPackageRepository,
 } from './repositories/bi/index.js';
 export type {
-  IntakePackage, CreateIntakePackageInput, AnalyticalDataset, DatasetVersion, BoToBiIntakeInput, BoToBiIntakeOutcome,
+  IntakePackage, CreateIntakePackageInput, AnalyticalDataset, DatasetVersion, BoToBiIntakeInput, BoToBiIntakeOutcome, IntakeDatasetResult,
   MetricDefinition, MetricDefinitionVersion, CreateMetricDefinitionInput,
   MetricCalculatedValue, RecordCalculationInput, TimeSeriesPoint,
   AnalysisRequest, AnalysisRun, CreateAnalysisRequestInput,
