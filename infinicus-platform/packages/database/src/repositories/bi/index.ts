@@ -42,3 +42,9 @@ export { BiMetricRegistryRepository } from './BiMetricRegistryRepository.js';
 export type { MetricRegistryTx, MetricRegistrySnapshot, StoredMetricVersion, RegistryDatasetRef, MetricHeaderWrite, MetricVersionWrite, StoredWrite } from './BiMetricRegistryRepository.js';
 export { BiMetricRegistryReadRepository, METRIC_READ_BOUNDS } from './BiMetricRegistryReadRepository.js';
 export type { MetricListFilter, MetricPage, GovernedMetricView, GovernedMetricVersionView, GovernedMetricDetail } from './BiMetricRegistryReadRepository.js';
+
+export { BiWarehouseRowRepository, WAREHOUSE_APPEND_BATCH_MAX } from './BiWarehouseRowRepository.js';
+export type { WarehouseRowInput, AppendRowsInput, AppendRowsResult, SealResult, SealedDatasetRows } from './BiWarehouseRowRepository.js';
+
+export { BiCalculationRunRepository } from './BiCalculationRunRepository.js';
+export type { CalculationRunRecord, CalculationRunInputRecord, MetricResultRecord, StoredCalculationRun, StoredDatasetFingerprint, PersistRunOutcome } from './BiCalculationRunRepository.js';

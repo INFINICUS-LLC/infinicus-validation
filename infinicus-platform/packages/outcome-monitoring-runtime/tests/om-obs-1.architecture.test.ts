@@ -110,6 +110,8 @@ describe('OM-OBS-1 - read-only observability', () => {
       '0221_create_dt_handoff_envelopes.sql',
       // BI-2-DEV-02: additive extension of the Business Intelligence metric registry tables (business_intelligence only); it does not change OM authority.
       '0222_extend_bi_metric_registry.sql',
+      // BI-2-DEV-07: BI-owned warehouse row storage and BI-10 calculation persistence (business_intelligence tables only; no OM or CL table, grant or role); it does not change OM authority.
+      '0223_bi10_warehouse_rows_and_calculation_persistence.sql',
     ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);

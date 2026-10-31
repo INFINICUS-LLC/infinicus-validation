@@ -9,6 +9,8 @@ import { BusinessIntelligenceCalculationHandoffService, type CalculationHandoffR
 import type { MetricScope } from './bi/metricDefinition.js';
 import { calculateMetrics, type CalculationErrorCode, type CalculationRun, type WarehouseRow } from './bi10/metricCalculation.js';
 import { buildIntelligenceHandoff, type IntelligenceHandoff, type IntelligenceHandoffErrorCode } from './bi10/intelligenceHandoff.js';
+import { BusinessIntelligenceCalculationPersistenceService, type PersistRunErrorCode } from './BusinessIntelligenceCalculationPersistenceService.js';
+import { PostgresWarehouseRowSource } from './PostgresWarehouseRowSource.js';
 import type { MetricRegistryErrorCode } from './bi/metricRegistry.js';
 
 /** Supplies the rows of one warehouse dataset of one business, in the dataset's stable order. Called only with a scope and dataset id taken from the hand-off. */
@@ -22,8 +24,15 @@ export type MetricCalculationWithHandoffResult =
   | { ok: true; run: CalculationRun; intelligenceHandoff: IntelligenceHandoff }
   | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode | IntelligenceHandoffErrorCode; detail: string };
 
+export type MetricCalculationPersistedResult =
+  | { ok: true; run: CalculationRun; replayed: boolean; persistedAt: Date }
+  | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode | PersistRunErrorCode; detail: string };
+
 export class BusinessIntelligenceMetricCalculationService {
-  constructor(private readonly handoffs: BusinessIntelligenceCalculationHandoffService = new BusinessIntelligenceCalculationHandoffService()) {}
+  constructor(
+    private readonly handoffs: BusinessIntelligenceCalculationHandoffService = new BusinessIntelligenceCalculationHandoffService(),
+    private readonly persistence: BusinessIntelligenceCalculationPersistenceService = new BusinessIntelligenceCalculationPersistenceService(),
+  ) {}
 
   async calculate(ctx: TenantContext, businessId: string, request: CalculationHandoffReadRequest, source: WarehouseRowSource): Promise<MetricCalculationServiceResult> {
     const built = await this.handoffs.calculationHandoff(ctx, businessId, request);
@@ -43,5 +52,16 @@ export class BusinessIntelligenceMetricCalculationService {
     if (!calculated.ok) return calculated;
     const handed = buildIntelligenceHandoff(calculated.run);
     return handed.ok ? { ok: true, run: calculated.run, intelligenceHandoff: handed.handoff } : handed;
+  }
+
+  /**
+   * The calculation over the business's SEALED warehouse rows, persisted (BI-2-DEV-07). Rows come only from the BI warehouse (PostgresWarehouseRowSource); the run is
+   * verified against the sealed evidence, stored atomically and idempotently, and returned as stored. No route and no permission: the execution API is a later block.
+   */
+  async calculateAndPersist(ctx: TenantContext, businessId: string, request: CalculationHandoffReadRequest): Promise<MetricCalculationPersistedResult> {
+    const source = new PostgresWarehouseRowSource(ctx);
+    const calculated = await this.calculate(ctx, businessId, request, source);
+    if (!calculated.ok) return calculated;
+    return this.persistence.persist(ctx, businessId, calculated.run, source.inputs);
   }
 }
