@@ -62,6 +62,7 @@ import type { PerformanceSimulationHandoffCompositionOptions } from './performan
 import type { InventoryBiEvidenceCompositionOptions } from './inventoryBiEvidenceComposition.js';
 import type { FinancialIntelligenceCompositionOptions } from './financialIntelligenceComposition.js';
 import biSalesReportRoutes from './routes/biSalesReport.js';
+import biDatasetRoutes, { type BiDatasetRoutesOptions } from './routes/biDatasets.js';
 import type { BiSalesReportCompositionOptions } from './biSalesReportComposition.js';
 import type { ReorderRecommendationCompositionOptions } from './reorderPolicyRecommendationComposition.js';
 import dataAcquisitionRoutes from './routes/dataAcquisition.js';
@@ -88,6 +89,7 @@ export interface BuildAppOptions {
   /** NEW-BI-01: test seam for the read-only financial report (production leaves it unset). */
   financialIntelligence?: FinancialIntelligenceCompositionOptions;
   biSalesReport?: BiSalesReportCompositionOptions;
+  biDatasets?: BiDatasetRoutesOptions;
   /** AC-2 Block 6: the BDT inventory item state composition (test seam; production feeds the twin from the BI evidence service). */
   inventoryItemTwin?: InventoryItemTwinCompositionOptions;
   /** NEW-BDT-01: test seam for the business performance twin (production leaves it unset). */
@@ -238,6 +240,8 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   // NEW-BI-01: read-only financial report (bi:read); Business Intelligence derives every figure from read-only Business Operations facts.
   await app.register(financialIntelligenceRoutes, options.financialIntelligence ?? {});
   await app.register(biSalesReportRoutes, options.biSalesReport ?? {});
+  // BI-1-DEV-03: read-only view of what BI took in from BO and the versioned analytical datasets built from it (bi:read); four GETs, no mutation.
+  await app.register(biDatasetRoutes, options.biDatasets ?? {});
   await app.register(inventoryItemTwinRoutes, options.inventoryItemTwin ?? {});
   // NEW-BDT-01: the twin's representation of governed BI financial and sales evidence (dt:write / dt:read); derives no KPI.
   await app.register(businessPerformanceTwinRoutes, options.businessPerformanceTwin ?? {});
