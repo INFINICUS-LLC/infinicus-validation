@@ -8,6 +8,7 @@ import type { TenantContext } from '@infinicus/database';
 import { BusinessIntelligenceCalculationHandoffService, type CalculationHandoffReadRequest } from './BusinessIntelligenceCalculationHandoffService.js';
 import type { MetricScope } from './bi/metricDefinition.js';
 import { calculateMetrics, type CalculationErrorCode, type CalculationRun, type WarehouseRow } from './bi10/metricCalculation.js';
+import { buildIntelligenceHandoff, type IntelligenceHandoff, type IntelligenceHandoffErrorCode } from './bi10/intelligenceHandoff.js';
 import type { MetricRegistryErrorCode } from './bi/metricRegistry.js';
 
 /** Supplies the rows of one warehouse dataset of one business, in the dataset's stable order. Called only with a scope and dataset id taken from the hand-off. */
@@ -16,6 +17,10 @@ export interface WarehouseRowSource { rows(scope: MetricScope, warehouseDatasetI
 export type MetricCalculationServiceResult =
   | { ok: true; run: CalculationRun }
   | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode; detail: string };
+
+export type MetricCalculationWithHandoffResult =
+  | { ok: true; run: CalculationRun; intelligenceHandoff: IntelligenceHandoff }
+  | { ok: false; code: CalculationErrorCode | MetricRegistryErrorCode | IntelligenceHandoffErrorCode; detail: string };
 
 export class BusinessIntelligenceMetricCalculationService {
   constructor(private readonly handoffs: BusinessIntelligenceCalculationHandoffService = new BusinessIntelligenceCalculationHandoffService()) {}
@@ -30,5 +35,13 @@ export class BusinessIntelligenceMetricCalculationService {
       catch { return { ok: false, code: 'DATASET_ROWS_UNAVAILABLE', detail: 'the rows of a dataset named by the hand-off could not be read.' }; }
     }
     return calculateMetrics({ handoff, rows });
+  }
+
+  /** The calculation and the BI-10 -> BI-11..BI-18 intelligence hand-off built from it (BI-2-DEV-06). Neither is stored or published here. */
+  async calculateForIntelligence(ctx: TenantContext, businessId: string, request: CalculationHandoffReadRequest, source: WarehouseRowSource): Promise<MetricCalculationWithHandoffResult> {
+    const calculated = await this.calculate(ctx, businessId, request, source);
+    if (!calculated.ok) return calculated;
+    const handed = buildIntelligenceHandoff(calculated.run);
+    return handed.ok ? { ok: true, run: calculated.run, intelligenceHandoff: handed.handoff } : handed;
   }
 }

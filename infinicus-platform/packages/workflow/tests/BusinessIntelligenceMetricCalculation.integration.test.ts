@@ -181,6 +181,34 @@ describe.runIf(run)('BusinessIntelligenceMetricCalculationService (live PostgreS
     expect(bad).toMatchObject({ ok: false, code: 'VALUE_NOT_NUMERIC' }); expect(bad).not.toHaveProperty('run');
   }, 60_000);
 
+  it('builds the BI-11..BI-18 intelligence hand-off from the calculation: derived identity, replay-identical, concurrent-identical, correlation excluded from the identity', async () => {
+    const f = await financialWorld('C11'); const source = new Source(new Map([[f.ds, SALES]]));
+    const first = ok(await svc.calculateForIntelligence(ctxOf(f.w), f.w.businessId, { correlationId: 'req-1' }, source));
+    const h = first.intelligenceHandoff;
+    expect(h).toMatchObject({ sourceBlock: 'BI-10', status: 'ready', calculationRunId: first.run.calculationRunId, correlationId: 'req-1', warehouseSnapshotId: null });
+    expect(h.metricResultIds).toEqual(first.run.results.map((r) => r.metricResultId));
+    expect(h.metricResults.filter((r) => r.metricCode === 'margin').map((r) => r.value)).toEqual(['1250.45', '200.05']);
+    const again = ok(await svc.calculateForIntelligence(ctxOf(f.w), f.w.businessId, { correlationId: 'req-2' }, source)).intelligenceHandoff;
+    expect(again.intelligenceHandoffId).toBe(h.intelligenceHandoffId);
+    expect({ ...again, correlationId: '' }).toEqual({ ...h, correlationId: '' });
+    const many = await Promise.all(Array.from({ length: 10 }, () => svc.calculateForIntelligence(ctxOf(f.w), f.w.businessId, { correlationId: 'same' }, source)));
+    expect(new Set(many.map((m) => JSON.stringify(ok(m).intelligenceHandoff))).size).toBe(1);
+  });
+
+  it('the intelligence hand-off holds only the business\'s own results; foreign ids and refusals produce no hand-off and read no rows', async () => {
+    const f = await financialWorld('C12'); const other = await financialWorld('C12b');
+    const source = new Source(new Map([[f.ds, SALES], [other.ds, SALES]]));
+    const h = ok(await svc.calculateForIntelligence(ctxOf(f.w), f.w.businessId, { correlationId: 'c' }, source)).intelligenceHandoff;
+    expect(h.metricResults.every((r) => r.warehouseDatasetId === f.ds)).toBe(true);
+    expect(JSON.stringify(h)).not.toMatch(new RegExp(`${other.ds}|${other.revenue}|${other.w.tenantId}|${other.w.businessId}`));
+    const guarded = new Source(new Map([[f.ds, SALES]]));
+    expect(await svc.calculateForIntelligence(ctxOf(f.w), f.w.businessId, { correlationId: 'c', metricIds: [other.revenue] }, guarded)).toMatchObject({ ok: false, code: 'METRIC_NOT_FOUND' });
+    await expect(svc.calculateForIntelligence(ctxOf(f.w), other.w.businessId, { correlationId: 'c' }, guarded)).rejects.toMatchObject({ name: 'NotFoundError' });
+    const bad = await svc.calculateForIntelligence(ctxOf(f.w), f.w.businessId, { correlationId: 'c' }, new Source(new Map([[f.ds, [{ amount: 'x', cost: '1', date: '2026-01-01T00:00:00Z' }]]])));
+    expect(bad).toMatchObject({ ok: false, code: 'VALUE_NOT_NUMERIC' }); expect(bad).not.toHaveProperty('intelligenceHandoff');
+    expect(guarded.calls).toEqual([]);
+  });
+
   it('reads the registry and nothing else: no write statement, no Business Operations table, and no registry, calculated-value or audit row changes', async () => {
     const f = await financialWorld('C10'); const source = new Source(new Map([[f.ds, SALES]]));
     const before = await state(f.w);

@@ -77,6 +77,16 @@ export interface CalculationRun {
 }
 export type CalculationOutcome = { ok: true; run: CalculationRun } | CalculationFailure;
 
+/** The run identity: the hand-off it calculates and the exact datasets (row count and fingerprint) it read. */
+export function deriveCalculationRunId(calculationHandoffId: string, datasets: readonly CalculationDatasetInput[]): string {
+  return deterministicUuid(canonicalJson({ kind: 'bi-calculation-run/v1', calculationHandoffId, datasets }));
+}
+
+/** The result identity: the run, the metric and its version, and the group. */
+export function deriveMetricResultId(calculationRunId: string, metricId: string, metricVersion: number, groupKey: string): string {
+  return deterministicUuid(canonicalJson({ kind: 'bi-metric-result/v1', calculationRunId, metricId, metricVersion, groupKey }));
+}
+
 const fail = (code: CalculationErrorCode, detail: string): CalculationFailure => ({ ok: false, code, detail });
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
@@ -355,7 +365,7 @@ export function calculateMetrics(req: CalculationRequest): CalculationOutcome {
     try { text = canonicalJson(rows); } catch { return fail('ROWS_INVALID', 'dataset rows must be plain JSON data.'); }
     datasets.push({ warehouseDatasetId: id, rowCount: rows.length, rowsFingerprint: createHash('sha256').update(text).digest('hex') });
   }
-  const calculationRunId = deterministicUuid(canonicalJson({ kind: 'bi-calculation-run/v1', calculationHandoffId: h.calculationHandoffId, datasets }));
+  const calculationRunId = deriveCalculationRunId(h.calculationHandoffId, datasets);
 
   const computed = new Map<string, Computed[]>();
   for (const m of ordered) {
@@ -395,7 +405,7 @@ export function calculateMetrics(req: CalculationRequest): CalculationOutcome {
     const plan = plans.get(m.metricId)!; const hash = metricContentHash(contentOf(m));
     for (const c of computed.get(m.metricId)!) {
       results.push({
-        metricResultId: deterministicUuid(canonicalJson({ kind: 'bi-metric-result/v1', calculationRunId, metricId: m.metricId, metricVersion: m.version, groupKey: c.key })),
+        metricResultId: deriveMetricResultId(calculationRunId, m.metricId, m.version, c.key),
         calculationRunId, calculationHandoffId: h.calculationHandoffId, metricId: m.metricId, metricCode: m.code, metricVersion: m.version, metricContentHash: hash,
         warehouseDatasetId: m.warehouseDatasetId, metricType: m.metricType, group: c.group, groupKey: c.key,
         value: c.value === null ? null : decimalToString(c.value), unit: m.unit, currency: m.currency ?? null, target: plan.target === null ? null : decimalToString(plan.target),

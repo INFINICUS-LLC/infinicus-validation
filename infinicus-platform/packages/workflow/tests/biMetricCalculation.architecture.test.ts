@@ -11,6 +11,7 @@ const read = (rel: string) => readFileSync(resolve(root, rel), 'utf8');
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 const engine = strip(read('packages/workflow/src/bi10/metricCalculation.ts'));
 const decimal = strip(read('packages/workflow/src/bi10/exactDecimal.ts'));
+const intelligence = strip(read('packages/workflow/src/bi10/intelligenceHandoff.ts'));
 const service = strip(read('packages/workflow/src/BusinessIntelligenceMetricCalculationService.ts'));
 const index = strip(read('packages/workflow/src/index.ts'));
 const frozenDir = resolve(root, 'layers/business-intelligence/blocks', readdirSync(resolve(root, 'layers/business-intelligence/blocks')).find((d) => d.startsWith('INFINICUS-BI-10-'))!, 'src');
@@ -19,20 +20,20 @@ const literals = (src: string, re: RegExp) => [...src.matchAll(re)].map((m) => m
 
 describe('BI-10 calculation core - purity', () => {
   it('reads no clock and generates no random value: results depend on the inputs alone', () => {
-    for (const src of [engine, decimal]) {
+    for (const src of [engine, decimal, intelligence]) {
       expect(src).not.toMatch(/new Date\(\)|Date\.now|performance\.now|Math\.random|randomUUID|crypto\.getRandomValues|setTimeout|setInterval/);
     }
   });
 
   it('does floating-point arithmetic nowhere: no parseFloat, toFixed, Number() coercion, rounding helpers or exponent operator', () => {
-    for (const src of [engine, decimal]) {
+    for (const src of [engine, decimal, intelligence]) {
       expect(src).not.toMatch(/\bparseFloat\b|\btoFixed\b|\btoPrecision\b|\bNumber\(|Math\.(round|ceil|trunc|pow|sqrt|log|exp|sign|fround)|\*\*(?!\s*BigInt\()/);
     }
     expect(decimal).toMatch(/bigint/);
   });
 
   it('has no input or output and no database: no database package, driver, SQL, file system, network, environment or process access', () => {
-    for (const src of [engine, decimal]) {
+    for (const src of [engine, decimal, intelligence]) {
       expect(src).not.toMatch(/@infinicus\/database|from 'pg'|node:fs|node:net|node:http|node:child_process|\bfetch\(|process\.env|XMLHttpRequest|indexedDB|localStorage|require\(/);
       expect(src).not.toMatch(/\b(SELECT|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b/);
     }
@@ -123,6 +124,40 @@ describe('BI-10 calculation service - read only, scoped', () => {
 
 describe('BI-10 calculation - no persistence, no route, no schema (not authorised in this block)', () => {
   it('adds no result table, route or event: nothing in the new modules creates, stores or publishes results', () => {
-    for (const src of [engine, decimal, service]) expect(src).not.toMatch(/CREATE TABLE|calculation_runs|metric_results|\.put\(|\.insert|publish|emit\(|server\.(get|post|put|patch|delete)/);
+    for (const src of [engine, decimal, intelligence, service]) expect(src).not.toMatch(/CREATE TABLE|calculation_runs|metric_results|\.put\(|\.insert|publish|emit\(|server\.(get|post|put|patch|delete)/);
+  });
+});
+
+describe('BI-10 intelligence hand-off - frozen parity and integrity', () => {
+  it('addresses exactly the target blocks of the frozen engine (BI-11..BI-18) and the frozen status', () => {
+    const frozenEngine = frozen('engine/metric-calculation-engine.js');
+    const frozenTargets = literals(frozenEngine.slice(frozenEngine.indexOf('targetBlocks')), /"(BI-\d+)"/g).slice(0, 8);
+    expect(frozenTargets).toEqual(['BI-11', 'BI-12', 'BI-13', 'BI-14', 'BI-15', 'BI-16', 'BI-17', 'BI-18']);
+    expect(literals(intelligence, /INTELLIGENCE_TARGET_BLOCKS = \[([^\]]*)\]/g)[0]!.split(',').map((x) => x.trim().replace(/'/g, ''))).toEqual(frozenTargets);
+    expect(frozenEngine).toMatch(/status: "ready"/); expect(intelligence).toMatch(/status: 'ready'/);
+  });
+
+  it('carries every field of the frozen BI-10 -> BI-11..BI-18 contract', () => {
+    for (const field of ['calculationRunId', 'metricResultIds', 'metricResults', 'correlationId']) expect(intelligence, field).toContain(field);
+    expect(read('layers/business-intelligence/blocks/' + readdirSync(resolve(root, 'layers/business-intelligence/blocks')).find((d) => d.startsWith('INFINICUS-BI-10-'))! + '/docs/INTEGRATION-CONTRACT.md')).toMatch(/calculation run ID[\s\S]*metric result IDs[\s\S]*metric values[\s\S]*dimensional groups[\s\S]*time buckets[\s\S]*units[\s\S]*target status[\s\S]*threshold status[\s\S]*source row counts[\s\S]*correlation ID/);
+  });
+
+  it('verifies the run before handing anything on: run id, result ids, canonical values and statuses, in that order, and derives its own id from the results', () => {
+    const body = intelligence.slice(intelligence.indexOf('export function buildIntelligenceHandoff'));
+    expect(body.indexOf('deriveCalculationRunId(')).toBeLessThan(body.indexOf('checkResult('));
+    expect(body.indexOf('checkResult(')).toBeLessThan(body.indexOf('structuredClone(run.results)'));
+    expect(intelligence).toMatch(/deriveMetricResultId\(run\.calculationRunId, r\.metricId, r\.metricVersion, r\.groupKey\)/);
+    expect(intelligence).toMatch(/intelligenceHandoffId: deterministicUuid\(canonicalJson\(\{ kind: 'bi-intelligence-handoff\/v1', calculationRunId: run\.calculationRunId, targetBlocks: INTELLIGENCE_TARGET_BLOCKS, resultsFingerprint \}\)\)/);
+    expect(intelligence).not.toMatch(/correlationId[^,\n]*deterministicUuid|deterministicUuid[^\n]*correlationId/);
+  });
+
+  it('records no creation time and publishes nothing: the package carries the stored source timestamp and is only returned', () => {
+    expect(intelligence).not.toMatch(/createdAt|calculatedAt|emit\(|publish\(|\.put\(/);
+    expect(intelligence).toMatch(/handoffSourceTimestamp: run\.handoffSourceTimestamp/);
+  });
+
+  it('is exported from the package index and used by the service without any write path', () => {
+    for (const name of ['buildIntelligenceHandoff', 'INTELLIGENCE_TARGET_BLOCKS', 'IntelligenceHandoff']) expect(index, name).toContain(name);
+    expect(service).toMatch(/buildIntelligenceHandoff\(calculated\.run\)/);
   });
 });
