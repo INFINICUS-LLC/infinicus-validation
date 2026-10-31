@@ -15,7 +15,7 @@ export const OPERATIONS_PREPARED_SUBMISSION_TYPE = 'operations_prepared';
 export const OPERATIONAL_PROFILE_VERSION = '1.0';
 export const NORMALIZE_TRANSFORMATION_TYPE = 'normalize';
 
-export const PREPARED_RECORD_TYPES = ['inventory_item', 'warehouse', 'inventory_movement', 'purchase_order', 'operational_fact', 'workforce_event', 'asset_inspection', 'supplier_performance'] as const;
+export const PREPARED_RECORD_TYPES = ['inventory_item', 'warehouse', 'inventory_movement', 'purchase_order', 'operational_fact', 'workforce_event', 'asset_inspection', 'supplier_performance', 'purchase_receipt'] as const;
 export type PreparedRecordType = (typeof PREPARED_RECORD_TYPES)[number];
 
 export const INVENTORY_MOVEMENT_TYPES = [
@@ -89,3 +89,15 @@ export const SUPPLIER_SCORE_CONTRACT = { precision: 5, scale: 2 } as const;
 export const SUPPLIER_SCORE_MINIMUM = 0;
 export const SUPPLIER_SCORE_MAXIMUM = 100;
 export const SUPPLIER_SCORE_FIELDS = ['qualityScore', 'deliveryScore', 'priceScore', 'serviceScore', 'overallScore'] as const;
+
+/**
+ * R-01B-8: the purchase_receipt contract of Business Operations (src/procurement/purchaseReceipt.ts), mirrored because the DAL cannot import it. A BO-side
+ * drift-guard test fails if the two diverge. Receipt identifiers follow the owner ruling: LOWER-CASE canonical UUIDs only (no case folding, no widening).
+ */
+export const RECEIPT_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const PURCHASE_RECEIPT_MAX_LINES = 500;
+export const PURCHASE_RECEIPT_NUMBER_MAX_LENGTH = 100;
+export const PURCHASE_RECEIPT_NOTES_MAX_LENGTH = 2000;
+/** purchase_receipt_lines.quantity and .unit_cost are numeric(18,4); covered by the live-schema parity test. */
+export const RECEIPT_LINE_QUANTITY_CONTRACT = { precision: 18, scale: 4 } as const;
+export const RECEIPT_LINE_UNIT_COST_CONTRACT = { precision: 18, scale: 4 } as const;
