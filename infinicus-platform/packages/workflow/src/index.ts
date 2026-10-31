@@ -105,3 +105,6 @@ export { verifyPersistedHandoff, handoffDigest, PERFORMANCE_HANDOFF_SCHEMA_VERSI
 
 export { BusinessIntelligenceIntakeService, BiIntakeRejectedError, BI_INTAKE_DOMAINS, biDomainForTargetBlock } from './BusinessIntelligenceIntakeService.js';
 export type { BiIntakeDomain, BusinessIntelligenceIntakeResult } from './BusinessIntelligenceIntakeService.js';
+
+export { BusinessIntelligenceDatasetService, IntakeNotMaterializableError } from './BusinessIntelligenceDatasetService.js';
+export type { IntakeDatasetResult } from './BusinessIntelligenceDatasetService.js';

@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "asOf": "2026-10-28",
-  "mainCommit": "844f5fc",
+  "asOf": "2026-10-31",
+  "mainCommit": "d6e035f",
   "dimensions": {
     "spec": 0.1,
     "functional": 0.35,
@@ -220,12 +220,12 @@
       "title": "Core, mapping, ingestion, validation, cleaning, entity resolution, transformation",
       "covers": "BI-01..07",
       "units": 7,
-      "impl": 0.1,
+      "impl": 0.13,
       "spec": 75,
       "integration": 25,
       "verification": 50,
       "operational": 0,
-      "evidence": "Schema and repositories only. Preparation is DAL's job in Stack B."
+      "evidence": "Schema and repositories, plus BI-03 ingestion for one source: a BO publication package is taken in through BusinessIntelligenceIntakeService (contract validation, claims checked against BO's own record and dispatch record, atomic persistence with provenance, idempotent; #398). No API route, no cursors/watermarks/scheduling, and BI-02 mapping contracts and BI-04..07 are not built. Preparation is DAL's job in Stack B."
     },
     {
       "id": "BI-2",
@@ -1417,6 +1417,26 @@
       ],
       "notScored": [
         "Manual/file intake and publication screens: not built"
+      ]
+    },
+    {
+      "date": "2026-10-31",
+      "mainCommit": "d6e035f",
+      "label": "BI-1-DEV-01 merged (#398)",
+      "changes": [
+        {
+          "workPackage": "BI-1",
+          "field": "impl",
+          "from": 0.1,
+          "to": 0.13,
+          "criterion": "one BI-1 unit (BI-03 ingestion coordination) moves from a table and repository (0.25) to a working vertical slice for one source (0.5): +0.25 of 7 units = +0.036, recorded as 0.03 (rounded down)",
+          "evidence": "#398 merged (34af9f3e): BusinessIntelligenceIntakeService and BoToBiIntakeRepository; 29 tests (12 unit, 11 PostgreSQL under the application role, 6 architecture), 5 mutants killed; workspace test, lint and build 83/83; validate, operations-runtime, image build and Cloudflare green on the PR head"
+        }
+      ],
+      "notScored": [
+        "BI-1 integration stays 25 (service and repository level; no API route) and verification stays 50 (the cluster is still mostly table-level work); the new slice alone would meet the 100 verification rubric, but it is not the cluster",
+        "BI-1-DEV-02 (intake to versioned analytical dataset with lineage): unmerged at the time of this entry, so it does not count; it also writes the BI-08 dataset tables, which belong to BI-2, and is not scored there",
+        "Every other work package was not re-assessed since 844f5fc. DAL-3 in particular is known to be stale (R-01B-4 to R-01B-8 merged: all nine BO record types are prepared, its evidence text still says only manual-record validation); its owner records that entry"
       ]
     }
   ]

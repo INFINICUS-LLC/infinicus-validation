@@ -3,6 +3,9 @@ export { NotFoundError, ConflictError, ValidationError, InvalidTransitionError }
 export { IntelligenceIntakeRepository } from './IntelligenceIntakeRepository.js';
 export type { IntakePackage, CreateIntakePackageInput, AnalyticalDataset, DatasetVersion } from './IntelligenceIntakeRepository.js';
 
+export { IntakeDatasetRepository, IntakeNotMaterializableError, datasetCodeFor, schemaReferenceOf } from './IntakeDatasetRepository.js';
+export type { IntakeDatasetResult } from './IntakeDatasetRepository.js';
+
 export { BoToBiIntakeRepository } from './BoToBiIntakeRepository.js';
 export type { BoToBiIntakeInput, BoToBiIntakeOutcome } from './BoToBiIntakeRepository.js';
 
