@@ -33,6 +33,16 @@ One governed metric at its latest version. Query: `versionLimit` (1–100, defau
 `dependencies` (metric ids), `dimensions`, `filters`, `formula`, `target`, `thresholds`, `contentHash`, `createdAt`, and `versions`
 (`version`, `contentHash`, `governanceStatus`, `timeGrain`, `createdAt`; newest first).
 
+## Identifiers
+
+`businessId`, `metricId` and the `datasetId` filter are UUIDs in the canonical 8-4-4-4-12 hexadecimal form. Either letter case is accepted and means the same
+resource: an upper-case id resolves to exactly what its lower-case form does, and every id in a response is lower case. This is the platform identifier rule
+(the same one the Business Operations and Data Acquisition layers apply). Anything else (braces, no hyphens, a `urn:uuid:` prefix, surrounding whitespace or a
+trailing newline, a wrong length, non-hexadecimal text) is refused with `400` before any database access. An id that is well-formed but outside the caller's
+business, workspace or tenant, one that does not exist, a Stage 2D definition, and a metric of a soft-deleted business all return the same `404`. A
+soft-deleted business is treated as a business that does not exist: authentication and `bi:read` are still checked first, so a caller without `bi:read`
+gets `403` whether or not the business exists.
+
 ## Errors
 
 `400` malformed id, unknown or out-of-range parameter · `401` no or invalid session · `403` missing `bi:read` · `404` business or metric not found in scope ·

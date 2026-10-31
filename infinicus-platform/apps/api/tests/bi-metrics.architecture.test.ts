@@ -51,7 +51,12 @@ describe('BI-09 registry read API - route', () => {
 describe('BI-09 registry read API - schemas', () => {
   it('validates ids as UUIDs, refuses unknown query parameters, bounds paging, and derives its enums from the persisted vocabularies', () => {
     expect(schema.match(/\.strict\(\)/g)?.length).toBe(2);
-    expect(schema.match(/z\.string\(\)\.uuid\(\)/g)?.length).toBeGreaterThanOrEqual(6);
+    // request ids: one canonicalizing definition (either case in, lower case out) used by every request-side id; no raw .uuid() on a request schema
+    expect(schema).toMatch(/const uuid = z\.string\(\)\.uuid\(\)\.transform\(\(value\) => value\.toLowerCase\(\)\)/);
+    expect(schema).toMatch(/biMetricBusinessParamsSchema = z\.object\(\{ businessId: uuid \}\)/);
+    expect(schema).toMatch(/biMetricParamsSchema = z\.object\(\{ businessId: uuid, metricId: uuid \}\)/);
+    expect(schema).toMatch(/datasetId: uuid\.optional\(\)/);
+    for (const line of schema.split('\n').filter((l) => /^export const bi\w*(Params|Query)Schema\b/.test(l))) expect(line, line).not.toMatch(/z\.string\(\)\.uuid\(\)/);
     expect(schema).toMatch(/limit: z\.coerce\.number\(\)\.int\(\)\.min\(1\)\.max\(100\)/);
     expect(schema).toMatch(/offset: z\.coerce\.number\(\)\.int\(\)\.min\(0\)\.max\(100_000\)/);
     expect(schema).toMatch(/z\.enum\(PERSISTABLE_STATUSES\)/); expect(schema).toMatch(/z\.enum\(PERSISTABLE_TIME_GRAINS\)/);
@@ -115,8 +120,23 @@ describe('BI-09 registry read API - read repository', () => {
 
   it('checks the business belongs to the caller before reading, and rejects malformed ids before any query', () => {
     expect(repo.indexOf('FROM platform.businesses')).toBeLessThan(repo.indexOf('fn(async'));
-    expect(repo).toMatch(/if \(!UUID\.test\(businessId\)\) throw new NotFoundError/);
-    expect(repo).toMatch(/if \(!UUID\.test\(metricId\)\) throw new NotFoundError/);
+    expect(repo).toMatch(/if \(id === null\) throw new NotFoundError\('Business', businessId\)/);
+    expect(repo).toMatch(/if \(id === null\) throw new NotFoundError\('MetricDefinition', metricId\)/);
+    expect(repo).toMatch(/throw new ValidationError\('MetricListFilter', \['datasetId must be a UUID'\]\)/);
+    // every identifier is validated before the first database call of its method
+    for (const marker of ['const id = canonicalUuid(businessId)', 'const id = canonicalUuid(metricId)', 'const datasetId = filter.datasetId === undefined']) {
+      expect(repo.indexOf(marker), marker).toBeGreaterThan(-1);
+    }
+    expect(repo.indexOf('const id = canonicalUuid(businessId)')).toBeLessThan(repo.indexOf('withTenantTransaction(ctx'));
+    expect(repo.indexOf('const id = canonicalUuid(metricId)')).toBeLessThan(repo.indexOf('this.scoped(ctx, businessId, async (query, scope) => {\n      const latest'));
+  });
+
+  it('accepts either letter case and binds only the canonical lower-case value: the pattern is case-insensitive, and no raw caller identifier reaches a statement', () => {
+    expect(repo).toMatch(/const UUID = \/\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}\$\/i;/);
+    expect(repo).toMatch(/value\.toLowerCase\(\)/);
+    expect(repo).not.toMatch(/\[businessId,|, businessId\]|\[\.\.\.scope, metricId|, metricId\]|filter\.datasetId \?\?/);
+    expect(repo).toMatch(/\[id, ctx\.tenantId, ctx\.workspaceId\]/); expect(repo).toMatch(/\[ctx\.tenantId, ctx\.workspaceId, id\]/);
+    expect(repo).toMatch(/\[\.\.\.scope, datasetId, filter\.status/);
   });
 
   it('is not the write path: the write repository and the registry service are not imported', () => {
