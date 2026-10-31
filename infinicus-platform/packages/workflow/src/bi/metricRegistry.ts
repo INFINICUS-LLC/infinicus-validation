@@ -288,6 +288,11 @@ export function deriveCalculationHandoffId(scope: MetricScope, warehouseSnapshot
     warehouseSnapshotId,
     metrics: ordered.map((m) => ({ metricId: m.metricId, version: m.version, contentHash: metricContentHash(contentOfDefinition(m)) })),
   });
+  return deterministicUuid(material);
+}
+
+/** A version-5-style UUID (RFC 4122 version and variant bits set) from the SHA-256 of canonical text: equal text, equal id. Used for derived identities. */
+export function deterministicUuid(material: string): string {
   const bytes = createHash('sha256').update(material).digest().subarray(0, 16);
   bytes[6] = (bytes[6]! & 0x0f) | 0x50;
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
