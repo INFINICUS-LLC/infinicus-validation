@@ -139,6 +139,18 @@ describe('BI-09 registry read API - read repository', () => {
     expect(repo).toMatch(/\[\.\.\.scope, datasetId, filter\.status/);
   });
 
+  it('enforces its own pagination bounds before taking a connection: limit, offset and versionLimit are validated, refused (never clamped), and only the validated values are bound', () => {
+    expect(repo.match(/boundedInteger\('/g)?.length).toBe(3);
+    expect(repo.indexOf("boundedInteger('MetricPage', 'limit'")).toBeGreaterThan(-1);
+    expect(repo.indexOf("boundedInteger('MetricPage', 'limit'")).toBeLessThan(repo.indexOf('return this.scoped(ctx, businessId, async (query, scope) => {\n      const rows'));
+    expect(repo.indexOf("boundedInteger('MetricDetailQuery', 'versionLimit'")).toBeLessThan(repo.indexOf('return this.scoped(ctx, businessId, async (query, scope) => {\n      const latest'));
+    expect(repo).toMatch(/Number\.isInteger\(value\)/); expect(repo).toMatch(/throw new ValidationError\(entity, \[name \+ ' must be an integer from ' \+ min \+ ' to ' \+ max\]\)/);
+    expect(repo).not.toMatch(/Math\.(min|max|trunc|floor|round)|clamp/i);
+    expect(repo).toMatch(/, limit, offset\]\)/); expect(repo).toMatch(/\[\.\.\.scope, id, boundedVersionLimit\]/);
+    expect(repo).not.toMatch(/page\.limit|page\.offset|\[\.\.\.scope, id, versionLimit\]/);
+    expect(repo).toMatch(/METRIC_READ_BOUNDS = \{ minLimit: 1, maxLimit: 100, minOffset: 0, maxOffset: 100_000, minVersionLimit: 1, maxVersionLimit: 100 \} as const/);
+  });
+
   it('is not the write path: the write repository and the registry service are not imported', () => {
     expect(repo).not.toMatch(/BiMetricRegistryRepository|BusinessIntelligenceMetricRegistryService|workflow/);
   });

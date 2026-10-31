@@ -39,6 +39,19 @@ export interface GovernedMetricDetail extends GovernedMetricView { versions: Gov
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const canonicalUuid = (value: unknown): string | null => (typeof value === 'string' && UUID.test(value) ? value.toLowerCase() : null);
 
+/**
+ * Read bounds, enforced here as well as by the API's request schema (which must agree: a test compares the two), so a caller that reaches the repository
+ * directly cannot read an unbounded page or trigger a database error with a negative or fractional value. Invalid values are REFUSED, never clamped, before
+ * any connection is taken.
+ */
+export const METRIC_READ_BOUNDS = { minLimit: 1, maxLimit: 100, minOffset: 0, maxOffset: 100_000, minVersionLimit: 1, maxVersionLimit: 100 } as const;
+
+/** `value` itself when it is a finite integer in [min, max]; otherwise a ValidationError that names the parameter and the range but never echoes the value. */
+function boundedInteger(entity: string, name: string, value: unknown, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) throw new ValidationError(entity, [name + ' must be an integer from ' + min + ' to ' + max]);
+  return value;
+}
+
 const toView = (r: Record<string, unknown>): GovernedMetricView => ({
   metricId: r.metric_id as string,
   content: r.definition_content as Record<string, unknown>,
@@ -80,6 +93,8 @@ export class BiMetricRegistryReadRepository {
   async list(ctx: TenantContext, businessId: string, filter: MetricListFilter, page: MetricPage): Promise<GovernedMetricView[]> {
     const datasetId = filter.datasetId === undefined ? null : canonicalUuid(filter.datasetId);
     if (filter.datasetId !== undefined && datasetId === null) throw new ValidationError('MetricListFilter', ['datasetId must be a UUID']);
+    const limit = boundedInteger('MetricPage', 'limit', page?.limit, METRIC_READ_BOUNDS.minLimit, METRIC_READ_BOUNDS.maxLimit);
+    const offset = boundedInteger('MetricPage', 'offset', page?.offset, METRIC_READ_BOUNDS.minOffset, METRIC_READ_BOUNDS.maxOffset);
     return this.scoped(ctx, businessId, async (query, scope) => {
       const rows = await query(
         `${LATEST}
@@ -88,7 +103,7 @@ export class BiMetricRegistryReadRepository {
         AND ($6::text IS NULL OR v.time_grain = $6::text)
       ORDER BY d.metric_code ASC, d.id ASC
       LIMIT $7 OFFSET $8`,
-        [...scope, datasetId, filter.status ?? null, filter.timeGrain ?? null, page.limit, page.offset]);
+        [...scope, datasetId, filter.status ?? null, filter.timeGrain ?? null, limit, offset]);
       return rows.map(toView);
     });
   }
@@ -97,6 +112,7 @@ export class BiMetricRegistryReadRepository {
   async get(ctx: TenantContext, businessId: string, metricId: string, versionLimit: number): Promise<GovernedMetricDetail> {
     const id = canonicalUuid(metricId);
     if (id === null) throw new NotFoundError('MetricDefinition', metricId);
+    const boundedVersionLimit = boundedInteger('MetricDetailQuery', 'versionLimit', versionLimit, METRIC_READ_BOUNDS.minVersionLimit, METRIC_READ_BOUNDS.maxVersionLimit);
     return this.scoped(ctx, businessId, async (query, scope) => {
       const latest = await query(`${LATEST} AND d.id = $4::uuid`, [...scope, id]);
       if (latest.length !== 1) throw new NotFoundError('MetricDefinition', metricId);
@@ -106,7 +122,7 @@ export class BiMetricRegistryReadRepository {
           WHERE v.tenant_id = $1 AND v.workspace_id = $2 AND v.business_id = $3 AND v.metric_definition_id = $4::uuid AND v.definition_content IS NOT NULL
           ORDER BY v.version_number DESC
           LIMIT $5`,
-        [...scope, id, versionLimit]);
+        [...scope, id, boundedVersionLimit]);
       return {
         ...toView(latest[0]!),
         versions: versions.map((r) => ({
