@@ -107,7 +107,7 @@ export type { SealedDatasetInput } from './PostgresWarehouseRowSource.js';
 export { BusinessIntelligenceCalculationPersistenceService, runDigest } from './BusinessIntelligenceCalculationPersistenceService.js';
 export type { PersistRunErrorCode, PersistRunResult, StoredRunResult } from './BusinessIntelligenceCalculationPersistenceService.js';
 export { BusinessIntelligenceMetricCalculationService } from './BusinessIntelligenceMetricCalculationService.js';
-export type { MetricCalculationServiceResult, MetricCalculationWithHandoffResult, MetricCalculationPersistedResult, WarehouseRowSource } from './BusinessIntelligenceMetricCalculationService.js';
+export type { MetricCalculationServiceResult, MetricCalculationWithHandoffResult, MetricCalculationPersistedResult, MetricCalculationRequest, WarehouseRowSource } from './BusinessIntelligenceMetricCalculationService.js';
 export { BusinessIntelligenceCalculationHandoffService } from './BusinessIntelligenceCalculationHandoffService.js';
 export type { CalculationHandoffReadRequest, CalculationHandoffReadResult } from './BusinessIntelligenceCalculationHandoffService.js';
 export { BusinessIntelligenceMetricRegistryService, PERSISTABLE_TIME_GRAINS, PERSISTABLE_STATUSES } from './BusinessIntelligenceMetricRegistryService.js';

@@ -204,12 +204,14 @@ describe('workflow layer - verify, then write; no route, no permission, no event
     expect(body).toMatch(/this\.persistence\.persist\(ctx, businessId, calculated\.run, source\.inputs\)/);
   });
 
-  it('adds no route, no permission and no event: nothing under apps/api references the new repositories, tables or services', () => {
+  it('only the BI-2-DEV-08 calculation route reaches the persistence code from apps/api (no other file does), and none of this code emits, publishes or authorises anything itself', () => {
     const files: string[] = [];
     const walk = (dir: string) => { for (const e of readdirSync(dir, { withFileTypes: true })) { const p = resolve(dir, e.name); if (e.isDirectory()) walk(p); else if (/\.ts$/.test(e.name)) files.push(p); } };
     walk(resolve(root, 'apps/api/src'));
     const needle = /BiWarehouseRowRepository|BiCalculationRunRepository|PostgresWarehouseRowSource|BusinessIntelligenceCalculationPersistenceService|calculateAndPersist|metric_calculation_runs|metric_results|warehouse_dataset_rows/;
-    expect(files.filter((f) => needle.test(readFileSync(f, 'utf8'))).map((f) => f.replace(root, ''))).toEqual([]);
+    // BI-2-DEV-08 authorised exactly one route module (and its schema and the application registration); anything else reaching this code is a new, unreviewed entry point
+    const allowed = ['/apps/api/src/routes/biCalculations.ts'];
+    expect(files.filter((f) => needle.test(readFileSync(f, 'utf8'))).map((f) => f.replace(root, '')).sort()).toEqual(allowed);
     expect(persistence + rowSource + rowsRepo + runsRepo).not.toMatch(/emit\(|publish\(|outbox|registerRoute|requirePermission|server\.(get|post)/);
   });
 
