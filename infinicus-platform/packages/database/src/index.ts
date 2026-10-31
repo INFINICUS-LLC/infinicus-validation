@@ -208,6 +208,7 @@ export {
   IntelligenceIntakeRepository,
   BoToBiIntakeRepository,
   IntakeDatasetRepository,
+  BiIntakeDatasetReadRepository,
   IntakeNotMaterializableError,
   datasetCodeFor,
   schemaReferenceOf,
@@ -222,7 +223,7 @@ export {
   BIPublicationPackageRepository,
 } from './repositories/bi/index.js';
 export type {
-  IntakePackage, CreateIntakePackageInput, AnalyticalDataset, DatasetVersion, BoToBiIntakeInput, BoToBiIntakeOutcome, IntakeDatasetResult,
+  IntakePackage, CreateIntakePackageInput, AnalyticalDataset, DatasetVersion, BoToBiIntakeInput, BoToBiIntakeOutcome, IntakeDatasetResult, BiPageInput, IntakePackageSummary, IntakePackageDetail, DatasetSummary, DatasetVersionView, DatasetDetail,
   MetricDefinition, MetricDefinitionVersion, CreateMetricDefinitionInput,
   MetricCalculatedValue, RecordCalculationInput, TimeSeriesPoint,
   AnalysisRequest, AnalysisRun, CreateAnalysisRequestInput,
