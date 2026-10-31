@@ -92,6 +92,14 @@ export type { BuildReportInput } from './financial/financialReport.js';
 export * from './financial/money.js';
 export * from './financial/periods.js';
 
+// ── BI-09 metric and KPI registry rules (BI-2-DEV-01): pure domain, nothing persisted ──
+export { METRIC_TYPES, METRIC_AGGREGATIONS, normalizeMetricCode, buildMetricDefinitionContent, canonicalMetricContent, metricContentHash } from './bi/metricDefinition.js';
+export type { MetricType, MetricAggregation, MetricScope, MetricDefinition, MetricDefinitionContent, MetricDefinitionInput, MetricDefinitionResult } from './bi/metricDefinition.js';
+export { registerMetric, reviseMetric, buildCalculationHandoff, buildMetricLineage, checkMetricDependencies, hasDependencyCycle, latestVersions, validateScope } from './bi/metricRegistry.js';
+export type { MetricLineage, WarehouseDatasetRef, CalculationHandoff, MetricRegistryErrorCode, RegisterOutcome, CalculationHandoffOutcome } from './bi/metricRegistry.js';
+export { BusinessIntelligenceMetricRegistryService, PERSISTABLE_TIME_GRAINS, PERSISTABLE_STATUSES } from './BusinessIntelligenceMetricRegistryService.js';
+export type { MetricWriteResult, MetricHandoffResult, MetricRegistryServiceFailure, MetricRegistryServiceErrorCode } from './BusinessIntelligenceMetricRegistryService.js';
+
 // ── Business Digital Twin representation of governed BI performance evidence (NEW-BDT-01) ──
 export * from './performance/BusinessPerformanceTwinService.js';
 export { assembleBiPerformanceEvidence, verifyBiPerformanceEvidence, crossCheckRevenue, canonicalJson, digestOf, SALES_REPORT_PROVENANCE_CONTRACT } from './performance/biPerformanceEvidence.js';
@@ -105,9 +113,3 @@ export { verifyPersistedHandoff, handoffDigest, PERFORMANCE_HANDOFF_SCHEMA_VERSI
 
 export { BusinessIntelligenceIntakeService, BiIntakeRejectedError, BI_INTAKE_DOMAINS, biDomainForTargetBlock } from './BusinessIntelligenceIntakeService.js';
 export type { BiIntakeDomain, BusinessIntelligenceIntakeResult } from './BusinessIntelligenceIntakeService.js';
-export { METRIC_TYPES, METRIC_AGGREGATIONS, normalizeMetricCode, buildMetricDefinitionContent, canonicalMetricContent, metricContentHash } from './bi/metricDefinition.js';
-export type { MetricType, MetricAggregation, MetricScope, MetricDefinition, MetricDefinitionContent, MetricDefinitionInput, MetricDefinitionResult } from './bi/metricDefinition.js';
-export { registerMetric, reviseMetric, buildCalculationHandoff, buildMetricLineage, checkMetricDependencies, hasDependencyCycle, latestVersions, validateScope } from './bi/metricRegistry.js';
-export type { MetricLineage, WarehouseDatasetRef, CalculationHandoff, MetricRegistryErrorCode, RegisterOutcome, CalculationHandoffOutcome } from './bi/metricRegistry.js';
-export { BusinessIntelligenceMetricRegistryService, PERSISTABLE_TIME_GRAINS, PERSISTABLE_STATUSES } from './BusinessIntelligenceMetricRegistryService.js';
-export type { MetricWriteResult, MetricHandoffResult, MetricRegistryServiceFailure, MetricRegistryServiceErrorCode } from './BusinessIntelligenceMetricRegistryService.js';
