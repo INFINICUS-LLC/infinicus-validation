@@ -35,3 +35,5 @@ export type { InsightPackage, InsightPackageVersion, CreateInsightPackageVersion
 
 export { BIPublicationPackageRepository } from './PublicationPackageRepository.js';
 export type { BIPublicationPackage, ComponentDeployment, TargetLayer } from './PublicationPackageRepository.js';
+export { BiMetricRegistryRepository } from './BiMetricRegistryRepository.js';
+export type { MetricRegistryTx, MetricRegistrySnapshot, StoredMetricVersion, RegistryDatasetRef, MetricHeaderWrite, MetricVersionWrite, StoredWrite } from './BiMetricRegistryRepository.js';

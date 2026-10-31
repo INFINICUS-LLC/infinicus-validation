@@ -108,6 +108,8 @@ describe('OM-OBS-1 - read-only observability', () => {
       '0220_normalize_access_event_tenant_context.sql',
       // NEW-BDT-SIM-01.SEC-01: the Digital Twin's own append-only hand-off envelope record. It touches only business_digital_twin tables and does not change OM authority.
       '0221_create_dt_handoff_envelopes.sql',
+      // BI-2-DEV-02: additive extension of the Business Intelligence metric registry tables (business_intelligence only); it does not change OM authority.
+      '0222_extend_bi_metric_registry.sql',
     ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);
