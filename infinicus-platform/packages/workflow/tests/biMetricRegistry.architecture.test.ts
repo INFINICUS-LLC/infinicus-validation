@@ -39,7 +39,7 @@ describe('BI-09 registry rules - boundaries', () => {
     }
   });
 
-  it('is not wired into any route or repository: only the package index, the registry service and the read-only hand-off service import it', () => {
+  it('is not wired into any route or repository: only the package index, the registry service, the read-only hand-off service and the BI-10 calculation (which consumes BI-09 definitions) import it', () => {
     const src = resolve(__dirname, '..', 'src');
     const stack = [src];
     const importers: string[] = [];
@@ -52,6 +52,7 @@ describe('BI-09 registry rules - boundaries', () => {
       }
     }
     // BI-2-DEV-04: the read-only hand-off service applies the same pure rules to the stored registry (no route, no repository imports them)
-    expect([...importers].sort()).toEqual(['BusinessIntelligenceCalculationHandoffService.ts', 'BusinessIntelligenceMetricRegistryService.ts', 'index.ts']);
+    // BI-2-DEV-05: the BI-10 calculation (src/bi10) and its service consume BI-09 definitions and hand-offs; no route and no repository imports the rules
+    expect([...importers].sort()).toEqual(['BusinessIntelligenceCalculationHandoffService.ts', 'BusinessIntelligenceMetricCalculationService.ts', 'BusinessIntelligenceMetricRegistryService.ts', 'index.ts', 'metricCalculation.ts']);
   });
 });

@@ -97,6 +97,10 @@ export { METRIC_TYPES, METRIC_AGGREGATIONS, normalizeMetricCode, buildMetricDefi
 export type { MetricType, MetricAggregation, MetricScope, MetricDefinition, MetricDefinitionContent, MetricDefinitionInput, MetricDefinitionResult } from './bi/metricDefinition.js';
 export { registerMetric, reviseMetric, buildCalculationHandoff, buildDeterministicCalculationHandoff, deriveCalculationHandoffId, buildMetricLineage, checkMetricDependencies, hasDependencyCycle, latestVersions, validateScope } from './bi/metricRegistry.js';
 export type { DeterministicHandoffRequest, MetricLineage, WarehouseDatasetRef, CalculationHandoff, MetricRegistryErrorCode, RegisterOutcome, CalculationHandoffOutcome } from './bi/metricRegistry.js';
+export { calculateMetrics, MAX_DATASET_ROWS, SUPPORTED_TIME_GRAINS, SUPPORTED_FILTER_OPERATORS, SUPPORTED_DERIVED_OPERATORS } from './bi10/metricCalculation.js';
+export type { CalculationErrorCode, CalculationFailure, CalculationOutcome, CalculationRun, CalculationRequest, CalculationDatasetInput, MetricGroup, MetricResult, ThresholdOutcome, WarehouseRow, WarehouseRows } from './bi10/metricCalculation.js';
+export { BusinessIntelligenceMetricCalculationService } from './BusinessIntelligenceMetricCalculationService.js';
+export type { MetricCalculationServiceResult, WarehouseRowSource } from './BusinessIntelligenceMetricCalculationService.js';
 export { BusinessIntelligenceCalculationHandoffService } from './BusinessIntelligenceCalculationHandoffService.js';
 export type { CalculationHandoffReadRequest, CalculationHandoffReadResult } from './BusinessIntelligenceCalculationHandoffService.js';
 export { BusinessIntelligenceMetricRegistryService, PERSISTABLE_TIME_GRAINS, PERSISTABLE_STATUSES } from './BusinessIntelligenceMetricRegistryService.js';
