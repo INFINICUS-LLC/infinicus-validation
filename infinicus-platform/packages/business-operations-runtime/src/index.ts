@@ -45,3 +45,14 @@ export * from './financial/FinancialFactsService.js';
 // Business Operations' read-only sales facts (BI sales report).
 export * from './sales/SalesFactsService.js';
 export { decimalToMinorUnits, AmountNotRepresentableError } from './sales/decimalMinor.js';
+
+// BO-PUB-DEV-01: PROPOSED (not active) record-level publication evidence for the inventory movement ledger. Read-only; writes and activates nothing.
+export {
+  INVENTORY_MOVEMENT_EVIDENCE, MOVEMENT_TYPES as EVIDENCE_MOVEMENT_TYPES, REFERENCE_TYPES as EVIDENCE_REFERENCE_TYPES, buildInventoryMovementEvidence, verifyInventoryMovementEvidence,
+  serializeInventoryMovement, canonicalDecimal, canonicalJson as evidenceCanonicalJson, computeDigest as computeEvidenceDigest, deriveEvidenceId,
+} from './publication/record-evidence/inventoryMovementEvidence.js';
+export type {
+  InventoryMovementEvidence, InventoryMovementRecord, RawInventoryMovementRow, EvidenceScope, EvidencePeriod, EvidenceIssue, EvidenceIssueCode, EvidenceFailureCode, EvidenceResult, EvidenceExpectation,
+} from './publication/record-evidence/inventoryMovementEvidence.js';
+export { InventoryMovementEvidenceExtractor } from './publication/record-evidence/InventoryMovementEvidenceExtractor.js';
+export type { ExtractInventoryMovementEvidenceRequest, ExtractionResult, ExtractionFailureCode } from './publication/record-evidence/InventoryMovementEvidenceExtractor.js';

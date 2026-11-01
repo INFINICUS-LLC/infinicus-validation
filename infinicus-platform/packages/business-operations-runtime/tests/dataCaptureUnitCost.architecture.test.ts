@@ -42,7 +42,7 @@ describe('data-capture Block B architecture (positive unit cost)', () => {
     expect(production.filter((f) => /INTO\s+business_operations\.inventory_movements/.test(f.code)).map((f) => f.rel)).toEqual([EXECUTOR]);
     const costUsers = production.filter((f) => /\bunit_cost\b/.test(f.code)).map((f) => f.rel);
     // B2b: the READ-ONLY policy facts repository selects unit_cost; the INTO check above proves it is not a writer.
-    expect(costUsers.sort()).toEqual([EXECUTOR, 'packages/database/src/repositories/bo/InventoryPolicyFactsRepository.ts', 'packages/database/src/repositories/bo/FinancialFactsRepository.ts'].sort());
+    expect(costUsers.sort()).toEqual([EXECUTOR, 'packages/database/src/repositories/bo/InventoryPolicyFactsRepository.ts', 'packages/database/src/repositories/bo/FinancialFactsRepository.ts', 'packages/business-operations-runtime/src/publication/record-evidence/inventoryMovementEvidence.ts', 'packages/business-operations-runtime/src/publication/record-evidence/InventoryMovementEvidenceExtractor.ts'].sort()); // BO-PUB-DEV-01: the READ-ONLY record-evidence serializer and extractor (no INTO; proven by the check above)
   });
 
   it('the mapper and the executor both apply the one shared positivity rule (they cannot drift) and neither rounds or coerces', () => {
