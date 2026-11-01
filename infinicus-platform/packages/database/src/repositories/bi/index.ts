@@ -51,3 +51,6 @@ export type { CalculationRunRecord, CalculationRunInputRecord, MetricResultRecor
 
 export { BiMetricResultReadRepository, RESULT_QUERY_BOUNDS, RESULT_THRESHOLD_STATUSES, RESULT_CALCULATION_STATUSES } from './BiMetricResultReadRepository.js';
 export type { MetricResultFilter, MetricResultPage, MetricResultView } from './BiMetricResultReadRepository.js';
+
+export { BiWarehouseLoadTargetReadRepository } from './BiWarehouseLoadTargetReadRepository.js';
+export type { WarehouseLoadTarget } from './BiWarehouseLoadTargetReadRepository.js';

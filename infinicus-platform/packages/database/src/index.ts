@@ -217,6 +217,7 @@ export {
   BiMetricRegistryReadRepository,
   METRIC_READ_BOUNDS,
   BiWarehouseRowRepository,
+  BiWarehouseLoadTargetReadRepository,
   WAREHOUSE_APPEND_BATCH_MAX,
   BiCalculationRunRepository,
   BiMetricResultReadRepository,
@@ -243,7 +244,7 @@ export type {
   RiskModel, RiskAssessment, BenchmarkDefinition, ComparisonResult,
   InsightPackage, InsightPackageVersion, CreateInsightPackageVersionInput,
   BIPublicationPackage, ComponentDeployment, TargetLayer,
-  WarehouseRowInput, AppendRowsInput, AppendRowsResult, SealResult, SealedDatasetRows,
+  WarehouseLoadTarget, WarehouseRowInput, AppendRowsInput, AppendRowsResult, SealResult, SealedDatasetRows,
   CalculationRunRecord, CalculationRunInputRecord, MetricResultRecord, StoredCalculationRun, StoredDatasetFingerprint, PersistRunOutcome,
   MetricResultFilter, MetricResultPage, MetricResultView,
 } from './repositories/bi/index.js';
