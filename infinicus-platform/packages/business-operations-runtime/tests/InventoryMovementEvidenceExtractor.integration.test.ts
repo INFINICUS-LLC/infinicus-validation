@@ -72,6 +72,38 @@ describe.runIf(run)('BO-PUB-DEV-01 inventory movement evidence extraction (live 
     return id;
   };
 
+  it('certifies that evidence extraction uses a non-owner, non-bypass PostgreSQL application role with forced RLS', async () => {
+    const result = await withTenantTransaction(
+      { tenantId: randomUUID(), workspaceId: randomUUID(), userId: randomUUID() },
+      async (client) => client.query<{
+        role_name: string; is_superuser: boolean; bypass_rls: boolean;
+        ledger_owner: boolean; ledger_rls: boolean; ledger_force_rls: boolean;
+        header_owner: boolean; header_rls: boolean; header_force_rls: boolean;
+      }>(`SELECT current_user AS role_name,
+           r.rolsuper AS is_superuser, r.rolbypassrls AS bypass_rls,
+           pg_get_userbyid(l.relowner) = current_user AS ledger_owner,
+           l.relrowsecurity AS ledger_rls, l.relforcerowsecurity AS ledger_force_rls,
+           pg_get_userbyid(h.relowner) = current_user AS header_owner,
+           h.relrowsecurity AS header_rls, h.relforcerowsecurity AS header_force_rls
+         FROM pg_roles r
+         CROSS JOIN pg_class l
+         CROSS JOIN pg_class h
+         WHERE r.rolname = current_user
+           AND l.oid = 'business_operations.inventory_movements'::regclass
+           AND h.oid = 'business_operations.bo_publication_packages'::regclass`)
+    );
+    expect(result.rowCount).toBe(1);
+    const role = result.rows[0]!;
+    expect(role.is_superuser).toBe(false);
+    expect(role.bypass_rls).toBe(false);
+    expect(role.ledger_owner).toBe(false);
+    expect(role.header_owner).toBe(false);
+    expect(role.ledger_rls).toBe(true);
+    expect(role.header_rls).toBe(true);
+    expect(role.ledger_force_rls).toBe(true);
+    expect(role.header_force_rls).toBe(true);
+  });
+
   describe('extraction from real BO persistence', () => {
     it('extracts exactly the period [start, end): deterministic order, canonical decimals, verified', async () => {
       const w = await world(); await seed(w);

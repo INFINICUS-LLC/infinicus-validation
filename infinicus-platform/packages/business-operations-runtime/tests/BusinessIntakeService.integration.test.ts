@@ -521,6 +521,39 @@ describe.runIf(RUN)('BUILD-32 DA to BO vertical integration', () => {
     expect(acknowledgements.rows[0].count).toBe('1');
   });
 
+  it('serializes concurrent header-only BO to BI dispatch replay without duplicate audit or outbox events', async () => {
+    const prepared = await publication.prepare(ctx, {
+      businessId,
+      packageCode: unique('bo-bi-concurrent'),
+      targetBlock: 'BI-01',
+      periodStart: new Date('2026-10-01T00:00:00.000Z'),
+      periodEnd: new Date('2026-10-02T00:00:00.000Z'),
+      recordCount: 1,
+      payloadReference: { source: 'business_operations.business_events', businessId },
+    });
+
+    const attempts = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        publication.dispatchToBusinessIntelligence(ctx, businessId, prepared.id)
+      )
+    );
+    expect(new Set(attempts.map((item) => item.handoffId)).size).toBe(1);
+
+    const audits = await adminPool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM business_operations.bo_handoff_records
+       WHERE publication_id = $1 AND handoff_type = 'dispatch'`,
+      [prepared.id]
+    );
+    expect(audits.rows[0].count).toBe('1');
+
+    const outbox = await adminPool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM events.outbox_events
+       WHERE tenant_id = $1 AND event_type = 'bo.data.published' AND aggregate_id = $2`,
+      [T1, prepared.id]
+    );
+    expect(outbox.rows[0].count).toBe('1');
+  });
+
   it('rejects quality below the DA to BO threshold without domain writes and records failure', async () => {
     const handoff = await createPublishedHandoff();
     handoff.payload.quality.qualityScore = 0.79;
