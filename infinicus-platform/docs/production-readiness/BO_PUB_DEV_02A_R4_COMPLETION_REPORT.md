@@ -110,3 +110,11 @@ Completed Blocks: Local FORCE RLS diagnosis/remediation and focused R4 verificat
 Remaining Blocks: Regression resolution, enforcement rollout plan and independent R4/T3 acceptance
 Next Recommended Block: Owner review of this R4 result; no automatic next block
 Estimated Remaining Blocks: Not established; no estimate invented
+
+## Authorized CI-only continuation — 2026-11-02
+
+Owner explicitly authorized CI-only FORCE RLS setup. Both validation workflows now invoke `scripts/setup-r4-ci-force-rls.sh` after migrations and before application grants/tests. BUILD-32 also watches this script for PR changes. The image smoke-test job is unchanged.
+
+The script requires GitHub Actions and CI flags, a full service container ID from `job.services.postgres.id`, a running `postgres:16` service, and the expected CI database/setup role. It connects by `docker exec`, accepts no database URL, enables header FORCE RLS transactionally, and rejects owner-member/superuser/BYPASSRLS application roles. No numbered migration, production setting, policy, ownership, existing assertion, or unrelated fixture changed.
+
+Local synthetic PostgreSQL 16 verification passed: Bash syntax, refusal outside CI, malformed ID refusal, initial FORCE=false, enable, repeat/idempotence, BYPASSRLS-role refusal, and transaction rollback leaving FORCE=false on refusal. The test container was removed. These are script-level checks, not full regression or independent approval. Fresh hosted CI is required before declaring the regression gate passed; the previously identified timing fixture remains unchanged.
