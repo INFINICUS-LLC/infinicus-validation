@@ -12,6 +12,7 @@ on:
       - "infinicus-platform/apps/api/**"
       - "infinicus-platform/infrastructure/database/**"
       - ".github/workflows/build-32.yml"
+      - "infinicus-platform/scripts/setup-r4-ci-force-rls.sh"
       - ".claude/state/implementation-status.json"
       - "docs/implementation-queue/BUILD-32-BUSINESS-OPERATIONS-RUNTIME-SPECIFICATION.md"
       - "docs/implementation-queue/00-IMPLEMENTATION-MANIFEST.md"
@@ -82,6 +83,9 @@ jobs:
         run: |
           DATABASE_URL="postgresql://${CI_ADMIN_USER}:${CI_ADMIN_PASSWORD}@localhost:5432/${CI_DB_NAME}" \
             infrastructure/deployment/scripts/migration-gate.sh
+
+      - name: Configure R4 FORCE RLS on disposable CI service
+        run: bash scripts/setup-r4-ci-force-rls.sh "${{ job.services.postgres.id }}"
 
       - name: Grant application role access
         run: |

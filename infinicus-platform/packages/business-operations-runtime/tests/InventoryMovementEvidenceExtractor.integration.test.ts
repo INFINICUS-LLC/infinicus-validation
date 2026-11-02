@@ -104,6 +104,26 @@ describe.runIf(run)('BO-PUB-DEV-01 inventory movement evidence extraction (live 
     expect(role.header_force_rls).toBe(true);
   });
 
+  it('enforces the header policy for the application role: foreign reads/updates expose nothing and foreign inserts are refused', async () => {
+    const mine = await world(); const other = await world(); const id = await header(other);
+    const security = await withTenantTransaction(mine.ctx, (c) => c.query(`SELECT
+      row_security_active('business_operations.bo_publication_packages'::regclass) AS active,
+      pg_has_role(current_user, (SELECT relowner FROM pg_class WHERE oid = 'business_operations.bo_publication_packages'::regclass), 'MEMBER') AS owner_member`));
+    expect(security.rows[0]).toEqual({ active: true, owner_member: false });
+    const reads = await withTenantTransaction(mine.ctx, (c) => c.query(`SELECT id FROM ${BO}.bo_publication_packages WHERE id = $1`, [id]));
+    expect(reads.rowCount).toBe(0);
+    const writes = await withTenantTransaction(mine.ctx, (c) => c.query(`UPDATE ${BO}.bo_publication_packages SET record_count = 999 WHERE id = $1 RETURNING id`, [id]));
+    expect(writes.rowCount).toBe(0);
+    const newId = randomUUID();
+    await expect(withTenantTransaction(mine.ctx, (c) => c.query(`INSERT INTO ${BO}.bo_publication_packages
+      (id, tenant_id, workspace_id, business_id, package_code, target_layer, target_block, period_start, period_end, record_count, payload_reference, package_status)
+      VALUES ($1,$2,$3,$4,$5,'business_intelligence','BI-16',$6,$7,0,'{}','draft')`,
+      [newId, other.tenantId, other.workspaceId, other.businessId, unique('foreign-pkg'), PERIOD.periodStart, PERIOD.periodEnd])))
+      .rejects.toMatchObject({ code: '42501' });
+    expect(await q(`SELECT record_count FROM ${BO}.bo_publication_packages WHERE id = $1`, [id])).toEqual([{ record_count: 3 }]);
+    expect(await q(`SELECT id FROM ${BO}.bo_publication_packages WHERE id = $1`, [newId])).toEqual([]);
+  });
+
   describe('extraction from real BO persistence', () => {
     it('extracts exactly the period [start, end): deterministic order, canonical decimals, verified', async () => {
       const w = await world(); await seed(w);

@@ -21,3 +21,9 @@ The earlier assertions in that test passed: the application role is not a superu
 The next owner-controlled remediation must reconcile the existing publication-header migration and its security policy. If FORCE RLS is required by the frozen architecture, propose the smallest compatible migration and its role/permission compatibility checks for separate approval; execute on disposable PostgreSQL only after approval. Preserve the existing header-only dispatch and record-evidence contract boundaries.
 
 Publisher-specific authorization and durable record-level atomic publication remain independently unverified and must not be marked PASS.
+
+## Development-only remediation evidence (2026-11-02)
+
+The authorized local continuation reproduced the exact line-104 failure on a fresh, labelled Docker PostgreSQL server, then applied the guarded disposable SQL without changing the table owner or policy. All 172 focused evidence/replay/conservation/header-dispatch checks passed after FORCE RLS was enabled, including the original non-owner/non-bypass assertion and a new tenant-policy read/update/insert check.
+
+This does **not** clear the certification or hosted-CI blocker. Numbered migrations and CI/deployment setup remain unchanged. The final full BO run had 1,345 passed, 68 failed, 0 skipped; the separate unremediated comparison already had 54 failures, but case counts varied and not all failures were isolated. No failures were waived. See `BO_PUB_DEV_02A_R4_COMPLETION_REPORT.md` and the reproducible `scripts/verify-r4-disposable.mjs` rehearsal, which deliberately exits nonzero while broad regression remains red. R5 is not authorized.
