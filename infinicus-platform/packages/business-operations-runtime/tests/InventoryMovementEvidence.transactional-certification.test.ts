@@ -254,11 +254,13 @@ describe.skipIf(!process.env.DATABASE_URL)('BO-PUB-DEV-02A-R3 T2 — disposable 
   });
 });
 
-describe.skipIf(!process.env.DATABASE_URL)('BO-PUB-DEV-02A-R3 T2 — disposable concurrent insertion', () => {
+describe.skipIf(!process.env.DATABASE_URL || !process.env.ADMIN_DATABASE_URL)('BO-PUB-DEV-02A-R3 T2 — disposable concurrent insertion', () => {
   it('allows one completed shared artifact and rolls back a concurrent duplicate', async () => {
     const connectionString = process.env.DATABASE_URL!;
-    const setup = new Client({ connectionString });
+    const setup = new Client({ connectionString: process.env.ADMIN_DATABASE_URL! });
+    const app = new Client({ connectionString });
     await setup.connect();
+    await app.connect();
     const table = `t2_concurrent_${randomUUID().replace(/-/g, '')}`;
     const children = `${table}_records`;
     const artifact = produced(2);
@@ -268,6 +270,11 @@ describe.skipIf(!process.env.DATABASE_URL)('BO-PUB-DEV-02A-R3 T2 — disposable 
       await setup.query(`CREATE TABLE ${table} (evidence_id text PRIMARY KEY, record_count integer NOT NULL, canonical_body text NOT NULL)`);
       await setup.query(`CREATE TABLE ${children} (evidence_id text NOT NULL REFERENCES ${table}(evidence_id),
         position integer NOT NULL, record jsonb NOT NULL, PRIMARY KEY (evidence_id, position))`);
+      // The application role must not receive CREATE on public. The CI admin owns
+      // only this disposable fixture and grants narrowly scoped test access.
+      const role = (await app.query<{ current_user: string }>('SELECT current_user')).rows[0]!.current_user;
+      if (!/^[a-z_][a-z_0-9]*$/.test(role)) throw new Error('unexpected disposable application role');
+      await setup.query(`GRANT SELECT, INSERT ON ${table}, ${children} TO "${role}"`);
       const write = async (): Promise<void> => {
         const client = new Client({ connectionString });
         await client.connect();
@@ -291,6 +298,11 @@ describe.skipIf(!process.env.DATABASE_URL)('BO-PUB-DEV-02A-R3 T2 — disposable 
       expect(rows.rows).toEqual([{ record_count: 2, canonical_body: evidenceCanonicalJson(body(artifact)) }]);
       const recorded = await setup.query<{ n: number }>(`SELECT count(*)::integer n FROM ${children}`);
       expect(recorded.rows[0]?.n).toBe(2);
-    } finally { await setup.query(`DROP TABLE IF EXISTS ${children}`); await setup.query(`DROP TABLE IF EXISTS ${table}`); await setup.end(); }
+    } finally {
+      await setup.query(`DROP TABLE IF EXISTS ${children}`);
+      await setup.query(`DROP TABLE IF EXISTS ${table}`);
+      await app.end();
+      await setup.end();
+    }
   });
 });

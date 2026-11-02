@@ -11,7 +11,7 @@ The executable probe is `packages/business-operations-runtime/tests/InventoryMov
 - The exact producer canonical body is passed as text. A recursive SQL routine reconstructs its canonical JSON form; the deferred check compares the parsed body's ordered record array against every separately inserted `jsonb` row. It also checks the declared count, contiguous positions `1..N`, header/body/record scope, duplicate movement IDs, and natural record order (`occurredAt`, then `movementId`).
 - The check executes at transaction close. Missing, skipped, duplicated, reordered, truncated, foreign-scope or altered records refuse commit; the entire header and all rows roll back.
 - SQL hashes the exact stored canonical text with `bo-evidence-body:` and checks the derived `bo-evidence-id:` identity. Test vectors demonstrate PostgreSQL/TypeScript agreement for 0, 1 and 2 records, canonical decimal text, UTC microsecond timestamps and UTF-8 data.
-- A concurrent duplicate insertion into a transient shared table permits one complete artifact and refuses the second with PostgreSQL unique violation; no partial child rows remain.
+- A concurrent duplicate insertion into a transient shared table permits one complete artifact and refuses the second with PostgreSQL unique violation; no partial child rows remain. The disposable database administrator creates and drops that fixture, granting the restricted application role only SELECT and INSERT on its two test tables; the application role does not receive schema CREATE.
 - Mutation probes recompute a valid digest for duplicate or reordered content. Both the existing TypeScript verifier and the SQL conservation check reject it independently.
 
 ## Limits before a durable contract
