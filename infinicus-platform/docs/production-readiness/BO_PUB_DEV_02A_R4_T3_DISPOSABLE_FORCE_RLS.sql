@@ -1,8 +1,19 @@
--- BO-PUB-DEV-02A-R4: DISPOSABLE DATABASE CERTIFICATION PROPOSAL ONLY.
+-- BO-PUB-DEV-02A-R4: DEVELOPMENT-ONLY DISPOSABLE DATABASE REMEDIATION.
 -- Not part of numbered migrations. Never execute on production/shared databases.
 -- Existing migration 0035 enables RLS and installs bo_pkg_isolation,
 -- but does not force RLS for the BO publication header.
 BEGIN;
+-- Fail before DDL unless the dedicated rehearsal runner provisioned this server
+-- and explicitly opted this session in. These checks are accident guards, not
+-- authorization to relabel or modify an existing/shared database.
+DO $$
+BEGIN
+  IF current_database() !~ '^infinicus_r4_disposable_[0-9a-f]{12}$'
+     OR current_setting('cluster_name') !~ '^codex-r4-[0-9a-f]{12}$'
+     OR current_setting('infinicus.r4_disposable', true) IS DISTINCT FROM 'BO-PUB-DEV-02A-R4' THEN
+    RAISE EXCEPTION 'R4 remediation requires a newly provisioned disposable rehearsal database';
+  END IF;
+END $$;
 ALTER TABLE business_operations.bo_publication_packages FORCE ROW LEVEL SECURITY;
 DO $$
 BEGIN
