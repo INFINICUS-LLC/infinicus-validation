@@ -79,10 +79,10 @@ describe('BO-PUB-DEV-01 - the extractor is BO-owned, read-only and isolated', ()
 });
 
 describe('BO-PUB-DEV-01 - no migration, no route, no permission, no durable store', () => {
-  it('the newest migration is still 0223 (this block adds none) and none mentions the evidence contract', () => {
+  it('this block (BO-PUB-DEV-01) added no migration: after 0223 the only later one is BO-PUB-DEV-02\'s, and no migration before it mentions the evidence contract', () => {
     const migrations = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => f.endsWith('.sql')).sort();
-    expect(migrations[migrations.length - 1]).toMatch(/^0223_/);
-    for (const m of migrations.slice(-5)) expect(read(`infrastructure/database/migrations/${m}`)).not.toMatch(/record_evidence|publication_evidence/i);
+    expect(migrations.filter((f) => /^0(22[4-9]|2[3-9]\d)_/.test(f))).toEqual(['0224_bo_publication_evidence.sql']);
+    for (const m of migrations.filter((f) => f < '0224').slice(-5)) expect(read(`infrastructure/database/migrations/${m}`)).not.toMatch(/record_evidence|publication_evidence/i);
   });
   it('the API exposes nothing of it and no source creates a table, permission or event type for it', () => {
     const api = walk(resolve(root, 'apps/api/src')).filter((f) => /\.ts$/.test(f)).map((f) => read(rel(f))).join('\n');

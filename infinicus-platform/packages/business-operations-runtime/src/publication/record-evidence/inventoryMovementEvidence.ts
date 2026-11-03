@@ -179,7 +179,9 @@ export const sortRecords = (records: readonly InventoryMovementRecord[]): Invent
 function digestBody(e: Pick<InventoryMovementEvidence, 'contract' | 'recordSchemaVersion' | 'scope' | 'source' | 'ordering' | 'recordCount' | 'records'>): string {
   return canonicalJson({ contract: e.contract, recordSchemaVersion: e.recordSchemaVersion, scope: e.scope, source: e.source, ordering: e.ordering, recordCount: e.recordCount, records: e.records });
 }
-export const computeDigest = (e: Parameters<typeof digestBody>[0]): string => sha256('bo-evidence-body:' + digestBody(e));
+/** The canonical text the digest covers (the digest is SHA-256 of 'bo-evidence-body:' + this text): durable storage keeps it verbatim so any later reader can re-hash and compare. */
+export const canonicalEvidenceBody = (e: Parameters<typeof digestBody>[0]): string => digestBody(e);
+export const computeDigest = (e: Parameters<typeof digestBody>[0]): string => sha256('bo-evidence-body:' + canonicalEvidenceBody(e));
 export const deriveEvidenceId = (digest: string): string => sha256('bo-evidence-id:' + INVENTORY_MOVEMENT_EVIDENCE.contract + ':' + digest);
 
 export interface EvidenceExpectation { scope?: EvidenceScope; periodStart?: string; periodEnd?: string; recordCount?: number; digest?: string }

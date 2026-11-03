@@ -56,3 +56,13 @@ export type {
 } from './publication/record-evidence/inventoryMovementEvidence.js';
 export { InventoryMovementEvidenceExtractor } from './publication/record-evidence/InventoryMovementEvidenceExtractor.js';
 export type { ExtractInventoryMovementEvidenceRequest, ExtractionResult, ExtractionFailureCode } from './publication/record-evidence/InventoryMovementEvidenceExtractor.js';
+
+// BO-PUB-DEV-02: durable, BO-owned evidence storage (migration 0224). Publication is FAIL-CLOSED (default authority denies); nothing calls it in production; no endpoint.
+export {
+  InventoryMovementEvidencePublicationService, InventoryMovementEvidenceReader, DisabledPublicationAuthority,
+} from './publication/record-evidence/InventoryMovementEvidencePublication.js';
+export type {
+  PublicationAuthority, PublishFailureCode, PublishEvidenceResult, PublishInventoryMovementEvidenceRequest, ReadEvidenceFailureCode, ReadEvidenceResult,
+  PublishedInventoryMovementEvidenceReader, PublicationEvidenceReadPort,
+} from './publication/record-evidence/InventoryMovementEvidencePublication.js';
+export { canonicalEvidenceBody } from './publication/record-evidence/inventoryMovementEvidence.js';
