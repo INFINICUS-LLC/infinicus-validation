@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TenantContext } from '@infinicus/database';
 import {
-  InventoryMovementEvidencePublicationService, buildInventoryMovementEvidence, type InventoryMovementEvidence, type RawInventoryMovementRow, type PublicationAuthority,
+  InventoryMovementEvidencePublicationService, buildInventoryMovementEvidence, canonicalEvidenceBody, type InventoryMovementEvidence, type RawInventoryMovementRow, type PublicationAuthority,
 } from '../src/index.js';
 
 const T = '11111111-1111-4111-8111-111111111111'; const W = '22222222-2222-4222-8222-222222222222'; const B = '33333333-3333-4333-8333-333333333333'; const H = '44444444-4444-4444-8444-444444444444';
@@ -37,7 +37,7 @@ describe('InventoryMovementEvidencePublicationService decisions', () => {
     const r = await service.publish(ctx, request); expect(r).toMatchObject({ ok: true, replayed }); expect(store.append).toHaveBeenCalledTimes(1); expect(reader.read).toHaveBeenCalledTimes(1);
   });
   it.each([
-    ['CONFLICT', 'EVIDENCE_CONFLICT'], ['REFUSED', 'EVIDENCE_REFUSED'], ['UNKNOWN_BUSINESS', 'BUSINESS_NOT_FOUND'],
+    ['CONFLICT', 'EVIDENCE_CONFLICT'], ['REFUSED', 'EVIDENCE_REFUSED'], ['UNKNOWN_BUSINESS', 'BUSINESS_NOT_FOUND'], ['HEADER_NOT_FOUND', 'HEADER_NOT_FOUND'], ['HEADER_NOT_ELIGIBLE', 'HEADER_NOT_READY'],
   ])('maps the store outcome %s to the closed code %s and never reads back', async (outcome, code) => {
     const { service, reader } = make({ append: { outcome } });
     expect(await service.publish(ctx, request)).toEqual({ ok: false, code }); expect(reader.read).not.toHaveBeenCalled();
@@ -57,10 +57,12 @@ describe('InventoryMovementEvidencePublicationService decisions', () => {
     const { service, store } = make({ extract: { ok: true, evidence: e } });
     expect(await service.publish(ctx, request)).toEqual({ ok: false, code: 'EVIDENCE_REFUSED' }); expect(store.append).not.toHaveBeenCalled();
   });
-  it('hands the store the canonical body, the digest and the ordered, positioned records exactly', async () => {
+  it('hands the store the canonical body bytes, the digest, the evidence id and the header binding exactly, and no records (the body carries them)', async () => {
     const { service, store } = make(); await service.publish(ctx, request);
-    const input = (store.append.mock.calls[0] as unknown as [TenantContext, string, { records: Array<{ position: number }>; recordCount: number; digest: string; publicationPackageId: string }])[2];
-    expect(input.records.map((r) => r.position)).toEqual([1, 2]); expect(input.recordCount).toBe(2); expect(input.digest).toBe(built().digest.value); expect(input.publicationPackageId).toBe(H);
+    const input = (store.append.mock.calls[0] as unknown as [TenantContext, string, Record<string, unknown>])[2];
+    const e = built();
+    expect(input.canonicalBody).toBe(canonicalEvidenceBody(e)); expect(input.digest).toBe(e.digest.value); expect(input.evidenceId).toBe(e.evidenceId);
+    expect(input.publicationPackageId).toBe(H); expect(input.recordCount).toBe(2); expect('records' in input).toBe(false);
   });
   it('refuses a request without a header id before reading anything', async () => {
     const { service, extractor } = make();

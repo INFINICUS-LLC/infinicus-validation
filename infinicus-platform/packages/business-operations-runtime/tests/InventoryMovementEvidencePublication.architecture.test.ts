@@ -1,6 +1,6 @@
 /**
- * BO-PUB-DEV-02 architecture guards (static): the migration is additive and complete, the evidence is BO-owned, append-only and tenant-isolated, publication is fail-closed
- * and unreachable from any route or other layer, and Business Intelligence can only ever reach the read-only reader.
+ * BO-PUB-DEV-02 architecture guards (static), R4/D3 association model: the migration is minimal, additive and shaped exactly as D3 describes; the repository is the one controlled
+ * writer with the D3 lock order and replay rules; publication is fail-closed and unreachable from any route or other layer; the reader is read-only.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -15,98 +15,110 @@ const rel = (f: string) => f.slice(root.length + 1).replace(/\\/g, '/');
 const migrationName = readdirSync(resolve(root, 'infrastructure/database/migrations')).find((f) => f.startsWith('0224_'))!;
 const migrationRaw = read(`infrastructure/database/migrations/${migrationName}`);
 const sql = flat(strip(migrationRaw.replace(/^--.*$/gm, '')));
-const repo = strip(read('packages/database/src/repositories/bo/BoPublicationEvidenceRepository.ts'));
+const repoRaw = read('packages/database/src/repositories/bo/BoPublicationEvidenceRepository.ts');
+const repo = strip(repoRaw);
 const publication = strip(read('packages/business-operations-runtime/src/publication/record-evidence/InventoryMovementEvidencePublication.ts'));
 const sources = [...walk(resolve(root, 'packages')), ...walk(resolve(root, 'apps'))].filter((f) => /[\\/]src[\\/].*\.(ts|tsx|js|mjs)$/.test(f)).map(rel);
 
-describe('BO-PUB-DEV-02 - migration 0224 is minimal, additive and complete', () => {
-  it('is the newest migration and creates exactly two BO tables and one scope key; it drops, renames, grants and rewrites nothing', () => {
+describe('BO-PUB-DEV-02 - migration 0224 is minimal, additive and shaped as the D3 association model', () => {
+  it('is the newest migration and creates exactly ONE BO table and ONE parent key; it drops, renames, grants and rewrites nothing', () => {
     const all = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => f.endsWith('.sql')).sort();
     expect(all[all.length - 1]).toBe('0224_bo_publication_evidence.sql');
-    expect([...sql.matchAll(/CREATE TABLE ([a-z_.]+)/g)].map((m) => m[1])).toEqual(['business_operations.bo_publication_evidence', 'business_operations.bo_publication_evidence_records']);
-    expect([...sql.matchAll(/ALTER TABLE ([a-z_.]+) ADD CONSTRAINT ([a-z_]+)/g)].map((m) => `${m[1]}.${m[2]}`)).toEqual(['business_operations.bo_publication_packages.bo_publication_packages_scope_key']);
-    expect(sql).not.toMatch(/\bDROP (TABLE|COLUMN|CONSTRAINT|TRIGGER|POLICY)\b|\bRENAME\b|\bGRANT\b|\bREVOKE\b|\bCREATE ROLE\b|\bUPDATE business_operations|\bDELETE FROM\b|\bTRUNCATE TABLE\b|;\s*TRUNCATE business/i); // (BEFORE TRUNCATE is the append-only trigger, not a statement)
-    expect(sql).not.toMatch(/INSERT INTO (?!_migrations)/i);
+    expect([...sql.matchAll(/CREATE TABLE ([a-z_.]+)/g)].map((m) => m[1])).toEqual(['business_operations.bo_publication_evidence']);
+    expect([...sql.matchAll(/ALTER TABLE ([a-z_.]+) ADD CONSTRAINT ([a-z_0-9]+)/g)].map((m) => `${m[1]}.${m[2]}`)).toEqual(['business_operations.bo_publication_packages.bo_publication_packages_d3_key']);
+    expect(sql).not.toMatch(/\bDROP (TABLE|COLUMN|CONSTRAINT|TRIGGER|POLICY)\b|\bRENAME\b|\bGRANT\b|\bREVOKE\b|\bCREATE ROLE\b|\bUPDATE business_operations|\bDELETE FROM\b|\bTRUNCATE TABLE\b|;\s*TRUNCATE business/i); // (BEFORE TRUNCATE is the append-only trigger)
+    expect(sql).not.toMatch(/INSERT INTO (?!_migrations)/i); // no audit, outbox, dispatch or other write
   });
-  it('binds every evidence row to its header and scope through composite foreign keys, one evidence per header, and the digest/id/count rules as CHECK constraints', () => {
-    expect(sql).toContain('CONSTRAINT bo_publication_evidence_header_fk FOREIGN KEY (publication_package_id, tenant_id, workspace_id, business_id) REFERENCES business_operations.bo_publication_packages (id, tenant_id, workspace_id, business_id)');
-    expect(sql).toContain('CONSTRAINT bo_publication_evidence_records_evidence_fk FOREIGN KEY (evidence_row_id, tenant_id, workspace_id, business_id) REFERENCES business_operations.bo_publication_evidence (id, tenant_id, workspace_id, business_id)');
+  it('the parent key is the six-column header tuple (id, tenant, workspace, business, period start, period end)', () => {
+    expect(sql).toContain('ADD CONSTRAINT bo_publication_packages_d3_key UNIQUE (id, tenant_id, workspace_id, business_id, period_start, period_end)');
+  });
+  it('ONE slot per header: a non-deferrable UNIQUE on the header id alone; and the composite FK is the full tuple, RESTRICT on update and delete, immediate', () => {
     expect(sql).toContain('CONSTRAINT bo_publication_evidence_one_per_header UNIQUE (publication_package_id)');
+    expect(sql).toContain('CONSTRAINT bo_publication_evidence_header_fk FOREIGN KEY (publication_package_id, tenant_id, workspace_id, business_id, period_start, period_end) REFERENCES business_operations.bo_publication_packages (id, tenant_id, workspace_id, business_id, period_start, period_end) ON UPDATE RESTRICT ON DELETE RESTRICT');
+    expect(sql).not.toMatch(/DEFERRABLE(?! INITIALLY DEFERRED FOR EACH ROW)/); // no constraint on the table is deferrable
+    expect(sql).not.toMatch(/CREATE CONSTRAINT TRIGGER/);
+  });
+  it('identities are separate and derived in the database: a generated row id, a content digest over the stored bytes, and an evidence id derived from the digest', () => {
+    expect(sql).toContain('id uuid PRIMARY KEY DEFAULT gen_random_uuid()');
     expect(sql).toContain("digest = encode(sha256(convert_to('bo-evidence-body:' || canonical_body, 'UTF8')), 'hex')");
     expect(sql).toContain("evidence_id = encode(sha256(convert_to('bo-evidence-id:' || contract_name || ':' || digest, 'UTF8')), 'hex')");
-    expect(sql).toContain('CONSTRAINT bo_publication_evidence_counts_agree CHECK (declared_record_count = record_count)');
     for (const c of ["contract_name = 'bo.inventory_movements.record_evidence'", "contract_version = '0.1.0-proposed'", "contract_status = 'PROPOSED_NOT_ACTIVE'", "domain = 'inventory_movements'", "digest_algorithm = 'sha256'", "canonicalization = 'bo-canonical-json-v1'"]) expect(sql).toContain(c);
   });
-  it('the database, not the caller, supplies the declared count and the time, and checks the header (layer, state, period, count) before storing', () => {
-    expect(sql).toContain('NEW.declared_record_count := h.record_count');
-    expect(sql).toContain('NEW.created_at := now()');
-    for (const c of ["h.target_layer <> 'business_intelligence'", "h.package_status NOT IN ('ready', 'dispatched', 'received')", 'h.period_start <> NEW.period_start OR h.period_end <> NEW.period_end', 'h.record_count <> NEW.record_count']) expect(sql).toContain(c);
+  it('a NEW association needs the creation state "ready" only (not dispatched or received), a BI-addressed header and the declared count; created_at is the database clock', () => {
+    for (const c of ["h.target_layer <> 'business_intelligence'", "h.package_status <> 'ready'", 'h.record_count <> NEW.record_count', 'NEW.created_at := now()']) expect(sql).toContain(c);
+    expect(sql).not.toContain("'dispatched', 'received'");
   });
-  it('is complete-or-absent: a deferred constraint trigger compares the records with the canonical body at commit', () => {
-    expect(sql).toMatch(/CREATE CONSTRAINT TRIGGER check_bo_publication_evidence_complete AFTER INSERT ON business_operations\.bo_publication_evidence DEFERRABLE INITIALLY DEFERRED/);
-    expect(sql).toContain("agg IS DISTINCT FROM (NEW.canonical_body::jsonb -> 'records')");
-  });
-  it('both tables are append-only (reusing business_operations.forbid_mutation, update/delete/truncate) with forced tenant+workspace row-level security', () => {
-    expect(sql).toContain("ARRAY['bo_publication_evidence', 'bo_publication_evidence_records']");
-    expect(sql).toContain('BEFORE UPDATE OR DELETE ON business_operations.%1$s FOR EACH ROW EXECUTE FUNCTION business_operations.forbid_mutation()');
-    expect(sql).toContain('BEFORE TRUNCATE ON business_operations.%1$s FOR EACH STATEMENT EXECUTE FUNCTION business_operations.forbid_mutation()');
-    expect(sql).toContain('FORCE ROW LEVEL SECURITY');
+  it('is append-only (reusing business_operations.forbid_mutation, never redefining it) with ENABLE and FORCE row-level security and a tenant+workspace policy', () => {
+    expect(sql).toContain('CREATE TRIGGER forbid_mutation_bo_publication_evidence BEFORE UPDATE OR DELETE ON business_operations.bo_publication_evidence FOR EACH ROW EXECUTE FUNCTION business_operations.forbid_mutation()');
+    expect(sql).toContain('CREATE TRIGGER forbid_truncate_bo_publication_evidence BEFORE TRUNCATE ON business_operations.bo_publication_evidence FOR EACH STATEMENT EXECUTE FUNCTION business_operations.forbid_mutation()');
+    expect(sql).toContain('ENABLE ROW LEVEL SECURITY'); expect(sql).toContain('FORCE ROW LEVEL SECURITY');
     expect(sql).toContain("USING (tenant_id = current_setting('app.tenant_id', true)::uuid AND workspace_id = current_setting('app.workspace_id', true)::uuid)");
-    expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION business_operations\.forbid_mutation/); // the shared function is reused, never redefined
+    expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION business_operations\.forbid_mutation/);
   });
-  it('decimals are text: no numeric, double or real column on either table', () => {
-    const tables = sql.slice(sql.indexOf('CREATE TABLE business_operations.bo_publication_evidence'), sql.indexOf('CREATE OR REPLACE FUNCTION'));
-    expect(tables).not.toMatch(/\b(numeric|decimal|double precision|real|float)\b/i);
+  it('no records table (the full canonical body is the artifact), and decimals are text: no numeric, double or real column', () => {
+    expect(sql).not.toMatch(/bo_publication_evidence_records/);
+    const table = sql.slice(sql.indexOf('CREATE TABLE business_operations.bo_publication_evidence'), sql.indexOf('CREATE OR REPLACE FUNCTION'));
+    expect(table).not.toMatch(/\b(numeric|decimal|double precision|real|float)\b/i);
+    expect(table).toMatch(/canonical_body\s+text\s+NOT NULL/);
   });
 });
 
-describe('BO-PUB-DEV-02 - the repository writes only the evidence tables and reads only what it must', () => {
+describe('BO-PUB-DEV-02 - the repository is the ONE controlled writer, with the D3 lock order and replay rules', () => {
   const statements = [...repo.matchAll(/client\.query[^(]*\(\s*(?:`([\s\S]*?)`|'([^']*)')/g)].map((m) => flat(m[1] ?? m[2] ?? ''));
-  it('every statement is parameterised, none interpolates a value, and the writes are the two evidence INSERTs only', () => {
-    // the only interpolations are two fixed SQL fragments (column list, timestamp format) and the advisory-lock KEY, which is a bound parameter value
-    expect(repo.replace(/`bo_publication_evidence:\$\{business\}:\$\{header\}`/, '')).not.toMatch(/\$\{(?!MS\}|EVIDENCE_COLUMNS\})/);
+  it('every statement is parameterised; the only write is ONE insert into the evidence table with ON CONFLICT (publication_package_id) DO NOTHING; the header is only ever read FOR UPDATE', () => {
     const writes = statements.filter((s) => /^(INSERT|UPDATE|DELETE|TRUNCATE)\b/i.test(s));
-    expect(writes.map((s) => s.match(/^INSERT INTO ([a-z_.]+)/)![1])).toEqual(['business_operations.bo_publication_evidence', 'business_operations.bo_publication_evidence_records']);
+    expect(writes).toHaveLength(1); expect(writes[0]).toMatch(/^INSERT INTO business_operations\.bo_publication_evidence /); expect(writes[0]).toContain('ON CONFLICT (publication_package_id) DO NOTHING RETURNING id');
     expect(statements.some((s) => /^(UPDATE|DELETE|TRUNCATE|DROP|ALTER)\b/i.test(s))).toBe(false);
+    expect(statements.some((s) => /bo_publication_packages/.test(s) && /FOR UPDATE$/.test(s) && /tenant_id = \$2 AND workspace_id = \$3 AND business_id = \$4/.test(s))).toBe(true);
+    expect(repo.replace(/`bo_publication_evidence:[^`]*`/, '')).not.toMatch(/\$\{(?!MS\}|EVIDENCE_COLUMNS\})/);
   });
-  it('touches no operational ledger, no publication-header write and no Business Intelligence table', () => {
-    expect(repo).not.toMatch(/inventory_movements|inventory_balances|bo_publication_packages|business_intelligence|events\.|audit\./);
-    expect(repo).toMatch(/pg_advisory_xact_lock/);
+  it('lock order: the header FOR UPDATE comes first, then the association is read, THEN eligibility; replay is decided before eligibility', () => {
+    const lock = repo.indexOf('FOR UPDATE'); const read = repo.indexOf('const existing = await readStored()'); const eligibility = repo.indexOf("h.package_status !== 'ready'"); const insert = repo.indexOf('INSERT INTO business_operations.bo_publication_evidence');
+    expect(lock).toBeGreaterThan(0); expect(read).toBeGreaterThan(lock); expect(eligibility).toBeGreaterThan(read); expect(insert).toBeGreaterThan(eligibility);
+    expect(repo).toMatch(/if \(existing !== null\) return decide\(existing\)/);
   });
-  it('reads are pinned to tenant, workspace and business, and replay/conflict is decided on the digest', () => {
-    const selects = statements.filter((s) => /^SELECT .*bo_publication_evidence/.test(s));
-    expect(selects.length).toBeGreaterThanOrEqual(2);
-    for (const s of selects.filter((x) => !x.includes('pg_advisory'))) expect(s).toMatch(/tenant_id = \$\d AND [a-z.]*workspace_id = \$\d AND [a-z.]*business_id = \$\d/);
-    expect(repo).toMatch(/digest === input\.digest \? \{ outcome: 'REPLAYED'/);
+  it('replay compares the stored canonical bytes, digest, evidence id, period, contract and schema - and NOT the correlation id; a different artifact is a CONFLICT', () => {
+    const same = repo.slice(repo.indexOf('function sameArtifact'), repo.indexOf('export class'));
+    for (const f of ['canonicalBody', 'digest', 'evidenceId', 'periodStart', 'periodEnd', 'contractName', 'contractVersion', 'contractStatus', 'recordSchemaVersion']) expect(same).toContain(`s.${f} === i.${f}`);
+    expect(same).not.toMatch(/correlation/i);
+    expect(repo).toMatch(/sameArtifact\(s, input\) \? \{ outcome: 'REPLAYED'.*: \{ outcome: 'CONFLICT' \}/);
   });
-  it('reports a database refusal as an outcome, with no SQL, constraint or message text', () => {
+  it('a lost race is read back in a separate statement and validated identically; a database refusal is an outcome with no SQL, constraint or message text', () => {
+    expect(repo).toMatch(/const winner = await readStored\(\);\s*return winner === null \? \{ outcome: 'REFUSED' \} : decide\(winner\)/);
     expect(repo).not.toMatch(/\.message|\.detail|\.constraint|String\(error\)/);
     expect(repo).toMatch(/outcome: code === '23505' \? 'CONFLICT' : 'REFUSED'/);
+  });
+  it('touches no operational ledger, no Business Intelligence table, no event or audit table, and never updates the header', () => {
+    expect(repo).not.toMatch(/inventory_movements|inventory_balances|business_intelligence\.|events\.|audit\.|bo_handoff_records|dispatchTo|\.dispatch\(/i); // ('business_intelligence' alone is the target-layer literal of the eligibility check)
+  });
+  it('reads are pinned to tenant, workspace and business', () => {
+    for (const s of statements.filter((x) => /FROM business_operations\.bo_publication_evidence/.test(x))) expect(s).toMatch(/tenant_id = \$\d AND [a-z.]*workspace_id = \$\d AND [a-z.]*business_id = \$\d/);
   });
 });
 
 describe('BO-PUB-DEV-02 - publication is fail-closed and unreachable; the reader is read-only', () => {
-  it('the shipped authority denies, the service consults it before any read, and no production source supplies an approving authority', () => {
+  it('the shipped authority denies, only an explicit true authorises, and the authority is consulted before any extraction', () => {
     expect(publication).toMatch(/DisabledPublicationAuthority: PublicationAuthority = Object\.freeze\(\{ mayPublish: async \(\) => false \}\)/);
-    const authorize = publication.indexOf('this.authority.mayPublish'); const extract = publication.indexOf('this.extractor.extract');
-    expect(authorize).toBeGreaterThan(0); expect(authorize).toBeLessThan(extract);
+    expect(publication).toMatch(/\(await this\.authority\.mayPublish\(ctx, request\?\.businessId\)\) !== true/);
+    expect(publication.indexOf('this.authority.mayPublish')).toBeLessThan(publication.indexOf('this.extractor.extract'));
     expect(publication).toMatch(/constructor\(\s*private readonly authority: PublicationAuthority = DisabledPublicationAuthority/);
-    const definers = sources.filter((f) => /mayPublish/.test(strip(read(f))));
-    expect(definers).toEqual(['packages/business-operations-runtime/src/publication/record-evidence/InventoryMovementEvidencePublication.ts']);
+    expect(sources.filter((f) => /mayPublish/.test(strip(read(f))))).toEqual(['packages/business-operations-runtime/src/publication/record-evidence/InventoryMovementEvidencePublication.ts']);
   });
-  it('no route, worker, event publisher or other layer constructs the publication service or touches the evidence tables', () => {
-    const users = sources.filter((f) => !f.startsWith('packages/business-operations-runtime/src/') && f !== 'packages/database/src/repositories/bo/BoPublicationEvidenceRepository.ts' && f !== 'packages/database/src/index.ts')
+  it('no route, worker, event publisher or other layer constructs the publication service or touches the evidence table; the existing publication service does not know it', () => {
+    const outside = sources.filter((f) => !f.startsWith('packages/business-operations-runtime/src/') && f !== 'packages/database/src/repositories/bo/BoPublicationEvidenceRepository.ts' && f !== 'packages/database/src/index.ts')
       .filter((f) => /InventoryMovementEvidencePublicationService|bo_publication_evidence|BoPublicationEvidenceRepository|DisabledPublicationAuthority/.test(strip(read(f))));
-    expect(users).toEqual([]);
+    expect(outside).toEqual([]);
     const insideBo = sources.filter((f) => f.startsWith('packages/business-operations-runtime/src/') && !f.includes('/publication/record-evidence/') && f !== 'packages/business-operations-runtime/src/index.ts')
       .filter((f) => /InventoryMovementEvidencePublicationService|BoPublicationEvidenceRepository|bo_publication_evidence/.test(strip(read(f))));
     expect(insideBo).toEqual([]);
+    expect(strip(read('packages/business-operations-runtime/src/publication/OperationalPublicationService.ts'))).not.toMatch(/bo_publication_evidence|Evidence/);
   });
-  it('the reader can only use the read port: it has no write method in its type, imports no write repository method, and never reads the mutable ledger', () => {
+  it('the reader can only use the read port, never reads the mutable ledger, compares the stored columns with the body and requires canonical bytes', () => {
     expect(publication).toMatch(/PublicationEvidenceReadPort = Pick<BoPublicationEvidenceRepository, 'getByHeader'>/);
     const reader = publication.slice(publication.indexOf('export class InventoryMovementEvidenceReader'), publication.indexOf('export class InventoryMovementEvidencePublicationService'));
     expect(reader).not.toMatch(/\.append\(|inventory_movements|InventoryMovementEvidenceExtractor/);
-    expect(reader).toMatch(/canonicalEvidenceBody\(artifact\) !== stored\.canonicalBody/);
+    expect(publication).toMatch(/canonicalJson\(body\) !== s\.canonicalBody\) return null/);
+    for (const c of ['artifact.scope?.tenantId === stored.tenantId', 'artifact.source?.boPublicationPackageId === stored.publicationPackageId', 'artifact.source?.periodStart === stored.periodStart', 'artifact.recordCount === stored.recordCount']) expect(reader).toContain(c);
   });
   it('the publication changes no header state and writes no event, audit row or Business Intelligence table', () => {
     expect(publication).not.toMatch(/package_status|UPDATE |outbox|publishEvent|OperationalPublicationService|business_intelligence|\.dispatch\(/);
