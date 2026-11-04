@@ -1,9 +1,9 @@
 import {
-  PlanRepository, SubscriptionRepository, UsageRepository, SubscriptionNotFoundError,
+  PlanRepository, SubscriptionRepository, UsageRepository, EntitlementRepository, SubscriptionNotFoundError,
   type TenantContext, type Subscription, type Plan, type UsageMetric, type PaymentStatus,
 } from '@infinicus/database';
 import { SubscriptionSuspendedError, SubscriptionCanceledError, FeatureNotEntitledError, CapabilityNotEntitledError } from './errors.js';
-import { entitlementProfileFor, type Capability } from './capabilities.js';
+import { entitlementProfileFor, entitlementProfileFromStore, isCapability, type Capability, type EntitlementProfile } from './capabilities.js';
 
 export interface SubscriptionWithPlan {
   subscription: Subscription;
@@ -25,7 +25,8 @@ export class EntitlementService {
   constructor(
     private readonly plans: PlanRepository = new PlanRepository(),
     private readonly subscriptions: SubscriptionRepository = new SubscriptionRepository(),
-    private readonly usage: UsageRepository = new UsageRepository()
+    private readonly usage: UsageRepository = new UsageRepository(),
+    private readonly entitlements: EntitlementRepository = new EntitlementRepository()
   ) {}
 
   async getSubscriptionWithPlan(ctx: TenantContext): Promise<SubscriptionWithPlan> {
@@ -63,14 +64,37 @@ export class EntitlementService {
   }
 
   /**
-   * Fail-closed capability gate (POS2-01). A suspended or canceled subscription throws the same errors as `enforceActiveSubscription` (402, same text),
-   * so a route moved from the subscription gate to this one behaves identically; an unknown capability key or one the profile does not hold is refused.
+   * The tenant's capabilities now. A tenant with no row in the entitlement store has not been moved to it: its profile is the compatibility derivation
+   * from the subscription state, so nothing changes for anyone until entitlements are written. A tenant with any row (even only expired or revoked ones)
+   * is decided by the store alone: no fallback can re-grant what the store withholds.
+   */
+  async resolveProfile(ctx: TenantContext): Promise<EntitlementProfile> {
+    const snapshot = await this.entitlements.snapshot(ctx);
+    if (snapshot.total > 0) return entitlementProfileFromStore(snapshot.effective);
+    const subscription = await this.getOrCreateSubscription(ctx);
+    return entitlementProfileFor(subscription.status);
+  }
+
+  /**
+   * Fail-closed capability gate (POS2-01, store-aware since POS2-02). A suspended or canceled subscription still throws the same errors as
+   * `enforceActiveSubscription` first (402, same text): billing suspension keeps stopping the tenant, and a route moved from the subscription gate to
+   * this one behaves identically. Then the profile decides; an unknown capability, an expired or revoked entitlement and an unreadable state all deny.
    */
   async enforceCapability(ctx: TenantContext, capability: Capability): Promise<void> {
-    const subscription = await this.enforceActiveSubscription(ctx);
-    if (!entitlementProfileFor(subscription.status).capabilities.has(capability)) {
-      throw new CapabilityNotEntitledError(String(capability));
-    }
+    await this.enforceActiveSubscription(ctx);
+    const profile = await this.resolveProfile(ctx);
+    if (!isCapability(capability) || !profile.capabilities.has(capability)) throw new CapabilityNotEntitledError(String(capability));
+  }
+
+  /**
+   * Was the tenant entitled to `capability` at `at`? Answered from the store's history (start, end and revocation times, read at database precision).
+   * A tenant with no store rows has no history, so the answer is no: compatibility derivation only describes the present. Used later to decide whether
+   * a sale captured earlier may still be accepted; the caller must not take `at` from a client alone.
+   */
+  async wasEntitledAt(ctx: TenantContext, capability: string, at: Date): Promise<boolean> {
+    if (!isCapability(capability)) return false;
+    const snapshot = await this.entitlements.snapshot(ctx, at);
+    return snapshot.total > 0 && snapshot.effective.includes(capability);
   }
 
   private async getOrCreateSubscription(ctx: TenantContext): Promise<Subscription> {

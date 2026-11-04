@@ -16,8 +16,11 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 export interface EntitlementProfile {
-  /** `compatibility`: derived only from subscription state (see above). */
-  readonly basis: 'compatibility';
+  /**
+   * `compatibility`: derived only from subscription state (see above), used while a tenant has no row in the entitlement store.
+   * `store`: read from billing.entitlements; once a tenant has any row there, the store alone decides (a revoked or expired row means "no", never a fallback).
+   */
+  readonly basis: 'compatibility' | 'store';
   readonly capabilities: ReadonlySet<Capability>;
 }
 
@@ -26,6 +29,13 @@ const FUNCTIONAL_STATUSES: ReadonlySet<string> = new Set(['trialing', 'active', 
 /** Pure and fail-closed: an unknown or non-functional status yields no capability at all. */
 export function entitlementProfileFor(subscriptionStatus: string): EntitlementProfile {
   return { basis: 'compatibility', capabilities: FUNCTIONAL_STATUSES.has(subscriptionStatus) ? new Set(CAPABILITIES) : new Set() };
+}
+
+/**
+ * The profile of a tenant that has entitlement rows. Fail closed: only capabilities in the vocabulary count, so an unknown key in the store grants nothing.
+ */
+export function entitlementProfileFromStore(effectiveCapabilities: readonly string[]): EntitlementProfile {
+  return { basis: 'store', capabilities: new Set(effectiveCapabilities.filter(isCapability)) };
 }
 
 export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);

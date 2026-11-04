@@ -7,6 +7,11 @@ export type {
   SubscriptionStatusHistoryEntry, CreateSubscriptionInput, TransitionStatusOptions,
 } from './SubscriptionRepository.js';
 
+export { EntitlementRepository } from './EntitlementRepository.js';
+export type {
+  EntitlementRecord, EntitlementSnapshot, EntitlementSourceType, EntitlementStatus, GrantEntitlementInput,
+} from './EntitlementRepository.js';
+
 export { UsageRepository } from './UsageRepository.js';
 export type { UsageRecord, UsageMetric } from './UsageRepository.js';
 
