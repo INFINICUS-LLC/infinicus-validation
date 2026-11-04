@@ -211,6 +211,6 @@ REVOKE ALL ON FUNCTION billing.resolve_provider_customer(text, text)            
 REVOKE ALL ON FUNCTION billing.check_provider_subscription_link(text, text, text)           FROM PUBLIC;
 REVOKE ALL ON FUNCTION billing.link_provider_subscription(text, text, text)                 FROM PUBLIC;
 
-INSERT INTO _migrations (filename) VALUES ('0225_billing_provider_links_and_events.sql') ON CONFLICT (filename) DO NOTHING;
+INSERT INTO _migrations (filename) VALUES ('0226_billing_provider_links_and_events.sql') ON CONFLICT (filename) DO NOTHING;
 
 COMMIT;

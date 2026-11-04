@@ -1,5 +1,5 @@
 /**
- * STRIPE-SBX-01 (migration 0225): live PostgreSQL negative and security tests for provider identity and the durable event ledger.
+ * STRIPE-SBX-01 (migration 0226): live PostgreSQL negative and security tests for provider identity and the durable event ledger.
  * Requires DATABASE_URL (application role, RLS enforced) and ADMIN_DATABASE_URL (fixtures, privileged tamper attempts). Disposable databases only.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -37,7 +37,7 @@ async function rolledBack<T>(fn: (c: import('pg').PoolClient) => Promise<T>): Pr
   try { await c.query('BEGIN'); return await fn(c); } finally { await c.query('ROLLBACK').catch(() => undefined); c.release(); }
 }
 
-describe.runIf(run)('STRIPE-SBX-01 migration 0225 - provider identity and event ledger (live PostgreSQL)', () => {
+describe.runIf(run)('STRIPE-SBX-01 migration 0226 - provider identity and event ledger (live PostgreSQL)', () => {
   beforeAll(async () => {
     createPool({ connectionString: process.env.DATABASE_URL! });
     appRole = (await getPool().query('SELECT current_user AS u')).rows[0].u as string;

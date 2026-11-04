@@ -1,5 +1,5 @@
 /**
- * STRIPE-SBX-01 (migration 0225): provider identity and the durable provider-event ledger. Provider-neutral: the provider is a parameter, and nothing here knows an
+ * STRIPE-SBX-01 (migration 0226): provider identity and the durable provider-event ledger. Provider-neutral: the provider is a parameter, and nothing here knows an
  * event name, a product or a price.
  *
  * Two kinds of method, deliberately separate:
@@ -7,7 +7,7 @@
  *    provider customer comes to belong to a tenant. No route exposes it today; the eventual checkout flow calls it. Identity is never taken from an email, a name, webhook
  *    metadata or a client-supplied tenant id.
  *  - WEBHOOK-PATH CALLS (`claimEvent`, `finishEvent`, `resolveCustomer`, `checkSubscriptionLink`, `linkSubscription`): run before any tenant is known and go ONLY through
- *    the narrow SECURITY DEFINER functions of migration 0225. They return closed outcome strings or identifiers, never payload, SQL or constraint text.
+ *    the narrow SECURITY DEFINER functions of migration 0226. They return closed outcome strings or identifiers, never payload, SQL or constraint text.
  */
 import { withTenantTransaction, withTransaction, type TenantContext } from '../../client.js';
 

@@ -3,7 +3,7 @@
  * Signatures are produced with the official SDK's test-header generator over the exact bytes sent. Provider links are created through the trusted repository boundary
  * (ProviderBillingRepository under a tenant context) - the same boundary the future checkout flow will use; a webhook can never create a customer link.
  *
- * Requires DATABASE_URL (app role, RLS enforced) and ADMIN_DATABASE_URL (fixtures and ledger inspection). Migration 0225 must be applied.
+ * Requires DATABASE_URL (app role, RLS enforced) and ADMIN_DATABASE_URL (fixtures and ledger inspection). Migration 0226 must be applied.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';

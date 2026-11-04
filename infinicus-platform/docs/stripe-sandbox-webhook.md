@@ -50,7 +50,7 @@ Unique `(provider, event_id)`; immutable `event_type` + SHA-256 `payload_hash` o
 * Unexpected errors record `INTERNAL_ERROR`, answer a generic 500 and are retried by Stripe.
 * Effects are idempotent, so a crash between applying an effect and finishing the ledger row is safe.
 
-## Database (migration 0225, additive)
+## Database (migration 0226, additive; renumbered from 0225, which POS2-02 took first)
 
 `billing.provider_customers` (unique `(provider, customer id)`), `billing.provider_subscription_links` (unique `(provider, subscription id)`, composite FKs pin **tenant and provider** to the customer and the optional internal subscription to the same tenant; **no tenant-level uniqueness**, so a tenant may hold many provider subscriptions), `billing.provider_events`; one composite unique key `(id, tenant_id)` on `billing.subscriptions` (additive). All three tables ENABLE + FORCE RLS; the identity tables are append-only; the ledger is writable only inside the governed functions (transaction-local marker **and** current_user = function owner, as migration 0196) and the application role has its direct write privileges revoked by `grant-app-role.sh`.
 Five narrow `SECURITY DEFINER` functions pin `search_path = pg_catalog, pg_temp`, qualify every relation, return only identifiers/closed outcomes and are not executable by PUBLIC. `billing.subscriptions` is **not** redesigned (POS2-02 owns multi-product subscriptions).

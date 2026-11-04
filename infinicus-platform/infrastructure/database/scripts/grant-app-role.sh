@@ -113,7 +113,15 @@ BEGIN
   IF to_regclass('audit.access_events') IS NOT NULL THEN
     EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON audit.access_events FROM %I', app_role);
   END IF;
-  -- STRIPE-SBX-01 (migration 0225): the provider event ledger is written only by the governed billing functions (claim / finish), never directly by the
+  -- POS2-02: billing.entitlements is read-only to the application role. Entitlements are minted only by the governed functions billing.grant_entitlement /
+  -- billing.revoke_entitlement (a future server-side commercial process), never by a request-serving session. The blanket EXECUTE grant above would hand
+  -- those functions to the application role, so it is withdrawn here, after the blanket grants and on every rerun. A no-op before migration 0225.
+  IF to_regclass('billing.entitlements') IS NOT NULL THEN
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON billing.entitlements FROM %I', app_role);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION billing.grant_entitlement(uuid, text, text, text, timestamptz, timestamptz) FROM %I', app_role);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION billing.revoke_entitlement(uuid, uuid) FROM %I', app_role);
+  END IF;
+  -- STRIPE-SBX-01 (migration 0226): the provider event ledger is written only by the governed billing functions (claim / finish), never directly by the
   -- application role. Read stays (tenant-scoped by RLS). The table trigger also refuses any write outside those functions; this is the least-privilege layer.
   IF to_regclass('billing.provider_events') IS NOT NULL THEN
     EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON billing.provider_events FROM %I', app_role);

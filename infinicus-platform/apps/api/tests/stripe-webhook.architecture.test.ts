@@ -17,7 +17,7 @@ const adapter = strip(read('apps/api/src/billing/stripe/StripeWebhookAdapter.ts'
 const verifier = strip(read('apps/api/src/billing/stripe/verifyStripeSignature.ts'));
 const route = strip(read('apps/api/src/routes/stripeWebhook.ts'));
 const service = strip(read('packages/billing/src/provider/ProviderBillingService.ts'));
-const migration = readdirSync(resolve(root, 'infrastructure/database/migrations')).find((f) => f.startsWith('0225_'))!;
+const migration = readdirSync(resolve(root, 'infrastructure/database/migrations')).find((f) => f.startsWith('0226_'))!;
 const sql = strip(read(`infrastructure/database/migrations/${migration}`).replace(/^--.*$/gm, ''));
 
 describe('STRIPE-SBX-01 - the Stripe code is isolated from the billing core', () => {
@@ -40,6 +40,11 @@ describe('STRIPE-SBX-01 - the Stripe code is isolated from the billing core', ()
     expect(service).toMatch(/this\.entitlements\.recordPaymentResult\(/);
     expect(service).not.toMatch(/SubscriptionRepository|transitionStatus|\.recordPayment\(|UPDATE\s|INSERT\s|\.query\(|withTransaction|withTenantTransaction/i);
     expect(service).not.toMatch(/capabilit|entitlementProfile|plan/i); // billing state is not entitlement: no capability or plan decision here
+  });
+  it('the Stripe adapter, the route, the provider service and the provider repository never touch the entitlement store: no grant, revoke, snapshot or capability decision', () => {
+    for (const [name, code] of [['adapter', adapter], ['verifier', verifier], ['route', route], ['service', service], ['repository', strip(read('packages/database/src/repositories/billing/ProviderBillingRepository.ts'))]] as const) {
+      expect(code, name).not.toMatch(/billing\.entitlements|grant_entitlement|revoke_entitlement|EntitlementRepository|\bresolveProfile\b|\benforceCapability\b|\bwasEntitledAt\b|entitlementProfile|CAPABILITIES|isCapability/);
+    }
   });
   it('EntitlementService, the capability profile and the subscription repository do not know any provider', () => {
     for (const f of ['packages/billing/src/EntitlementService.ts', 'packages/billing/src/capabilities.ts', 'packages/database/src/repositories/billing/SubscriptionRepository.ts']) expect(strip(read(f)), f).not.toMatch(/provider|stripe/i);
@@ -107,11 +112,12 @@ describe('STRIPE-SBX-01 - configuration and secrets', () => {
   });
 });
 
-describe('STRIPE-SBX-01 - migration 0225 shape', () => {
+describe('STRIPE-SBX-01 - migration 0226 shape', () => {
   it('is the only new migration, exactly named', () => {
     const all = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => /\.sql$/.test(f)).sort();
-    expect(all[all.length - 1]).toBe('0225_billing_provider_links_and_events.sql');
-    expect(all.filter((f) => /^0(22[5-9]|2[3-9]\d)_/.test(f))).toEqual(['0225_billing_provider_links_and_events.sql']);
+    expect(all[all.length - 1]).toBe('0226_billing_provider_links_and_events.sql');
+    expect(all.filter((f) => /^0(22[5-9]|2[3-9]\d)_/.test(f))).toEqual(['0225_create_billing_entitlements.sql', '0226_billing_provider_links_and_events.sql']); // 0225 is POS2-02's entitlement store; this block's only migration is 0226
+    expect(all.filter((f) => f.startsWith('0226_'))).toHaveLength(1); // the number is unique
   });
   it('is additive: no drop, no seed, no GRANT, no plan or entitlement change; the one change to an existing table is a composite unique key', () => {
     expect(sql).not.toMatch(/\bDROP\s+(TABLE|COLUMN|SCHEMA|CONSTRAINT|TRIGGER|POLICY|INDEX)\b|\bTRUNCATE\s+billing|\bDELETE\s+FROM|\bGRANT\b|billing\.plans|INSERT INTO billing\.(?!provider_)/i);
