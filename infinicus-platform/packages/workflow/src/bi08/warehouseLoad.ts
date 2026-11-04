@@ -11,6 +11,7 @@
  * Pattern, referential and timeliness rules of BI-04 are NOT implemented here (see docs/bi-08-warehouse-load-validation.md) and a contract cannot ask for them.
  */
 import { createHash } from 'node:crypto';
+import { compare, parseDecimal } from '../bi10/exactDecimal.js';
 
 export const WAREHOUSE_LOAD_LIMITS = Object.freeze({
   /** The BI-10 frozen engine reads at most this many rows per dataset; a larger load could never be calculated, so it is refused whole. */
@@ -21,7 +22,8 @@ export const WAREHOUSE_LOAD_LIMITS = Object.freeze({
   maxIdentifierLength: 200,
 });
 
-export const FIELD_DATA_TYPES = ['string', 'integer', 'number', 'currency', 'percentage', 'boolean', 'date', 'datetime'] as const;
+/** `decimal` is EXACT decimal TEXT: canonical, at most 14 integer and 4 fractional digits (the BO numeric(18,4) grammar), no exponent, no padding, no -0, never a JSON number. `number` stays a JSON number and refuses decimal text. */
+export const FIELD_DATA_TYPES = ['string', 'integer', 'number', 'currency', 'percentage', 'decimal', 'boolean', 'date', 'datetime'] as const;
 export type FieldDataType = (typeof FIELD_DATA_TYPES)[number];
 export const DATASET_TYPES = ['fact', 'dimension', 'aggregate', 'snapshot'] as const;
 export type DatasetType = (typeof DATASET_TYPES)[number];
@@ -31,8 +33,9 @@ export interface WarehouseFieldDefinition {
   name: string;
   dataType: FieldDataType;
   required: boolean;
-  minimum?: number;
-  maximum?: number;
+  /** A JSON number for the numeric types; canonical decimal TEXT for `decimal`. */
+  minimum?: number | string;
+  maximum?: number | string;
   allowedValues?: Array<string | number | boolean>;
 }
 /** The dataset definition the frozen BI-08 requires (name and version belong to the dataset registry; the contract id binds the records to their definition). */
@@ -74,6 +77,14 @@ export const SOURCE_INDEX_KEY = '__source_index';
 
 const CONTRACT_KEYS = ['datasetContractId', 'datasetType', 'primaryKeyFields', 'partitionFields', 'loadMode', 'fields'];
 const FIELD_KEYS = ['name', 'dataType', 'required', 'minimum', 'maximum', 'allowedValues'];
+const DECIMAL_WHOLE = /^-?(0|[1-9]\d{0,13})$/;
+const DECIMAL_FRACTION = /^\d{0,3}[1-9]$/;
+/** Canonical exact-decimal text: the same grammar the BO evidence contract uses for quantities and costs. */
+export function isCanonicalDecimalText(t: unknown): t is string {
+  if (typeof t !== 'string') return false;
+  const [whole, fraction, extra] = t.split('.');
+  return extra === undefined && DECIMAL_WHOLE.test(whole!) && (fraction === undefined || DECIMAL_FRACTION.test(fraction)) && t !== '-0';
+}
 const NAME = /^[A-Za-z][A-Za-z0-9_]{0,99}$/;
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DATETIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{1,9}|)(Z|[+-]\d{2}:\d{2})$/;
@@ -122,12 +133,14 @@ export function validateContract(contract: unknown): 'CONTRACT_INVALID' | 'LOAD_
     if (!(FIELD_DATA_TYPES as readonly string[]).includes(f.dataType as string) || typeof f.required !== 'boolean') return 'CONTRACT_INVALID';
     if (Object.keys(f).some((k) => !FIELD_KEYS.includes(k))) return 'CONTRACT_INVALID';
     const def = f as unknown as WarehouseFieldDefinition;
-    const numeric = NUMERIC.includes(def.dataType);
+    const numeric = NUMERIC.includes(def.dataType); const exact = def.dataType === 'decimal';
     for (const bound of ['minimum', 'maximum'] as const) {
       if (def[bound] === undefined) continue;
-      if (!numeric || typeof def[bound] !== 'number' || !Number.isFinite(def[bound])) return 'CONTRACT_INVALID';
+      if (exact ? !isCanonicalDecimalText(def[bound]) : !numeric || typeof def[bound] !== 'number' || !Number.isFinite(def[bound])) return 'CONTRACT_INVALID';
     }
-    if (def.minimum !== undefined && def.maximum !== undefined && def.minimum > def.maximum) return 'CONTRACT_INVALID';
+    if (def.minimum !== undefined && def.maximum !== undefined) {
+      if (exact ? compare(parseDecimal(def.minimum as string)!, parseDecimal(def.maximum as string)!) > 0 : (def.minimum as number) > (def.maximum as number)) return 'CONTRACT_INVALID';
+    }
     if (def.allowedValues !== undefined) {
       if (!Array.isArray(def.allowedValues) || def.allowedValues.length < 1 || def.allowedValues.length > 1000) return 'CONTRACT_INVALID';
       if (!def.allowedValues.every((v) => typeValid(def.dataType, v) && (typeof v !== 'number' || Number.isFinite(v)))) return 'CONTRACT_INVALID';
@@ -150,6 +163,7 @@ function typeValid(type: FieldDataType, value: unknown): boolean {
     case 'string': return typeof value === 'string' && value.length <= WAREHOUSE_LOAD_LIMITS.maxStringLength;
     case 'integer': return typeof value === 'number' && Number.isSafeInteger(value);
     case 'number': case 'currency': case 'percentage': return typeof value === 'number' && Number.isFinite(value);
+    case 'decimal': return isCanonicalDecimalText(value);
     case 'boolean': return typeof value === 'boolean';
     case 'date': return typeof value === 'string' && validDate(value);
     case 'datetime': return typeof value === 'string' && validDateTime(value);
@@ -200,7 +214,11 @@ export function prepareWarehouseRows(contract: WarehouseDatasetContract, records
       if (value === undefined || value === null || value === '') { if (def.required) { flag('FIELD_REQUIRED', i, def.name); ok = false; } continue; }
       if (typeof value === 'object' || typeof value === 'bigint' || typeof value === 'function' || typeof value === 'symbol' || (typeof value === 'number' && !Number.isFinite(value))) { flag('VALUE_UNSUPPORTED', i, def.name); ok = false; continue; }
       if (!typeValid(def.dataType, value)) { flag('FIELD_TYPE', i, def.name); ok = false; continue; }
-      if (typeof value === 'number' && ((def.minimum !== undefined && value < def.minimum) || (def.maximum !== undefined && value > def.maximum))) { flag('FIELD_RANGE', i, def.name); ok = false; }
+      if (typeof value === 'number' && ((def.minimum !== undefined && value < (def.minimum as number)) || (def.maximum !== undefined && value > (def.maximum as number)))) { flag('FIELD_RANGE', i, def.name); ok = false; }
+      else if (def.dataType === 'decimal') { // exact comparison on decimal text: no float is ever involved
+        const v = parseDecimal(value as string)!;
+        if ((def.minimum !== undefined && compare(v, parseDecimal(def.minimum as string)!) < 0) || (def.maximum !== undefined && compare(v, parseDecimal(def.maximum as string)!) > 0)) { flag('FIELD_RANGE', i, def.name); ok = false; }
+      }
       if (def.allowedValues !== undefined && !def.allowedValues.includes(value as string | number | boolean)) { flag('FIELD_NOT_ALLOWED', i, def.name); ok = false; }
     }
     if (!ok) return;

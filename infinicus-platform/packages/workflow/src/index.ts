@@ -133,3 +133,11 @@ export { prepareWarehouseRows, validateContract as validateWarehouseDatasetContr
 export type { WarehouseDatasetContract, WarehouseFieldDefinition, TransformedRecord, LoadIssue, LoadIssueCode, LoadPreparation, LoadPreparationCode, PreparedRow, PreparedWarehouseRows, FieldDataType, DatasetType } from './bi08/warehouseLoad.js';
 export { BusinessIntelligenceWarehouseLoadPreparationService } from './BusinessIntelligenceWarehouseLoadPreparationService.js';
 export type { PreparedWarehouseLoad, WarehouseLoadPreparationRequest, WarehouseLoadPreparationResult, WarehouseLoadRefusalCode } from './BusinessIntelligenceWarehouseLoadPreparationService.js';
+// BI-08-DEV-02: verified inventory movement evidence ingestion (BO -> BI), warehouse insertion and dataset sealing. Internal service: no route, no rows in any request.
+export { BusinessIntelligenceInventoryEvidenceIngestionService } from './BusinessIntelligenceInventoryEvidenceIngestionService.js';
+export type { InventoryMovementEvidenceSource, IngestInventoryEvidenceRequest, IngestionResult, IngestionFailureCode } from './BusinessIntelligenceInventoryEvidenceIngestionService.js';
+export {
+  CONSUMED_EVIDENCE_CONTRACT, INVENTORY_MOVEMENT_WAREHOUSE_CONTRACT, EVIDENCE_RECORD_PROPERTIES, verifyConsumedInventoryEvidence, toTransformedRecords, consumedDigest, consumedEvidenceId,
+} from './bi08/inventoryEvidenceConsumer.js';
+export type { ConsumedInventoryEvidence, ConsumedEvidenceExpectation, ConsumedEvidenceFailureCode, ConsumedEvidenceResult } from './bi08/inventoryEvidenceConsumer.js';
+export { isCanonicalDecimalText } from './bi08/warehouseLoad.js';
