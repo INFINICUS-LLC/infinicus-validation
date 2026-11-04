@@ -44,6 +44,23 @@ export interface InfinicusConfig {
    *   driftLimitMinorByCurrency  D4 price-drift tolerance per currency in minor units; a currency that is not listed has limit 0 (every difference goes to review).
    */
   offlineSales: { futureToleranceSeconds: number | null; driftLimitMinorByCurrency: Readonly<Record<string, number>> };
+  /**
+   * STRIPE-SBX-01 (SANDBOX ONLY). Both values are server-side secrets and optional: a null `webhookSecret` means POST /webhooks/stripe answers 503 (fail closed).
+   * A live-mode key is refused at startup. The error text never contains the value.
+   */
+  stripe: { secretKey: string | null; webhookSecret: string | null };
+}
+
+export function parseStripe(env: NodeJS.ProcessEnv): InfinicusConfig['stripe'] {
+  const secretKey = env.STRIPE_SECRET_KEY?.trim() || null;
+  const webhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim() || null;
+  if (secretKey !== null && !/^(sk|rk)_test_[A-Za-z0-9]{8,}$/.test(secretKey)) {
+    throw new ConfigurationError('STRIPE_SECRET_KEY must be a Stripe SANDBOX key (sk_test_... or rk_test_...); live keys are not accepted by this build.');
+  }
+  if (webhookSecret !== null && !/^whsec_[A-Za-z0-9+/=_-]{8,}$/.test(webhookSecret)) {
+    throw new ConfigurationError('STRIPE_WEBHOOK_SECRET must be a Stripe webhook signing secret (whsec_...).');
+  }
+  return { secretKey, webhookSecret };
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, key: string): string {
@@ -213,5 +230,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): InfinicusConfi
     corsAllowedOrigins: (env.CORS_ALLOWED_ORIGINS ?? 'https://infini-cus.com,https://www.infini-cus.com')
       .split(',').map((o) => o.trim()).filter((o) => o.length > 0),
     offlineSales: parseOfflineSales(env),
+    stripe: parseStripe(env),
   };
 }

@@ -113,6 +113,11 @@ BEGIN
   IF to_regclass('audit.access_events') IS NOT NULL THEN
     EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON audit.access_events FROM %I', app_role);
   END IF;
+  -- STRIPE-SBX-01 (migration 0225): the provider event ledger is written only by the governed billing functions (claim / finish), never directly by the
+  -- application role. Read stays (tenant-scoped by RLS). The table trigger also refuses any write outside those functions; this is the least-privilege layer.
+  IF to_regclass('billing.provider_events') IS NOT NULL THEN
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON billing.provider_events FROM %I', app_role);
+  END IF;
   -- Order events are insert-only operational history. Revoke blanket write privileges
   -- after each grant application; the database trigger also protects privileged writes.
   IF to_regclass('business_operations.order_events') IS NOT NULL THEN

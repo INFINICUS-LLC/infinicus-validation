@@ -114,6 +114,8 @@ describe('OM-OBS-1 - read-only observability', () => {
       '0223_bi10_warehouse_rows_and_calculation_persistence.sql',
       // BO-PUB-DEV-02: BO-owned, append-only publication evidence (business_operations tables only; no OM or CL table, grant or role); it does not change OM authority.
       '0224_bo_publication_evidence.sql',
+      // STRIPE-SBX-01: billing provider links and the provider event ledger (billing tables only; no OM or CL table, grant or role); it does not change OM authority.
+      '0225_billing_provider_links_and_events.sql',
     ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);

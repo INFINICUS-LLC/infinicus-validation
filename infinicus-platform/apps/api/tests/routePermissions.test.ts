@@ -55,6 +55,7 @@ const BY_DESIGN: Record<string, { kind: 'public' | 'session' | 'onboarding'; rea
   'POST /v1/auth/verify-email': { kind: 'public', reason: 'pre-authentication; single-use token' },
   'POST /v1/auth/login': { kind: 'public', reason: 'pre-authentication' },
   'POST /v1/auth/identity-exchange': { kind: 'public', reason: 'pre-authentication; the identity provider verifies the supplied access token server-side and the managed account is derived only from the provider\'s answer; per-route rate limit; closed (503) when unconfigured' },
+  'POST /webhooks/stripe': { kind: 'public', reason: 'STRIPE-SBX-01: no session; the Stripe signature over the exact raw bytes is the authentication (fail closed: 503 unconfigured, 400 on a missing/invalid signature); sandbox events only; effects only through the trusted customer link' },
   'POST /v1/webhooks/data-acquisition/:token': { kind: 'public', reason: 'unguessable connector token in the path + per-IP/connector rate limit; no session' },
   'POST /v1/auth/logout': { kind: 'session', reason: 'acts only on the caller\'s own session' },
   'GET /v1/auth/memberships': { kind: 'session', reason: 'NA-04: lists the caller\'s own active workspaces so a client can choose one; no tenant exists to resolve yet; the user comes from the validated session (the route passes only that id); the database function additionally refuses a mismatched app.user_id' },

@@ -23,7 +23,7 @@ const sources = [...walk(resolve(root, 'packages')), ...walk(resolve(root, 'apps
 describe('BO-PUB-DEV-02 - migration 0224 is minimal, additive and shaped as the D3 association model', () => {
   it('is the newest migration and creates exactly ONE BO table and ONE parent key; it drops, renames, grants and rewrites nothing', () => {
     const all = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => f.endsWith('.sql')).sort();
-    expect(all[all.length - 1]).toBe('0224_bo_publication_evidence.sql');
+    expect(all.filter((f) => f >= '0224')).toEqual(['0224_bo_publication_evidence.sql', '0225_billing_provider_links_and_events.sql']); // 0224 is the newest BO migration; 0225 is STRIPE-SBX-01's billing migration (exact name)
     expect([...sql.matchAll(/CREATE TABLE ([a-z_.]+)/g)].map((m) => m[1])).toEqual(['business_operations.bo_publication_evidence']);
     expect([...sql.matchAll(/ALTER TABLE ([a-z_.]+) ADD CONSTRAINT ([a-z_0-9]+)/g)].map((m) => `${m[1]}.${m[2]}`)).toEqual(['business_operations.bo_publication_packages.bo_publication_packages_d3_key']);
     expect(sql).not.toMatch(/\bDROP (TABLE|COLUMN|CONSTRAINT|TRIGGER|POLICY)\b|\bRENAME\b|\bGRANT\b|\bREVOKE\b|\bCREATE ROLE\b|\bUPDATE business_operations|\bDELETE FROM\b|\bTRUNCATE TABLE\b|;\s*TRUNCATE business/i); // (BEFORE TRUNCATE is the append-only trigger)

@@ -15,3 +15,6 @@ export {
   PlanNotFoundError, SubscriptionNotFoundError, SubscriptionAlreadyExistsError,
   InvalidSubscriptionTransitionError, UsageLimitExceededError,
 } from './errors.js';
+
+export { ProviderBillingRepository, ProviderLinkConflictError, ProviderLinkNotFoundError, ProviderInputError } from './ProviderBillingRepository.js';
+export type { ClaimOutcome, LinkSubscriptionOutcome, SubscriptionLinkCheck, ResolvedCustomer } from './ProviderBillingRepository.js';

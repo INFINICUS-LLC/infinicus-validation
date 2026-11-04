@@ -221,6 +221,8 @@ async function main() {
   // Migration 0196 activation and 0213 governed OM sources use their own
   // unconditional mutation-refusal functions and remain protected even when
   // the application role has no DELETE privilege.
+  // Migration 0225 (STRIPE-SBX-01): billing.provider_events is a governed append-only ledger (guard_provider_events refuses DELETE and TRUNCATE for every
+  // role), so it is retained and reported like the tables above. Its erasure / retention treatment is an OPEN OWNER DECISION, not decided here.
   const appendOnlyRaw = psql(
     ADMIN_DATABASE_URL,
     `SELECT DISTINCT n.nspname||'.'||c.relname
@@ -229,7 +231,7 @@ async function main() {
      JOIN pg_namespace n ON n.oid = c.relnamespace
      JOIN pg_proc p ON p.oid = t.tgfoid
      WHERE p.proname IN ('forbid_mutation', 'forbid_execution_capability_activation_mutation',
-                        'forbid_governed_source_mutation');`
+                        'forbid_governed_source_mutation', 'guard_provider_events');`
   );
   const tablesAppendOnly = new Set(
     appendOnlyRaw.split('\n').map((l) => l.trim()).filter(Boolean).filter((t) => tenantScopedTables.has(t))
