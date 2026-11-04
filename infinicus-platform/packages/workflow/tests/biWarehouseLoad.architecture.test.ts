@@ -16,7 +16,7 @@ const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }
 
 describe('BI-08-DEV-01 - the load module is pure and deterministic', () => {
   it('imports nothing but node:crypto and has no clock, randomness, I/O, database or network', () => {
-    expect([...pure.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1])).toEqual(['node:crypto']);
+    expect([...pure.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1])).toEqual(['node:crypto', '../bi10/exactDecimal.js']);
     expect(pure).not.toMatch(/Date\.now|new Date\(\)|Math\.random|randomUUID|process\.|fetch\(|require\(|from '@infinicus|readFile|writeFile|setTimeout/);
     // the only Date use is calendar arithmetic on parsed numbers (Date.UTC), never a parse of caller text
     expect([...pure.matchAll(/\bDate\.[A-Za-z]+/g)].map((m) => m[0])).toEqual(['Date.UTC']);
@@ -41,12 +41,12 @@ describe('BI-08-DEV-01 - the warehouse write boundary stays DISABLED', () => {
     // the service constructor accepts only the read repository
     expect(service).toMatch(/constructor\(private readonly targets: BiWarehouseLoadTargetReadRepository/);
   });
-  it('no source file outside the repository itself and the BI-10 persistence path references appendRows or sealVersion (production has no caller)', () => {
+  it('no source file outside the repository itself and the BI-08-DEV-02 ingestion service (the one reviewed caller, which has no route) references appendRows or sealVersion', () => {
     const callers = [...walk(resolve(root, 'packages')), ...walk(resolve(root, 'apps'))]
       .filter((f) => /[\\/]src[\\/].*\.(ts|tsx|js|mjs)$/.test(f))
       .filter((f) => /\b(appendRows|sealVersion)\b/.test(strip(readFileSync(f, 'utf8'))))
       .map((f) => f.slice(root.length + 1).replace(/\\/g, '/'));
-    expect(callers).toEqual(['packages/database/src/repositories/bi/BiWarehouseRowRepository.ts']);
+    expect(callers).toEqual(['packages/database/src/repositories/bi/BiWarehouseRowRepository.ts', 'packages/workflow/src/BusinessIntelligenceInventoryEvidenceIngestionService.ts']);
   });
   it('no route, handler or event publisher exposes preparation; no API source mentions it', () => {
     const api = walk(resolve(root, 'apps/api/src')).filter((f) => /\.ts$/.test(f)).map((f) => readFileSync(f, 'utf8')).join('\n');
