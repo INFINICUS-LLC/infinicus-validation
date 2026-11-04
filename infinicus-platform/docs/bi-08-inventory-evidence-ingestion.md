@@ -19,7 +19,7 @@ unique UUID movement ids, strict order (`occurredAt`, `movementId`), cost/curren
 BI-08 gains a `decimal` field type: canonical decimal TEXT (up to 14 integer digits, up to 4 fraction digits, no trailing zeros, no `-0`), exact min/max comparison via the BI-10 exact-decimal module. No floats anywhere.
 
 ## Idempotency and resume
-Running again after a crash between batches, or after the seal, completes or confirms the same result and never overwrites: identical rows replay, different rows conflict (`INGESTION_CONFLICT`), sealing is idempotent.
+Running again after a crash between batches, or after the seal, completes or confirms the same result and never overwrites: identical rows replay, different rows conflict (`INGESTION_CONFLICT`), sealing is idempotent. Concurrent runners of the same version are safe: if another runner seals between a batch's seal check and its insert, the database refuses the late insert and the batch is retried once (it is then a replay); a genuinely invalid batch is refused again (`LOAD_REFUSED`) and a conflict is never retried.
 
 ## Closed result codes
 `EVIDENCE_NOT_FOUND`, `EVIDENCE_INTEGRITY`, `EVIDENCE_REJECTED` (+ detail), `HEADER_MISMATCH`, `RECORD_COUNT_MISMATCH`, `LOAD_REFUSED` (+ detail), `INGESTION_CONFLICT`, `SEAL_REFUSED`. No value, SQL, schema or identifier text. An unknown or foreign dataset version raises the uniform `BiNotFoundError`.

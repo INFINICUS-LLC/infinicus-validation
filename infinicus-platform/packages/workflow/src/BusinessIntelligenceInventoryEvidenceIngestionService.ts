@@ -74,7 +74,16 @@ export class BusinessIntelligenceInventoryEvidenceIngestionService {
     let inserted = 0; let replayedRows = 0;
     try {
       for (const batch of load.appendBatches) {
-        const r = await this.warehouse.appendRows(ctx, businessId, batch);
+        let r;
+        try {
+          r = await this.warehouse.appendRows(ctx, businessId, batch);
+        } catch (error) {
+          // A concurrent runner may seal the version between this call's own "is it sealed?" check and its insert; the database then (correctly) refuses the late insert.
+          // The identical rows are a legitimate replay, so a validation refusal is retried ONCE, per batch (idempotent): the second pass sees the seal and takes the replay
+          // path. A genuinely invalid batch is refused again and stays LOAD_REFUSED. A conflict is never retried.
+          if (!(error instanceof BiValidationError)) throw error;
+          r = await this.warehouse.appendRows(ctx, businessId, batch);
+        }
         inserted += r.inserted; replayedRows += r.replayed;
       }
     } catch (error) {

@@ -36,7 +36,9 @@ describe('BI-08-DEV-02 - ingestion service', () => {
     expect(JSON.parse(read('packages/workflow/package.json')).dependencies?.['@infinicus/business-operations-runtime']).toBeUndefined();
   });
   it('adds no migration for this block', () => {
-    const names = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((n) => /^0225/.test(n));
-    expect(names).toEqual([]);
+    // content-based, not number-based: no migration after 0224 may touch the warehouse / ingestion objects (another block's migration, e.g. billing 0225, is fine)
+    const dir = resolve(root, 'infrastructure/database/migrations');
+    const offenders = readdirSync(dir).filter((n) => /^0(22[5-9]|2[3-9]\d)_/.test(n)).filter((n) => /business_intelligence\.|from_bo_evidence|bi_warehouse|inventory_movements/i.test(readFileSync(resolve(dir, n), 'utf8')));
+    expect(offenders).toEqual([]);
   });
 });
