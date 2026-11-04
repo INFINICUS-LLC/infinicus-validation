@@ -37,8 +37,10 @@ describe('BO-PUB-DEV-01 - the proposed contract is marked proposed and is not ac
     expect(evidenceRaw).toMatch(/PROPOSED contract/);
     expect(evidenceRaw).toMatch(/NOT an[\s*]+approved/);
   });
+  // BI-08-DEV-02: the BI-side consumer restates the proposed contract identifiers (it imports nothing from BO); exactly these two files, nothing else
+  const BI_CONSUMER = ['packages/workflow/src/bi08/inventoryEvidenceConsumer.ts', 'packages/workflow/src/BusinessIntelligenceInventoryEvidenceIngestionService.ts', 'packages/workflow/src/index.ts']; // plus the workflow index that re-exports them
   it('is not referenced by any production source outside the BO package: no BI, API, event, worker or handoff-contract source mentions it', () => {
-    const users = sources.map(rel).filter((f) => !f.startsWith('packages/business-operations-runtime/src/')).filter((f) => /InventoryMovementEvidence|InventoryMovementRecord|record_evidence|verifyInventoryMovementEvidence|buildInventoryMovementEvidence/.test(strip(read(f))));
+    const users = sources.map(rel).filter((f) => !f.startsWith('packages/business-operations-runtime/src/')).filter((f) => !BI_CONSUMER.includes(f)).filter((f) => /InventoryMovementEvidence|InventoryMovementRecord|record_evidence|verifyInventoryMovementEvidence|buildInventoryMovementEvidence/.test(strip(read(f))));
     expect(users).toEqual([]);
   });
   it('inside the BO package it is referenced only by its own folder and the package index (nothing activates or calls it)', () => {

@@ -43,6 +43,11 @@ export interface WarehouseLoadPreparationRequest {
   datasetVersionId: string;
   contract: WarehouseDatasetContract;
   records: readonly TransformedRecord[];
+  /**
+   * What to do when the target already holds rows or is sealed. `refuse` (default, the BI-08-DEV-01 behaviour) refuses; `allow` is for the idempotent ingestion writer, which resumes an
+   * unsealed version or replays a sealed one (the row repository replays identical rows and conflicts on different ones, so allowing it cannot overwrite anything).
+   */
+  existing?: 'refuse' | 'allow';
 }
 
 const refuse = (code: WarehouseLoadRefusalCode, issues: LoadIssue[] = [], issueCount = issues.length): WarehouseLoadPreparationResult => ({ ok: false, code, issueCount, issues });
@@ -55,7 +60,7 @@ export class BusinessIntelligenceWarehouseLoadPreparationService {
   /** NotFoundError (from the repository) when the version is not in the caller's business. Every other refusal is a result, never an exception, and never carries a value. */
   async prepare(ctx: TenantContext, businessId: string, request: WarehouseLoadPreparationRequest): Promise<WarehouseLoadPreparationResult> {
     const target = await this.targets.resolve(ctx, businessId, request.datasetVersionId);
-    const unfit = verifyTarget(target);
+    const unfit = verifyTarget(target, request.existing === 'allow');
     if (unfit) return refuse(unfit);
 
     // The count BO declared, the count BI recorded at intake and the records offered must all agree; a seal would refuse anything else later, so refuse it now.
@@ -85,14 +90,14 @@ export class BusinessIntelligenceWarehouseLoadPreparationService {
   }
 }
 
-function verifyTarget(t: WarehouseLoadTarget): WarehouseLoadRefusalCode | null {
+function verifyTarget(t: WarehouseLoadTarget, allowExisting: boolean): WarehouseLoadRefusalCode | null {
   if (t.publicationStatus !== 'published') return 'TARGET_NOT_PUBLISHED';
   if (t.intakeStatus !== 'processed') return 'INTAKE_NOT_PROCESSED';
   if (t.boPackage.targetLayer !== 'business_intelligence') return 'SOURCE_NOT_FOR_BI';
   if (!PUBLISHED_STATES.includes(t.boPackage.packageStatus)) return 'SOURCE_NOT_PUBLISHED';
   if (t.sourceReferenceIds.length !== 1) return 'SOURCE_REFERENCE_AMBIGUOUS';
-  if (t.seal !== null) return 'TARGET_ALREADY_SEALED';
-  if (t.heldRowCount > 0) return 'TARGET_HAS_ROWS';
+  if (!allowExisting && t.seal !== null) return 'TARGET_ALREADY_SEALED';
+  if (!allowExisting && t.heldRowCount > 0) return 'TARGET_HAS_ROWS';
   if (t.boPackage.recordCount !== t.declaredRecordCount) return 'DECLARED_COUNT_CONFLICT';
   return null;
 }
