@@ -27,7 +27,7 @@ export default async function registerSessionsRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId } = request.params;
     const session = await registerSessions.open(request.ctx!, { businessId, ...request.body });
@@ -60,7 +60,7 @@ export default async function registerSessionsRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, sessionId } = request.params;
     const session = await registerSessions.close(request.ctx!, sessionId, request.body, businessId);

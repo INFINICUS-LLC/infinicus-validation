@@ -51,7 +51,7 @@ export default async function offlineSalesRoutes(app: FastifyInstance, options: 
       },
     },
     preHandler: [
-      app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace,
+      app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace,
       requireOfflineSalesEnabled, app.requireIdempotencyKey,
     ],
   }, async (request, reply) => {

@@ -18,3 +18,10 @@ export class FeatureNotEntitledError extends Error {
     this.name = 'FeatureNotEntitledError';
   }
 }
+
+export class CapabilityNotEntitledError extends Error {
+  constructor(capability: string) {
+    super(`This tenant is not entitled to the "${capability}" capability`);
+    this.name = 'CapabilityNotEntitledError';
+  }
+}

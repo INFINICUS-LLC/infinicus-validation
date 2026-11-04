@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { EntitlementService } from '@infinicus/billing';
+import { EntitlementService, type Capability } from '@infinicus/billing';
 import type { UsageMetric } from '@infinicus/database';
 
 const entitlements = new EntitlementService();
@@ -27,6 +27,18 @@ export default fp(async function billingPlugin(app: FastifyInstance) {
     };
   });
 
+  /** The capability gate (POS2-01): same position in the chain and same failure as requireActiveSubscription today, but names what is being used. */
+  app.decorate('requireCapability', (capability: Capability) => {
+    return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
+      if (!request.ctx) {
+        const err = new Error('requireCapability requires resolveTenantContext to run first');
+        err.name = 'PermissionDeniedError';
+        throw err;
+      }
+      await entitlements.enforceCapability(request.ctx, capability);
+    };
+  });
+
   app.decorate('enforceUsageLimit', (metric: UsageMetric) => {
     return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
       if (!request.ctx) {
@@ -42,6 +54,7 @@ export default fp(async function billingPlugin(app: FastifyInstance) {
 declare module 'fastify' {
   interface FastifyInstance {
     requireActiveSubscription: () => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requireCapability: (capability: Capability) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     enforceUsageLimit: (metric: UsageMetric) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }

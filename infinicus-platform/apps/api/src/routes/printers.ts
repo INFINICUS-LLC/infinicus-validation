@@ -16,7 +16,7 @@ const printers = new PrinterRepository();
  */
 export default async function printersRoutes(app: FastifyInstance) {
   const server = app.withTypeProvider<ZodTypeProvider>();
-  const admin = [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:admin'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey];
+  const admin = [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:admin'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey];
 
   server.post('/v1/businesses/:businessId/printers', {
     schema: {

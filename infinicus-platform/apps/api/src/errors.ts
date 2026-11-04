@@ -93,6 +93,7 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   SubscriptionSuspendedError: 402,
   SubscriptionCanceledError: 402,
   FeatureNotEntitledError: 403,
+  CapabilityNotEntitledError: 403,
 
   // Incident response (@infinicus/database/repositories/incident — BUILD-29).
   // PlatformIncidentNotFoundError is an empty NotFoundError subclass (see

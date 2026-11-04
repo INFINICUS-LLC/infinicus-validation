@@ -28,7 +28,7 @@ export default async function printJobsRoutes(app: FastifyInstance) {
       body: recordPrintJobBodySchema,
       response: { 201: printJobResponseSchema, 400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema, 409: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
     const job = await printJobs.record(request.ctx!, { businessId, orderId, createdBy: request.ctx!.userId, ...request.body });

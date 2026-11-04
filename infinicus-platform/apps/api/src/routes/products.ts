@@ -22,7 +22,7 @@ export default async function productsRoutes(app: FastifyInstance) {
       body: createProductBodySchema,
       response: { 201: productResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId } = request.params;
     const product = await products.create(request.ctx!, { businessId, ...request.body });
@@ -52,7 +52,7 @@ export default async function productsRoutes(app: FastifyInstance) {
       body: updateProductBodySchema,
       response: { 200: productResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, productId } = request.params;
     const product = await products.update(request.ctx!, productId, request.body, businessId);
