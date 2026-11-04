@@ -37,6 +37,7 @@ describe('BI-08-DEV-02 - ingestion service', () => {
   });
   it('adds no migration for this block', () => {
     const names = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((n) => /^0225/.test(n));
-    expect(names).toEqual([]);
+    // 0225 is POS2-02's billing entitlement store (an exact, other-block name); this block added no migration
+    expect(names).toEqual(['0225_create_billing_entitlements.sql']);
   });
 });
