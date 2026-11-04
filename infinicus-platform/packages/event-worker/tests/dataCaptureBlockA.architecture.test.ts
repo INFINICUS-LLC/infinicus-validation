@@ -107,7 +107,7 @@ describe('Data-capture Block A architecture (purchase receipt write path)', () =
     const b = receiptBranch();
     expect(b).not.toMatch(/UPDATE|DELETE|received_qty|po_status|reorder|apply_inventory_reorder_policy|activation|authorized_action|AuthorizedAction|ExecutionEvidence|@infinicus\/workflow/i);
     for (const rel of [RULES, MAPPERS]) expect(read(rel), rel).not.toMatch(/authorized_action|AuthorizedAction|execution-activation|apply_inventory_reorder_policy|approved_business_action/);
-    for (const f of [...under('packages/workflow/'), ...under('layers/approved-business-action/'), ...under('packages/outcome-monitoring-runtime/')]) expect(f.code, f.rel).not.toMatch(/purchase_receipt/);
+    for (const f of [...under('packages/workflow/'), ...under('layers/approved-business-action/'), ...under('packages/outcome-monitoring-runtime/')].filter((x) => x.rel !== 'packages/workflow/src/bi08/inventoryEvidenceConsumer.ts')) expect(f.code, f.rel).not.toMatch(/purchase_receipt/); // BI-08-DEV-02: the BI evidence consumer lists the BO reference types as allowed values (no receipt logic)
     expect(filesMatching(/purchase_receipt/).filter((rel) => rel.startsWith(`${BO}authorized-action`) || rel.startsWith(`${BO}execution-activation`))).toEqual([]);
   });
 
