@@ -11,7 +11,7 @@
 export const CAPABILITIES = [
   'pos.core', 'pos.inventory', 'pos.multi_branch', 'pos.restaurant', 'pos.offline',
   'intelligence.explorer', 'intelligence.starter', 'intelligence.growth', 'intelligence.pro',
-  'enterprise.custom_integrations', 'enterprise.custom_limits',
+  'enterprise.custom_integrations', 'enterprise.custom_limits', 'enterprise.priority_support',
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 

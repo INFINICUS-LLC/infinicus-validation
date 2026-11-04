@@ -2,7 +2,7 @@
 
 Workstream: INFINICUS POS 2.0 program. Baseline: `main` at `b737122`. Status: DEVELOPMENT. Nothing here is deployed, priced, sold or applied to any database.
 
-**Governing document.** The POS 2.0 proposal named in the directive was not attached to the session that wrote this note; only the directive's own text was available. Where this note says "target" it means the directive. Reconcile against the proposal itself before POS2-02.
+**Governing document.** The POS 2.0 proposal ("Commercial Operations Foundation & Architecture Upgrade Proposal") was not attached when this note was first written and was reconciled afterwards: see section 8. Where this note says "target" it means the directive and the proposal together.
 
 State words used below, never mixed: **EXISTS** (code on `main`), **DESIGNED** (a merged design or decision, no code), **MISSING** (nothing found), **PRODUCTION VERIFIED** (nothing in this list: the session cannot reach production, so no row is production verified). Production is not asserted anywhere here; the last migration reported deployed (0209) is not verifiable from a session.
 
@@ -51,7 +51,7 @@ State words used below, never mixed: **EXISTS** (code on `main`), **DESIGNED** (
 
 ## 4. What this block delivered (the smallest safe seam)
 
-1. `packages/billing/src/capabilities.ts`: the capability vocabulary (`pos.core`, `pos.inventory`, `pos.multi_branch`, `pos.restaurant`, `pos.offline`, `intelligence.explorer|starter|growth|pro`, `enterprise.custom_integrations|custom_limits`) and a pure `entitlementProfileFor(status)`.
+1. `packages/billing/src/capabilities.ts`: the capability vocabulary (`pos.core`, `pos.inventory`, `pos.multi_branch`, `pos.restaurant`, `pos.offline`, `intelligence.explorer|starter|growth|pro`, `enterprise.custom_integrations|custom_limits|priority_support`) and a pure `entitlementProfileFor(status)`.
 2. `EntitlementService.enforceCapability(ctx, capability)`; `CapabilityNotEntitledError` (HTTP 403).
 3. `app.requireCapability(capability)` beside the unchanged `requireActiveSubscription`.
 4. The 14 POS Core gate sites (every state-changing handler in six files) now use `requireCapability('pos.core')` in the same chain position. Intelligence routes are untouched, so the architecture guards on them still pass.
@@ -65,7 +65,7 @@ Not delivered, by design: no schema change, no plan or price change, no Stripe, 
 ```
 Capability       = 'pos.core' | 'pos.inventory' | 'pos.multi_branch' | 'pos.restaurant' | 'pos.offline'
                  | 'intelligence.explorer' | 'intelligence.starter' | 'intelligence.growth' | 'intelligence.pro'
-                 | 'enterprise.custom_integrations' | 'enterprise.custom_limits'
+                 | 'enterprise.custom_integrations' | 'enterprise.custom_limits' | 'enterprise.priority_support'
 EntitlementProfile = { basis: 'compatibility'; capabilities: ReadonlySet<Capability> }
 entitlementProfileFor(subscriptionStatus: string): EntitlementProfile        // pure, fail closed
 EntitlementService.enforceCapability(ctx, capability): Promise<void>         // 402 suspended/canceled, 403 not entitled
@@ -83,3 +83,23 @@ Rules: a capability is never a provider product, plan code or price; entitlement
 ## 7. Conflicts found
 
 None blocking. One observation: the directive's "pos.offline" capability and the POS-9 offline decision record are consistent; no existing authority forbids a separate capability. The kitchen-routing note (#360) named 0222 as the next migration number; `main` now has 0222 to 0224, so that figure is stale and must be re-checked when that block is written.
+
+## 8. Reconciliation against the POS 2.0 proposal (added after the proposal was supplied)
+
+Result: no conflict with any locked architecture, security control or owner decision. One vocabulary gap was closed; two overlaps and two points for POS2-02 are recorded.
+
+| Proposal item | Status against this block |
+|---|---|
+| Section 6 capability families: POS, intelligence, enterprise incl. `enterprise.priority_support` | Vocabulary lacked `priority_support`; **added** (one key, no behaviour). |
+| Section 6: no hard-coded provider product names in operational code | Holds: no provider, plan or price name exists in the gate or the seam; a guard test keeps it so. |
+| Section 6: entitlement grants capability, role/policy decides the actor | Holds: three separate checks; the seam sits after `requirePermission`. |
+| Section 6: fail closed when entitlement state is unavailable, **without breaking already-authorized durable records** | Fail-closed holds (a lookup error propagates, no silent allow). The second half needs a POS2-02/POS2-08 decision: `offline-sales` replay is gated like any POS write, so a lapsed tenant's already-captured offline sale would be refused (402) at replay. The proposal's wording suggests a captured sale should still be accepted; that is a policy ruling, not guessed here. |
+| Roadmap POS2-02: "capability mapping with compatibility adapter for existing subscription logic; no live Stripe mutation" | **Largely started by this block**: the compatibility adapter is `entitlementProfileFor` plus `requireCapability`. POS2-02 therefore reduces to the real mapping (plan/subscription to a profile that can separate POS Core from intelligence) and its storage; it need not rebuild the adapter. |
+| Acceptance: POS-only entitlement must not grant Growth/Pro; an intelligence-only customer must exist without POS Core | **Not met yet, by design**: the compatibility profile grants every capability to every functional subscription. These two criteria are the substance of POS2-02 and need the schema/tier decisions in section 6. |
+| Acceptance: POS transactions keep producing governed evidence without an intelligence entitlement | Holds today: nothing beyond the write gate restricts data production. POS2-02 must gate only consumption of intelligence features. |
+| Gap P1 "POS readiness gate": business cannot activate POS until configuration is complete | Not started (POS2-03). Note it will need a place to hold activation state, likely alongside the entitlement store; decide together with POS2-02. |
+| Section 4 hardware and basic reporting rows | Match the inventory in section 1 (kitchen routing is single-printer today; per-product routing is the #360 design). |
+| Section 13: replay/idempotency tests prove no duplicate stock effect | Applies to POS2-04, not this block. |
+| P3 integrated payment processing | Out of scope; no provider work. |
+
+Two items for the owner in addition to section 6: (1) whether a captured offline sale may still be accepted at replay after a subscription lapses (above); (2) whether the readiness gate (POS2-03) and the entitlement store (POS2-02) should share one table or stay separate.
