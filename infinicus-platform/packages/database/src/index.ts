@@ -573,6 +573,7 @@ export {
   BillingNotFoundError, BillingConflictError,
   PlanNotFoundError, SubscriptionNotFoundError, SubscriptionAlreadyExistsError,
   InvalidSubscriptionTransitionError, UsageLimitExceededError,
+  ProviderBillingRepository, ProviderLinkConflictError, ProviderLinkNotFoundError, ProviderInputError,
 } from './repositories/billing/index.js';
 export type {
   Plan,
@@ -580,6 +581,7 @@ export type {
   SubscriptionStatusHistoryEntry, CreateSubscriptionInput, TransitionStatusOptions,
   UsageRecord, UsageMetric,
   EntitlementRecord, EntitlementSnapshot, EntitlementSourceType, EntitlementStatus, GrantEntitlementInput,
+  ClaimOutcome, LinkSubscriptionOutcome, SubscriptionLinkCheck, ResolvedCustomer,
 } from './repositories/billing/index.js';
 
 // ── Incident response repository (BUILD-29) ───────────────────────────────

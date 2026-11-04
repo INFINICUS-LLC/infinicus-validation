@@ -71,6 +71,19 @@ describe('BusinessIntelligenceInventoryEvidenceIngestionService decisions', () =
     const refused = make({ append: async () => { throw new BiValidationError('WarehouseRows', ['secret detail']); } });
     expect(await refused.service.ingest(ctx, B, request)).toEqual({ ok: false, code: 'LOAD_REFUSED' }); expect(refused.warehouse.sealVersion).not.toHaveBeenCalled();
   });
+  it('a validation refusal from a concurrent seal is retried ONCE per batch (replay path); a persistent refusal stays LOAD_REFUSED after exactly two attempts; a conflict is never retried', async () => {
+    let calls = 0;
+    const flaky = make({ append: async () => { calls += 1; if (calls === 1) throw new BiValidationError('WarehouseRows', ['sealed meanwhile']); return { inserted: 0, replayed: 1 }; } });
+    const r = await flaky.service.ingest(ctx, B, request);
+    expect(r.ok).toBe(true); if (r.ok) expect(r).toMatchObject({ inserted: 0, replayedRows: 2 }); // batch 1 retried once, batch 2 clean: counts are never double-added
+    expect(flaky.warehouse.appendRows).toHaveBeenCalledTimes(3);
+    const persistent = make({ append: async () => { throw new BiValidationError('WarehouseRows', ['invalid']); } });
+    expect(await persistent.service.ingest(ctx, B, request)).toEqual({ ok: false, code: 'LOAD_REFUSED' });
+    expect(persistent.warehouse.appendRows).toHaveBeenCalledTimes(2); expect(persistent.warehouse.sealVersion).not.toHaveBeenCalled();
+    const conflict = make({ append: async () => { throw new BiConflictError('WarehouseRows', 'different'); } });
+    expect(await conflict.service.ingest(ctx, B, request)).toEqual({ ok: false, code: 'INGESTION_CONFLICT' });
+    expect(conflict.warehouse.appendRows).toHaveBeenCalledTimes(1);
+  });
   it('a seal the database refuses (count or contiguity) is SEAL_REFUSED; an unexpected failure is rethrown, not swallowed', async () => {
     const refused = make({ seal: async () => { throw new BiValidationError('WarehouseSeal', ['the dataset version holds 1 rows but 2 were declared']); } });
     const r = await refused.service.ingest(ctx, B, request); expect(r).toEqual({ ok: false, code: 'SEAL_REFUSED' }); expect(JSON.stringify(r)).not.toMatch(/holds|declared/);

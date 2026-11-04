@@ -38,6 +38,8 @@ import type { AbaAnnouncementCompositionOptions } from './abaPackageAnnouncement
 import type { AbaAuthoringRouteOptions } from './routes/abaAuthoring.js';
 import observabilityRoutes from './routes/observability.js';
 import billingRoutes from './routes/billing.js';
+import stripeWebhookRoutes from './routes/stripeWebhook.js';
+import type { ProviderBillingService } from '@infinicus/billing';
 import incidentRoutes from './routes/incidents.js';
 import bizopsRoutes from './routes/bizops.js';
 import businessOperationsRoutes from './routes/businessOperations.js';
@@ -75,6 +77,8 @@ import { resolveTrustProxy } from './trustProxy.js';
 import './types.js';
 
 export interface BuildAppOptions {
+  /** STRIPE-SBX-01 test seam: replaces the provider-neutral billing service behind POST /webhooks/stripe. */
+  stripeWebhookService?: ProviderBillingService;
   /** J-3: identity-provider verifier for POST /v1/auth/identity-exchange (test seam; production resolves it from SUPABASE_URL / SUPABASE_ANON_KEY, unset = closed). */
   identityVerifier?: IdentityVerifier;
   /** Composition-root dependency overrides for the ABA authoring surface (for example the authoritative evidence verifier). */
@@ -231,6 +235,7 @@ export async function buildApp(config: InfinicusConfig, options: BuildAppOptions
   await app.register(businessAdministrationRoutes);
   await app.register(observabilityRoutes);
   await app.register(billingRoutes);
+  await app.register(stripeWebhookRoutes, { stripe: config.stripe, service: options.stripeWebhookService });
   await app.register(incidentRoutes);
   await app.register(bizopsRoutes);
   await app.register(businessOperationsRoutes);

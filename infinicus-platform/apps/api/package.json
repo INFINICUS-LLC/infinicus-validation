@@ -29,6 +29,7 @@
     "@infinicus/authentication": "workspace:*",
     "@infinicus/authorization": "workspace:*",
     "@infinicus/billing": "workspace:*",
+    "@infinicus/business-operations-runtime": "workspace:*",
     "@infinicus/configuration": "workspace:*",
     "@infinicus/data-acquisition-runtime": "workspace:*",
     "@infinicus/database": "workspace:*",
@@ -42,7 +43,7 @@
     "fastify": "^5.12.6",
     "fastify-plugin": "^5.0.0",
     "fastify-type-provider-zod": "6.1.0",
-    "zod": "4.6.7",
-    "@infinicus/business-operations-runtime": "workspace:*"
+    "stripe": "23.1.0",
+    "zod": "4.6.7"
   }
 }

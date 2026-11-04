@@ -39,5 +39,9 @@ describe('BI-08-DEV-02 - ingestion service', () => {
     const names = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((n) => /^0225/.test(n));
     // 0225 is POS2-02's billing entitlement store (an exact, other-block name); this block added no migration
     expect(names).toEqual(['0225_create_billing_entitlements.sql']);
+    // content-based as well: no migration after 0224 may touch the warehouse / ingestion objects (other blocks' billing migrations, 0225 and 0226, are fine)
+    const dir = resolve(root, 'infrastructure/database/migrations');
+    const offenders = readdirSync(dir).filter((n) => /^0(22[5-9]|2[3-9]\d)_/.test(n)).filter((n) => /business_intelligence\.|from_bo_evidence|bi_warehouse|inventory_movements/i.test(readFileSync(resolve(dir, n), 'utf8')));
+    expect(offenders).toEqual([]);
   });
 });

@@ -87,6 +87,22 @@ export const SECRET_INVENTORY: readonly SecretDefinition[] = [
     rotationPolicyDays: 180,
     description: 'Anthropic API key for AI Decisions recommendations (packages/workflow/BusinessDecisionRecommendationService, via @infinicus/llm-client). Not read via loadConfig() — same "resolved independently, optional" pattern as RESEND_API_KEY. Unset means recommendations fall back to a deterministic threshold-based generator, which never blocks the feature.',
   },
+  {
+    name: 'STRIPE_SECRET_KEY',
+    classification: 'secret',
+    required: false,
+    owner: 'platform-billing',
+    rotationPolicyDays: 90,
+    description: 'Stripe SANDBOX secret key (sk_test_ / rk_test_ only; a live key is refused at startup). STRIPE-SBX-01 does not call the Stripe API; it is validated and held for the later server-side checkout flow. Never logged.',
+  },
+  {
+    name: 'STRIPE_WEBHOOK_SECRET',
+    classification: 'secret',
+    required: false,
+    owner: 'platform-billing',
+    rotationPolicyDays: 90,
+    description: 'Stripe webhook signing secret (whsec_...) for POST /webhooks/stripe. Unset means the webhook route answers 503 (fail closed). Never logged.',
+  },
 ] as const;
 
 /** pino `redact.paths` — structured-log paths that are always redacted regardless of value, independent of redactSecretValues()'s value-based scrubbing. */

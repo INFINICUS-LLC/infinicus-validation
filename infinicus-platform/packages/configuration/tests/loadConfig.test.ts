@@ -23,6 +23,7 @@ describe('loadConfig', () => {
       dbStatementTimeoutMs: 30_000,
       corsAllowedOrigins: ['https://infini-cus.com', 'https://www.infini-cus.com'],
       offlineSales: { futureToleranceSeconds: null, driftLimitMinorByCurrency: {} },
+      stripe: { secretKey: null, webhookSecret: null },
     });
   });
 
@@ -247,6 +248,31 @@ describe('loadConfig', () => {
       for (const bad of ['not json', '[]', 'null', '5', '{"kwd":5}', '{"KWDX":5}', '{"KWD":-1}', '{"KWD":1.5}', '{"KWD":"500"}', '{"KWD":1000000001}', '{"KWD":null}']) {
         expect(() => loadConfig({ ...base, OFFLINE_SALES_DRIFT_LIMITS: bad }), bad).toThrow(ConfigurationError);
       }
+    });
+  });
+
+  describe('Stripe sandbox configuration (STRIPE-SBX-01)', () => {
+    const base = { DATABASE_URL: 'postgresql://x', NODE_ENV: 'test' as const, DB_SSL: 'false' };
+    const SK = 'sk_test_' + 'A1b2C3d4E5f6G7h8';
+    const WH = 'whsec_' + 'A1b2C3d4E5f6G7h8I9j0';
+
+    it('is unconfigured by default (the webhook route fails closed)', () => {
+      expect(loadConfig(base).stripe).toEqual({ secretKey: null, webhookSecret: null });
+      expect(loadConfig({ ...base, STRIPE_SECRET_KEY: '  ', STRIPE_WEBHOOK_SECRET: '' }).stripe).toEqual({ secretKey: null, webhookSecret: null });
+    });
+    it('accepts a sandbox key and a webhook signing secret', () => {
+      expect(loadConfig({ ...base, STRIPE_SECRET_KEY: SK, STRIPE_WEBHOOK_SECRET: WH }).stripe).toEqual({ secretKey: SK, webhookSecret: WH });
+      expect(loadConfig({ ...base, STRIPE_SECRET_KEY: 'rk_test_' + 'A1b2C3d4E5f6' }).stripe.secretKey).toMatch(/^rk_test_/);
+    });
+    it('refuses a live key or a malformed value, never echoing it', () => {
+      const live = 'sk_live_' + 'A1b2C3d4E5f6G7h8';
+      for (const bad of [live, 'rk_live_' + 'A1b2C3d4E5f6', 'pk_test_' + 'A1b2C3d4E5f6', 'sk_test_short', SK + ' x']) {
+        let message = '';
+        try { loadConfig({ ...base, STRIPE_SECRET_KEY: bad }); } catch (e) { expect(e).toBeInstanceOf(ConfigurationError); message = (e as Error).message; }
+        expect(message, bad).toMatch(/STRIPE_SECRET_KEY/);
+        expect(message).not.toContain(bad);
+      }
+      for (const bad of ['whsec_', 'secret', 'we_' + 'A1b2C3d4E5f6G7h8']) expect(() => loadConfig({ ...base, STRIPE_WEBHOOK_SECRET: bad }), bad).toThrow(ConfigurationError);
     });
   });
 });
