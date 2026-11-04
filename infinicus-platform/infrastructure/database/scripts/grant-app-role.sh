@@ -113,6 +113,14 @@ BEGIN
   IF to_regclass('audit.access_events') IS NOT NULL THEN
     EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON audit.access_events FROM %I', app_role);
   END IF;
+  -- POS2-02: billing.entitlements is read-only to the application role. Entitlements are minted only by the governed functions billing.grant_entitlement /
+  -- billing.revoke_entitlement (a future server-side commercial process), never by a request-serving session. The blanket EXECUTE grant above would hand
+  -- those functions to the application role, so it is withdrawn here, after the blanket grants and on every rerun. A no-op before migration 0225.
+  IF to_regclass('billing.entitlements') IS NOT NULL THEN
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON billing.entitlements FROM %I', app_role);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION billing.grant_entitlement(uuid, text, text, text, timestamptz, timestamptz) FROM %I', app_role);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION billing.revoke_entitlement(uuid, uuid) FROM %I', app_role);
+  END IF;
   -- Order events are insert-only operational history. Revoke blanket write privileges
   -- after each grant application; the database trigger also protects privileged writes.
   IF to_regclass('business_operations.order_events') IS NOT NULL THEN

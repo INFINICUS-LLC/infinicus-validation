@@ -54,7 +54,7 @@ describe('BI-08-DEV-01 - the warehouse write boundary stays DISABLED', () => {
   });
   it('adds no migration (after 0223 the only later one is BO-PUB-DEV-02\'s BO-owned evidence tables), no permission, and no fixture or sample-data path in src', () => {
     const migrations = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => f.endsWith('.sql')).sort();
-    expect(migrations.filter((f) => /^0(22[4-9]|2[3-9]\d)_/.test(f))).toEqual(['0224_bo_publication_evidence.sql']); // exact name: this BI-08 block added none
+    expect(migrations.filter((f) => /^0(22[4-9]|2[3-9]\d)_/.test(f))).toEqual(['0224_bo_publication_evidence.sql', '0225_create_billing_entitlements.sql']); // exact names: this BI-08 block added none (0225 is POS2-02's billing entitlement store)
     for (const s of [pure, service, repo]) expect(s).not.toMatch(/permission|requirePermission|fixture|sample|demo|faker/i);
   });
 });

@@ -569,7 +569,7 @@ export type {
 
 // ── Billing and entitlements repositories (BUILD-28) ─────────────────────
 export {
-  PlanRepository, SubscriptionRepository, UsageRepository,
+  PlanRepository, SubscriptionRepository, UsageRepository, EntitlementRepository,
   BillingNotFoundError, BillingConflictError,
   PlanNotFoundError, SubscriptionNotFoundError, SubscriptionAlreadyExistsError,
   InvalidSubscriptionTransitionError, UsageLimitExceededError,
@@ -579,6 +579,7 @@ export type {
   Subscription, SubscriptionStatus, PaymentStatus,
   SubscriptionStatusHistoryEntry, CreateSubscriptionInput, TransitionStatusOptions,
   UsageRecord, UsageMetric,
+  EntitlementRecord, EntitlementSnapshot, EntitlementSourceType, EntitlementStatus, GrantEntitlementInput,
 } from './repositories/billing/index.js';
 
 // ── Incident response repository (BUILD-29) ───────────────────────────────
