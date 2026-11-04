@@ -166,6 +166,8 @@ export {
   INVENTORY_POLICY_EVALUATION_DIMENSIONS, INVENTORY_POLICY_EVALUATION_RESULTS,
 } from './repositories/bo/index.js';
 export { InventoryPolicyFactsRepository } from './repositories/bo/InventoryPolicyFactsRepository.js';
+export { BoPublicationEvidenceRepository, PUBLICATION_EVIDENCE_MAX_RECORDS } from './repositories/bo/BoPublicationEvidenceRepository.js';
+export type { AppendPublicationEvidenceInput, AppendPublicationEvidenceOutcome, StoredPublicationEvidence } from './repositories/bo/BoPublicationEvidenceRepository.js';
 export { InventoryOutcomeEvidenceRepository } from './repositories/bo/InventoryOutcomeEvidenceRepository.js';
 export type { InventoryOutcomeEvidence, InventoryOutcomeEvidenceInput, InventoryIssueEvidence } from './repositories/bo/InventoryOutcomeEvidenceRepository.js';
 export { InventoryAttributionEvidenceRepository } from './repositories/bo/InventoryAttributionEvidenceRepository.js';

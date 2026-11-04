@@ -43,7 +43,8 @@ describe('BI-10 calculation API - route authority', () => {
     expect(seed).toMatch(/\('bi:write',\s+'business_intelligence',\s+'write', 'Manage business intelligence analyses and metrics'\)/);
     expect(seed).toMatch(/\('bi:read'/);
     const migrations = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => /^0(22[3-9]|2[3-9]\d)_/.test(f));
-    expect(migrations).toEqual(['0223_bi10_warehouse_rows_and_calculation_persistence.sql']); // BI-2-DEV-08 added no migration
+    // BI-2-DEV-08 added no migration: after 0223 the only later migration is BO-PUB-DEV-02's BO-owned evidence tables (exact name, not a pattern)
+    expect(migrations).toEqual(['0223_bi10_warehouse_rows_and_calculation_persistence.sql', '0224_bo_publication_evidence.sql']);
   });
 
   it('takes tenant and workspace from the authenticated context and the correlation id from the request, never from the body, query or headers', () => {

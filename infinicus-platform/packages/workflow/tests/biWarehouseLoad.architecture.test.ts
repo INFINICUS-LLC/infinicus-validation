@@ -52,9 +52,9 @@ describe('BI-08-DEV-01 - the warehouse write boundary stays DISABLED', () => {
     const api = walk(resolve(root, 'apps/api/src')).filter((f) => /\.ts$/.test(f)).map((f) => readFileSync(f, 'utf8')).join('\n');
     expect(api).not.toMatch(/WarehouseLoadPreparation|prepareWarehouseRows|BiWarehouseLoadTarget|warehouse-load|warehouse_load/);
   });
-  it('adds no migration (the newest remains 0223), no permission, and no fixture or sample-data path in src', () => {
+  it('adds no migration (after 0223 the only later one is BO-PUB-DEV-02\'s BO-owned evidence tables), no permission, and no fixture or sample-data path in src', () => {
     const migrations = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => f.endsWith('.sql')).sort();
-    expect(migrations[migrations.length - 1]).toMatch(/^0223_/);
+    expect(migrations.filter((f) => /^0(22[4-9]|2[3-9]\d)_/.test(f))).toEqual(['0224_bo_publication_evidence.sql']); // exact name: this BI-08 block added none
     for (const s of [pure, service, repo]) expect(s).not.toMatch(/permission|requirePermission|fixture|sample|demo|faker/i);
   });
 });

@@ -112,6 +112,8 @@ describe('OM-OBS-1 - read-only observability', () => {
       '0222_extend_bi_metric_registry.sql',
       // BI-2-DEV-07: BI-owned warehouse row storage and BI-10 calculation persistence (business_intelligence tables only; no OM or CL table, grant or role); it does not change OM authority.
       '0223_bi10_warehouse_rows_and_calculation_persistence.sql',
+      // BO-PUB-DEV-02: BO-owned, append-only publication evidence (business_operations tables only; no OM or CL table, grant or role); it does not change OM authority.
+      '0224_bo_publication_evidence.sql',
     ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);
@@ -123,6 +125,7 @@ describe('OM-OBS-1 - read-only observability', () => {
       '0217_create_disabled_offline_review_evidence.sql',
       '0218_canonicalize_offline_review_digest.sql',
       '0219_harden_bo_order_event_integrity.sql',
+      '0224_bo_publication_evidence.sql', // BO-PUB-DEV-02: business_operations only (checked below like the others)
     ];
     const prohibited = /\b(?:outcome_monitoring|continuous_learning)\.|\b(?:GRANT|CREATE\s+ROLE)\b|\bOUTCOME_(?:VERIFIED|FAILED)\b/i;
     for (const file of files) {
