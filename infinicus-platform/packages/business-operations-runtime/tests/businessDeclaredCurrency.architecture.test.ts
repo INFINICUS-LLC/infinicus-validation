@@ -87,6 +87,8 @@ describe('business declared currency architecture (0185)', () => {
       // AC-1: the read-only derivation READS the declared currency through the same Reader and passes it to the same evaluator; it never writes it.
       'packages/business-operations-runtime/src/inventory-policy/ReorderPolicyDerivationService.ts', 'packages/business-operations-runtime/src/inventory-policy/derive.ts',
       'packages/business-operations-runtime/src/inventory-policy/evaluate.ts',
+      // POS2-03: the read-only POS readiness service READS the declared currency through the same Reader to report whether the business can sell; it never writes it and supplies no default.
+      'packages/business-operations-runtime/src/pos-readiness/posReadiness.ts',
       'packages/database/src/index.ts', 'packages/database/src/repositories/onboarding/BusinessDeclaredCurrencyRepository.ts',
       'packages/database/src/repositories/onboarding/index.ts', 'packages/onboarding/src/BusinessDeclaredCurrencyService.ts', 'packages/onboarding/src/index.ts',
     ]);
