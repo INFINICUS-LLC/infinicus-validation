@@ -124,13 +124,12 @@ describe.runIf(run)('POS2-04 decision gate: current state of the sale -> invento
     expect(tables).toEqual([]);
   });
 
-  it('the stock ledger refuses a later change to a movement (append-only), so a correction can only be a new compensating movement', async () => {
+  it('the stock ledger has no uniqueness on an order-line reference, so at-most-once has no existing mechanism', async () => {
     const s = await setup('owner');
     const item = (await adminPool.query(`INSERT INTO platform.inventory_items (tenant_id, workspace_id, business_id, sku, name) VALUES ($1,$2,$3,$4,'Beans') RETURNING id`, [s.ctx.tenantId, s.ctx.workspaceId, s.bizId, uc('sku')])).rows[0].id as string;
     const wh = (await adminPool.query(`INSERT INTO platform.warehouses (tenant_id, workspace_id, business_id, warehouse_code, name) VALUES ($1,$2,$3,$4,'Main') RETURNING id`, [s.ctx.tenantId, s.ctx.workspaceId, s.bizId, uc('wh')])).rows[0].id as string;
-    const mv = (await adminPool.query(`INSERT INTO business_operations.inventory_movements (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, movement_type, quantity, reference_type, reference_id) VALUES ($1,$2,$3,$4,$5,'issue',1,'order_line',$6) RETURNING id`, [s.ctx.tenantId, s.ctx.workspaceId, s.bizId, item, wh, randomUUID()])).rows[0].id as string;
-    await expect(adminPool.query(`UPDATE business_operations.inventory_movements SET quantity = 2 WHERE id=$1`, [mv])).rejects.toThrow(/append-only/);
-    // (DELETE and TRUNCATE refusal is covered by the existing append-only tests; a raw DELETE is not repeated here, per the repository's test-hygiene guard.)
+    await adminPool.query(`INSERT INTO business_operations.inventory_movements (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, movement_type, quantity, reference_type, reference_id) VALUES ($1,$2,$3,$4,$5,'issue',1,'order_line',$6) `, [s.ctx.tenantId, s.ctx.workspaceId, s.bizId, item, wh, randomUUID()]);
+    // (Update, delete and truncate refusal are covered by the existing append-only tests; raw mutation statements are not repeated here, per the repository's test-hygiene guard.)
     // the ledger has NO uniqueness on (reference_type, reference_id): the same order-line reference can be inserted twice, so at-most-once has no existing mechanism
     const ref = randomUUID();
     const ins = () => adminPool.query(`INSERT INTO business_operations.inventory_movements (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id, movement_type, quantity, reference_type, reference_id) VALUES ($1,$2,$3,$4,$5,'issue',1,'order_line',$6)`, [s.ctx.tenantId, s.ctx.workspaceId, s.bizId, item, wh, ref]);

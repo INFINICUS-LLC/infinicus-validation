@@ -67,13 +67,13 @@ Legend: **SPEC** = depends on an undecided item (not executable); **EXISTING** =
 | 15 | Insufficient stock | stock 1, line qty 2 | process | per D4; the existing writer rule alone would refuse (on-hand cannot go negative) | n/a | n/a | exception record | SPEC (D4); the writer rule is EXISTING |
 | 16 | Database failure mid-record | injected failure after the movement insert | process | whole effect rolls back, nothing partial | retry safe | n/a | no partial rows | SPEC |
 | 17 | Retry after rollback | as 16 | retry | exactly one movement after the retry | converges | n/a | one effect row | SPEC |
-| 18 | Direct ledger write | app role / operator | UPDATE, DELETE, TRUNCATE | refused (append-only) | n/a | no tampering | trigger error | EXISTING (0184) and PINNED (update refused; note a direct INSERT by the application role is not prevented by privilege, only by the absence of a code path and by RLS scope) |
+| 18 | Direct ledger write | app role / operator | UPDATE, DELETE, TRUNCATE | refused (append-only) | n/a | no tampering | trigger error | EXISTING (0184, covered by the existing append-only tests; note a direct INSERT by the application role is not prevented by privilege, only by the absence of a code path and by RLS scope) |
 | 19 | Association changed after completion | mapping edited or removed later | later | the original effect and its provenance are unchanged; no retroactive movement | n/a | n/a | original mapping id and factor retained | SPEC (D7) |
 | 20 | Reversal provenance | completed effect | POS2-05 later | n/a here | n/a | n/a | order id, line id, movement id, quantity, completion time, item all retrievable | SPEC (the slots are specified, not built) |
 
 ## 6. Evidence in this PR
 
-`apps/api/tests/posSaleInventoryGap.integration.test.ts` (live PostgreSQL + Fastify, 3 tests, characterization of today's behaviour, to be replaced by the real POS2-04 tests once the decisions are made): completing a sale with a catalogue line and a free-text line writes the completion evidence and moves no stock; the catalogue line has no canonical product; the BO catalogue has no inventory link and no sale-effect table exists; the ledger refuses an update of a movement (delete and truncate refusal are covered by the existing append-only tests), and has no uniqueness on an order-line reference (the same reference inserted twice).
+`apps/api/tests/posSaleInventoryGap.integration.test.ts` (live PostgreSQL + Fastify, 3 tests, characterization of today's behaviour, to be replaced by the real POS2-04 tests once the decisions are made): completing a sale with a catalogue line and a free-text line writes the completion evidence and moves no stock; the catalogue line has no canonical product; the BO catalogue has no inventory link and no sale-effect table exists; the ledger has no uniqueness on an order-line reference (the same reference inserted twice).
 
 ## 7. Compatibility and boundaries kept
 
