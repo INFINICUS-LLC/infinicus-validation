@@ -2,7 +2,8 @@ import {
   PlanRepository, SubscriptionRepository, UsageRepository, SubscriptionNotFoundError,
   type TenantContext, type Subscription, type Plan, type UsageMetric, type PaymentStatus,
 } from '@infinicus/database';
-import { SubscriptionSuspendedError, SubscriptionCanceledError, FeatureNotEntitledError } from './errors.js';
+import { SubscriptionSuspendedError, SubscriptionCanceledError, FeatureNotEntitledError, CapabilityNotEntitledError } from './errors.js';
+import { entitlementProfileFor, type Capability } from './capabilities.js';
 
 export interface SubscriptionWithPlan {
   subscription: Subscription;
@@ -59,6 +60,17 @@ export class EntitlementService {
     if (subscription.status === 'suspended') throw new SubscriptionSuspendedError();
     if (subscription.status === 'canceled') throw new SubscriptionCanceledError();
     return subscription;
+  }
+
+  /**
+   * Fail-closed capability gate (POS2-01). A suspended or canceled subscription throws the same errors as `enforceActiveSubscription` (402, same text),
+   * so a route moved from the subscription gate to this one behaves identically; an unknown capability key or one the profile does not hold is refused.
+   */
+  async enforceCapability(ctx: TenantContext, capability: Capability): Promise<void> {
+    const subscription = await this.enforceActiveSubscription(ctx);
+    if (!entitlementProfileFor(subscription.status).capabilities.has(capability)) {
+      throw new CapabilityNotEntitledError(String(capability));
+    }
   }
 
   private async getOrCreateSubscription(ctx: TenantContext): Promise<Subscription> {

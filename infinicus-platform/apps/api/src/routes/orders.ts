@@ -23,7 +23,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
       body: createOrderBodySchema,
       response: { 201: orderResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId } = request.params;
     const order = await orders.create(request.ctx!, { businessId, ...request.body });
@@ -71,7 +71,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
     const order = await orders.addLineItem(request.ctx!, orderId, businessId, request.body);
@@ -89,7 +89,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, orderId, lineItemId } = request.params;
     const order = await orders.removeLineItem(request.ctx!, orderId, lineItemId, businessId);
@@ -104,7 +104,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
       body: updateLineQuantityBodySchema,
       response: { 200: orderResponseSchema, 400: errorResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema, 409: errorResponseSchema },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, orderId, lineItemId } = request.params;
     const order = await orders.updateLineQuantity(request.ctx!, orderId, lineItemId, businessId, request.body.quantity);
@@ -124,7 +124,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
     const order = await orders.setNote(request.ctx!, orderId, businessId, request.body.note);
@@ -144,7 +144,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:admin'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:admin'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
     const order = await orders.addDiscount(request.ctx!, orderId, businessId, request.body);
@@ -163,7 +163,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
     const order = await orders.complete(request.ctx!, orderId, businessId, request.body.payments);
@@ -182,7 +182,7 @@ export default async function ordersRoutes(app: FastifyInstance) {
         404: errorResponseSchema, 409: errorResponseSchema,
       },
     },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireActiveSubscription(), requireBusinessWorkspace, app.requireIdempotencyKey],
+    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('bo:write'), app.requireCapability('pos.core'), requireBusinessWorkspace, app.requireIdempotencyKey],
   }, async (request, reply) => {
     const { businessId, orderId } = request.params;
     const order = await orders.void(request.ctx!, orderId, businessId, request.body.reason);

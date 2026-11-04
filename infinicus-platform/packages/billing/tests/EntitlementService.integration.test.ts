@@ -14,7 +14,7 @@ import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { createPool, closePool, UsageLimitExceededError, type TenantContext } from '@infinicus/database';
 import { EntitlementService } from '../src/EntitlementService.js';
-import { SubscriptionSuspendedError, SubscriptionCanceledError, FeatureNotEntitledError } from '../src/errors.js';
+import { SubscriptionSuspendedError, SubscriptionCanceledError, FeatureNotEntitledError, CapabilityNotEntitledError } from '../src/errors.js';
 
 const run = !!process.env.DATABASE_URL;
 
@@ -92,6 +92,26 @@ describe.runIf(run)('EntitlementService — live PostgreSQL', () => {
 
     await service.cancel(ctx, 'test_cancellation');
     await expect(service.enforceActiveSubscription(ctx)).rejects.toThrow(SubscriptionCanceledError);
+  });
+
+  it('enforceCapability behaves exactly like enforceActiveSubscription for a known capability, and refuses an unknown one (POS2-01)', async () => {
+    const ctx = await makeTenantCtx('capability');
+    await service.startSubscription(ctx, 'free');
+    await expect(service.enforceCapability(ctx, 'pos.core')).resolves.toBeUndefined();
+    await expect(service.enforceCapability(ctx, 'intelligence.pro')).resolves.toBeUndefined();   // compatibility profile: no capability catalogue yet
+    await expect(service.enforceCapability(ctx, 'pos.nope' as never)).rejects.toThrow(CapabilityNotEntitledError);
+
+    await service.suspend(ctx, 'test_suspension');
+    await expect(service.enforceCapability(ctx, 'pos.core')).rejects.toThrow(SubscriptionSuspendedError);
+    await service.reactivate(ctx, 'test_reactivation');
+    await expect(service.enforceCapability(ctx, 'pos.core')).resolves.toBeUndefined();
+    await service.cancel(ctx, 'test_cancellation');
+    await expect(service.enforceCapability(ctx, 'pos.core')).rejects.toThrow(SubscriptionCanceledError);
+  });
+
+  it('a tenant with no subscription row is lazily provisioned and holds the capability, as with the subscription gate (POS2-01)', async () => {
+    const ctx = await makeTenantCtx('capability-lazy');
+    await expect(service.enforceCapability(ctx, 'pos.core')).resolves.toBeUndefined();
   });
 
   it('gates features by plan: free lacks apiAccess, pro has it', async () => {
