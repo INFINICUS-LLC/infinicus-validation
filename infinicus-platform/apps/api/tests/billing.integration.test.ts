@@ -98,21 +98,21 @@ describe.runIf(run)('BUILD-28 billing HTTP routes — live PostgreSQL', () => {
     expect(body.usage).toEqual({ simulation_runs: 0, reasoning_runs: 0 });
   });
 
-  it('POST /v1/billing/trial starts a pro trial for an owner, and rejects a second call for the same tenant', async () => {
+  it('POST /v1/billing/trial starts the FREE plan for an owner (active, no trial) and rejects a second call for the same tenant (SEC-BILL-02A: pro is no longer self-service)', async () => {
     const { userId, token } = await registerActiveUser();
     const ctx = await createTenantWithMember(userId);
 
     const res = await app.inject({
-      method: 'POST', url: '/v1/billing/trial', headers: tenantHeaders(ctx, token), payload: { planCode: 'pro' },
+      method: 'POST', url: '/v1/billing/trial', headers: tenantHeaders(ctx, token), payload: { planCode: 'free' },
     });
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body.status).toBe('trialing');
-    expect(body.plan.code).toBe('pro');
-    expect(body.trialEndsAt).not.toBeNull();
+    expect(body.status).toBe('active');
+    expect(body.plan.code).toBe('free');
+    expect(body.trialEndsAt).toBeNull();
 
     const secondRes = await app.inject({
-      method: 'POST', url: '/v1/billing/trial', headers: tenantHeaders(ctx, token), payload: { planCode: 'pro' },
+      method: 'POST', url: '/v1/billing/trial', headers: tenantHeaders(ctx, token), payload: { planCode: 'free' },
     });
     expect(secondRes.statusCode).toBe(409);
   });
@@ -137,20 +137,20 @@ describe.runIf(run)('BUILD-28 billing HTTP routes — live PostgreSQL', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('POST /v1/billing/payment-result records a failed payment and moves the subscription into grace_period', async () => {
+  it('POST /v1/billing/payment-result no longer exists (SEC-BILL-02A): an owner cannot report any payment result, and the subscription is untouched', async () => {
     const { userId, token } = await registerActiveUser();
     const ctx = await createTenantWithMember(userId);
     await app.inject({ method: 'POST', url: '/v1/billing/trial', headers: tenantHeaders(ctx, token), payload: { planCode: 'free' } });
 
-    const res = await app.inject({
-      method: 'POST', url: '/v1/billing/payment-result', headers: tenantHeaders(ctx, token),
-      payload: { status: 'failed', externalInvoiceReference: 'inv-http-test-001' },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expect(body.status).toBe('grace_period');
-    expect(body.paymentStatus).toBe('failed');
-    expect(body.gracePeriodEndsAt).not.toBeNull();
+    for (const status of ['failed', 'paid', 'pending']) {
+      const res = await app.inject({
+        method: 'POST', url: '/v1/billing/payment-result', headers: tenantHeaders(ctx, token),
+        payload: { status, externalInvoiceReference: 'inv-http-test-001' },
+      });
+      expect(res.statusCode, status).toBe(404);
+    }
+    const sub = await adminPool.query('SELECT status, payment_status, external_invoice_reference FROM billing.subscriptions WHERE tenant_id = $1', [ctx.tenantId]);
+    expect(sub.rows[0]).toEqual({ status: 'active', payment_status: 'unknown', external_invoice_reference: null });
   });
 
   it('a suspended tenant is blocked from a billing-gated business-write route (server-side enforcement, 402)', async () => {

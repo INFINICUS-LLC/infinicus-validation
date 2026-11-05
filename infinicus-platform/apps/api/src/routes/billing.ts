@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { EntitlementService } from '@infinicus/billing';
 import type { Subscription, Plan } from '@infinicus/database';
-import { subscriptionResponseSchema, startTrialBodySchema, recordPaymentBodySchema } from '../schemas/billing.js';
+import { subscriptionResponseSchema, startTrialBodySchema } from '../schemas/billing.js';
 import { errorResponseSchema } from '../schemas/common.js';
 
 const entitlements = new EntitlementService();
@@ -46,29 +46,18 @@ export default async function billingRoutes(app: FastifyInstance) {
   server.post('/v1/billing/trial', {
     schema: {
       tags: ['billing'],
-      summary: 'Start the tenant\'s subscription (trialing if the plan has a trial period, active otherwise)',
+      summary: 'Start the tenant\'s self-service subscription (allowlisted plans only; currently the free plan)',
       body: startTrialBodySchema,
       response: { 201: subscriptionResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 409: errorResponseSchema },
     },
     preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('platform:admin')],
   }, async (request, reply) => {
-    const { subscription, plan } = await entitlements.startSubscription(request.ctx!, request.body.planCode);
+    // SEC-BILL-02A (SF-1): the plan must be on the server-side self-service allowlist; enterprise, pro and unknown plans are refused (403) before any lookup or write.
+    const { subscription, plan } = await entitlements.startSelfServiceSubscription(request.ctx!, request.body.planCode);
     return reply.status(201).send(serializeSubscription(subscription, plan, {}));
   });
 
-  server.post('/v1/billing/payment-result', {
-    schema: {
-      tags: ['billing'],
-      summary: 'Record an external payment result for the tenant\'s subscription and apply its lifecycle consequence',
-      body: recordPaymentBodySchema,
-      response: { 200: subscriptionResponseSchema, 401: errorResponseSchema, 403: errorResponseSchema, 404: errorResponseSchema },
-    },
-    preHandler: [app.authenticate, app.resolveTenantContext, app.requirePermission('platform:admin')],
-  }, async (request, reply) => {
-    const subscription = await entitlements.recordPaymentResult(
-      request.ctx!, request.body.status, request.body.externalInvoiceReference ?? null
-    );
-    const { plan } = await entitlements.getSubscriptionWithPlan(request.ctx!);
-    return reply.status(200).send(serializeSubscription(subscription, plan, {}));
-  });
+  // SEC-BILL-02A (SF-2): POST /v1/billing/payment-result was REMOVED. It let any tenant owner (platform:admin) report their own payment as paid, clearing a grace
+  // period and overwriting the provider's invoice reference. Payment results now come only from the signature-verified provider webhook (POST /webhooks/stripe), which
+  // calls EntitlementService.recordPaymentResult directly; there is no tenant-callable payment-result operation.
 }

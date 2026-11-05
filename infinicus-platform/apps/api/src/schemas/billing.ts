@@ -26,7 +26,3 @@ export const startTrialBodySchema = z.object({
   planCode: z.string().min(1).max(64).default('free'),
 });
 
-export const recordPaymentBodySchema = z.object({
-  status: z.enum(['paid', 'pending', 'failed']),
-  externalInvoiceReference: z.string().max(255).optional(),
-});

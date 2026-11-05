@@ -1,6 +1,7 @@
 export { EntitlementService } from './EntitlementService.js';
 export type { SubscriptionWithPlan } from './EntitlementService.js';
-export { SubscriptionSuspendedError, SubscriptionCanceledError, FeatureNotEntitledError, CapabilityNotEntitledError } from './errors.js';
+export { SubscriptionSuspendedError, SubscriptionCanceledError, FeatureNotEntitledError, CapabilityNotEntitledError, PlanNotSelfServiceError } from './errors.js';
+export { SELF_SERVICE_PLAN_CODES, isSelfServicePlanCode } from './selfService.js';
 export { CAPABILITIES, entitlementProfileFor, entitlementProfileFromStore, isCapability } from './capabilities.js';
 export type { Capability, EntitlementProfile } from './capabilities.js';
 export { ProviderBillingService } from './provider/ProviderBillingService.js';
