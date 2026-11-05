@@ -5,6 +5,7 @@ import { canonicalUuidReference, referenceIdProblem } from './uuidReference.js';
 import { contextIdentifierFields, firstIdentifierProblem, idOptional, idRequired, type IdentifierField } from './commandIdentifiers.js';
 import { UNIT_COST_MINIMUM_STORABLE, unitCostProblem } from './unitCost.js';
 import { Decimal } from './inventory-policy/decimal.js';
+import { movementDelta, nextOnHand, parseMovementQuantity, quantityProblemMessage, INVENTORY_QUANTITY_MAXIMUM_TEXT } from './inventory/inventoryQuantity.js';
 import type { ConfigureInventoryReorderPolicyCommand, OperationalCommand } from './types.js';
 import { canonicalJson, canonicalReceiptContent, purchaseReceiptProblems } from './procurement/purchaseReceipt.js';
 
@@ -15,26 +16,6 @@ const REORDER_VALUE_EXCLUSIVE_MAX = Decimal.of(10n ** 14n);
 export interface CommandExecutionResult {
   commandType: OperationalCommand['type'];
   recordId: string;
-}
-
-function inventoryDelta(
-  movementType: Extract<OperationalCommand, { type: 'record_inventory_movement' }>['payload']['movementType'],
-  quantity: number
-): number {
-  const magnitude = Math.abs(quantity);
-  switch (movementType) {
-    case 'receipt':
-    case 'transfer_in':
-    case 'return':
-      return magnitude;
-    case 'issue':
-    case 'transfer_out':
-    case 'write_off':
-      return -magnitude;
-    case 'adjustment':
-    case 'cycle_count':
-      return quantity;
-  }
 }
 
 async function requireBusinessEntity(
@@ -294,6 +275,11 @@ export class OperationalCommandExecutor {
     if (p.unitCostCurrency !== undefined && !/^[A-Z]{3}$/.test(p.unitCostCurrency)) {
       throw new OperationalMappingError('unitCostCurrency must be a three-letter uppercase currency code.');
     }
+    // POS2-04-S1: the quantity is an EXACT decimal (numeric(18,4)): at most four decimal places, absolute value below 10^14, refused (never rounded) otherwise.
+    // It is validated before the first SQL statement and never passes through JavaScript `Number` arithmetic.
+    const parsedQuantity = parseMovementQuantity(p.quantity);
+    if (!parsedQuantity.ok) throw new OperationalMappingError(quantityProblemMessage(parsedQuantity.problem));
+    const quantity = parsedQuantity.value;
     await requireBusinessEntity(client, 'inventory_items', p.inventoryItemId, businessId);
     await requireBusinessEntity(client, 'warehouses', p.warehouseId, businessId);
 
@@ -307,7 +293,7 @@ export class OperationalCommandExecutor {
     );
 
     const locked = await client.query<Record<string, unknown>>(
-      `SELECT id, quantity_on_hand
+      `SELECT id, quantity_on_hand::text AS quantity_on_hand
        FROM business_operations.inventory_balances
        WHERE business_id = $1 AND inventory_item_id = $2 AND warehouse_id = $3
        FOR UPDATE`,
@@ -315,41 +301,44 @@ export class OperationalCommandExecutor {
     );
     if (locked.rowCount !== 1) throw new OperationalMappingError('Inventory balance could not be locked.');
 
-    const delta = inventoryDelta(p.movementType, p.quantity);
-    const nextQuantity = Number(locked.rows[0].quantity_on_hand) + delta;
-    if (nextQuantity < 0) {
-      throw new OperationalMappingError(
-        `Inventory movement would make quantity_on_hand negative (${nextQuantity}).`
-      );
+    // Exact arithmetic on the locked row: the balance is read as database text, the delta is exact, and the result is written back as exact text.
+    const onHand = Decimal.parse(String(locked.rows[0].quantity_on_hand));
+    if (onHand === null) throw new OperationalMappingError('Inventory balance could not be read exactly.');
+    const next = nextOnHand(onHand, movementDelta(p.movementType, quantity));
+    if (!next.ok) {
+      throw new OperationalMappingError(next.reason === 'negative'
+        ? `Inventory movement would make quantity_on_hand negative (${next.value.toString()}).`
+        : `Inventory movement would make quantity_on_hand exceed the maximum ${INVENTORY_QUANTITY_MAXIMUM_TEXT}.`);
     }
+    const quantityText = quantity.toString();
 
     const movement = await client.query<{ id: string }>(
       `INSERT INTO business_operations.inventory_movements
          (tenant_id, workspace_id, business_id, inventory_item_id, warehouse_id,
           movement_type, quantity, reference_type, reference_id, unit_cost, unit_cost_currency, notes, correlation_id, occurred_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,coalesce($14::timestamptz, now()))
+       VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8,$9,$10,$11,$12,$13,coalesce($14::timestamptz, now()))
        RETURNING id`,
       [
         ctx.tenantId, ctx.workspaceId, businessId, p.inventoryItemId, p.warehouseId,
-        p.movementType, p.quantity, p.referenceType ?? null, referenceId,
+        p.movementType, quantityText, p.referenceType ?? null, referenceId,
         p.unitCost ?? null, p.unitCostCurrency ?? null, p.notes ?? null, command.context.correlationId, occurredAt ?? null,
       ]
     );
 
     await client.query(
       `UPDATE business_operations.inventory_balances
-       SET quantity_on_hand = $2, last_movement_at = now(), version = version + 1
+       SET quantity_on_hand = $2::numeric, last_movement_at = now(), version = version + 1
        WHERE id = $1`,
-      [locked.rows[0].id, nextQuantity]
+      [locked.rows[0].id, next.value.toString()]
     );
 
     await client.query(
       `SELECT business_operations.emit_inventory_movement_recorded(
-         $1,$2,$3,$4,$5,$6,$7,$8
+         $1,$2,$3,$4,$5,$6::numeric,$7,$8
        )`,
       [
         ctx.tenantId, ctx.workspaceId, movement.rows[0].id, p.inventoryItemId,
-        p.movementType, p.quantity, command.context.correlationId,
+        p.movementType, quantityText, command.context.correlationId,
         command.context.causationId ?? null,
       ]
     );
