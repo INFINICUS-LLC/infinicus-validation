@@ -1,5 +1,6 @@
 # BUILD-28 — Billing and Entitlements: Known Limitations
 
+- **(SEC-BILL-02A) The `payment-result` route described below has been removed; the Stripe sandbox webhook (STRIPE-SBX-01) is now the only path that records payment results.**
 - **No real payment processor integration.** `POST /v1/billing/payment-result` accepts an already-decided payment outcome, matching what a real payment processor's webhook would report — but this build does not itself charge a card, integrate Stripe/any processor's API, or validate a webhook signature. A future build would need to add that integration and call this same `EntitlementService.recordPaymentResult()` entry point from a webhook handler.
 
 - **No plan upgrade/downgrade for an existing subscription.** `SubscriptionRepository` supports creating a subscription and transitioning its lifecycle `status`, but changing an existing subscription's `plan_id` (e.g. free → pro without canceling and recreating) is not implemented. Kept out to hold this build to its smallest coherent scope; a real implementation would need to decide proration rules, which is itself out of scope (see below).

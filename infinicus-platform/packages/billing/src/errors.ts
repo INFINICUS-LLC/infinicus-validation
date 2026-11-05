@@ -12,6 +12,14 @@ export class SubscriptionCanceledError extends Error {
   }
 }
 
+/** SEC-BILL-02A: a plan outside the self-service allowlist (or an unknown one - the two are deliberately indistinguishable) was requested through a public route. */
+export class PlanNotSelfServiceError extends Error {
+  constructor() {
+    super('This plan cannot be started through self-service');
+    this.name = 'PlanNotSelfServiceError';
+  }
+}
+
 export class FeatureNotEntitledError extends Error {
   constructor(featureKey: string) {
     super(`The current plan does not include the "${featureKey}" feature`);

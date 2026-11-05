@@ -94,6 +94,8 @@ export const ERROR_STATUS_CODES: Record<string, number> = {
   SubscriptionCanceledError: 402,
   FeatureNotEntitledError: 403,
   CapabilityNotEntitledError: 403,
+  // SEC-BILL-02A (SF-1): the requested plan is not on the server-side self-service allowlist (also the answer for an unknown plan: no existence oracle).
+  PlanNotSelfServiceError: 403,
 
   // Incident response (@infinicus/database/repositories/incident — BUILD-29).
   // PlatformIncidentNotFoundError is an empty NotFoundError subclass (see

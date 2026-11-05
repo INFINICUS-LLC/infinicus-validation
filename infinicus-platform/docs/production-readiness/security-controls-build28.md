@@ -26,4 +26,6 @@ A rejected `incrementAndCheck()` call runs a compensating decrement inside the s
 
 ## No new secrets, no new attack surface beyond the documented routes
 
+> **SEC-BILL-02A:** the claim below that both mutating routes were adequately protected by `platform:admin` was wrong for these two routes: a tenant owner holds `platform:admin`. `POST /v1/billing/trial` is now restricted to an allowlisted plan and `POST /v1/billing/payment-result` has been removed. See SEC-BILL-02A-SECURITY-CONTRACT.md.
+
 Three new HTTP routes (`GET /v1/billing/subscription`, `POST /v1/billing/trial`, `POST /v1/billing/payment-result`), all behind `app.authenticate` + `app.resolveTenantContext`; the two mutating routes additionally require `platform:admin` (live-verified: a `viewer`-role member's `POST /v1/billing/trial` call is rejected `403`). Request bodies are Zod-validated with bounded string lengths (`externalInvoiceReference` capped at 255 chars, `planCode` at 64), consistent with BUILD-26's bounded-payload requirement.

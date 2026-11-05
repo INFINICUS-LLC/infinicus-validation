@@ -2,6 +2,8 @@
 
 ## Starting a tenant's subscription
 
+> **SEC-BILL-02A (supersedes the example below):** `POST /v1/billing/trial` now accepts only an allowlisted self-service plan (currently `free`). `pro`, `enterprise` and unknown plans return 403. A paid or negotiated plan is started by a trusted commercial process, not by the tenant. See SEC-BILL-02A-SECURITY-CONTRACT.md.
+
 Via the API (requires `platform:admin`):
 
 ```
@@ -12,6 +14,8 @@ POST /v1/billing/trial
 A tenant that never calls this is not blocked — `EntitlementService.enforceActiveSubscription()` lazily provisions the `free` plan on first check (see architecture-and-scope-build28.md). Calling `/v1/billing/trial` a second time for an already-subscribed tenant returns `409`.
 
 ## Recording a payment result
+
+> **SEC-BILL-02A: REMOVED.** `POST /v1/billing/payment-result` no longer exists (404). A tenant owner could report their own payment as paid. Payment state now changes only through the signature-verified provider webhook (`POST /webhooks/stripe`). The text below is kept as history only.
 
 ```
 POST /v1/billing/payment-result

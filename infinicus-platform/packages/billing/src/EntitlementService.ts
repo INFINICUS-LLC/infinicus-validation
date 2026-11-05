@@ -2,7 +2,8 @@ import {
   PlanRepository, SubscriptionRepository, UsageRepository, EntitlementRepository, SubscriptionNotFoundError,
   type TenantContext, type Subscription, type Plan, type UsageMetric, type PaymentStatus,
 } from '@infinicus/database';
-import { SubscriptionSuspendedError, SubscriptionCanceledError, FeatureNotEntitledError, CapabilityNotEntitledError } from './errors.js';
+import { SubscriptionSuspendedError, SubscriptionCanceledError, FeatureNotEntitledError, CapabilityNotEntitledError, PlanNotSelfServiceError } from './errors.js';
+import { isSelfServicePlanCode } from './selfService.js';
 import { entitlementProfileFor, entitlementProfileFromStore, isCapability, type Capability, type EntitlementProfile } from './capabilities.js';
 
 export interface SubscriptionWithPlan {
@@ -35,7 +36,18 @@ export class EntitlementService {
     return { subscription, plan };
   }
 
-  /** Starts a tenant's first subscription. planCode defaults to 'free' (no card, no trial needed). */
+  /**
+   * The ONLY way a public route may start a subscription (SEC-BILL-02A, SF-1). The requested plan must be on the server-side self-service allowlist (selfService.ts);
+   * anything else - enterprise, pro, an unknown plan, a differently cased or padded code, a non-string - is refused BEFORE any plan lookup or write, with one indistinguishable
+   * error (no plan-existence oracle, no state change). Eligibility is never inferred from a plan's name, price, trial length or any provider metadata.
+   * Trusted internal callers (provisioning, commercial processes, tests) keep using `startSubscription`.
+   */
+  async startSelfServiceSubscription(ctx: TenantContext, planCode: unknown = 'free'): Promise<SubscriptionWithPlan> {
+    if (!isSelfServicePlanCode(planCode)) throw new PlanNotSelfServiceError();
+    return this.startSubscription(ctx, planCode);
+  }
+
+  /** Starts a tenant's first subscription. TRUSTED INTERNAL USE ONLY - a public route must call `startSelfServiceSubscription`. planCode defaults to 'free' (no card, no trial needed). */
   async startSubscription(ctx: TenantContext, planCode = 'free'): Promise<SubscriptionWithPlan> {
     const plan = await this.plans.getByCode(planCode);
     const subscription = await this.subscriptions.create(ctx, { planId: plan.id, trialDays: plan.trialDays });
