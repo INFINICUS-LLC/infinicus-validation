@@ -43,3 +43,12 @@ Movement-type semantics (receipts, transfers in and returns add the magnitude; i
 ## 7. Not done, by design
 
 No sale-effect consumer, mapping, shortage semantics, refund, restoration or POS change; no change to DAL contracts or the intake mapper (a movement with excess scale now fails at execution with a deterministic `OperationalMappingError`; pre-validating it in the mapper is a separate, optional change). Reserved quantity and the generated available quantity are untouched. S2 onward (mapping, effect record, command, consumer) still waits for the owner rulings in the reconciliation document.
+
+## 8. R1 independent review (POS2-04-S1-R1)
+
+Review of the merged-with-main head `072725e4` (hosted CI green, no concurrent change to the executor or `inventory/` on `main`). Two defects in the first implementation were demonstrated by executable probes and fixed; everything else was retained unchanged.
+
+- **D1, a number with more than 15 significant digits was silently altered.** A double reproduces a decimal only up to 15 significant digits. `12345678901234.5678` arrives as the double `12345678901234.568` and was accepted as that; `12345678901234.567` became `12345678901234.566`. Such numbers are now refused (`unsafe_number`, "pass it as exact decimal text"); exact text is accepted. Numbers with up to 15 significant digits are unchanged.
+- **D2, unbounded text input.** A text quantity of `0.` followed by 100,000 zeros and a `1` took about 8 seconds to refuse; a million digits took about 260 ms. Text longer than 64 characters is now refused before any parsing (`too_long`); the longest valid quantity is 20 characters.
+- **Retained and verified by execution:** the row lock, reading the balance as database text, atomic movement-and-balance update, validation before SQL, scope checks, RLS, and the event contract. New tests show a committed movement emits exactly one `bo.inventory.movement_recorded` event whose payload carries the exact quantity, and a refused or rolled-back movement emits none.
+- **Only consumer of the widened `quantity: number | string`** is the movement writer (the other `quantity` reads are a different command).

@@ -20,6 +20,17 @@ describe('parseMovementQuantity: exact, never rounded', () => {
     for (const v of ['100000000000000', 1e14, 1e21, 9007199254740993, '9007199254740993', '-100000000000000', '123456789012345678901234567890.1234']) expect(problem(v)).toBe('out_of_range');
     expect(ok('99999999999999')).toBe('99999999999999');
   });
+  it('refuses a number with more than 15 significant digits: it is already an approximation (R1 defect D1)', () => {
+    for (const v of [12345678901234.5678, 12345678901234.567, 123456789012.3456, 1234567890123.4567]) expect(problem(v), String(v)).toBe('unsafe_number');
+    for (const v of [123456789012.345, 1234567890.1234, 12345678901234, 0.0001, 99999999999999]) expect(problem(v), String(v)).toBeNull();
+    expect(ok('12345678901234.5678')).toBe('12345678901234.5678');   // the same value as exact text is accepted
+  });
+  it('refuses over-long text before parsing, so a huge string cannot cost CPU (R1 defect D2)', () => {
+    const huge = ['9'.repeat(1_000_000), `0.${'0'.repeat(100_000)}1`, `1${'0'.repeat(300_000)}`, '0'.repeat(65)];
+    for (const v of huge) { const t0 = performance.now(); expect(problem(v)).toBe('too_long'); expect(performance.now() - t0).toBeLessThan(50); }
+    expect(problem('0'.repeat(64))).toBeNull();                       // 64 characters is still accepted
+    expect(ok(`0.${'0'.repeat(20)}`)).toBe('0');                     // trailing zeros beyond the fourth place are still the same value
+  });
   it('refuses anything that is not a finite plain decimal', () => {
     for (const v of ['abc', '1e3', '1E3', ' 1', '1 ', '', '1,5', '--1', '.5', '5.', '+', '-', NaN, Infinity, -Infinity, null, undefined, {}, [1], true, 5n]) expect(problem(v), String(v)).toBe('not_a_decimal');
   });
@@ -27,6 +38,8 @@ describe('parseMovementQuantity: exact, never rounded', () => {
     expect(quantityProblemMessage('not_a_decimal')).toBe('Inventory movement quantity must be a finite decimal.');
     expect(quantityProblemMessage('excess_scale')).toBe('Inventory movement quantity must have at most 4 decimal places (it is never rounded).');
     expect(quantityProblemMessage('out_of_range')).toBe('Inventory movement quantity must have an absolute value below 100000000000000.');
+    expect(quantityProblemMessage('too_long')).toBe('Inventory movement quantity text must be at most 64 characters.');
+    expect(quantityProblemMessage('unsafe_number')).toBe('Inventory movement quantity given as a number must have at most 15 significant digits; pass it as exact decimal text.');
   });
 });
 
