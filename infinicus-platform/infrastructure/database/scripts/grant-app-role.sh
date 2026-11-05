@@ -121,6 +121,12 @@ BEGIN
     EXECUTE format('REVOKE EXECUTE ON FUNCTION billing.grant_entitlement(uuid, text, text, text, timestamptz, timestamptz) FROM %I', app_role);
     EXECUTE format('REVOKE EXECUTE ON FUNCTION billing.revoke_entitlement(uuid, uuid) FROM %I', app_role);
   END IF;
+  -- SEC-BILL-02B-1 (migration 0227): billing.emit_outbox_event is an INTERNAL helper. Its only callers are the two billing.emit_* wrappers, which run as the function
+  -- owner, so the application role has no reason to execute it directly; the blanket EXECUTE grant above would hand it over, so it is withdrawn here, after the blanket
+  -- grants and on every rerun. (The wrappers stay executable: the billing repositories call them.) A no-op before migration 0227.
+  IF to_regprocedure('billing.emit_outbox_event(uuid,uuid,text,text,uuid,uuid,jsonb,text,uuid)') IS NOT NULL THEN
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION billing.emit_outbox_event(uuid, uuid, text, text, uuid, uuid, jsonb, text, uuid) FROM %I', app_role);
+  END IF;
   -- STRIPE-SBX-01 (migration 0226): the provider event ledger is written only by the governed billing functions (claim / finish), never directly by the
   -- application role. Read stays (tenant-scoped by RLS). The table trigger also refuses any write outside those functions; this is the least-privilege layer.
   IF to_regclass('billing.provider_events') IS NOT NULL THEN
