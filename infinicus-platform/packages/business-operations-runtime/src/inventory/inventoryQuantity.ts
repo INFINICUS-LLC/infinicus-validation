@@ -12,7 +12,12 @@ export const INVENTORY_QUANTITY_EXCLUSIVE_MAX = Decimal.of(10n ** 14n);
 export const INVENTORY_QUANTITY_MAXIMUM_TEXT = '99999999999999.9999';
 
 export type MovementType = 'receipt' | 'issue' | 'transfer_in' | 'transfer_out' | 'adjustment' | 'return' | 'write_off' | 'cycle_count';
-export type QuantityProblem = 'not_a_decimal' | 'excess_scale' | 'out_of_range';
+export type QuantityProblem = 'not_a_decimal' | 'excess_scale' | 'out_of_range' | 'too_long' | 'unsafe_number';
+
+/** The longest valid text is a sign, 14 digits, a point and 4 digits (20 characters); trailing zeros are tolerated. Longer text is refused BEFORE any parsing (no input amplification). */
+export const INVENTORY_QUANTITY_TEXT_MAX_LENGTH = 64;
+/** A double reproduces any decimal of up to 15 significant digits; beyond that its text is an approximation of what was written, so a number with more is refused (pass exact decimal text). */
+export const INVENTORY_QUANTITY_NUMBER_MAX_SIGNIFICANT_DIGITS = 15;
 
 /** Plain decimal text only: optional sign, digits, optional fraction. No exponent, spaces or separators. Written without nested quantifiers. */
 function isPlainDecimalText(text: string): boolean {
@@ -24,6 +29,13 @@ function isPlainDecimalText(text: string): boolean {
   return digits(whole) && (dot === -1 || digits(fraction));
 }
 
+function significantDigits(d: Decimal): number {
+  const digits = d.toString().replace('-', '').replace('.', '');
+  let i = 0;
+  while (i < digits.length && digits[i] === '0') i += 1;
+  return digits.length - i;
+}
+
 function fractionDigits(d: Decimal): number {
   const text = d.toString();   // trailing fractional zeros are removed, so 0.3000 and 0.30000 are the same value
   const dot = text.indexOf('.');
@@ -33,11 +45,15 @@ function fractionDigits(d: Decimal): number {
 /** An exact movement quantity, or why it cannot be one. Never rounds; never converts a text quantity through `Number`. */
 export function parseMovementQuantity(value: unknown): { ok: true; value: Decimal } | { ok: false; problem: QuantityProblem } {
   let d: Decimal | null = null;
-  if (typeof value === 'string') d = isPlainDecimalText(value) ? Decimal.parse(value) : null;
-  else if (typeof value === 'number') d = Decimal.fromNumber(value);   // finite numbers only, through their shortest round-trip text
+  if (typeof value === 'string') {
+    if (value.length > INVENTORY_QUANTITY_TEXT_MAX_LENGTH) return { ok: false, problem: 'too_long' };
+    d = isPlainDecimalText(value) ? Decimal.parse(value) : null;
+  } else if (typeof value === 'number') d = Decimal.fromNumber(value);   // finite numbers only, through their shortest round-trip text
   if (d === null) return { ok: false, problem: 'not_a_decimal' };
   if (d.abs().gte(INVENTORY_QUANTITY_EXCLUSIVE_MAX)) return { ok: false, problem: 'out_of_range' };
   if (fractionDigits(d) > INVENTORY_QUANTITY_MAX_DECIMALS) return { ok: false, problem: 'excess_scale' };
+  // A number with more than 15 significant digits is already an approximation of what was written (12345678901234.5678 is the double 12345678901234.568), so it is refused, never taken as exact.
+  if (typeof value === 'number' && significantDigits(d) > INVENTORY_QUANTITY_NUMBER_MAX_SIGNIFICANT_DIGITS) return { ok: false, problem: 'unsafe_number' };
   return { ok: true, value: d };
 }
 
@@ -46,6 +62,8 @@ export function quantityProblemMessage(problem: QuantityProblem): string {
     case 'not_a_decimal': return 'Inventory movement quantity must be a finite decimal.';
     case 'excess_scale': return `Inventory movement quantity must have at most ${INVENTORY_QUANTITY_MAX_DECIMALS} decimal places (it is never rounded).`;
     case 'out_of_range': return `Inventory movement quantity must have an absolute value below ${INVENTORY_QUANTITY_EXCLUSIVE_MAX.toString()}.`;
+    case 'too_long': return `Inventory movement quantity text must be at most ${INVENTORY_QUANTITY_TEXT_MAX_LENGTH} characters.`;
+    case 'unsafe_number': return `Inventory movement quantity given as a number must have at most ${INVENTORY_QUANTITY_NUMBER_MAX_SIGNIFICANT_DIGITS} significant digits; pass it as exact decimal text.`;
   }
 }
 

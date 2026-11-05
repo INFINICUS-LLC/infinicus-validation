@@ -142,6 +142,45 @@ describe.runIf(run)('POS2-04-S1: exact inventory balance arithmetic (real Postgr
     });
   });
 
+  describe('R1 review: defects found and the event contract', () => {
+    it('D1: a number with more than 15 significant digits is refused, never taken as the approximation it already is; the same value as text is exact', async () => {
+      const w = await world(); const a = await item(w);
+      for (const q of [12345678901234.5678, 12345678901234.567, 123456789012.3456]) {
+        expect(await refused(move(w, a, 'receipt', q))).toBe('Inventory movement quantity given as a number must have at most 15 significant digits; pass it as exact decimal text.');
+      }
+      expect(await movements(a)).toEqual({ n: 0, list: [] });
+      await move(w, a, 'receipt', '12345678901234.5678');
+      expect(await onHand(a, w.warehouse)).toBe('12345678901234.5678');
+      await move(w, a, 'issue', 123456789012.345);                                     // 15 significant digits as a number is exact
+      expect(await onHand(a, w.warehouse)).toBe('12222222112222.2228');
+    });
+    it('D2: over-long text is refused before any parsing or SQL, quickly', async () => {
+      const w = await world(); const a = await item(w);
+      for (const q of ['9'.repeat(1_000_000), `0.${'0'.repeat(100_000)}1`]) {
+        const t0 = performance.now();
+        expect(await refused(move(w, a, 'receipt', q))).toBe('Inventory movement quantity text must be at most 64 characters.');
+        expect(performance.now() - t0).toBeLessThan(500);
+      }
+      expect(await movements(a)).toEqual({ n: 0, list: [] });
+    });
+    it('a committed movement emits exactly one event carrying the exact quantity; a refused or rolled-back movement emits none', async () => {
+      const w = await world(); const a = await item(w);
+      const events = async () => (await admin.query(`SELECT payload->>'quantity' AS q, payload->>'movementType' AS t FROM events.outbox_events WHERE tenant_id=$1 AND event_type='bo.inventory.movement_recorded' AND payload->>'inventoryItemId'=$2 ORDER BY created_at, id`, [w.ctx.tenantId, a])).rows;
+      await move(w, a, 'receipt', '12345678901234.5678');
+      expect(await events()).toEqual([{ q: '12345678901234.5678', t: 'receipt' }]);
+      expect(await refused(move(w, a, 'receipt', '99999999999999.9999'))).toContain('exceed the maximum');
+      expect(await refused(move(w, a, 'issue', '99999999999999'))).toContain('negative');
+      expect(await refused(move(w, a, 'receipt', '0.00001'))).toContain('at most 4 decimal places');
+      const boom = withTenantTransaction(w.ctx, async (client) => {
+        await executor.executeOn(client, w.ctx, { type: 'record_inventory_movement', context: context(w), payload: { inventoryItemId: a, warehouseId: w.warehouse, movementType: 'receipt', quantity: '1' } } as OperationalCommand);
+        throw new Error('rolled back');
+      });
+      expect(await refused(boom)).toBe('rolled back');
+      expect(await events()).toEqual([{ q: '12345678901234.5678', t: 'receipt' }]);
+      expect((await movements(a)).n).toBe(1);
+    });
+  });
+
   describe('movement-type semantics are unchanged', () => {
     it('receipts, transfers in and returns add the magnitude; issues, transfers out and write-offs subtract it (a negative input is its magnitude)', async () => {
       const w = await world(); const a = await item(w);
