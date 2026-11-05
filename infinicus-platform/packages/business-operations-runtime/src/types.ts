@@ -35,7 +35,8 @@ export interface RecordInventoryMovementCommand {
     inventoryItemId: string;
     warehouseId: string;
     movementType: 'receipt' | 'issue' | 'transfer_in' | 'transfer_out' | 'adjustment' | 'return' | 'write_off' | 'cycle_count';
-    quantity: number;
+    /** Exact numeric(18,4): plain decimal TEXT (preferred, exact), or a finite number taken through its shortest round-trip text. More than four decimals, or 10^14 and above, is refused, never rounded. */
+    quantity: number | string;
     unitCost?: number;
     /** Explicit ISO 4217-style code of `unitCost`; present exactly when `unitCost` is present. Never defaulted. */
     unitCostCurrency?: string;
