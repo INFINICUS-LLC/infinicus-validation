@@ -106,6 +106,13 @@ BEGIN
     EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.offline_review_evidence FROM %I', app_role);
     EXECUTE format('GRANT SELECT ON business_operations.offline_review_evidence TO %I', app_role);
   END IF;
+  -- POS2-04-S2: only the governed BO configuration function may mutate mapping state or audit history.
+  -- Apply after blanket grants on every rerun; default table privileges remain read-only.
+  IF to_regclass('business_operations.pos_inventory_mappings') IS NOT NULL THEN
+    EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.pos_inventory_mappings FROM %I', app_role);
+    EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.pos_inventory_mapping_history FROM %I', app_role);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION business_operations.configure_pos_inventory_mapping(uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid) TO %I', app_role);
+  END IF;
   -- AUDIT-LP-1: audit.access_events is a security log (it also carries the failed-login events that bound password guessing). The application only
   -- INSERTs and SELECTs it, so UPDATE, DELETE and TRUNCATE are withheld; a compromised or buggy application session can no longer rewrite or erase it.
   -- Tenant erasure removes a tenant's rows over the ADMIN connection (delete-tenant-data.mjs, ADMIN_ERASED_TABLES). Re-applied on every run, after

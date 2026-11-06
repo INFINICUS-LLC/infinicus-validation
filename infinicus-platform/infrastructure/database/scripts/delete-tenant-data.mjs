@@ -223,6 +223,8 @@ async function main() {
   // the application role has no DELETE privilege.
   // Migration 0226 (STRIPE-SBX-01): billing.provider_events is a governed append-only ledger (guard_provider_events refuses DELETE and TRUNCATE for every
   // role), so it is retained and reported like the tables above. Its erasure / retention treatment is an OPEN OWNER DECISION, not decided here.
+  // POS2-04-S2 mappings and transition history are also protected append-only configuration evidence. Count their tenant rows as retained;
+  // never attempt an application-role DELETE or claim complete erasure while they remain. Tenant-specific retention remains an owner decision.
   const appendOnlyRaw = psql(
     ADMIN_DATABASE_URL,
     `SELECT DISTINCT n.nspname||'.'||c.relname
@@ -231,7 +233,8 @@ async function main() {
      JOIN pg_namespace n ON n.oid = c.relnamespace
      JOIN pg_proc p ON p.oid = t.tgfoid
      WHERE p.proname IN ('forbid_mutation', 'forbid_execution_capability_activation_mutation',
-                        'forbid_governed_source_mutation', 'guard_provider_events');`
+                        'forbid_governed_source_mutation', 'guard_provider_events',
+                        'refuse_pos_inventory_mapping_delete', 'guard_pos_inventory_mapping_history');`
   );
   const tablesAppendOnly = new Set(
     appendOnlyRaw.split('\n').map((l) => l.trim()).filter(Boolean).filter((t) => tenantScopedTables.has(t))
