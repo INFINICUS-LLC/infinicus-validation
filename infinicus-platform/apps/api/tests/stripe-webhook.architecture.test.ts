@@ -115,8 +115,8 @@ describe('STRIPE-SBX-01 - configuration and secrets', () => {
 describe('STRIPE-SBX-01 - migration 0226 shape', () => {
   it('is the only new migration, exactly named', () => {
     const all = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => /\.sql$/.test(f)).sort();
-    expect(all.slice(all.indexOf('0226_billing_provider_links_and_events.sql'))).toEqual(['0226_billing_provider_links_and_events.sql', '0227_harden_billing_emit_functions.sql']); // 0227 is SEC-BILL-02B-1's (legacy emit_* hardening), later than this block's
-    expect(all.filter((f) => /^0(22[5-9]|2[3-9]\d)_/.test(f))).toEqual(['0225_create_billing_entitlements.sql', '0226_billing_provider_links_and_events.sql', '0227_harden_billing_emit_functions.sql']); // 0225 is POS2-02's entitlement store, 0227 is SEC-BILL-02B-1's; this block's only migration is 0226
+    expect(all.slice(all.indexOf('0226_billing_provider_links_and_events.sql'))).toEqual(['0226_billing_provider_links_and_events.sql', '0227_harden_billing_emit_functions.sql', '0228_pos_inventory_mapping_foundation.sql']); // 0227 is SEC-BILL-02B-1's (legacy emit_* hardening), later than this block's
+    expect(all.filter((f) => /^0(22[5-9]|2[3-9]\d)_/.test(f))).toEqual(['0225_create_billing_entitlements.sql', '0226_billing_provider_links_and_events.sql', '0227_harden_billing_emit_functions.sql', '0228_pos_inventory_mapping_foundation.sql']); // 0225 is POS2-02's entitlement store, 0227 is SEC-BILL-02B-1's; this block's only migration is 0226
     expect(all.filter((f) => f.startsWith('0226_'))).toHaveLength(1); // the number is unique
   });
   it('is additive: no drop, no seed, no GRANT, no plan or entitlement change; the one change to an existing table is a composite unique key', () => {
@@ -147,7 +147,9 @@ describe('STRIPE-SBX-01 - migration 0226 shape', () => {
     for (const f of fns) expect(sql, f).toMatch(new RegExp(`REVOKE ALL ON FUNCTION ${f.replace('.', '\\.')}\\(`));
   });
   it('tenant erasure recognises the ledger guard as an append-only guard (retained and reported, never a blocked DELETE)', () => {
-    expect(read('infrastructure/database/scripts/delete-tenant-data.mjs')).toMatch(/'forbid_governed_source_mutation', 'guard_provider_events'\)/);
+    const erasure = read('infrastructure/database/scripts/delete-tenant-data.mjs');
+    expect(erasure).toMatch(/'forbid_governed_source_mutation', 'guard_provider_events'/);
+    expect(erasure).toMatch(/'refuse_pos_inventory_mapping_delete', 'guard_pos_inventory_mapping_history'\)/);
   });
   it('the grant script withholds direct ledger writes from the application role', () => {
     expect(read('infrastructure/database/scripts/grant-app-role.sh')).toMatch(/REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON billing\.provider_events FROM %I/);
