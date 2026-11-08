@@ -20,14 +20,16 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
   let completedAt: Date;
   let args: unknown[];
 
-  async function scoped<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+  async function scoped<T>(fn: (c: PoolClient) => Promise<T>, commit = false): Promise<T> {
     const c = await app.connect();
     try {
       await c.query('BEGIN');
       await c.query(`SELECT set_config('app.tenant_id',$1,true),
         set_config('app.workspace_id',$2,true),set_config('app.user_id',$3,true)`,
       [tenant, workspace, actor]);
-      return await fn(c);
+      const result = await fn(c);
+      if (commit) await c.query('COMMIT');
+      return result;
     } finally {
       await c.query('ROLLBACK').catch(() => undefined);
       c.release();
@@ -65,7 +67,7 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
 
     mapping = await scoped(async c => (await c.query(
       'SELECT * FROM business_operations.configure_pos_inventory_mapping($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-      [tenant,workspace,business,product,item,warehouse,actor,randomUUID(),null])).rows[0].mapping_id as string);
+      [tenant,workspace,business,product,item,warehouse,actor,randomUUID(),null])).rows[0].mapping_id as string, true);
 
     await admin.query(`INSERT INTO platform.orders
       (id,tenant_id,workspace_id,business_id,order_number,order_date,currency_code,
