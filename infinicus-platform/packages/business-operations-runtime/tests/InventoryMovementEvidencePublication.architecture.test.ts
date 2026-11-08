@@ -24,7 +24,7 @@ describe('BO-PUB-DEV-02 - migration 0224 is minimal, additive and shaped as the 
   it('is the newest migration and creates exactly ONE BO table and ONE parent key; it drops, renames, grants and rewrites nothing', () => {
     const all = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => f.endsWith('.sql')).sort();
     // 0224 is the newest BO migration; the only later ones are billing-schema migrations of other blocks (POS2-02 entitlement store 0225, STRIPE-SBX-01 provider links 0226): no BO table
-    expect(all.slice(all.indexOf('0224_bo_publication_evidence.sql'))).toEqual(['0224_bo_publication_evidence.sql', '0225_create_billing_entitlements.sql', '0226_billing_provider_links_and_events.sql', '0227_harden_billing_emit_functions.sql', '0228_pos_inventory_mapping_foundation.sql']);
+    expect(all.slice(all.indexOf('0224_bo_publication_evidence.sql'))).toEqual(['0224_bo_publication_evidence.sql', '0225_create_billing_entitlements.sql', '0226_billing_provider_links_and_events.sql', '0227_harden_billing_emit_functions.sql', '0228_pos_inventory_mapping_foundation.sql', '0229_pos_inventory_sale_effect_evidence.sql']);
     expect([...sql.matchAll(/CREATE TABLE ([a-z_.]+)/g)].map((m) => m[1])).toEqual(['business_operations.bo_publication_evidence']);
     expect([...sql.matchAll(/ALTER TABLE ([a-z_.]+) ADD CONSTRAINT ([a-z_0-9]+)/g)].map((m) => `${m[1]}.${m[2]}`)).toEqual(['business_operations.bo_publication_packages.bo_publication_packages_d3_key']);
     expect(sql).not.toMatch(/\bDROP (TABLE|COLUMN|CONSTRAINT|TRIGGER|POLICY)\b|\bRENAME\b|\bGRANT\b|\bREVOKE\b|\bCREATE ROLE\b|\bUPDATE business_operations|\bDELETE FROM\b|\bTRUNCATE TABLE\b|;\s*TRUNCATE business/i); // (BEFORE TRUNCATE is the append-only trigger)

@@ -117,11 +117,11 @@ describe.runIf(run)('POS2-04 decision gate: current state of the sale -> invento
     expect((await adminPool.query(`SELECT 1 FROM platform.inventory_items WHERE id=$1 AND product_id IS NULL`, [item])).rowCount).toBe(1);
   });
 
-  it('S2 adds a separate governed mapping table but no sale-effect or stock writer', async () => {
+  it('S2 mapping and S3 inert effect evidence exist without a stock writer', async () => {
     const cols = (await adminPool.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='business_operations' AND table_name='products' ORDER BY ordinal_position`)).rows.map((r) => r.column_name as string);
     expect(cols.filter((c) => /inventory|stock|sku|warehouse|item/i.test(c))).toEqual([]);
     const tables = (await adminPool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='business_operations' AND table_name ~ '(sale|pos).*(inventory|stock|effect)|(inventory|stock).*(sale|pos)' ORDER BY table_name`)).rows.map((r) => r.table_name);
-    expect(tables).toEqual(['pos_inventory_mapping_history', 'pos_inventory_mappings']);
+    expect(tables).toEqual(['pos_inventory_mapping_history', 'pos_inventory_mappings', 'pos_inventory_sale_effects']);
   });
 
   it('the stock ledger has no uniqueness on an order-line reference, so at-most-once has no existing mechanism', async () => {
