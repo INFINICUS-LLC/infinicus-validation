@@ -10,6 +10,7 @@
  * Guard pattern: describe.runIf(!!process.env.DATABASE_URL)
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { runScript } from './helpers/subprocessDiagnostics.js';
 import { Pool } from 'pg';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
@@ -31,6 +32,8 @@ const MODEL_CODE_T1 = 'export-test-model-t1';
 describe.runIf(run)('export-tenant.sh — live PostgreSQL', () => {
   let adminPool: Pool;
   let outputDir: string;
+  let exportDatabaseUrl: string;
+  const exportRole = `s3_export_${randomBytes(6).toString('hex')}`;
 
   beforeAll(async () => {
     adminPool = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
@@ -74,11 +77,35 @@ describe.runIf(run)('export-tenant.sh — live PostgreSQL', () => {
        ON CONFLICT (business_id, model_code) DO NOTHING`,
       [T1, WS1, MODEL_CODE_T1, BIZ_CODE_T1]
     );
+    // Dedicated read-only, non-BYPASSRLS export principal in the disposable test database.
+    // The request-serving app role retains NO SELECT access to S2/S3 protected evidence.
+    const exportPassword = randomBytes(24).toString('hex');
+    await adminPool.query(`CREATE ROLE "${exportRole}" LOGIN PASSWORD '${exportPassword}' NOSUPERUSER NOBYPASSRLS NOINHERIT`);
+    await adminPool.query(`DO $grant$
+      DECLARE r record;
+      BEGIN
+        FOR r IN SELECT DISTINCT schemaname, tablename FROM pg_policies
+          WHERE qual LIKE '%app.tenant_id%'
+        LOOP
+          EXECUTE format('GRANT USAGE ON SCHEMA %I TO %I', r.schemaname, '${exportRole}');
+          EXECUTE format('GRANT SELECT ON %I.%I TO %I', r.schemaname, r.tablename, '${exportRole}');
+        END LOOP;
+        EXECUTE format('GRANT USAGE ON SCHEMA tenancy TO %I', '${exportRole}');
+        EXECUTE format('GRANT SELECT ON tenancy.workspaces TO %I', '${exportRole}');
+      END $grant$`);
+    const parsed = new URL(process.env.DATABASE_URL!);
+    parsed.username = exportRole;
+    parsed.password = exportPassword;
+    exportDatabaseUrl = parsed.toString();
     outputDir = await mkdtemp(join(tmpdir(), 'infinicus-export-test-'));
   }, 30_000);
 
   afterAll(async () => {
-    if (adminPool) await adminPool.end();
+    if (adminPool) {
+      await adminPool.query(`DROP OWNED BY "${exportRole}"`).catch(() => undefined);
+      await adminPool.query(`DROP ROLE IF EXISTS "${exportRole}"`).catch(() => undefined);
+      await adminPool.end();
+    }
     if (outputDir) await rm(outputDir, { recursive: true, force: true });
   });
 
@@ -97,7 +124,7 @@ describe.runIf(run)('export-tenant.sh — live PostgreSQL', () => {
 
   it('exports only the target tenant\'s data, never another tenant\'s', async () => {
     const outputFile = join(outputDir, 'export.sql');
-    await runScript(EXPORT_SH, { ...process.env, DATABASE_URL: process.env.DATABASE_URL, TENANT_ID: T1, OUTPUT_FILE: outputFile }, 'export-tenant.sh (target tenant export)', catalogContext);
+    await runScript(EXPORT_SH, { ...process.env, DATABASE_URL: exportDatabaseUrl, TENANT_ID: T1, OUTPUT_FILE: outputFile }, 'export-tenant.sh (target tenant export)', catalogContext);
 
     const contents = await readFile(outputFile, 'utf8');
     // The same five requirements as before, reported by NAME when one fails, with structural facts instead of the export's contents (customer data).
@@ -115,6 +142,25 @@ describe.runIf(run)('export-tenant.sh — live PostgreSQL', () => {
     expect(failed, `export-tenant isolation checks failed: ${failed.join('; ')} (bytes=${contents.length} copyBlocks=${copyBlocks})`).toEqual([]);
   }, 30_000);
 
+  it('uses export-only SELECT authority while keeping application access restricted', async () => {
+    const roles = (await adminPool.query('SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=$1', [exportRole])).rows[0];
+    expect(roles).toMatchObject({rolsuper:false,rolbypassrls:false});
+    const db = new Pool({connectionString:exportDatabaseUrl});
+    try {
+      const grants = (await db.query(`SELECT
+        has_table_privilege(current_user,'business_operations.pos_inventory_mappings','SELECT') AS mapping_read,
+        has_table_privilege(current_user,'business_operations.pos_inventory_sale_effects','SELECT') AS effect_read,
+        has_table_privilege(current_user,'business_operations.pos_inventory_sale_effects','INSERT') AS effect_write,
+        has_table_privilege(current_user,'business_operations.pos_inventory_sale_effects','UPDATE') AS effect_update`)).rows[0];
+      expect(grants).toEqual({mapping_read:true,effect_read:true,effect_write:false,effect_update:false});
+    } finally { await db.end(); }
+    const app = new Pool({connectionString:process.env.DATABASE_URL});
+    try {
+      const access = (await app.query(`SELECT has_table_privilege(current_user,
+        'business_operations.pos_inventory_sale_effects','SELECT') AS allowed`)).rows[0];
+      expect(access.allowed).toBe(false);
+    } finally { await app.end(); }
+  });
   it('refuses to run against a superuser/BYPASSRLS connection', async () => {
     const adminUrl = process.env.ADMIN_DATABASE_URL;
     if (!adminUrl) return; // no separate admin credential configured in this environment
