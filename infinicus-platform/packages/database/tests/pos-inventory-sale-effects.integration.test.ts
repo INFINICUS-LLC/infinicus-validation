@@ -203,6 +203,15 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
     },true);
     expect((await admin.query(`SELECT count(*)::int n FROM business_operations.pos_catalog_line_origins
       WHERE order_line_id=$1`,[lines[0]])).rows[0].n).toBe(1);
+    // A deleted draft origin must not be resurrected by a direct app INSERT
+    // reusing its now-vacant line UUID, even with identical tenant/order scope.
+    await scoped(async c => {
+      await expect(c.query(`INSERT INTO business_operations.order_line_items
+        (id,tenant_id,workspace_id,business_id,order_id,line_number,item_type,
+         description,quantity,unit_price,line_total)
+        VALUES($1,$2,$3,$4,$5,3,'product','Forged',1,0,0)`,
+        [lines[0],tenant,workspace,business,plannedOrder])).rejects.toThrow(/identity already consumed/);
+    });
     // A completed or foreign-scope order may never gain an association later.
     await scoped(async c => {
       await expect(c.query(`SELECT business_operations.create_pos_catalog_line(
