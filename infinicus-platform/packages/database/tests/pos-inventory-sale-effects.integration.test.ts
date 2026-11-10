@@ -15,7 +15,7 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
   const tenant = randomUUID(), workspace = randomUUID(), business = randomUUID();
   const actor = randomUUID(), product = randomUUID(), item = randomUUID(), warehouse = randomUUID();
   const order = randomUUID(), note = randomUUID(), completion = randomUUID();
-  let line = randomUUID();
+  let line: string = randomUUID();
   const correlation = randomUUID();
   let mapping = '';
   let completedAt: string;
