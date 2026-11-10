@@ -67,7 +67,9 @@ BEGIN
      OR p_line_number IS NULL OR p_line_number < 1
      OR p_qty IS NULL OR p_qty <= 0 OR p_qty >= 100000000000000
      OR p_unit_price IS NULL OR p_unit_price < 0
-     OR p_line_total IS NULL OR p_line_total < 0 OR p_source NOT IN
+     OR p_line_total IS NULL OR p_line_total < 0
+     OR scale(p_qty)>4 OR scale(p_unit_price)>4 OR scale(p_line_total)>4
+     OR p_source NOT IN
        ('online','offline_catalog','offline_honoured_drift') THEN
     RAISE EXCEPTION 'POS catalogue line: invalid input' USING ERRCODE='invalid_parameter_value';
   END IF;
@@ -105,9 +107,6 @@ BEGIN
   IF p_source <> 'offline_honoured_drift' AND p_unit_price IS DISTINCT FROM v_product.price THEN
     RAISE EXCEPTION 'POS catalogue line: canonical unit price required' USING ERRCODE='check_violation';
   END IF;
-  IF p_source='offline_honoured_drift' AND p_unit_price IS NOT DISTINCT FROM v_product.price THEN
-    RAISE EXCEPTION 'POS catalogue line: drift override must differ from canonical price' USING ERRCODE='check_violation';
-  END IF;
 
   INSERT INTO business_operations.order_line_items
     (tenant_id,workspace_id,business_id,order_id,line_number,item_type,product_id,
@@ -124,6 +123,35 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION business_operations.create_pos_catalog_line(
   uuid,uuid,uuid,uuid,integer,uuid,numeric,numeric,numeric,uuid,text) FROM PUBLIC;
+
+-- A deleted draft line leaves a tombstone. Its original UUID may NEVER be
+-- recycled into a different row, including by an app role specifying INSERT.id.
+CREATE FUNCTION business_operations.guard_pos_origin_line_identity()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp AS $
+BEGIN
+  IF TG_OP='INSERT' THEN
+    IF EXISTS (SELECT 1 FROM business_operations.pos_catalog_line_origins a
+      WHERE a.order_line_id=NEW.id) THEN
+      RAISE EXCEPTION 'POS catalogue origin: line identity already consumed' USING ERRCODE='check_violation';
+    END IF;
+  ELSIF EXISTS (SELECT 1 FROM business_operations.pos_catalog_line_origins a
+      WHERE a.order_line_id=OLD.id) THEN
+    IF (NEW.id,NEW.tenant_id,NEW.workspace_id,NEW.business_id,NEW.order_id,NEW.item_type)
+      IS DISTINCT FROM
+      (OLD.id,OLD.tenant_id,OLD.workspace_id,OLD.business_id,OLD.order_id,OLD.item_type) THEN
+      RAISE EXCEPTION 'POS catalogue origin: original line identity is immutable' USING ERRCODE='check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $;
+CREATE TRIGGER guard_pos_origin_line_identity_insert
+  BEFORE INSERT ON business_operations.order_line_items
+  FOR EACH ROW EXECUTE FUNCTION business_operations.guard_pos_origin_line_identity();
+CREATE TRIGGER guard_pos_origin_line_identity_update
+  BEFORE UPDATE OF id, tenant_id, workspace_id, business_id, order_id, item_type
+  ON business_operations.order_line_items
+  FOR EACH ROW EXECUTE FUNCTION business_operations.guard_pos_origin_line_identity();
 
 -- Only origins created inside the authenticated line writer can satisfy S3.
 -- Legacy 'catalog_line_added' notes are deliberately no longer considered proof.
