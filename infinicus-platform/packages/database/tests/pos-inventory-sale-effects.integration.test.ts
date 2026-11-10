@@ -14,7 +14,8 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
   let app: Pool;
   const tenant = randomUUID(), workspace = randomUUID(), business = randomUUID();
   const actor = randomUUID(), product = randomUUID(), item = randomUUID(), warehouse = randomUUID();
-  const order = randomUUID(), line = randomUUID(), note = randomUUID(), completion = randomUUID();
+  const order = randomUUID(), note = randomUUID(), completion = randomUUID();
+  let line = randomUUID();
   const correlation = randomUUID();
   let mapping = '';
   let completedAt: string;
@@ -50,7 +51,7 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
     const role = (await admin.query(`INSERT INTO tenancy.roles(tenant_id,code,name,scope)
       VALUES($1,$2,'S3','business') RETURNING id`, [tenant,`s3-${tenant}`])).rows[0].id as string;
     await admin.query(`INSERT INTO tenancy.role_permissions(role_id,permission_id)
-      SELECT $1,id FROM tenancy.permissions WHERE code='bo:admin'`, [role]);
+      SELECT $1,id FROM tenancy.permissions WHERE code IN ('bo:admin','bo:write')`, [role]);
     const member = (await admin.query(`INSERT INTO tenancy.memberships(tenant_id,workspace_id,user_id,status)
       VALUES($1,$2,$3,'active') RETURNING id`, [tenant,workspace,actor])).rows[0].id as string;
     await admin.query(`INSERT INTO tenancy.membership_roles(membership_id,role_id,business_id)
@@ -72,13 +73,13 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
     await admin.query(`INSERT INTO platform.orders
       (id,tenant_id,workspace_id,business_id,order_number,order_date,currency_code,
        operational_status,total_amount,correlation_id,created_by)
-      VALUES($1,$2,$3,$4,$5,CURRENT_DATE,'KWD','completed',0,$6,$7)`,
+      VALUES($1,$2,$3,$4,$5,CURRENT_DATE,'KWD','planned',0,$6,$7)`,
       [order,tenant,workspace,business,`S3-${order}`,randomUUID(),actor]);
-    await admin.query(`INSERT INTO business_operations.order_line_items
-      (id,tenant_id,workspace_id,business_id,order_id,line_number,item_type,product_id,
-       description,quantity,unit_price,line_total)
-      VALUES($1,$2,$3,$4,$5,1,'product',NULL,'S3 product',2.5000,0,0)`,
-      [line,tenant,workspace,business,order]);
+    line = await scoped(async c => (await c.query<{ id: string }>(
+      `SELECT business_operations.create_pos_catalog_line(
+        $1::uuid,$2::uuid,$3::uuid,$4::uuid,1,$5::uuid,2.5000,0,0,$6::uuid,'online') AS id`,
+      [tenant,workspace,business,order,product,actor])).rows[0].id, true);
+    await admin.query(`UPDATE platform.orders SET operational_status='completed' WHERE id=$1`,[order]);
     await admin.query(`INSERT INTO business_operations.order_events
       (id,tenant_id,workspace_id,business_id,order_id,event_type,payload,correlation_id)
       VALUES($1,$2,$3,$4,$5,'note',$6,$7)`,
@@ -131,6 +132,26 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
     await expect(admin.query(insertEvidence,altered(7,randomUUID()))).rejects.toBeDefined();
     await expect(admin.query(insertEvidence,altered(5,randomUUID()))).rejects.toBeDefined();
     await expect(admin.query(insertEvidence,altered(9,randomUUID()))).rejects.toBeDefined();
+  });
+
+  it('refuses a completed legacy note-only line without privileged origin', async () => {
+    const untrustedLine = randomUUID();
+    await admin.query(`INSERT INTO business_operations.order_line_items
+      (id,tenant_id,workspace_id,business_id,order_id,line_number,item_type,description,quantity,unit_price,line_total)
+      VALUES($1,$2,$3,$4,$5,2,'product','S3 product',2.5000,0,0)`,
+      [untrustedLine,tenant,workspace,business,order]);
+    await admin.query(`INSERT INTO business_operations.order_events
+      (tenant_id,workspace_id,business_id,order_id,event_type,payload,correlation_id)
+      VALUES($1,$2,$3,$4,'note',$5,$6)`,
+      [tenant,workspace,business,order,
+       JSON.stringify({kind:'catalog_line_added',lineItemId:untrustedLine,catalogProductId:product}),
+       randomUUID()]);
+    const legacyArgs = args.map((value,index)=>index===4?untrustedLine:value);
+    await expect(admin.query(insertEvidence,legacyArgs)).rejects.toThrow(/authenticated catalogue-line origin/);
+    const remaining = (await admin.query(
+      `SELECT count(*)::int n FROM business_operations.pos_inventory_sale_effects WHERE order_line_id=$1`,
+      [untrustedLine])).rows[0].n;
+    expect(remaining).toBe(0);
   });
 
   it('forbids privileged UPDATE and DELETE on immutable evidence', async () => {
