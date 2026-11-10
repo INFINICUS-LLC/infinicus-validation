@@ -138,11 +138,15 @@ export class OfflineSaleRepository {
       await client.query('UPDATE platform.orders SET client_sale_id = $1 WHERE id = $2 AND business_id = $3', [request.clientSaleId.toLowerCase(), created.id, businessId]);
       for (const line of plan.lines) {
         if (!line.honouredDrift) {
-          await this.orders.addLineItem(ctx, created.id, businessId, { catalogProductId: line.productId, quantity: line.quantity });
+          await this.orders.addLineItem(ctx, created.id, businessId, { catalogProductId: line.productId, quantity: line.quantity, offlineSource: 'catalog' });
         } else {
-          // The customer-shown price is honoured (D4): a custom-priced line carrying the same provenance event a catalogue line gets.
+          // S5A: honoured-drift lines are still catalogue selections. The server
+          // accepted this deviation in planOfflineSale; only the governed creator
+          // may persist an immutable product origin at line insertion.
           const after = await this.orders.addLineItem(ctx, created.id, businessId, {
-            description: line.name, quantity: line.quantity, unitPrice: minorToMajor(line.usedUnitMinor, exponent), itemType: 'product',
+            catalogProductId: line.productId, quantity: line.quantity,
+            offlineSource: 'honoured_drift',
+            offlineHonouredUnitPrice: minorToMajor(line.usedUnitMinor, exponent),
           });
           const added = after.lineItems[after.lineItems.length - 1];
           await client.query(
