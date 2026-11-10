@@ -54,7 +54,7 @@ describe('BI-08-DEV-01 - the warehouse write boundary stays DISABLED', () => {
   });
   it('adds no migration (after 0223 the only later one is BO-PUB-DEV-02\'s BO-owned evidence tables), no permission, and no fixture or sample-data path in src', () => {
     const migrations = readdirSync(resolve(root, 'infrastructure/database/migrations')).filter((f) => f.endsWith('.sql')).sort();
-    expect(migrations.filter((f) => /^0(22[4-9]|2[3-9]\d)_/.test(f))).toEqual(['0224_bo_publication_evidence.sql', '0225_create_billing_entitlements.sql', '0226_billing_provider_links_and_events.sql', '0227_harden_billing_emit_functions.sql', '0228_pos_inventory_mapping_foundation.sql', '0229_pos_inventory_sale_effect_evidence.sql']); // exact names: this BI-08 block added none (0225 is POS2-02's billing entitlement store, 0226 is STRIPE-SBX-01's billing provider links)
+    expect(migrations.filter((f) => /^0(22[4-9]|2[3-9]\d)_/.test(f))).toEqual(['0224_bo_publication_evidence.sql', '0225_create_billing_entitlements.sql', '0226_billing_provider_links_and_events.sql', '0227_harden_billing_emit_functions.sql', '0228_pos_inventory_mapping_foundation.sql', '0229_pos_inventory_sale_effect_evidence.sql', '0230_pos_inventory_sale_effect_outcomes.sql']); // exact names: this BI-08 block added none (0225 is POS2-02's billing entitlement store, 0226 is STRIPE-SBX-01's billing provider links)
     for (const s of [pure, service, repo]) expect(s).not.toMatch(/permission|requirePermission|fixture|sample|demo|faker/i);
   });
 });
