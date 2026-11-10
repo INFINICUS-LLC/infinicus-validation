@@ -14,7 +14,9 @@ CREATE TABLE business_operations.pos_catalog_line_origins (
   catalog_product_id uuid NOT NULL REFERENCES business_operations.products(id) ON DELETE RESTRICT,
   actor_user_id uuid NOT NULL,
   source_kind text NOT NULL CHECK (source_kind IN ('online','offline_catalog','offline_honoured_drift')),
-  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  -- order_events.occurred_at uses now(); the offline path completes within the
+  -- same transaction, so this must share its transaction timestamp.
+  created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT pos_catalog_line_origin_line_scope UNIQUE (order_line_id, order_id, tenant_id, workspace_id, business_id)
 );
 CREATE INDEX pos_catalog_line_origins_scope ON business_operations.pos_catalog_line_origins
