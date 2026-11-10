@@ -102,9 +102,15 @@ describe.runIf(run)('OfflineSaleRepository - live PostgreSQL', () => {
     try {
       await c.query('BEGIN');
       await c.query("SET LOCAL session_replication_role = 'replica'");
+      // Membership role mappings and permissions have no tenant_id column.
+      // Remove their fixture rows by joining their scoped parent IDs first.
+      await c.query(`DELETE FROM tenancy.membership_roles mr WHERE EXISTS (
+        SELECT 1 FROM tenancy.memberships m WHERE m.id=mr.membership_id AND m.tenant_id=ANY($1))`,[tenants]);
+      await c.query(`DELETE FROM tenancy.role_permissions rp WHERE EXISTS (
+        SELECT 1 FROM tenancy.roles r WHERE r.id=rp.role_id AND r.tenant_id=ANY($1))`,[tenants]);
       for (const tbl of ['business_operations.offline_sales', 'business_operations.order_payments', 'business_operations.order_events', 'business_operations.business_events',
         'business_operations.pos_catalog_line_origins', 'business_operations.order_line_items', 'platform.orders', 'business_operations.register_sessions', 'business_operations.products',
-        'platform.business_currency_declarations', 'tenancy.membership_roles', 'tenancy.role_permissions', 'tenancy.memberships', 'tenancy.roles',
+        'platform.business_currency_declarations', 'tenancy.memberships', 'tenancy.roles',
         'platform.businesses', 'tenancy.workspaces']) {
         await c.query(`DELETE FROM ${tbl} WHERE tenant_id = ANY($1)`, [tenants]);
       }
