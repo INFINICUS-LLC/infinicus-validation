@@ -382,7 +382,7 @@ describe.runIf(run)('OfflineSaleRepository - live PostgreSQL', () => {
         await registers.close(onlineWorld.ctx, onlineWorld.session, { closingCash: 0 }, onlineWorld.biz).catch(() => undefined);
         onlineWorld.session = (await registers.open(onlineWorld.ctx, { businessId: onlineWorld.biz, openingCash: 0 })).id;
       }
-    });
+    }, 30_000); // 25 real offline+online orders now each invoke the governed S5A origin writer.
   });
 
   describe('row-level security on what the service wrote', () => {
