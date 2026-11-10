@@ -13,13 +13,13 @@ This sub-block characterizes the existing trust boundary; it is **not** the S5 d
 5. Migration 0229 checks the note's content, time, business scope, uniqueness and mapping consistency, but does not prove that the note was emitted by the trusted POS line-authoring code. The S3 trigger is a **consistency** validator, not source authentication.
 6. The S4 command `OperationalCommandExecutor.applyPosSaleEffectOn` is privileged and unwired. No route, pull worker or scheduler calls it; automatic stock deduction must remain disabled.
 
-An application-role principal able to insert arbitrary order notes could manufacture a `catalog_line_added` payload. A forged note may be caught when conflicting with an earlier note, but it cannot be assumed authentic when it is the only note. An append-only record alone is insufficient authority to move inventory.
+An application-role principal able to insert arbitrary order notes could manufacture a `catalog_line_added` payload. The legacy event schema also permits callers with column-level INSERT permission to provide `occurred_at`, so chronological checks against completion do not prove the event was originally emitted before the sale. A forged note may be caught when conflicting with an earlier note, but it cannot be assumed authentic when it is the only note. An append-only record alone is insufficient authority to move inventory.
 
 ## Proof and limits
 
 The rollback-only disposable-PG16 characterization in
 `infinicus-platform/packages/database/tests/pos-inventory-sale-effects.integration.test.ts`
-checks that the ordinary app role can INSERT an arbitrary same-scope catalogue-line note, cannot directly INSERT sale-effect evidence, and that the forged note is rolled back. This test **does not** establish that the current S3 producer can be exploited, nor does it authorize activation.
+checks that the ordinary app role can INSERT an arbitrary same-scope catalogue-line note with an artificially backdated `occurred_at`, cannot directly INSERT sale-effect evidence, and that the forged note is rolled back. This test **does not** establish that the current S3 producer can be exploited, nor does it authorize activation.
 
 The test runs only when both `DATABASE_URL` and `ADMIN_DATABASE_URL` are set. A skipped or unexecuted integration test is UNKNOWN, not PASS. Run only on disposable PG16 with CI-equivalent app-role grants and RLS. A future fix that removes the described INSERT capability must replace this characterization with an enforceable rejection test.
 
