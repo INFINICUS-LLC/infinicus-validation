@@ -21,6 +21,9 @@ export interface CreateOrderInput {
 export type AddLineItemInput = {
   catalogProductId: string;
   quantity: number;
+  /** Internal offline-intake metadata. Strict public schemas do not accept these keys. */
+  offlineSource?: 'catalog' | 'honoured_drift';
+  offlineHonouredUnitPrice?: number;
 } | {
   description: string;
   quantity: number;
@@ -247,7 +250,16 @@ export class OrderRepository {
           [input.catalogProductId, businessId]
         );
         if (!catalog.rows[0]) throw new NotFoundError('Product', input.catalogProductId);
-        selected = { description: catalog.rows[0].name as string, unitPrice: Number(catalog.rows[0].price), quantity: input.quantity, itemType: 'product' };
+        if (input.offlineSource !== 'honoured_drift' && input.offlineHonouredUnitPrice !== undefined) {
+          throw new ConflictError('OrderLineItem', 'an offline price override requires the honoured-drift source');
+        }
+        selected = {
+          description: catalog.rows[0].name as string,
+          unitPrice: input.offlineSource === 'honoured_drift'
+            ? (input.offlineHonouredUnitPrice ?? Number(catalog.rows[0].price))
+            : Number(catalog.rows[0].price),
+          quantity: input.quantity, itemType: 'product',
+        };
       } else {
         selected = input;
       }
@@ -257,18 +269,28 @@ export class OrderRepository {
       );
       const lineNumber = Number(nextLine.rows[0].next);
       const lineTotal = roundToCurrency(selected.quantity * selected.unitPrice, order.currency_code as string);
-      const added = await client.query<{ id: string }>(
-        `INSERT INTO business_operations.order_line_items
-           (tenant_id, workspace_id, business_id, order_id, line_number, item_type, product_id, description, quantity, unit_price, line_total)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-        [
-          ctx.tenantId, ctx.workspaceId, businessId, orderId, lineNumber,
-          selected.itemType ?? 'product', selected.productId ?? null, selected.description,
-          selected.quantity, selected.unitPrice, lineTotal,
-        ]
-      );
+      // S5A: only the governed database creator may create a trusted catalogue
+      // origin. Free-text lines remain ordinary draft rows without provenance.
+      const added = 'catalogProductId' in input
+        ? await client.query<{ id: string }>(
+          `SELECT business_operations.create_pos_catalog_line(
+             $1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::integer,$6::uuid,
+             $7::numeric,$8::numeric,$9::numeric,$10::uuid,$11::text) AS id`,
+          [ctx.tenantId, ctx.workspaceId, businessId, orderId, lineNumber,
+           input.catalogProductId, selected.quantity, selected.unitPrice, lineTotal, ctx.userId,
+           input.offlineSource === 'honoured_drift' ? 'offline_honoured_drift'
+             : input.offlineSource === 'catalog' ? 'offline_catalog' : 'online']
+        )
+        : await client.query<{ id: string }>(
+          `INSERT INTO business_operations.order_line_items
+             (tenant_id, workspace_id, business_id, order_id, line_number, item_type, product_id, description, quantity, unit_price, line_total)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+          [ctx.tenantId, ctx.workspaceId, businessId, orderId, lineNumber,
+           selected.itemType ?? 'product', selected.productId ?? null, selected.description,
+           selected.quantity, selected.unitPrice, lineTotal]
+        );
       if ('catalogProductId' in input) {
-        // Persist catalog provenance with the snapshot, without putting a BO ID in the canonical FK.
+        // Compatibility note only; provenance authority is the private S5A origin, NOT this user-writable note.
         await client.query(
           `INSERT INTO business_operations.order_events
              (tenant_id, workspace_id, business_id, order_id, event_type, payload, correlation_id)
