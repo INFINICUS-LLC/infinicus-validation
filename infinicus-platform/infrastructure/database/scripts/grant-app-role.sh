@@ -113,6 +113,12 @@ BEGIN
     EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.pos_inventory_mapping_history FROM %I', app_role);
     EXECUTE format('GRANT EXECUTE ON FUNCTION business_operations.configure_pos_inventory_mapping(uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid) TO %I', app_role);
   END IF;
+  -- POS2-04-S5A: immutable origin rows are written only by the governed
+  -- create_pos_catalog_line SECURITY DEFINER function, never by app DML.
+  IF to_regclass('business_operations.pos_catalog_line_origins') IS NOT NULL THEN
+    EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.pos_catalog_line_origins FROM %I', app_role);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION business_operations.create_pos_catalog_line(uuid,uuid,uuid,uuid,integer,uuid,numeric,numeric,numeric,uuid,text) TO %I', app_role);
+  END IF;
   -- POS2-04-S3: inert sale-effect evidence cannot be read or written by the application.
   -- There is no producer or operational route until a separately authorized block.
   IF to_regclass('business_operations.pos_inventory_sale_effects') IS NOT NULL THEN
