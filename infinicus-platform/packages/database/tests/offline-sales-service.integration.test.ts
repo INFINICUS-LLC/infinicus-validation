@@ -44,6 +44,19 @@ describe.runIf(run)('OfflineSaleRepository - live PostgreSQL', () => {
     await admin.query(`INSERT INTO tenancy.workspaces (id, tenant_id, name, slug, status) VALUES ($1,$2,'WS',$3,'active')`, [ws, t, `ws-${ws}`]);
     await admin.query(`INSERT INTO platform.businesses (id, tenant_id, workspace_id, legal_name, business_code, status) VALUES ($1,$2,$3,'Off Biz',$4,'active')`, [biz, t, ws, `os-${biz}`]);
     await admin.query(`INSERT INTO identity.users (id, email) VALUES ($1,$2)`, [user, `os-${user}@example.test`]);
+    // S5A's governed catalogue-line writer rechecks the same bo:write
+    // authorization enforced by the offline-sales HTTP route. Keep the live
+    // repository fixture representative of an authorized cashier.
+    const role = (await admin.query(`INSERT INTO tenancy.roles (tenant_id,code,name,scope)
+      VALUES($1,$2,'Offline POS writer','business') RETURNING id`,
+      [t,`offline-pos-${t}`])).rows[0].id as string;
+    await admin.query(`INSERT INTO tenancy.role_permissions (role_id,permission_id)
+      SELECT $1,id FROM tenancy.permissions WHERE code='bo:write'`,[role]);
+    const membership = (await admin.query(`INSERT INTO tenancy.memberships
+      (tenant_id,workspace_id,user_id,status)
+      VALUES($1,$2,$3,'active') RETURNING id`,[t,ws,user])).rows[0].id as string;
+    await admin.query(`INSERT INTO tenancy.membership_roles(membership_id,role_id,business_id)
+      VALUES($1,$2,$3)`,[membership,role,biz]);
     await declare({ t, ws, biz }, currency);
     const ctx: TenantContext = { tenantId: t, workspaceId: ws, userId: user };
     let session = '';
@@ -90,8 +103,9 @@ describe.runIf(run)('OfflineSaleRepository - live PostgreSQL', () => {
       await c.query('BEGIN');
       await c.query("SET LOCAL session_replication_role = 'replica'");
       for (const tbl of ['business_operations.offline_sales', 'business_operations.order_payments', 'business_operations.order_events', 'business_operations.business_events',
-        'business_operations.order_line_items', 'platform.orders', 'business_operations.register_sessions', 'business_operations.products',
-        'platform.business_currency_declarations', 'platform.businesses', 'tenancy.workspaces']) {
+        'business_operations.pos_catalog_line_origins', 'business_operations.order_line_items', 'platform.orders', 'business_operations.register_sessions', 'business_operations.products',
+        'platform.business_currency_declarations', 'tenancy.membership_roles', 'tenancy.role_permissions', 'tenancy.memberships', 'tenancy.roles',
+        'platform.businesses', 'tenancy.workspaces']) {
         await c.query(`DELETE FROM ${tbl} WHERE tenant_id = ANY($1)`, [tenants]);
       }
       await c.query(`DELETE FROM identity.users WHERE email LIKE 'os-%@example.test'`);
