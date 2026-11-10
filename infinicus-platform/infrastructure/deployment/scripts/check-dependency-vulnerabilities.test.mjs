@@ -92,11 +92,15 @@ test('the date argument must be a real date (no silent fallback to "never expire
 test('the real clock cannot be overridden from the environment or the command line', () => {
   const r = spawnSync(process.execPath, [SCRIPT, '--allowlist-only', '--today=2000-01-01'], { encoding: 'utf8', env: { ...process.env, ALLOWLIST_TODAY: '2000-01-01', TODAY: '2000-01-01' } });
   const today = todayUtc();
-  if (today <= REVIEW_BY) {
+  // The date check must reflect the actual committed allowlist, not a synthetic
+  // expired fixture. Timeboxed fixture expirations are tested separately above.
+  const actual = evaluateAllowlist(ALLOWLIST, today);
+  if (actual.expired.length === 0 && actual.invalid.length === 0) {
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, new RegExp(`UTC ${today}`));
   } else {
-    assert.equal(r.status, 1, 'after the review date the offline guard must fail');
-    assert.match(r.stderr, /ALLOWLIST EXPIRED/);
+    assert.equal(r.status, 1, 'expired or invalid entries must fail closed');
+    assert.match(r.stderr, /ALLOWLIST (EXPIRED|INVALID)/);
   }
+  assert.equal(evaluateAllowlist(FIXTURE, '2026-11-07').expired.length, temporary.length);
 });
