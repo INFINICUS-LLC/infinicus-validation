@@ -28,7 +28,6 @@ const execFileAsync = promisify(execFile);
 const run = !!process.env.DATABASE_URL;
 
 const DEPLOY_SH = resolve(__dirname, '../../../infrastructure/deployment/scripts/deploy.sh');
-const PORT = 34128;
 const DEPLOYED_BY = `vitest-${Date.now()}`;
 const DEPLOY_DATABASE_URL = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
 
@@ -41,17 +40,19 @@ describe.runIf(run)('deploy.sh — live orchestration', () => {
   });
 
   it('runs migration gate + smoke test and records a succeeded deployment_events row', async () => {
-    const config = loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', PORT: String(PORT) });
+    const config = loadConfig({ DATABASE_URL: process.env.DATABASE_URL!, NODE_ENV: 'test', LOG_LEVEL: 'silent', PORT: '0' });
     createPool({ connectionString: config.databaseUrl, ssl: config.dbSsl });
     app = await buildApp(config);
-    await app.listen({ port: PORT, host: '127.0.0.1' });
+    // Ask the OS to allocate a free loopback port: parallel CI suites must never
+    // compete for a hard-coded port or accidentally target another test server.
+    const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
 
     const { stdout } = await execFileAsync('bash', [DEPLOY_SH], {
       env: {
         ...process.env,
         ENVIRONMENT: 'test',
         DATABASE_URL: DEPLOY_DATABASE_URL,
-        BASE_URL: `http://127.0.0.1:${PORT}`,
+        BASE_URL: baseUrl,
         DEPLOYED_BY,
       },
     });
@@ -74,7 +75,7 @@ describe.runIf(run)('deploy.sh — live orchestration', () => {
           ...process.env,
           ENVIRONMENT: 'test',
           DATABASE_URL: DEPLOY_DATABASE_URL,
-          BASE_URL: 'http://127.0.0.1:34199', // nothing listening here
+          BASE_URL: 'http://127.0.0.1:1', // reserved-system port, no test server listening
           DEPLOYED_BY,
         },
       });

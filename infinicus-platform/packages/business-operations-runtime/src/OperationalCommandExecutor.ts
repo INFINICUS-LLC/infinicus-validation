@@ -248,6 +248,130 @@ export class OperationalCommandExecutor {
   }
 
   /**
+   * POS2-04-S4: UNWIRED trusted BO command. The caller MUST supply a privileged
+   * BO transaction client (not a request-serving application-role client).
+   * The initial SAVEPOINT is intentionally mandatory: without BEGIN this fails,
+   * instead of leaving a committed movement without its durable outcome.
+   *
+   * S3 evidence is not modified; S4 terminal outcomes are append-only.
+   * No route, scheduler, intake mapper or consumer invokes this method.
+   */
+  async applyPosSaleEffectOn(
+    client: PoolClient,
+    ctx: TenantContext,
+    businessId: string,
+    effectId: string,
+  ): Promise<{ outcome: 'applied' | 'exception'; outcomeId: string; movementId: string | null; replayed: boolean }> {
+    const id = canonicalUuidReference(effectId);
+    const business = canonicalUuidReference(businessId);
+    if (!id || !business) throw new OperationalMappingError('Canonical sale-effect and business UUIDs are required.');
+    await client.query('SAVEPOINT pos_s4_atomic');
+    try {
+      const source = await client.query<{
+        id: string; order_id: string; order_line_id: string; completion_event_id: string;
+        inventory_item_id: string; warehouse_id: string; mapping_id: string;
+        effect_quantity: string; completed_at: string; correlation_id: string;
+      }>(`SELECT id, order_id, order_line_id, completion_event_id, inventory_item_id,
+              warehouse_id, mapping_id, effect_quantity::text, completed_at::text,
+              correlation_id
+            FROM business_operations.pos_inventory_sale_effects
+           WHERE id=$1 AND tenant_id=$2 AND workspace_id=$3 AND business_id=$4
+           FOR UPDATE`, [id, ctx.tenantId, ctx.workspaceId, business]);
+      if (source.rowCount !== 1) throw new OperationalMappingError('Sale effect not found in BO scope.');
+      const effect = source.rows[0];
+      const existing = await client.query<{ id: string; outcome: 'applied' | 'exception'; movement_id: string | null }>(
+        `SELECT id, outcome, movement_id
+           FROM business_operations.pos_inventory_sale_effect_outcomes
+          WHERE effect_id=$1 AND tenant_id=$2 AND workspace_id=$3 AND business_id=$4`,
+        [id, ctx.tenantId, ctx.workspaceId, business]);
+      if (existing.rowCount === 1) {
+        await client.query('RELEASE SAVEPOINT pos_s4_atomic');
+        return { outcome: existing.rows[0].outcome, outcomeId: existing.rows[0].id,
+          movementId: existing.rows[0].movement_id, replayed: true };
+      }
+      const valid = await client.query<{ valid: boolean }>(
+        `SELECT (
+           EXISTS (SELECT 1 FROM platform.orders o
+             WHERE o.id=$1 AND o.tenant_id=$2 AND o.workspace_id=$3
+               AND o.business_id=$4 AND o.operational_status='completed')
+           AND EXISTS (SELECT 1 FROM business_operations.order_events e
+             WHERE e.id=$5 AND e.order_id=$1 AND e.tenant_id=$2
+               AND e.workspace_id=$3 AND e.business_id=$4
+               AND e.event_type='completed' AND e.new_status='completed')
+           AND EXISTS (SELECT 1 FROM business_operations.pos_inventory_mappings m
+             WHERE m.id=$6 AND m.tenant_id=$2 AND m.workspace_id=$3
+               AND m.business_id=$4 AND m.state='active'
+               AND m.inventory_item_id=$7 AND m.warehouse_id=$8)
+           AND EXISTS (SELECT 1 FROM platform.inventory_items i
+             WHERE i.id=$7 AND i.tenant_id=$2 AND i.workspace_id=$3
+               AND i.business_id=$4 AND i.status='active')
+           AND EXISTS (SELECT 1 FROM platform.warehouses w
+             WHERE w.id=$8 AND w.tenant_id=$2 AND w.workspace_id=$3
+               AND w.business_id=$4 AND w.status='active')
+          ) AS valid`,
+        [effect.order_id, ctx.tenantId, ctx.workspaceId, business,
+          effect.completion_event_id, effect.mapping_id, effect.inventory_item_id, effect.warehouse_id]);
+      if (valid.rows[0]?.valid !== true) {
+        throw new OperationalMappingError('Sale-effect source or current stock association is invalid.');
+      }
+      // Hold the existing balance lock through movement and outcome insertion.
+      // No balance row is equivalent to zero available stock; the canonical
+      // movement writer remains the only code allowed to CREATE balances.
+      const balance = await client.query<{ available: string }>(
+        `SELECT GREATEST(quantity_on_hand - quantity_reserved,0)::text AS available
+           FROM business_operations.inventory_balances
+          WHERE tenant_id=$1 AND workspace_id=$2 AND business_id=$3
+            AND inventory_item_id=$4 AND warehouse_id=$5 FOR UPDATE`,
+        [ctx.tenantId, ctx.workspaceId, business, effect.inventory_item_id, effect.warehouse_id]);
+      const available = Decimal.parse(balance.rows[0]?.available ?? '0');
+      const requested = Decimal.parse(effect.effect_quantity);
+      if (available === null || requested === null || requested.cmp(Decimal.of(0n)) <= 0) {
+        throw new OperationalMappingError('Sale-effect quantity or available balance is invalid.');
+      }
+      const shortage = available.cmp(requested) < 0;
+      let movementId: string | null = null;
+      if (!shortage) {
+        // Canonical writer only; its exact-decimal balance checks, lock, ledger
+        // and event publishing remain authoritative and in the SAME transaction.
+        movementId = await this.applyInventoryMovement(client, ctx, {
+          type: 'record_inventory_movement',
+          context: {
+            tenantId: ctx.tenantId, workspaceId: ctx.workspaceId, businessId: business,
+            correlationId: effect.correlation_id, causationId: effect.completion_event_id,
+            sourceReference: effect.order_id, provenanceReference: effect.id,
+            idempotencyKey: effect.id, actorId: ctx.userId,
+            occurredAt: effect.completed_at,
+          },
+          payload: {
+            inventoryItemId: effect.inventory_item_id, warehouseId: effect.warehouse_id,
+            movementType: 'issue', quantity: effect.effect_quantity,
+            referenceType: 'order_line', referenceId: effect.order_line_id,
+            notes: 'pos-sale-effect:v1',
+          },
+        }, effect.completed_at);
+      }
+      const outcome = await client.query<{ id: string }>(
+        `INSERT INTO business_operations.pos_inventory_sale_effect_outcomes
+           (effect_id,tenant_id,workspace_id,business_id,outcome,reason,movement_id,
+            order_line_id,inventory_item_id,warehouse_id,quantity,available_quantity,correlation_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::numeric,$12::numeric,$13)
+         RETURNING id`,
+        [effect.id, ctx.tenantId, ctx.workspaceId, business,
+          shortage ? 'exception' : 'applied',
+          shortage ? 'INSUFFICIENT_STOCK' : null, movementId,
+          effect.order_line_id, effect.inventory_item_id, effect.warehouse_id,
+          effect.effect_quantity, shortage ? available.toString() : null, effect.correlation_id]);
+      await client.query('RELEASE SAVEPOINT pos_s4_atomic');
+      return { outcome: shortage ? 'exception' : 'applied', outcomeId: outcome.rows[0].id,
+        movementId, replayed: false };
+    } catch (error) {
+      await client.query('ROLLBACK TO SAVEPOINT pos_s4_atomic');
+      await client.query('RELEASE SAVEPOINT pos_s4_atomic');
+      throw error;
+    }
+  }
+
+  /**
    * THE one writer of an inventory movement and its balance effect (validation, balance lock, ledger INSERT, balance UPDATE, event). A plain movement and
    * the per-line movements of a purchase receipt (Data-capture Block A) both go through here, so there is no second movement writer. `occurredAt`, when
    * given, is the business instant of the movement (a receipt's `received_at`); otherwise the database default (now) applies, as before.

@@ -121,7 +121,7 @@ describe('OM-OBS-1 - read-only observability', () => {
       // SEC-BILL-02B-1: hardening of three billing event-emission functions (billing schema only; no OM or CL table, role or authority); it does not change OM authority.
       '0227_harden_billing_emit_functions.sql',
       // POS2-04-S2: BO-owned mapping configuration only; no OM observation, verdict or CL writer.
-      '0228_pos_inventory_mapping_foundation.sql', '0229_pos_inventory_sale_effect_evidence.sql',
+      '0228_pos_inventory_mapping_foundation.sql', '0229_pos_inventory_sale_effect_evidence.sql', '0230_pos_inventory_sale_effect_outcomes.sql',
     ];
     const migrations = readdirSync(join(PLATFORM, 'infrastructure/database/migrations')).filter((f) => /^02(1\d|[2-9]\d)_/.test(f) && !OTHER_BLOCK_MIGRATIONS.includes(f));
     expect(migrations).toEqual([]);

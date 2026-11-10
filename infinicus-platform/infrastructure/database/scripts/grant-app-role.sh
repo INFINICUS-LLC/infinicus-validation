@@ -118,6 +118,11 @@ BEGIN
   IF to_regclass('business_operations.pos_inventory_sale_effects') IS NOT NULL THEN
     EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.pos_inventory_sale_effects FROM %I', app_role);
   END IF;
+  -- POS2-04-S4: outcomes and exceptions are privileged BO evidence.
+  -- The application role has no direct reader/writer access, even after blanket grant reapplication.
+  IF to_regclass('business_operations.pos_inventory_sale_effect_outcomes') IS NOT NULL THEN
+    EXECUTE format('REVOKE ALL PRIVILEGES ON business_operations.pos_inventory_sale_effect_outcomes FROM %I', app_role);
+  END IF;
   -- AUDIT-LP-1: audit.access_events is a security log (it also carries the failed-login events that bound password guessing). The application only
   -- INSERTs and SELECTs it, so UPDATE, DELETE and TRUNCATE are withheld; a compromised or buggy application session can no longer rewrite or erase it.
   -- Tenant erasure removes a tenant's rows over the ADMIN connection (delete-tenant-data.mjs, ADMIN_ERASED_TABLES). Re-applied on every run, after

@@ -41,7 +41,20 @@ describe('BI-08-DEV-02 - ingestion service', () => {
     expect(names).toEqual(['0225_create_billing_entitlements.sql']);
     // content-based as well: no migration after 0224 may touch the warehouse / ingestion objects (other blocks' billing migrations, 0225 and 0226, are fine)
     const dir = resolve(root, 'infrastructure/database/migrations');
-    const offenders = readdirSync(dir).filter((n) => /^0(22[5-9]|2[3-9]\d)_/.test(n)).filter((n) => /business_intelligence\.|from_bo_evidence|bi_warehouse|inventory_movements/i.test(readFileSync(resolve(dir, n), 'utf8')));
+    const relevant = readdirSync(dir).filter((n) => /^0(22[5-9]|2[3-9]\d)_/.test(n));
+    // S4's FK into the canonical BO movement ledger is not a BI-08 warehouse change.
+    // Keep checking all BI warehouse references and all other movement migrations.
+    const s4Name = '0230_pos_inventory_sale_effect_outcomes.sql';
+    const s4 = readFileSync(resolve(dir, s4Name), 'utf8');
+    expect(relevant).toContain(s4Name);
+    expect(s4).toMatch(/ALTER TABLE business_operations\.inventory_movements\s+ADD CONSTRAINT pos_sale_effect_movement_scope_unique UNIQUE/);
+    expect(s4).toMatch(/REFERENCES business_operations\.inventory_movements/);
+    expect(s4).not.toMatch(/(?:INSERT INTO|UPDATE|DELETE FROM)\s+business_operations\.inventory_movements/i);
+    const offenders = relevant.filter((n) => {
+      const sql = readFileSync(resolve(dir, n), 'utf8');
+      if (/business_intelligence\.|from_bo_evidence|bi_warehouse/i.test(sql)) return true;
+      return n !== s4Name && /inventory_movements/i.test(sql);
+    });
     expect(offenders).toEqual([]);
   });
 });
