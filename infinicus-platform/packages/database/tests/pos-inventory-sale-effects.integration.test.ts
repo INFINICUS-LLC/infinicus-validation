@@ -17,7 +17,7 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
   const order = randomUUID(), line = randomUUID(), note = randomUUID(), completion = randomUUID();
   const correlation = randomUUID();
   let mapping = '';
-  let completedAt: Date;
+  let completedAt: string;
   let args: unknown[];
 
   async function scoped<T>(fn: (c: PoolClient) => Promise<T>, commit = false): Promise<T> {
@@ -86,9 +86,9 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
        JSON.stringify({kind:'catalog_line_added',lineItemId:line,catalogProductId:product}),randomUUID()]);
     const completed = (await admin.query(`INSERT INTO business_operations.order_events
       (id,tenant_id,workspace_id,business_id,order_id,event_type,previous_status,new_status,correlation_id)
-      VALUES($1,$2,$3,$4,$5,'completed','planned','completed',$6) RETURNING occurred_at`,
+      VALUES($1,$2,$3,$4,$5,'completed','planned','completed',$6) RETURNING occurred_at::text AS occurred_at`,
       [completion,tenant,workspace,business,order,correlation])).rows[0];
-    completedAt = completed.occurred_at as Date;
+    completedAt = completed.occurred_at as string;
     args = [tenant,workspace,business,order,line,completion,product,mapping,item,warehouse,completedAt,correlation];
   });
 

@@ -147,7 +147,7 @@ describe.runIf(run)('POS2-04-S2 governed mapping foundation (disposable PostgreS
     await expect(admin.query(`UPDATE business_operations.pos_inventory_mappings SET state='inactive',deactivated_at=clock_timestamp() WHERE id=$1`, [id])).rejects.toThrow(/governed writer/i);
     await expect(admin.query(`DELETE FROM business_operations.pos_inventory_mappings WHERE id=$1`, [id])).rejects.toThrow(/append-only/i);
     // Include the referencing history table so PostgreSQL's FK precheck cannot mask the trigger proof.
-    await expect(truncateRefusal(admin, `TRUNCATE business_operations.pos_inventory_mappings, business_operations.pos_inventory_mapping_history`)).rejects.toThrow(/append-only/i);
+    await expect(truncateRefusal(admin, `TRUNCATE business_operations.pos_inventory_mappings, business_operations.pos_inventory_mapping_history, business_operations.pos_inventory_sale_effects`)).rejects.toThrow(/append-only/i);
     expect((await admin.query(`SELECT state FROM business_operations.pos_inventory_mappings WHERE id=$1`, [id])).rows[0].state).toBe('active');
   });
 
