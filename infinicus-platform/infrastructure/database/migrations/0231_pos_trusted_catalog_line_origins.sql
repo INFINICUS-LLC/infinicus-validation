@@ -128,7 +128,7 @@ REVOKE ALL ON FUNCTION business_operations.create_pos_catalog_line(
 -- recycled into a different row, including by an app role specifying INSERT.id.
 CREATE FUNCTION business_operations.guard_pos_origin_line_identity()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp AS $
+SET search_path = pg_catalog, pg_temp AS $$
 BEGIN
   IF TG_OP='INSERT' THEN
     IF EXISTS (SELECT 1 FROM business_operations.pos_catalog_line_origins a
@@ -144,7 +144,7 @@ BEGIN
     END IF;
   END IF;
   RETURN NEW;
-END $;
+END $$;
 CREATE TRIGGER guard_pos_origin_line_identity_insert
   BEFORE INSERT ON business_operations.order_line_items
   FOR EACH ROW EXECUTE FUNCTION business_operations.guard_pos_origin_line_identity();
