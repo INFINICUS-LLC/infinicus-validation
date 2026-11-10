@@ -147,4 +147,32 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
     expect((await admin.query(`SELECT count(*)::int AS n FROM business_operations.inventory_balances
       WHERE business_id=$1`, [business])).rows[0].n).toBe(0);
   });
+
+  it('S5 provenance preflight: the application role can append a catalogue note without authenticating its writer', async () => {
+    // Characterization of the existing trust gap, NOT acceptance of forged notes
+    // for activation. The transaction rolls back and leaves no attack fixture.
+    const forgedId = await scoped(async c => {
+      const grants = (await c.query(`SELECT
+        has_table_privilege(current_user,'business_operations.order_events','INSERT') AS note_insert,
+        has_table_privilege(current_user,'business_operations.pos_inventory_sale_effects','INSERT') AS effect_insert`)).rows[0];
+      expect(grants).toEqual({ note_insert: true, effect_insert: false });
+      const forgedCatalogId = randomUUID();
+      const forged = await c.query<{ id: string; payload: { catalogProductId: string } }>(
+        `INSERT INTO business_operations.order_events
+          (tenant_id,workspace_id,business_id,order_id,event_type,payload,correlation_id)
+         VALUES ($1,$2,$3,$4,'note',$5,$6) RETURNING id,payload`,
+        [tenant,workspace,business,order,
+          JSON.stringify({ kind: 'catalog_line_added', lineItemId: line, catalogProductId: forgedCatalogId }),
+          randomUUID()]
+      );
+      expect(forged.rows).toHaveLength(1);
+      expect(forged.rows[0].payload.catalogProductId).toBe(forgedCatalogId);
+      return forged.rows[0].id;
+    });
+    const surviving = (await admin.query(
+      'SELECT count(*)::int AS n FROM business_operations.order_events WHERE id=$1',
+      [forgedId])).rows[0].n;
+    expect(surviving).toBe(0);
+  });
+
 });
