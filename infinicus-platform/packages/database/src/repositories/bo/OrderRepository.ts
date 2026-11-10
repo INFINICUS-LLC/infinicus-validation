@@ -289,8 +289,9 @@ export class OrderRepository {
            selected.itemType ?? 'product', selected.productId ?? null, selected.description,
            selected.quantity, selected.unitPrice, lineTotal]
         );
-      if ('catalogProductId' in input) {
+      if ('catalogProductId' in input && input.offlineSource !== 'honoured_drift') {
         // Compatibility note only; provenance authority is the private S5A origin, NOT this user-writable note.
+        // The offline honoured-drift importer emits its richer compatibility note itself.
         await client.query(
           `INSERT INTO business_operations.order_events
              (tenant_id, workspace_id, business_id, order_id, event_type, payload, correlation_id)
