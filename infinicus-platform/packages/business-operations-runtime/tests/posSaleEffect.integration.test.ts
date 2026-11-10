@@ -42,7 +42,7 @@ describe.runIf(run)('POS2-04-S4 unwired canonical BO sale-effect command (dispos
     const role = (await admin.query(`INSERT INTO tenancy.roles(tenant_id,code,name,scope)
       VALUES($1,$2,'S4','business') RETURNING id`,[ctx.tenantId,`s4-${ctx.tenantId}`])).rows[0].id;
     await admin.query(`INSERT INTO tenancy.role_permissions(role_id,permission_id)
-      SELECT $1,id FROM tenancy.permissions WHERE code='bo:admin'`,[role]);
+      SELECT $1,id FROM tenancy.permissions WHERE code IN ('bo:admin','bo:write')`,[role]);
     const member=(await admin.query(`INSERT INTO tenancy.memberships(tenant_id,workspace_id,user_id,status)
       VALUES($1,$2,$3,'active') RETURNING id`,[ctx.tenantId,ctx.workspaceId,ctx.userId])).rows[0].id;
     await admin.query(`INSERT INTO tenancy.membership_roles(membership_id,role_id,business_id)
@@ -62,19 +62,20 @@ describe.runIf(run)('POS2-04-S4 unwired canonical BO sale-effect command (dispos
     await admin.query(`INSERT INTO platform.orders
       (id,tenant_id,workspace_id,business_id,order_number,order_date,currency_code,
        operational_status,total_amount,correlation_id,created_by)
-      VALUES($1,$2,$3,$4,$5,CURRENT_DATE,'KWD','completed',0,$6,$7)`,
+      VALUES($1,$2,$3,$4,$5,CURRENT_DATE,'KWD','planned',0,$6,$7)`,
       [order,ctx.tenantId,ctx.workspaceId,business,`S4-${order}`,randomUUID(),ctx.userId]);
     for(let n=0;n<lines.length;n++){
-      await admin.query(`INSERT INTO business_operations.order_line_items
-        (id,tenant_id,workspace_id,business_id,order_id,line_number,item_type,description,quantity,unit_price,line_total)
-        VALUES($1,$2,$3,$4,$5,$6,'product','S4 product',2.5000,0,0)`,
-        [lines[n],ctx.tenantId,ctx.workspaceId,business,order,n+1]);
+      lines[n]=await transaction(app,async c=>(await c.query(
+        `SELECT business_operations.create_pos_catalog_line(
+          $1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::integer,$6::uuid,2.5000,1,2.5,$7::uuid,'online') AS id`,
+        [ctx.tenantId,ctx.workspaceId,business,order,n+1,product,ctx.userId])).rows[0].id);
       await admin.query(`INSERT INTO business_operations.order_events
         (tenant_id,workspace_id,business_id,order_id,event_type,payload,correlation_id)
         VALUES($1,$2,$3,$4,'note',$5,$6)`,
         [ctx.tenantId,ctx.workspaceId,business,order,
           JSON.stringify({kind:'catalog_line_added',lineItemId:lines[n],catalogProductId:product}),randomUUID()]);
     }
+    await admin.query(`UPDATE platform.orders SET operational_status='completed' WHERE id=$1`,[order]);
     const time=(await admin.query(`INSERT INTO business_operations.order_events
       (id,tenant_id,workspace_id,business_id,order_id,event_type,previous_status,new_status,correlation_id)
       VALUES($1,$2,$3,$4,$5,'completed','planned','completed',$6)
