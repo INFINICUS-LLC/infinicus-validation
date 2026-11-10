@@ -159,14 +159,26 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
       const forgedCatalogId = randomUUID();
       const forged = await c.query<{ id: string; payload: { catalogProductId: string } }>(
         `INSERT INTO business_operations.order_events
-          (tenant_id,workspace_id,business_id,order_id,event_type,payload,correlation_id)
-         VALUES ($1,$2,$3,$4,'note',$5,$6) RETURNING id,payload`,
+          (tenant_id,workspace_id,business_id,order_id,event_type,payload,correlation_id,occurred_at)
+         VALUES ($1,$2,$3,$4,'note',$5,$6,
+           (SELECT occurred_at - interval '1 second'
+              FROM business_operations.order_events WHERE id=$7))
+         RETURNING id,payload`,
         [tenant,workspace,business,order,
           JSON.stringify({ kind: 'catalog_line_added', lineItemId: line, catalogProductId: forgedCatalogId }),
-          randomUUID()]
+          randomUUID(),completion]
       );
       expect(forged.rows).toHaveLength(1);
       expect(forged.rows[0].payload.catalogProductId).toBe(forgedCatalogId);
+      // The caller can also backdate occurred_at into the interval that S3
+      // treats as evidence preceding completion: time ordering is not attestation.
+      const chronology = await c.query<{ backdated: boolean }>(
+        `SELECT forged.occurred_at < completed.occurred_at AS backdated
+           FROM business_operations.order_events forged
+           JOIN business_operations.order_events completed ON completed.id=$2
+          WHERE forged.id=$1`,
+        [forged.rows[0].id,completion]);
+      expect(chronology.rows[0]?.backdated).toBe(true);
       return forged.rows[0].id;
     });
     const surviving = (await admin.query(
