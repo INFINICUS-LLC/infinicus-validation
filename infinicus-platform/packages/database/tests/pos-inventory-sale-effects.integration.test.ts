@@ -225,6 +225,38 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
     });
   });
 
+  it('S5A security characterization: app-role direct drift invocation bypasses offline price planning', async () => {
+    // Not an acceptance test for activation: document the unresolved trust boundary
+    // using a disposable transaction. The privileged creator checks bo:write and
+    // order scope, but currently does not attest an accepted offline sale plan.
+    const plannedOrder = randomUUID();
+    await admin.query(`INSERT INTO platform.orders
+      (id,tenant_id,workspace_id,business_id,order_number,order_date,currency_code,
+       operational_status,total_amount,correlation_id,created_by)
+      VALUES($1,$2,$3,$4,$5,CURRENT_DATE,'KWD','planned',0,$6,$7)`,
+      [plannedOrder,tenant,workspace,business,`S5A-DRIFT-${plannedOrder}`,randomUUID(),actor]);
+    const unauthorizedLineId = await scoped(async c => {
+      const line = await c.query<{id:string}>(`SELECT business_operations.create_pos_catalog_line(
+        $1::uuid,$2::uuid,$3::uuid,$4::uuid,1,$5::uuid,1.0000,8.5000,8.5000,
+        $6::uuid,'offline_honoured_drift') AS id`,
+        [tenant,workspace,business,plannedOrder,product,actor]);
+      expect(line.rows).toHaveLength(1);
+      const saved = await c.query<{unit_price:string;line_total:string}>(`SELECT
+        unit_price::text AS unit_price,line_total::text AS line_total
+        FROM business_operations.order_line_items WHERE id=$1`,[line.rows[0].id]);
+      expect(Number(saved.rows[0].unit_price)).toBe(8.5);
+      expect(Number(saved.rows[0].line_total)).toBe(8.5);
+      return line.rows[0].id;
+    });
+    // Transaction rolled back; no fraudulent line, origin, sale or stock effects persist.
+    expect((await admin.query(`SELECT count(*)::int AS n
+      FROM business_operations.order_line_items WHERE id=$1`,[unauthorizedLineId])).rows[0].n).toBe(0);
+    expect((await admin.query(`SELECT count(*)::int AS n
+      FROM business_operations.pos_catalog_line_origins WHERE order_line_id=$1`,[unauthorizedLineId])).rows[0].n).toBe(0);
+    expect((await admin.query(`SELECT count(*)::int AS n
+      FROM business_operations.inventory_movements WHERE business_id=$1`,[business])).rows[0].n).toBe(0);
+  });
+
   it('forbids privileged UPDATE and DELETE on immutable evidence', async () => {
     await expect(admin.query(`UPDATE business_operations.pos_inventory_sale_effects
       SET state='pending' WHERE order_line_id=$1`,[line])).rejects.toBeDefined();
