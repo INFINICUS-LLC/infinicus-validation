@@ -269,10 +269,10 @@ export class OperationalCommandExecutor {
     try {
       const source = await client.query<{
         id: string; order_id: string; order_line_id: string; completion_event_id: string;
-        inventory_item_id: string; warehouse_id: string; mapping_id: string;
+        catalog_product_id: string; inventory_item_id: string; warehouse_id: string; mapping_id: string;
         effect_quantity: string; completed_at: string; correlation_id: string;
-      }>(`SELECT id, order_id, order_line_id, completion_event_id, inventory_item_id,
-              warehouse_id, mapping_id, effect_quantity::text, completed_at::text,
+      }>(`SELECT id, order_id, order_line_id, completion_event_id, catalog_product_id,
+              inventory_item_id, warehouse_id, mapping_id, effect_quantity::text, completed_at::text,
               correlation_id
             FROM business_operations.pos_inventory_sale_effects
            WHERE id=$1 AND tenant_id=$2 AND workspace_id=$3 AND business_id=$4
@@ -302,6 +302,12 @@ export class OperationalCommandExecutor {
              WHERE m.id=$6 AND m.tenant_id=$2 AND m.workspace_id=$3
                AND m.business_id=$4 AND m.state='active'
                AND m.inventory_item_id=$7 AND m.warehouse_id=$8)
+           -- Historical S3 rows may have been accepted using spoofable order notes.
+           -- Never execute S4 from those rows without a trusted S5A origin.
+           AND EXISTS (SELECT 1 FROM business_operations.pos_catalog_line_origins a
+             WHERE a.order_line_id=$9 AND a.order_id=$1
+               AND a.tenant_id=$2 AND a.workspace_id=$3 AND a.business_id=$4
+               AND a.catalog_product_id=$10 AND a.created_at <= $11::timestamptz)
            AND EXISTS (SELECT 1 FROM platform.inventory_items i
              WHERE i.id=$7 AND i.tenant_id=$2 AND i.workspace_id=$3
                AND i.business_id=$4 AND i.status='active')
@@ -310,7 +316,8 @@ export class OperationalCommandExecutor {
                AND w.business_id=$4 AND w.status='active')
           ) AS valid`,
         [effect.order_id, ctx.tenantId, ctx.workspaceId, business,
-          effect.completion_event_id, effect.mapping_id, effect.inventory_item_id, effect.warehouse_id]);
+          effect.completion_event_id, effect.mapping_id, effect.inventory_item_id,
+          effect.warehouse_id, effect.order_line_id, effect.catalog_product_id, effect.completed_at]);
       if (valid.rows[0]?.valid !== true) {
         throw new OperationalMappingError('Sale-effect source or current stock association is invalid.');
       }

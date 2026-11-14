@@ -14,7 +14,8 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
   let app: Pool;
   const tenant = randomUUID(), workspace = randomUUID(), business = randomUUID();
   const actor = randomUUID(), product = randomUUID(), item = randomUUID(), warehouse = randomUUID();
-  const order = randomUUID(), line = randomUUID(), note = randomUUID(), completion = randomUUID();
+  const order = randomUUID(), note = randomUUID(), completion = randomUUID();
+  let line: string = randomUUID();
   const correlation = randomUUID();
   let mapping = '';
   let completedAt: string;
@@ -50,7 +51,7 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
     const role = (await admin.query(`INSERT INTO tenancy.roles(tenant_id,code,name,scope)
       VALUES($1,$2,'S3','business') RETURNING id`, [tenant,`s3-${tenant}`])).rows[0].id as string;
     await admin.query(`INSERT INTO tenancy.role_permissions(role_id,permission_id)
-      SELECT $1,id FROM tenancy.permissions WHERE code='bo:admin'`, [role]);
+      SELECT $1,id FROM tenancy.permissions WHERE code IN ('bo:admin','bo:write')`, [role]);
     const member = (await admin.query(`INSERT INTO tenancy.memberships(tenant_id,workspace_id,user_id,status)
       VALUES($1,$2,$3,'active') RETURNING id`, [tenant,workspace,actor])).rows[0].id as string;
     await admin.query(`INSERT INTO tenancy.membership_roles(membership_id,role_id,business_id)
@@ -72,13 +73,13 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
     await admin.query(`INSERT INTO platform.orders
       (id,tenant_id,workspace_id,business_id,order_number,order_date,currency_code,
        operational_status,total_amount,correlation_id,created_by)
-      VALUES($1,$2,$3,$4,$5,CURRENT_DATE,'KWD','completed',0,$6,$7)`,
+      VALUES($1,$2,$3,$4,$5,CURRENT_DATE,'KWD','planned',0,$6,$7)`,
       [order,tenant,workspace,business,`S3-${order}`,randomUUID(),actor]);
-    await admin.query(`INSERT INTO business_operations.order_line_items
-      (id,tenant_id,workspace_id,business_id,order_id,line_number,item_type,product_id,
-       description,quantity,unit_price,line_total)
-      VALUES($1,$2,$3,$4,$5,1,'product',NULL,'S3 product',2.5000,0,0)`,
-      [line,tenant,workspace,business,order]);
+    line = await scoped(async c => (await c.query<{ id: string }>(
+      `SELECT business_operations.create_pos_catalog_line(
+        $1::uuid,$2::uuid,$3::uuid,$4::uuid,1,$5::uuid,2.5000,0,0,$6::uuid,'online') AS id`,
+      [tenant,workspace,business,order,product,actor])).rows[0].id, true);
+    await admin.query(`UPDATE platform.orders SET operational_status='completed' WHERE id=$1`,[order]);
     await admin.query(`INSERT INTO business_operations.order_events
       (id,tenant_id,workspace_id,business_id,order_id,event_type,payload,correlation_id)
       VALUES($1,$2,$3,$4,$5,'note',$6,$7)`,
@@ -131,6 +132,129 @@ describe.runIf(run)('POS2-04-S3 immutable, inert sale-effect evidence (disposabl
     await expect(admin.query(insertEvidence,altered(7,randomUUID()))).rejects.toBeDefined();
     await expect(admin.query(insertEvidence,altered(5,randomUUID()))).rejects.toBeDefined();
     await expect(admin.query(insertEvidence,altered(9,randomUUID()))).rejects.toBeDefined();
+  });
+
+  it('refuses a completed legacy note-only line without privileged origin', async () => {
+    const untrustedLine = randomUUID();
+    await admin.query(`INSERT INTO business_operations.order_line_items
+      (id,tenant_id,workspace_id,business_id,order_id,line_number,item_type,description,quantity,unit_price,line_total)
+      VALUES($1,$2,$3,$4,$5,2,'product','S3 product',2.5000,0,0)`,
+      [untrustedLine,tenant,workspace,business,order]);
+    await admin.query(`INSERT INTO business_operations.order_events
+      (tenant_id,workspace_id,business_id,order_id,event_type,payload,correlation_id)
+      VALUES($1,$2,$3,$4,'note',$5,$6)`,
+      [tenant,workspace,business,order,
+       JSON.stringify({kind:'catalog_line_added',lineItemId:untrustedLine,catalogProductId:product}),
+       randomUUID()]);
+    const legacyArgs = args.map((value,index)=>index===4?untrustedLine:value);
+    await expect(admin.query(insertEvidence,legacyArgs)).rejects.toThrow(/authenticated catalogue-line origin/);
+    const remaining = (await admin.query(
+      `SELECT count(*)::int n FROM business_operations.pos_inventory_sale_effects WHERE order_line_id=$1`,
+      [untrustedLine])).rows[0].n;
+    expect(remaining).toBe(0);
+  });
+
+  it('withholds every origin-table privilege from the ordinary application role', async () => {
+    const grants = (await app.query(`SELECT
+      has_table_privilege(current_user,'business_operations.pos_catalog_line_origins','SELECT') s,
+      has_table_privilege(current_user,'business_operations.pos_catalog_line_origins','INSERT') i,
+      has_table_privilege(current_user,'business_operations.pos_catalog_line_origins','UPDATE') u,
+      has_table_privilege(current_user,'business_operations.pos_catalog_line_origins','DELETE') d,
+      has_table_privilege(current_user,'business_operations.pos_catalog_line_origins','TRUNCATE') t,
+      has_function_privilege(current_user,
+        'business_operations.create_pos_catalog_line(uuid,uuid,uuid,uuid,integer,uuid,numeric,numeric,numeric,uuid,text)','EXECUTE') exec`)).rows[0];
+    expect(grants).toEqual({s:false,i:false,u:false,d:false,t:false,exec:true});
+    await scoped(async c => {
+      await expect(c.query(`INSERT INTO business_operations.pos_catalog_line_origins
+        (order_line_id,tenant_id,workspace_id,business_id,order_id,catalog_product_id,actor_user_id,source_kind)
+        VALUES($1,$2,$3,$4,$5,$6,$7,'online')`,
+        [randomUUID(),tenant,workspace,business,order,product,actor])).rejects.toMatchObject({code:'42501'});
+    });
+  });
+
+  it('writes scoped catalogue origins with their new lines atomically; offline override retains product attribution', async () => {
+    const plannedOrder = randomUUID();
+    await admin.query(`INSERT INTO platform.orders
+      (id,tenant_id,workspace_id,business_id,order_number,order_date,currency_code,
+       operational_status,total_amount,correlation_id,created_by)
+      VALUES($1,$2,$3,$4,$5,CURRENT_DATE,'KWD','planned',0,$6,$7)`,
+      [plannedOrder,tenant,workspace,business,`S5A-${plannedOrder}`,randomUUID(),actor]);
+    const lines = await scoped(async c => {
+      const a=(await c.query<{id:string}>(`SELECT business_operations.create_pos_catalog_line(
+        $1::uuid,$2::uuid,$3::uuid,$4::uuid,1,$5::uuid,2.5000,0,0,$6::uuid,'online') AS id`,
+        [tenant,workspace,business,plannedOrder,product,actor])).rows[0].id;
+      const b=(await c.query<{id:string}>(`SELECT business_operations.create_pos_catalog_line(
+        $1::uuid,$2::uuid,$3::uuid,$4::uuid,2,$5::uuid,2.5000,0.5,1.25,$6::uuid,'offline_honoured_drift') AS id`,
+        [tenant,workspace,business,plannedOrder,product,actor])).rows[0].id;
+      return [a,b];
+    },true);
+    const records=(await admin.query(`SELECT order_line_id,order_id,catalog_product_id,source_kind
+      FROM business_operations.pos_catalog_line_origins
+      WHERE order_line_id=ANY($1::uuid[]) ORDER BY source_kind DESC`,[lines])).rows;
+    expect(records).toHaveLength(2);
+    expect(records.every(r=>r.order_id===plannedOrder && r.catalog_product_id===product)).toBe(true);
+    expect(records.map(r=>r.source_kind).sort()).toEqual(['offline_honoured_drift','online']);
+    // The provenance is immutable even for privileged ordinary DML; only the
+    // line itself may legitimately be removed while the order remains planned.
+    await expect(admin.query(`UPDATE business_operations.pos_catalog_line_origins
+      SET catalog_product_id=$2 WHERE order_line_id=$1`,[lines[0],randomUUID()])).rejects.toThrow();
+    await scoped(async c=>{await c.query(
+      'DELETE FROM business_operations.order_line_items WHERE id=$1 AND order_id=$2',[lines[0],plannedOrder]);
+    },true);
+    expect((await admin.query(`SELECT count(*)::int n FROM business_operations.pos_catalog_line_origins
+      WHERE order_line_id=$1`,[lines[0]])).rows[0].n).toBe(1);
+    // A deleted draft origin must not be resurrected by a direct app INSERT
+    // reusing its now-vacant line UUID, even with identical tenant/order scope.
+    await scoped(async c => {
+      await expect(c.query(`INSERT INTO business_operations.order_line_items
+        (id,tenant_id,workspace_id,business_id,order_id,line_number,item_type,
+         description,quantity,unit_price,line_total)
+        VALUES($1,$2,$3,$4,$5,3,'product','Forged',1,0,0)`,
+        [lines[0],tenant,workspace,business,plannedOrder])).rejects.toThrow(/identity already consumed/);
+    });
+    // A completed or foreign-scope order may never gain an association later.
+    await scoped(async c => {
+      await expect(c.query(`SELECT business_operations.create_pos_catalog_line(
+        $1::uuid,$2::uuid,$3::uuid,$4::uuid,3,$5::uuid,2.5000,0,0,$6::uuid,'online')`,
+        [tenant,workspace,business,order,product,actor])).rejects.toBeDefined();
+    });
+    await scoped(async c => {
+      await expect(c.query(`SELECT business_operations.create_pos_catalog_line(
+        $1::uuid,$2::uuid,$3::uuid,$4::uuid,3,$5::uuid,2.5000,0,0,$6::uuid,'online')`,
+        [tenant,workspace,business,plannedOrder,randomUUID(),actor])).rejects.toBeDefined();
+    });
+  });
+
+  it('S5A security characterization: app-role direct drift invocation bypasses offline price planning', async () => {
+    // Not an acceptance test for activation: document the unresolved trust boundary
+    // using a disposable transaction. The privileged creator checks bo:write and
+    // order scope, but currently does not attest an accepted offline sale plan.
+    const plannedOrder = randomUUID();
+    await admin.query(`INSERT INTO platform.orders
+      (id,tenant_id,workspace_id,business_id,order_number,order_date,currency_code,
+       operational_status,total_amount,correlation_id,created_by)
+      VALUES($1,$2,$3,$4,$5,CURRENT_DATE,'KWD','planned',0,$6,$7)`,
+      [plannedOrder,tenant,workspace,business,`S5A-DRIFT-${plannedOrder}`,randomUUID(),actor]);
+    const unauthorizedLineId = await scoped(async c => {
+      const line = await c.query<{id:string}>(`SELECT business_operations.create_pos_catalog_line(
+        $1::uuid,$2::uuid,$3::uuid,$4::uuid,1,$5::uuid,1.0000,8.5000,8.5000,
+        $6::uuid,'offline_honoured_drift') AS id`,
+        [tenant,workspace,business,plannedOrder,product,actor]);
+      expect(line.rows).toHaveLength(1);
+      const saved = await c.query<{unit_price:string;line_total:string}>(`SELECT
+        unit_price::text AS unit_price,line_total::text AS line_total
+        FROM business_operations.order_line_items WHERE id=$1`,[line.rows[0].id]);
+      expect(Number(saved.rows[0].unit_price)).toBe(8.5);
+      expect(Number(saved.rows[0].line_total)).toBe(8.5);
+      return line.rows[0].id;
+    });
+    // Transaction rolled back; no fraudulent line, origin, sale or stock effects persist.
+    expect((await admin.query(`SELECT count(*)::int AS n
+      FROM business_operations.order_line_items WHERE id=$1`,[unauthorizedLineId])).rows[0].n).toBe(0);
+    expect((await admin.query(`SELECT count(*)::int AS n
+      FROM business_operations.pos_catalog_line_origins WHERE order_line_id=$1`,[unauthorizedLineId])).rows[0].n).toBe(0);
+    expect((await admin.query(`SELECT count(*)::int AS n
+      FROM business_operations.inventory_movements WHERE business_id=$1`,[business])).rows[0].n).toBe(0);
   });
 
   it('forbids privileged UPDATE and DELETE on immutable evidence', async () => {
